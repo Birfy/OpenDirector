@@ -1,0 +1,11 @@
+import { u1 } from "./module-tvS.js";
+let a;
+export var X;
+a = X || (X = {});
+a.DEFAULT = "default";
+a.TTS = "tts";
+a.SAMI = "sami";
+a.FRONTIER = "frontier";
+a.COMMERCE = "commerce";
+a.JIANYING = "jianying";
+export let r = u1("http-api-setting");

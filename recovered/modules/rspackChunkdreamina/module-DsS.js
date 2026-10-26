@@ -1,0 +1,15 @@
+export var r = {
+  SubjectListShow: "subject_list_show",
+  UploadFromLocal: "upload_from_local",
+  UploadFromAsset: "upload_from_asset",
+  SubjectDelete: "subject_delete",
+  SubjectDeleteConfirm: "subject_delete_confirm",
+  SubjectSetting: "subject_setting",
+  SubjectCreate: "subject_create",
+  Delete: "delete",
+  DeleteConfirm: "delete_confirm",
+  Collect: "collect",
+  Uncollected: "uncollected",
+  Download: "download",
+  AddToPrompt: "add_to_prompt",
+};

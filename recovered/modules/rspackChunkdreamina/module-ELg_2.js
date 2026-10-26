@@ -1,0 +1,18 @@
+export const A = {
+  "dropdown-footer": "dropdown-footer-lhiLq3",
+  dropdownFooter: "dropdown-footer-lhiLq3",
+  "dropdown-divider": "dropdown-divider-VtZw1E",
+  dropdownDivider: "dropdown-divider-VtZw1E",
+  "dropdown-actions": "dropdown-actions-cT_6HR",
+  dropdownActions: "dropdown-actions-cT_6HR",
+  "dropdown-action": "dropdown-action-T39qPN",
+  dropdownAction: "dropdown-action-T39qPN",
+  "dropdown-action-icon": "dropdown-action-icon-KETpNX",
+  dropdownActionIcon: "dropdown-action-icon-KETpNX",
+  "dropdown-action-label": "dropdown-action-label-Oka99K",
+  dropdownActionLabel: "dropdown-action-label-Oka99K",
+  "dropdown-action-label-content": "dropdown-action-label-content-n5A4GW",
+  dropdownActionLabelContent: "dropdown-action-label-content-n5A4GW",
+  "dropdown-action-label-text": "dropdown-action-label-text-YeORdR",
+  dropdownActionLabelText: "dropdown-action-label-text-YeORdR",
+};

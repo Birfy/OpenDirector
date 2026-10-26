@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.local
+.cache/
+playwright-report/
+test-results/
+.recovery-stage-*/
+recovered.previous/

@@ -1,0 +1,41 @@
+import n from "./module-A_17.js";
+import o from "./module-xK_16.js";
+import i from "./module-vo_16.js";
+import a from "./module-d_17.js";
+import s from "./module-NK_16.js";
+n(
+  {
+    target: "Iterator",
+    proto: true,
+    real: true,
+  },
+  {
+    reduce: function (t) {
+      a(this);
+      i(t);
+      const r = s(this);
+      let e = arguments.length < 2;
+      let n = e ? undefined : arguments[1];
+      let c = 0;
+      o(
+        r,
+        function (r) {
+          if (e) {
+            e = false;
+            n = r;
+          } else {
+            n = t(n, r, c);
+          }
+          c++;
+        },
+        {
+          IS_RECORD: true,
+        },
+      );
+      if (e) {
+        throw TypeError("Reduce of empty iterator with no initial value");
+      }
+      return n;
+    },
+  },
+);

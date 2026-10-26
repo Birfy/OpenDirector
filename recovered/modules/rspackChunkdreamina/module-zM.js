@@ -1,0 +1,11 @@
+let r;
+let n;
+r = {};
+r[(r.Reviewing = 0)] = "Reviewing";
+r[(r.Approved = 1)] = "Approved";
+r[(r.Rejected = 2)] = "Rejected";
+export var F = r;
+n = {};
+n[(n.Dreamina = 0)] = "Dreamina";
+n[(n.ShortDrama = 1)] = "ShortDrama";
+export var M = n;

@@ -1,0 +1,16 @@
+export var C;
+let o;
+let i;
+let n;
+i = C || (C = {});
+i.ALL = "all";
+i.STANDARD = "standard";
+i.ARTISAN = "artisan";
+i.MAESTRO = "maestro";
+i.ULTRA = "ultra";
+n = o || (o = {});
+n.Free = "free";
+n.STANDARD = "standard";
+n.ARTISAN = "artisan";
+n.MAESTRO = "maestro";
+n.ULTRA = "ultra";

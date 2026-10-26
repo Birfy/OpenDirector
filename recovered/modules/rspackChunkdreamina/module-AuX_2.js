@@ -1,0 +1,17 @@
+export var g = {
+  Delete: "Delete",
+  BatchDelete: "batch_delete",
+  Regenerate: "Regenerate",
+  Favorites: "Favorites",
+  Download: "Download",
+  Detail: "detail",
+  Reprompt: "Reprompt",
+  Publish: "Publish",
+  AudioReport: "AudioReport",
+  LocateToOriginalPosition: "locate_to_original_position",
+  Locate: "Locate",
+  AsReference: "as_reference",
+  CreateSubject: "create_subject",
+  AudioSeparation: "audio_separation",
+  GenerationFeedback: "generation_feedback",
+};

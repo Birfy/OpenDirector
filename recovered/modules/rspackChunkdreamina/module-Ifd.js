@@ -1,0 +1,11 @@
+export var z;
+export var _;
+let i;
+let n;
+i = z || (z = {});
+i.Sg = "sg-capcut";
+i.Cn = "cn";
+n = _ || (_ = {});
+n[(n.Boe = 0)] = "Boe";
+n[(n.Ppe = 1)] = "Ppe";
+n[(n.Online = 2)] = "Online";

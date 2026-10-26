@@ -1,0 +1,12 @@
+export var W;
+let o;
+o = W || (W = {});
+o.NEED_LOGIN = "needLogin";
+o.CAN_APPLY = "canApply";
+o.PENDING_APPROVAL = "pendingApproval";
+o.ALREADY_MEMBER = "alreadyMember";
+o.OWNER_SELF = "ownerSelf";
+o.JOINED = "joined";
+o.EXPIRED = "expired";
+o.SEAT_FULL = "seatFull";
+o.ERROR = "error";

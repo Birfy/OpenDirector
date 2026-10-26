@@ -1,0 +1,10 @@
+let r;
+r = {};
+r[(r.Image = 1)] = "Image";
+r[(r.Video = 2)] = "Video";
+r[(r.Story = 3)] = "Story";
+r[(r.Canvas = 4)] = "Canvas";
+r[(r.CanvasProject = 20)] = "CanvasProject";
+r[(r.Document = 12)] = "Document";
+r[(r.Audio = 6)] = "Audio";
+export var PW = r;

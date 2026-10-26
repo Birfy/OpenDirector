@@ -1,0 +1,12 @@
+"use strict";
+require("./module-A_13.js")(
+  {
+    target: "Iterator",
+    proto: true,
+    real: true,
+    forced: true,
+  },
+  {
+    indexed: require("./module-up9_12.js"),
+  },
+);

@@ -1,0 +1,10 @@
+import _Z from "./module-Z9.js";
+export default _Z;
+_Z.Stream = _Z;
+_Z.Readable = _Z;
+_Z.Writable = require("./module-mP.js");
+_Z.Duplex = require("./module-zD_2_2.js");
+_Z.Transform = require("./module-Hf.js");
+_Z.PassThrough = require("./module-sxO.js");
+_Z.finished = require("./module-qm.js");
+_Z.pipeline = require("./module-LH.js");

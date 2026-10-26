@@ -1,0 +1,24 @@
+import n from "./module-A.js";
+import o from "./module-r9.js";
+import forced from "./module-hP.js";
+import a from "./module-vo.js";
+import s from "./module-aq.js";
+import { f } from "./module-t.js";
+if (o) {
+  n(
+    {
+      target: "Object",
+      proto: true,
+      forced,
+    },
+    {
+      __defineGetter__: function (t, r) {
+        f(s(this), t, {
+          get: a(r),
+          enumerable: true,
+          configurable: true,
+        });
+      },
+    },
+  );
+}

@@ -1,0 +1,5 @@
+export default function (t, e) {
+  if (!(t instanceof e)) {
+    throw TypeError("Cannot call a class as a function");
+  }
+}

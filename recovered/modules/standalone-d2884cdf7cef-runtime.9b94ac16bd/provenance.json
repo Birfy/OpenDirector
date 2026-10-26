@@ -1,0 +1,7 @@
+{
+  "format": "unknown",
+  "strategy": "structural",
+  "modules": {
+    "d2884cdf7cef-runtime.9b94ac16bd.js": {"input": "research/prepared/standalone-d2884cdf7cef-runtime.9b94ac16bd/d2884cdf7cef-runtime.9b94ac16bd.js", "ranges": [[0,113666]], "extraction": "structural"}
+  }
+}

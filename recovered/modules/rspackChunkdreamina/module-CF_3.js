@@ -1,0 +1,17 @@
+export const A = {
+  container: "container-_Hbcq4",
+  content: "content-pSzNV3",
+  disabled: "disabled-R9HlIR",
+  "left-scrollable": "left-scrollable-fwdAxU",
+  leftScrollable: "left-scrollable-fwdAxU",
+  "right-scrollable": "right-scrollable-jkN7ww",
+  rightScrollable: "right-scrollable-jkN7ww",
+  "scroll-button": "scroll-button-Hqzozj",
+  scrollButton: "scroll-button-Hqzozj",
+  "scroll-button-container": "scroll-button-container-muie6l",
+  scrollButtonContainer: "scroll-button-container-muie6l",
+  "scroll-left-button-container": "scroll-left-button-container-alWb8w",
+  scrollLeftButtonContainer: "scroll-left-button-container-alWb8w",
+  "scroll-right-button-container": "scroll-right-button-container-BmF2Ng",
+  scrollRightButtonContainer: "scroll-right-button-container-BmF2Ng",
+};

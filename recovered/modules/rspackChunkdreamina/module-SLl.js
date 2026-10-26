@@ -1,0 +1,10 @@
+import _Q from "./module-TSU.js";
+export default _Q;
+_Q.Stream = _Q;
+_Q.Readable = _Q;
+_Q.Writable = require("./module-Cg5.js");
+_Q.Duplex = require("./module-qd_2.js");
+_Q.Transform = require("./module-sE_2.js");
+_Q.PassThrough = require("./module-eT_2.js");
+_Q.finished = require("./module-P6e.js");
+_Q.pipeline = require("./module-IA_2.js");

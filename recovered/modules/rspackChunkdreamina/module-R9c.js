@@ -1,0 +1,12 @@
+let n;
+let a;
+n = {};
+n[(n.Group_Image = 1)] = "Group_Image";
+n[(n.Edit_Image = 2)] = "Edit_Image";
+n[(n.Text_Image = 3)] = "Text_Image";
+export var o = n;
+a = {};
+a[(a.Default = 0)] = "Default";
+a[(a.AllAtOnce = 1)] = "AllAtOnce";
+a[(a.OneByOne = 2)] = "OneByOne";
+export var d = a;
