@@ -24,7 +24,8 @@ export function StudyNotes() {
             <h3>页面布局与资源分组</h3>
             <p>
               首页入口 <code>fP</code> 声明
-              HomeCreate、侧栏与生成器资源；页面外观参考浏览器截图。
+              HomeCreate、侧栏与生成器资源；画布使用独立的 octo_web
+              构建，界面参考实际编辑器。
             </p>
           </div>
           <div>
@@ -39,7 +40,7 @@ export function StudyNotes() {
             <span className="evidence-tag authored">重新编写</span>
             <h3>本地交互练习</h3>
             <p>
-              React 状态、模拟任务、画布和 SVG
+              React 状态、模拟任务、可编辑全屏画布和 SVG
               插图为独立实现。没有原站后端、登录、模型推理或上传服务。
             </p>
           </div>

@@ -1051,146 +1051,6 @@
   font-size: 12px;
   line-height: 1.9;
 }
-.canvas-section {
-  overflow: hidden;
-  margin-top: 8px;
-  border: 1px solid #403149;
-  border-radius: 12px;
-  background: #17101d;
-}
-.canvas-toolbar,
-.canvas-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 16px;
-  background: #201827;
-}
-.canvas-toolbar > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #b49ac6;
-}
-.canvas-toolbar strong {
-  color: #d2bbdf;
-  font-size: 11px;
-  font-weight: 500;
-}
-.canvas-toolbar > div > span {
-  color: #8d739e;
-  font-size: 9px;
-}
-.canvas-toolbar button {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  border: 1px solid #483154;
-  border-radius: 5px;
-  color: #c0a3d2;
-  font-size: 9px;
-}
-.canvas-toolbar button:hover,
-.canvas-footer button:hover {
-  background: #3d294b;
-}
-.canvas-viewport {
-  overflow: auto;
-  max-height: 570px;
-  background-color: #100c15;
-  background-image: radial-gradient(#43334f 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-.canvas-surface {
-  position: relative;
-  min-width: 100%;
-}
-.canvas-scale {
-  position: absolute;
-  width: 850px;
-  height: 520px;
-  transform-origin: top left;
-}
-.canvas-item {
-  position: absolute;
-  overflow: hidden;
-  width: 260px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 4px;
-  background: #1f1527;
-  box-shadow: 0 7px 20px #0000003b;
-}
-.canvas-item.is-selected {
-  border-color: #be8ce2;
-}
-.canvas-item svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-.canvas-item > span {
-  display: block;
-  padding: 8px 9px;
-  color: #bda2d0;
-  font-size: 9px;
-  text-align: left;
-}
-.canvas-sticky {
-  position: absolute;
-  top: 32px;
-  left: 613px;
-  width: 190px;
-  padding: 19px;
-  border-radius: 2px;
-  color: #e5d2f3;
-  background: #514061;
-  transform: rotate(4deg);
-}
-.canvas-sticky > span {
-  font-size: 9px;
-  letter-spacing: 1px;
-}
-.canvas-sticky > p {
-  margin: 13px 0 20px;
-  font-size: 14px;
-  line-height: 1.7;
-}
-.canvas-sticky > small {
-  font-size: 8px;
-  color: #bca6cc;
-}
-.canvas-footer {
-  padding: 9px 16px;
-}
-.canvas-footer > p {
-  margin: 0;
-  color: #92779f;
-  font-size: 9px;
-}
-.canvas-footer > div {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.canvas-footer > div > span {
-  min-width: 33px;
-  color: #ba9aca;
-  font-size: 10px;
-  text-align: center;
-}
-.canvas-footer button {
-  padding: 4px 6px;
-  border-radius: 4px;
-  color: #baa0ce;
-  font-size: 10px;
-}
-.canvas-footer button:disabled {
-  color: #685474;
-  cursor: not-allowed;
-}
 .mobile-only {
   display: none;
 }
@@ -1403,25 +1263,6 @@
     gap: 8px;
     text-align: center;
   }
-  .canvas-toolbar {
-    padding: 11px;
-  }
-  .canvas-toolbar > div > span {
-    display: none;
-  }
-  .canvas-footer {
-    flex-wrap: wrap;
-    padding: 9px 11px;
-  }
-  .canvas-footer > p {
-    width: 100%;
-  }
-  .canvas-footer > div {
-    margin-left: auto;
-  }
-  .canvas-viewport {
-    max-height: 430px;
-  }
 }
 @media (max-width: 430px) {
   .main-content {
@@ -1496,4 +1337,14 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.canvas-loading-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0d0d0d;
+  color: #777;
+  font-size: 13px;
 }

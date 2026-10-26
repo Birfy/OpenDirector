@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createJob, runLocalGeneration } from "./domain/generation";
 import type {
   GenerationJob,
@@ -10,16 +10,34 @@ import { CATEGORIES, PRESETS, SKILLS } from "./data/presets";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Composer, type ReferenceFile } from "./components/Composer";
 import { Gallery } from "./components/Gallery";
-import { CanvasBoard } from "./components/CanvasBoard";
 import { Jobs } from "./components/Jobs";
 import { StudyNotes } from "./components/StudyNotes";
 import { Icon } from "./components/Icon";
 import { Artwork } from "./components/Artwork";
 import "./styles/app.css";
 
+const CanvasWorkspace = lazy(() => import("./canvas/CanvasWorkspace"));
+
 export default function App() {
   const [view, setView] = useState<View>("create");
-  const [tab, setTab] = useState<"generate" | "canvas">("generate");
+  const [canvasOpen, setCanvasOpen] = useState(() =>
+    window.location.pathname.includes("/ai-canvas"),
+  );
+  const openCanvas = () => {
+    window.history.pushState({}, "", "/ai-tool/ai-canvas");
+    setCanvasOpen(true);
+    setSidebarOpen(false);
+  };
+  const closeCanvas = () => {
+    window.history.pushState({}, "", "/");
+    setCanvasOpen(false);
+  };
+  useEffect(() => {
+    const navigate = () =>
+      setCanvasOpen(window.location.pathname.includes("/ai-canvas"));
+    window.addEventListener("popstate", navigate);
+    return () => window.removeEventListener("popstate", navigate);
+  }, []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<GenerationMode>("agent");
@@ -60,7 +78,6 @@ export default function App() {
     );
   const goToComposer = () => {
     setView("create");
-    setTab("generate");
     setSidebarOpen(false);
     focusComposer();
   };
@@ -170,6 +187,15 @@ export default function App() {
     }
   };
 
+  if (canvasOpen)
+    return (
+      <Suspense
+        fallback={<div className="canvas-loading-screen">正在打开画布…</div>}
+      >
+        <CanvasWorkspace onExit={closeCanvas} />
+      </Suspense>
+    );
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -180,11 +206,7 @@ export default function App() {
         onNew={newCreation}
         jobs={jobs}
         onJob={reuseJob}
-        onCanvas={() => {
-          setView("create");
-          setTab("canvas");
-          setSidebarOpen(false);
-        }}
+        onCanvas={openCanvas}
       />
       <div className="main-shell">
         <header className="topbar">
@@ -233,54 +255,46 @@ export default function App() {
                 </h1>
                 <div className="creation-tabs" aria-label="创作工作区">
                   <button
-                    className={tab === "generate" ? "selected" : ""}
-                    onClick={() => setTab("generate")}
-                    aria-pressed={tab === "generate"}
+                    className="selected"
+                    onClick={() => focusComposer()}
+                    aria-pressed={true}
                   >
                     <Icon name="sparkles" size={17} />
                     生成
                   </button>
-                  <button
-                    className={tab === "canvas" ? "selected" : ""}
-                    onClick={() => setTab("canvas")}
-                    aria-pressed={tab === "canvas"}
-                  >
+                  <button onClick={openCanvas} aria-pressed={false}>
                     <Icon name="canvas" size={17} />
                     画布
                   </button>
                 </div>
               </section>
-              {tab === "generate" ? (
-                <>
-                  <Composer
-                    prompt={prompt}
-                    onPrompt={setPrompt}
-                    mode={mode}
-                    onMode={setMode}
-                    aspectRatio={aspectRatio}
-                    onAspectRatio={setAspectRatio}
-                    references={references}
-                    onFiles={addFiles}
-                    onRemoveFile={removeFile}
-                    running={running}
-                    onGenerate={() => {
-                      void generate();
-                    }}
-                    onAbort={() => activeTask.current?.controller.abort()}
-                    skills={SKILLS}
-                    onSkill={useSkill}
-                    notice={notice}
-                  />
-                  <Jobs jobs={jobs.slice(0, 3)} onReuse={reuseJob} />
-                  <Gallery
-                    presets={PRESETS}
-                    categories={CATEGORIES}
-                    onSelect={usePreset}
-                  />
-                </>
-              ) : (
-                <CanvasBoard />
-              )}
+              <>
+                <Composer
+                  prompt={prompt}
+                  onPrompt={setPrompt}
+                  mode={mode}
+                  onMode={setMode}
+                  aspectRatio={aspectRatio}
+                  onAspectRatio={setAspectRatio}
+                  references={references}
+                  onFiles={addFiles}
+                  onRemoveFile={removeFile}
+                  running={running}
+                  onGenerate={() => {
+                    void generate();
+                  }}
+                  onAbort={() => activeTask.current?.controller.abort()}
+                  skills={SKILLS}
+                  onSkill={useSkill}
+                  notice={notice}
+                />
+                <Jobs jobs={jobs.slice(0, 3)} onReuse={reuseJob} />
+                <Gallery
+                  presets={PRESETS}
+                  categories={CATEGORIES}
+                  onSelect={usePreset}
+                />
+              </>
             </>
           )}
           {view === "explore" && (

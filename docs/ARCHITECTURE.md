@@ -9,13 +9,13 @@ main.tsx
       ├── Composer      提示词、模式、画幅、参考文件、提交/中止
       ├── Gallery       分类、样例卡片、预览与填入
       ├── Jobs          任务状态、预置结果、重用
-      ├── CanvasBoard   独立编写的本地画布练习
+      ├── CanvasWorkspace  懒加载的全屏编辑器（/ai-tool/ai-canvas）
       └── StudyNotes    说明观察、推导和重建的区别
 ```
 
 `App` 拥有页面状态、参考文件的 object URL、任务列表和当前 `AbortController`。组件通过 props 接收状态和回调，领域模块不依赖 React。`data/presets.ts` 是独立编写的内容，`Artwork` 负责原创 SVG。
 
-提交时先校验并复制请求，建立 `running` 任务，运行一个可取消的本地计时器；成功时改为 `completed`，取消时改为 `aborted`。组件卸载会取消任务并回收图片 object URL。当前会话的数据不会持久化到后端或浏览器存储。
+提交时先校验并复制请求，建立 `running` 任务，运行一个可取消的本地计时器；成功时改为 `completed`，取消时改为 `aborted`。组件卸载会取消任务并回收图片 object URL。首页任务属于当前会话。画布项目与素材单独由 IndexedDB 持久化，见 [画布导读](CANVAS.md)。
 
 这个流程参考了原模块 `nT` 中“可取消时中止，否则提交”的 UI 边界，但没有恢复原站的 task manager、模型推理、队列或网络协议。不要把计时器执行时间当作原站性能。
 
@@ -31,4 +31,4 @@ main.tsx
 
 本学习工程选用 React 19、Vite 6 与 TypeScript 5，并将实际版本写入 lockfile。它们是重建工程的依赖，不能据此推断即梦原始 package.json。已采集发布包中存在 ReactDOM 18.2 相关标记，但这也不足以精确重建原项目完整依赖锁定。
 
-`npm test` 覆盖快照校验语义与本地任务取消；`npm run build` 验证重建工程的类型与打包；`npm run recovery:check` 核验恢复材料的字节、范围、语法和静态依赖。三者分别回答不同问题。恢复模块通过静态检查，不代表原站应用可以完整运行。
+`npm test` 覆盖快照校验、画布结构/历史/存储边界、异步预览结果归属与本地任务取消；`npm run build` 验证重建工程的类型与打包；`npm run recovery:check` 核验恢复材料的字节、范围、语法和静态依赖。三者分别回答不同问题。恢复模块通过静态检查，不代表原站应用可以完整运行。

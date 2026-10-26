@@ -1,15 +1,17 @@
 # MuseShow · 即梦前端学习工程
 
-目标页面：[即梦首页](https://jimeng.jianying.com/ai-tool/home)。资源采集日期：2026-10-26。
+目标页面：[即梦首页](https://jimeng.jianying.com/ai-tool/home) 与独立 [画布编辑器](https://jimeng.jianying.com/ai-tool/ai-canvas)。资源采集日期：2026-10-26。
 
 这个分支把浏览器发布的前端资源整理成可以阅读、追溯和继续开发的工程，包含两条学习路径：
 
 - **实际代码恢复**：`research/capture/` 保存公开 JS/CSS 的原始字节、URL 和 SHA-256；`recovered/` 保存 Wakaru 解包、格式化与有限反编译的派生模块。依赖关系、未解决项和覆盖范围都有报告。
-- **可运行的学习重建**：`src/` 是重新编写的 React + TypeScript 工程，复现首页的组件分区和主要交互。`bannerSnapshot.ts` 依据真实模块移植校验语义，其余 UI、类型、画布、插图与本地任务适配器均明确标为重建。
+- **可运行的学习重建**：`src/` 是重新编写的 React + TypeScript 工程，复现首页的组件分区，并加入独立全屏画布编辑器。`bannerSnapshot.ts` 依据真实模块移植校验语义，其余 UI、类型、画布、插图与本地任务适配器均明确标为重建。
 
 没有获取到原站发布前的 TypeScript/TSX、原始 source map、构建配置、完整素材或服务端。**这不是完整原版工程，也不具备真实 AI 生成能力。** 解包得到的源码不自动等于可编译的原站应用；可直接运行的是 `src/` 学习工程。
 
-![本地学习工程预览](docs/preview.png)
+![全屏画布学习工程](docs/canvas-preview.jpg)
+
+首页预览见 [preview.png](docs/preview.png)。画布实现与覆盖范围见 [画布导读](docs/CANVAS.md)。
 
 ## 启动
 
@@ -22,10 +24,10 @@ npm ci
 npm run dev
 ```
 
-打开终端显示的本机地址（默认 `http://127.0.0.1:5173`）。
+打开终端显示的本机地址（默认 `http://127.0.0.1:5173`）。点击“画布”，或直接打开 `/ai-tool/ai-canvas`。画布菜单中的“打开示例画布”提供可编辑的节点和参考连线。
 
 ```sh
-npm test                 # 快照校验、任务提交和中止测试
+npm test                 # 快照、画布命令/历史/持久化边界与任务测试
 npm run build            # TypeScript 检查 + Vite 生产构建
 npm run preview          # 查看生产构建
 npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态依赖
@@ -35,8 +37,10 @@ npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态
 
 - 首页：侧栏导航、生成/画布切换、创作类型、画幅、提示词、技能填入、灵感分类与卡片预览。
 - 状态管理：提交 → 运行 → 完成/中止、取消控制器、资产列表和任务重用。
-- 本地素材：选取参考文件、图片预览和移除；文件只留在当前页面，不上传，刷新即清空。
-- 画布：本地概念示例，用来练习元素选择、移动、缩放和删除，具体支持项以界面为准。
+- 本地素材：首页参考文件属于当前会话；画布素材与项目保存在 IndexedDB，刷新可恢复，均不上传。
+- 画布：无限平移、8%–800% 缩放、小地图、参考连线、文本/图片/视频/音频/文件/分组、框选、拖拽、缩放节点、编组、复制粘贴、锁定、层级、撤销重做。
+- 图片编辑：真实像素裁剪、旋转、翻转、亮度/对比度/饱和度调整、PNG 输出与撤销。
+- 项目与生成器：本地项目切换、JSON 导入导出、搜索、媒体播放、模型/比例/数量/镜头风格参数、引用素材、本地预览任务。
 - 源码对照：SSR 推荐卡片快照校验、首页入口与异步资源分组、原始生成器的提交/中止边界。
 
 页面中显示“本地模拟”。任务完成后的卡片使用本工程绘制的 SVG，既没有调用即梦 API，也没有连接模型。原站资源只作为分析输入，学习应用不加载或执行 `recovered/` 与 `research/` 下的脚本。
@@ -46,7 +50,8 @@ npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态
 ```text
 src/
   App.tsx                 页面状态与任务生命周期
-  components/             侧栏、输入区、卡片、画布、结果列表
+  components/             首页侧栏、输入区、卡片、结果列表
+  canvas/                 全屏编辑器、节点、历史、持久化、图片编辑
   data/presets.ts          独立编写的提示词和样例内容
   domain/bannerSnapshot.ts 依据 TJ 模块移植的校验逻辑
   domain/generation.ts     独立编写的本地任务适配器
@@ -54,6 +59,7 @@ src/
 tests/                    领域边界与取消行为测试
 research/capture/         148 份原始公开资源和采集清单
 research/prepared/        AST 提取的解包输入及原始区间
+research/canvas/          独立 octo_web 画布资源、格式化代码与证据
 recovered/                实际解包模块、派生 source map 和恢复报告
 scripts/recovery*.mjs     可重复执行的恢复与核验工具
 docs/                     工程导读与溯源说明
