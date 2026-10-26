@@ -1,11 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CanvasNode } from "./model";
+import { LayerBoard } from "./LayerBoard";
+import type { LayerDocument } from "./layerDocument";
 import "./image-editor.css";
 
-interface ImageEditorProps {
+export interface ImageEditorProps {
   node: CanvasNode;
-  onApply: (src: string) => void;
+  onApply: (src: string, layers?: LayerDocument) => void;
   onClose: () => void;
+  initialTab?: "crop" | "layers";
+  initialLayers?: LayerDocument;
 }
 
 type Aspect = "original" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
@@ -116,7 +120,42 @@ function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "图片编辑未完成，请重试。";
 }
 
-export function ImageEditor({ node, onApply, onClose }: ImageEditorProps) {
+export function ImageEditor({
+  initialTab = "crop",
+  initialLayers,
+  ...props
+}: ImageEditorProps) {
+  const [tab, setTab] = useState(initialTab);
+  const [layerSource, setLayerSource] = useState(props.node.data.src);
+  const [layers, setLayers] = useState(initialLayers);
+  return tab === "layers" ? (
+    <LayerBoard
+      src={layerSource}
+      title={props.node.data.title}
+      initialDocument={layers}
+      onApply={props.onApply}
+      onClose={props.onClose}
+    />
+  ) : (
+    <CropEditor
+      {...props}
+      onOpenLayers={(src, unchanged) => {
+        setLayerSource(src);
+        setLayers(unchanged ? initialLayers : undefined);
+        setTab("layers");
+      }}
+    />
+  );
+}
+
+function CropEditor({
+  node,
+  onApply,
+  onClose,
+  onOpenLayers,
+}: ImageEditorProps & {
+  onOpenLayers: (src: string, unchanged: boolean) => void;
+}) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [options, setOptions] = useState<EditOptions>({ ...INITIAL_OPTIONS });
   const [loadError, setLoadError] = useState("");
@@ -314,14 +353,43 @@ export function ImageEditor({ node, onApply, onClose }: ImageEditorProps) {
               编辑图片<span>{node.data.title}</span>
             </h2>
           </div>
-          <button
-            type="button"
-            className="cw-editor-close"
-            onClick={onClose}
-            aria-label="关闭图片编辑"
-          >
-            ×
-          </button>
+          <div className="cw-editor-header-actions">
+            <button
+              type="button"
+              className="cw-editor-layers"
+              disabled={!image || applying}
+              onClick={() => {
+                if (!image) return;
+                try {
+                  const unchanged = (
+                    Object.keys(INITIAL_OPTIONS) as (keyof EditOptions)[]
+                  ).every((key) => options[key] === INITIAL_OPTIONS[key]);
+                  if (unchanged && node.data.src)
+                    onOpenLayers(node.data.src, true);
+                  else {
+                    const output = document.createElement("canvas");
+                    renderImage(output, image, options);
+                    const src = output.toDataURL("image/png");
+                    if (!src.startsWith("data:image/png;base64,"))
+                      throw new Error("无法导出裁剪结果，请缩小图片后重试。");
+                    onOpenLayers(src, false);
+                  }
+                } catch (error) {
+                  setRenderError(failureMessage(error));
+                }
+              }}
+            >
+              图层工作台
+            </button>
+            <button
+              type="button"
+              className="cw-editor-close"
+              onClick={onClose}
+              aria-label="关闭图片编辑"
+            >
+              ×
+            </button>
+          </div>
         </header>
         <div className="cw-editor-body">
           <div className="cw-editor-preview-panel">

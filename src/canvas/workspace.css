@@ -1009,3 +1009,124 @@
     right: 10px;
   }
 }
+.cw-rail {
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.cw-rail > * {
+  flex-shrink: 0;
+}
+.cw-context-menu {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+.cw-side-panel.is-tools {
+  padding: 0;
+  width: 365px;
+  overflow: hidden;
+}
+.cw-side-panel.is-tools > .cw-panel-heading {
+  display: none;
+}
+.cw-generation-dialog {
+  width: min(700px, 96vw);
+}
+.cw-generation-dialog .cw-domain-footer a {
+  color: #d0c4ec;
+  text-decoration: none;
+  padding: 8px;
+  font-size: 12px;
+}
+.cw-generation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 0;
+  font-size: 13px;
+}
+.cw-generation-summary > span {
+  color: #b6c5b1;
+  border: 1px solid #52624c;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.cw-generation-summary small {
+  margin-left: auto;
+  color: #96939d;
+}
+.cw-generation-prompt {
+  display: block;
+  font-size: 12px;
+  color: #a8a4af;
+}
+.cw-generation-prompt textarea {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  margin-top: 8px;
+  min-height: 110px;
+  padding: 14px;
+  resize: vertical;
+  color: #ddd8e4;
+  background: #18171d;
+  border: 1px solid #3c3746;
+  border-radius: 8px;
+  font: 13px/1.6 inherit;
+}
+.cw-generation-references {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+}
+.cw-generation-references > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 8px 10px;
+  background: #29262f;
+  border-radius: 6px;
+}
+.cw-generation-references small {
+  margin-left: auto;
+  color: #a69aaf;
+}
+.cw-generation-import {
+  border-top: 1px solid #39353f;
+  padding: 18px 0;
+}
+.cw-generation-import h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.cw-generation-import p {
+  color: #a49ea9;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.cw-generation-import button {
+  padding: 9px 18px;
+  border: 1px solid #77658a;
+  background: #4f405e;
+  color: #e9def1;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cw-generation-import button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+@media (max-width: 700px) {
+  .cw-side-panel.is-tools {
+    width: auto;
+  }
+  .cw-selected-tools {
+    overflow-x: auto;
+  }
+  .cw-selected-tools > * {
+    flex-shrink: 0;
+  }
+}

@@ -1,5 +1,8 @@
 import { createDocument, createNode } from "./model";
 import type { CanvasDocument } from "./model";
+import { createLocalStage } from "./stageDocument";
+import { dataUrlToBlob } from "./downloadAssets";
+export { downloadFilename } from "./downloadAssets";
 
 /** Original vector study assets; these are illustrations, not AI results or remote media. */
 export function studyImage(seed = 0, title = "光与山之间"): string {
@@ -46,6 +49,7 @@ export function exampleDocument(): CanvasDocument {
       src: studyImage(0),
       assetState: "ready",
       mimeType: "image/svg+xml",
+      media: { width: 1200, height: 1000 },
       prompt: "清晨，远山与湖泊，薄雾，低饱和青绿色，电影感广角构图",
     },
   );
@@ -59,6 +63,7 @@ export function exampleDocument(): CanvasDocument {
       src: studyImage(1, "暮色抵达之前"),
       assetState: "ready",
       mimeType: "image/svg+xml",
+      media: { width: 1200, height: 1000 },
       prompt: "参考场景结构，转为暮色暖调，保留静谧的氛围",
     },
   );
@@ -72,21 +77,109 @@ export function exampleDocument(): CanvasDocument {
       prompt: "以参考图为首帧，镜头缓慢向前推进，小船轻轻划过湖面。",
       settings: {
         mode: "video",
-        model: "Seedance 2.0",
+        model: "Seedance 2.0 mini",
         aspectRatio: "16:9",
-        durationSeconds: 5,
-        resolution: "720p",
+        durationSeconds: 4,
+        resolution: "720P",
+        videoMode: "reference",
         prompt: "",
       },
     },
   );
   video.width = 360;
   video.height = 240;
-  doc.nodes = [notes, a, b, video];
+  const timeline = createNode(
+    "timeline",
+    { x: 80, y: 600 },
+    {
+      title: "两幕 · 时间线",
+      timeline: {
+        fps: 24,
+        width: 1920,
+        height: 1080,
+        tracks: [
+          {
+            id: "visual",
+            kind: "visual",
+            title: "画面轨",
+            muted: false,
+            clips: [a, b].map((node) => ({
+              id: crypto.randomUUID(),
+              resource: {
+                id: crypto.randomUUID(),
+                nodeId: node.id,
+                kind: "image",
+                title: node.data.title,
+                src: node.data.src,
+                mimeType: node.data.mimeType,
+                width: 1200,
+                height: 1000,
+              },
+              inPoint: 0,
+              outPoint: 3,
+              speed: 1,
+              volume: 1,
+              muted: false,
+            })),
+          },
+        ],
+      },
+    },
+  );
+  const subject = createNode(
+    "subject",
+    { x: 810, y: 600 },
+    {
+      title: "场景参考 · 山与湖",
+      subject: {
+        description: "远山、薄雾和一叶小舟。示例素材为本工程原创矢量插画。",
+        category: "scene",
+        auxiliaries: [],
+        main: {
+          id: crypto.randomUUID(),
+          nodeId: a.id,
+          kind: "image",
+          title: a.data.title,
+          src: a.data.src,
+          mimeType: a.data.mimeType,
+          width: 1200,
+          height: 1000,
+        },
+      },
+    },
+  );
+  const camera = createNode(
+    "tool",
+    { x: 1230, y: 600 },
+    {
+      title: "镜头参数",
+      tool: {
+        kind: "camera",
+        fields: [
+          { name: "景别", values: ["远景"] },
+          { name: "机位", values: ["平视"] },
+          { name: "焦距", values: ["35mm"] },
+        ],
+      },
+    },
+  );
+  const director = createNode(
+    "external",
+    { x: 1230, y: 890 },
+    {
+      title: "导演预演 · 机位研究",
+      localStage: createLocalStage(),
+    },
+  );
+  doc.nodes = [notes, a, b, video, timeline, subject, camera, director];
   doc.edges = [
     { id: crypto.randomUUID(), source: notes.id, target: a.id },
     { id: crypto.randomUUID(), source: a.id, target: b.id },
     { id: crypto.randomUUID(), source: b.id, target: video.id },
+    { id: crypto.randomUUID(), source: a.id, target: timeline.id },
+    { id: crypto.randomUUID(), source: b.id, target: timeline.id },
+    { id: crypto.randomUUID(), source: a.id, target: subject.id },
+    { id: crypto.randomUUID(), source: camera.id, target: video.id },
   ];
   return doc;
 }
@@ -101,12 +194,22 @@ export function fileDataUrl(file: File): Promise<string> {
 }
 
 export function downloadFile(contents: Blob | string, filename: string): void {
-  const url =
-    typeof contents === "string" ? contents : URL.createObjectURL(contents);
+  const downloadable = typeof contents === "string" && /^data:/i.test(contents)
+    ? dataUrlToBlob(contents) : contents;
+  const ownsUrl = downloadable instanceof Blob;
+  const url = ownsUrl ? URL.createObjectURL(downloadable) : downloadable;
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-  a.click();
-  if (typeof contents !== "string")
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  a.hidden = true;
+  document.body.append(a);
+  try {
+    a.click();
+  } catch (error) {
+    if (ownsUrl) URL.revokeObjectURL(url);
+    throw error;
+  } finally {
+    a.remove();
+  }
+  if (ownsUrl) setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

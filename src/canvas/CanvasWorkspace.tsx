@@ -1,5 +1,6 @@
-import { applyPreviewResult } from "./previewResult";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -24,6 +25,37 @@ import { CanvasNodeView, CanvasActionsContext } from "./CanvasNodeView";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { CanvasIcon } from "./CanvasIcon";
 import { ImageEditor } from "./ImageEditor";
+import { TimelineEditor } from "./TimelineEditor";
+import { SubjectEditor } from "./SubjectEditor";
+import { StackEditor } from "./StackEditor";
+import { ToolEditor } from "./ToolEditor";
+import { CanvasToolsPanel } from "./CanvasToolsPanel";
+import { EditorModal } from "./EditorModal";
+import { LocalImageTools } from "./LocalImageTools";
+import { LocalMediaEditor } from "./LocalMediaEditor";
+const DirectorStage = lazy(() =>
+  import("./DirectorStage").then((module) => ({
+    default: module.DirectorStage,
+  })),
+);
+import { readEditorResource } from "./editorMedia";
+import {
+  appendLinkedMediaResults,
+  type LinkedMediaResult,
+  type ResultSource,
+} from "./linkedResults";
+import {
+  CANVAS_TOOLS,
+  createCanvasToolTask,
+  initialToolParameters,
+  type CanvasToolId,
+  type CanvasToolTask,
+  type ToolSource,
+} from "./toolCatalog";
+import {
+  generationBlocker,
+  generationActiveReferences,
+} from "./generationCatalog";
 import {
   createDocument,
   createNode,
@@ -61,14 +93,12 @@ import {
   pasteFragment,
   groupSelection,
   ungroupSelection,
+  stackSelection,
+  updateStack,
+  resourceFromNode,
   type CanvasFragment,
 } from "./operations";
-import {
-  downloadFile,
-  exampleDocument,
-  fileDataUrl,
-  studyImage,
-} from "./assets";
+import { downloadFile, downloadFilename, exampleDocument, studyImage } from "./assets";
 import "@xyflow/react/dist/style.css";
 import "./workspace.css";
 
@@ -92,7 +122,7 @@ type Job = {
   id: string;
   nodeId: string;
   title: string;
-  status: "running" | "done" | "cancelled";
+  status: "draft" | "imported";
   time: string;
 };
 const nodeTypes = {
@@ -102,6 +132,11 @@ const nodeTypes = {
   file: CanvasNodeView,
   text: CanvasNodeView,
   group: CanvasNodeView,
+  timeline: CanvasNodeView,
+  subject: CanvasNodeView,
+  stack: CanvasNodeView,
+  tool: CanvasNodeView,
+  external: CanvasNodeView,
 };
 const labels: Record<CanvasNodeKind, string> = {
   image: "图片",
@@ -110,8 +145,35 @@ const labels: Record<CanvasNodeKind, string> = {
   text: "文本",
   file: "文件",
   group: "分组",
+  timeline: "时间线",
+  subject: "主体",
+  stack: "资源堆叠",
+  tool: "工具",
+  external: "导演台",
 };
-const kinds: CanvasNodeKind[] = ["image", "video", "audio", "text"];
+const kinds: CanvasNodeKind[] = [
+  "image",
+  "video",
+  "audio",
+  "text",
+  "timeline",
+  "subject",
+  "stack",
+  "tool",
+  "external",
+  "file",
+  "group",
+];
+const ORIGINAL_CANVAS_URL = "https://jimeng.jianying.com/ai-tool/ai-canvas";
+type EditorMode =
+  | "default"
+  | "layers"
+  | "annotation"
+  | "grid"
+  | "mask"
+  | "trim"
+  | "frame"
+  | "extract-audio";
 const lastKey = "museshow-last-canvas";
 
 function IconButton({
@@ -176,6 +238,25 @@ function Workspace({ onExit }: { onExit: () => void }) {
   const [projects, setProjects] = useState<DocumentSummary[]>([]);
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
+  const [editorMode, setEditorMode] = useState<EditorMode>("default");
+  const editorOrigin = useRef<ResultSource | null>(null);
+  const [toolInitial, setToolInitial] = useState<CanvasToolId>("layers");
+  const [maskTool, setMaskTool] = useState<CanvasToolId>("cutout");
+  const [generationTarget, setGenerationTarget] = useState<{
+    documentId: string;
+    nodeId: string;
+    jobId: string;
+  } | null>(null);
+  const [resultBusy, setResultBusy] = useState(false);
+  const resultInput = useRef<HTMLInputElement>(null);
+  const resultBinding = useRef<
+    | (ResultSource & {
+        expectedKind?: "image" | "video" | "audio";
+        jobId?: string;
+      })
+    | null
+  >(null);
+  const importAbort = useRef<AbortController | null>(null);
   const [rename, setRename] = useState<{ id?: string; value: string } | null>(
     null,
   );
@@ -189,7 +270,6 @@ function Workspace({ onExit }: { onExit: () => void }) {
   const jsonInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const referenceTarget = useRef<string | null>(null);
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const root = useRef<HTMLDivElement>(null);
   const saveQueue = useRef(Promise.resolve(true));
   const [zoom, setZoom] = useState(1);
@@ -197,6 +277,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
     selected.length === 1
       ? (doc.nodes.find((n) => n.id === selected[0]) ?? null)
       : null;
+  const selectedOwner = doc.nodes.find((node) => node.id === selected[0]);
   const incoming = useMemo(
     () =>
       doc.nodes.filter((n) =>
@@ -247,8 +328,14 @@ function Workspace({ onExit }: { onExit: () => void }) {
 
   const installDocument = useCallback(
     (next: CanvasDocument, fit = false) => {
-      timers.current.forEach(clearTimeout);
-      timers.current.clear();
+      importAbort.current?.abort();
+      importAbort.current = null;
+      resultBinding.current = null;
+      setResultBusy(false);
+      setGenerationTarget(null);
+      setEditing(null);
+      setPreview(null);
+      editorOrigin.current = null;
       referenceTarget.current = null;
       uploadTarget.current = null;
       setJobs([]);
@@ -297,11 +384,9 @@ function Workspace({ onExit }: { onExit: () => void }) {
       }
     };
     void init();
-    const owned = timers.current;
     return () => {
       alive = false;
-      owned.forEach(clearTimeout);
-      owned.clear();
+      importAbort.current?.abort();
     };
   }, [installDocument, notify]);
   useEffect(() => {
@@ -324,11 +409,19 @@ function Workspace({ onExit }: { onExit: () => void }) {
   }, [doc.nodes, doc.edges]);
   useEffect(() => {
     const input = fileInput.current;
+    const result = resultInput.current;
     const cancelUpload = () => {
       uploadTarget.current = null;
     };
     input?.addEventListener("cancel", cancelUpload);
-    return () => input?.removeEventListener("cancel", cancelUpload);
+    const cancelResult = () => {
+      resultBinding.current = null;
+    };
+    result?.addEventListener("cancel", cancelResult);
+    return () => {
+      input?.removeEventListener("cancel", cancelUpload);
+      result?.removeEventListener("cancel", cancelResult);
+    };
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -376,6 +469,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       node.height = 240;
     }
     if (kind === "text") node.height = 220;
+    if (kind === "timeline") node.width = 720;
     if (menu?.connected) {
       const original = doc.nodes.find((n) => n.id === menu.connected!.id);
       if (original) {
@@ -546,22 +640,21 @@ function Workspace({ onExit }: { onExit: () => void }) {
     setMenu(null);
   };
   const downloadNode = (node: CanvasNode) => {
-    if (node.data.src)
-      downloadFile(
-        node.data.src,
-        node.data.title +
-          (node.data.mimeType === "image/png"
-            ? ".png"
-            : node.data.mimeType === "image/svg+xml"
-              ? ".svg"
-              : ""),
-      );
-    else if (node.type === "text")
-      downloadFile(
-        new Blob([node.data.text ?? ""], { type: "text/plain;charset=utf-8" }),
-        `${node.data.title}.txt`,
-      );
-    else notify("这个节点还没有可下载的素材。");
+    try {
+      if (node.data.src)
+        downloadFile(
+          node.data.src,
+          downloadFilename(node.data.title, node.data.mimeType),
+        );
+      else if (node.type === "text")
+        downloadFile(
+          new Blob([node.data.text ?? ""], { type: "text/plain;charset=utf-8" }),
+          downloadFilename(node.data.title, "text/plain"),
+        );
+      else notify("这个节点还没有可下载的素材。");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "无法下载素材，请重试。");
+    }
   };
   const exportDocument = () => {
     const result = serializeDocument(historyRef.current.present);
@@ -586,24 +679,28 @@ function Workspace({ onExit }: { onExit: () => void }) {
     let refTarget = referenceTarget.current;
     const importDocumentId = historyRef.current.present.id;
     referenceTarget.current = null;
+    const controller = new AbortController();
+    importAbort.current?.abort();
+    importAbort.current = controller;
     try {
       const nodes: CanvasNode[] = [];
       const commands: CanvasCommand[] = [];
       const origin = point ?? center();
       for (const [i, file] of files.entries()) {
-        const src = await fileDataUrl(file);
-        const kind: CanvasNodeKind = file.type.startsWith("image/")
-          ? "image"
-          : file.type.startsWith("video/")
-            ? "video"
-            : file.type.startsWith("audio/")
-              ? "audio"
-              : "file";
+        const resource = await readEditorResource(file, controller.signal);
+        const kind = resource.kind;
         const data = {
-          src,
-          title: file.name,
-          mimeType: file.type,
+          src: resource.src,
+          title: resource.title,
+          mimeType: resource.mimeType,
           assetState: "ready" as const,
+          layers: undefined,
+          taskDraft: undefined,
+          media: {
+            width: resource.width,
+            height: resource.height,
+            durationSeconds: resource.durationSeconds,
+          },
         };
         if (target && i === 0) {
           commands.push({
@@ -624,6 +721,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
         }
         nodes.push(node);
       }
+      if (controller.signal.aborted) return;
       if (historyRef.current.present.id !== importDocumentId) {
         notify("已切换项目，本次素材导入已取消。");
         return;
@@ -657,38 +755,145 @@ function Workspace({ onExit }: { onExit: () => void }) {
       );
       notify(`已导入 ${files.length} 个素材，保存在本机。`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "素材导入失败");
+      if (!controller.signal.aborted)
+        notify(error instanceof Error ? error.message : "素材导入失败");
+    } finally {
+      if (importAbort.current === controller) importAbort.current = null;
     }
   };
 
-  const cancelJob = (nodeId: string) => {
-    const timer = timers.current.get(nodeId);
-    if (timer) clearTimeout(timer);
-    timers.current.delete(nodeId);
-    setJobs((current) =>
-      current.map((j) =>
-        j.nodeId === nodeId && j.status === "running"
-          ? { ...j, status: "cancelled" }
-          : j,
-      ),
-    );
-  };
-  const runPreview = () => {
-    if (
-      !single ||
-      (!single.data.prompt.trim() && !incoming.length) ||
-      timers.current.has(single.id)
-    )
+  const resources = useMemo(
+    () =>
+      doc.nodes.flatMap((node) => {
+        const resource = resourceFromNode(node);
+        return resource ? [resource] : [];
+      }),
+    [doc.nodes],
+  );
+  const selectedSources: ToolSource[] = useMemo(
+    () =>
+      selected
+        .flatMap((id) => {
+          const node = doc.nodes.find((item) => item.id === id);
+          return node ? [node] : [];
+        })
+        .map((node) => ({
+          nodeId: node.id,
+          kind: node.type,
+          title: node.data.title,
+          src: node.data.src,
+          mimeType: node.data.mimeType,
+          width: node.data.media?.width,
+          height: node.data.media?.height,
+        })),
+    [doc.nodes, selected],
+  );
+  const openEditor = (node: CanvasNode, mode: EditorMode = "default") => {
+    if (node.type === "text") {
+      setPreview(node);
       return;
-    const target = single;
-    const submission = { documentId: doc.id, nodeId: target.id };
-    const id = crypto.randomUUID();
+    }
+    editorOrigin.current = {
+      documentId: doc.id,
+      nodeId: node.id,
+      kind: node.type,
+      src: node.data.src,
+    };
+    setEditorMode(mode);
+    setEditing(node);
+    setMenu(null);
+    setGenerationTarget(null);
+  };
+  const closeEditor = () => {
+    setEditing(null);
+    editorOrigin.current = null;
+  };
+  const applyEditorData = (data: Partial<CanvasNodeData>) => {
+    const origin = editorOrigin.current;
+    const current = historyRef.current.present;
+    const target = current.nodes.find((node) => node.id === origin?.nodeId);
+    if (
+      !origin ||
+      current.id !== origin.documentId ||
+      !target ||
+      target.type !== origin.kind ||
+      target.data.src !== origin.src ||
+      target.locked
+    ) {
+      notify("编辑来源已改变、删除或锁定，本次修改未应用。");
+      return;
+    }
+    command({ type: "update-node", id: target.id, patch: { data } });
+    notify("修改已应用到画布，可以撤销。");
+  };
+  const addLinkedOutputs = (
+    source: ResultSource,
+    outputs: readonly LinkedMediaResult[],
+  ) => {
+    const result = appendLinkedMediaResults(
+      historyRef.current.present,
+      source,
+      outputs,
+    );
+    if (result.error) {
+      notify(result.error);
+      return false;
+    }
+    if (!result.ids.length) return false;
+    change(() => result.document);
+    setSelected(result.ids);
+    notify(`已加入 ${result.ids.length} 个真实素材，并连接来源节点。`);
+    return true;
+  };
+  const editorOutputs = (outputs: readonly LinkedMediaResult[]) => {
+    if (editorOrigin.current) addLinkedOutputs(editorOrigin.current, outputs);
+  };
+  const stack = () => {
+    try {
+      const next = stackSelection(
+        historyRef.current.present,
+        selectedRef.current,
+      );
+      change(() => next);
+      const created = next.nodes.at(-1)!;
+      setSelected([created.id]);
+      setMenu(null);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "无法创建堆叠。");
+    }
+  };
+  const openTools = (tool: CanvasToolId = "layers") => {
+    setToolInitial(tool);
+    setPanel("tools");
+    referenceTarget.current = null;
+    setMenu(null);
+  };
+  const editSelected = (
+    mode: EditorMode = "default",
+    kind: "image" | "video" | "audio" = "image",
+  ) => {
+    const source = doc.nodes.find(
+      (node) => selected.includes(node.id) && node.type === kind,
+    );
+    if (source) openEditor(source, mode);
+    else notify("请先选择一个媒体节点。");
+  };
+  const prepareGeneration = () => {
+    if (!single) return;
+    const settings = getNodeGenerationSettings(single);
+    const blocked = generationBlocker(settings, incoming);
+    if (blocked) {
+      notify(blocked);
+      return;
+    }
+    const jobId = crypto.randomUUID();
+    setGenerationTarget({ documentId: doc.id, nodeId: single.id, jobId });
     setJobs((current) => [
       {
-        id,
-        nodeId: target.id,
-        title: target.data.prompt,
-        status: "running",
+        id: jobId,
+        nodeId: single.id,
+        title: single.data.prompt || single.data.title,
+        status: "draft",
         time: new Date().toLocaleTimeString("zh-CN", {
           hour: "2-digit",
           minute: "2-digit",
@@ -696,38 +901,150 @@ function Workspace({ onExit }: { onExit: () => void }) {
       },
       ...current,
     ]);
-    const timer = setTimeout(() => {
-      timers.current.delete(target.id);
-      const current = historyRef.current.present;
-      if (
-        current.id !== submission.documentId ||
-        !current.nodes.some(
-          (n) => n.id === target.id && !n.locked && n.type === target.type,
-        )
-      ) {
-        setJobs((jobs) =>
-          jobs.map((j) => (j.id === id ? { ...j, status: "cancelled" } : j)),
+  };
+  const generationNode =
+    generationTarget?.documentId === doc.id
+      ? doc.nodes.find((node) => node.id === generationTarget.nodeId)
+      : undefined;
+  const generationIncoming = generationNode
+    ? doc.nodes.filter((node) =>
+        doc.edges.some(
+          (edge) =>
+            edge.source === node.id && edge.target === generationNode.id,
+        ),
+      )
+    : [];
+  const generationSettings = generationNode
+    ? getNodeGenerationSettings(generationNode)
+    : undefined;
+  const generationDraft =
+    generationNode && generationSettings
+      ? {
+          format: "museshow-generation-request",
+          version: 1,
+          status: "draft",
+          sourcePage: ORIGINAL_CANVAS_URL,
+          documentId: doc.id,
+          targetNodeId: generationNode.id,
+          requestId: generationTarget?.jobId,
+          title: generationNode.data.title,
+          prompt: generationNode.data.prompt,
+          settings: generationSettings,
+          references: generationActiveReferences(
+            generationSettings,
+            generationIncoming,
+          ).map(({ node, role }) => ({
+            nodeId: node.id,
+            title: node.data.title,
+            kind: node.type,
+            role,
+            ...(node.data.src
+              ? {
+                  src: node.data.src,
+                  mimeType: node.data.mimeType,
+                  media: node.data.media,
+                }
+              : {}),
+            ...(node.data.subject ? { subject: node.data.subject } : {}),
+            ...(node.data.tool ? { tool: node.data.tool } : {}),
+            ...(node.data.text ? { text: node.data.text } : {}),
+          })),
+        }
+      : undefined;
+  const exportGenerationDraft = () => {
+    if (!generationDraft || !generationNode) return;
+    downloadFile(
+      new Blob([JSON.stringify(generationDraft, null, 2)], {
+        type: "application/json",
+      }),
+      `${generationNode.data.title}.request.json`,
+    );
+    notify("已导出生成请求草稿，没有向服务提交任务。");
+  };
+  const pickGenerationResults = () => {
+    if (
+      !generationNode ||
+      !["image", "video", "audio"].includes(generationNode.type)
+    )
+      return;
+    resultBinding.current = {
+      documentId: doc.id,
+      nodeId: generationNode.id,
+      kind: generationNode.type,
+      expectedKind: generationNode.type as "image" | "video" | "audio",
+      src: generationNode.data.src,
+      jobId: generationTarget?.jobId,
+    };
+    if (resultInput.current) {
+      resultInput.current.accept = `${generationNode.type}/*`;
+      resultInput.current.click();
+    }
+  };
+  const importGenerationResults = async (files: File[]) => {
+    const binding = resultBinding.current;
+    resultBinding.current = null;
+    if (!binding || !files.length) return;
+    const source = historyRef.current.present.nodes.find(
+      (node) => node.id === binding.nodeId,
+    );
+    if (!source || historyRef.current.present.id !== binding.documentId) {
+      notify("任务来源已失效，请重新选择。");
+      return;
+    }
+    const origin = binding;
+    const controller = new AbortController();
+    importAbort.current?.abort();
+    importAbort.current = controller;
+    setResultBusy(true);
+    try {
+      const outputs: LinkedMediaResult[] = [];
+      for (const file of files) {
+        const resource = await readEditorResource(file, controller.signal);
+        if (resource.kind === "file")
+          throw new Error("结果必须是实际图片、视频或音频文件。");
+        if (binding.expectedKind && resource.kind !== binding.expectedKind)
+          throw new Error(
+            `该任务需要${labels[binding.expectedKind]}结果，文件「${file.name}」类型不匹配。`,
+          );
+        outputs.push({
+          kind: resource.kind,
+          src: resource.src!,
+          mimeType: resource.mimeType || `${resource.kind}/*`,
+          title: resource.title,
+          media: {
+            ...(resource.width ? { width: resource.width } : {}),
+            ...(resource.height ? { height: resource.height } : {}),
+            ...(resource.durationSeconds
+              ? { durationSeconds: resource.durationSeconds }
+              : {}),
+          },
+        });
+      }
+      if (controller.signal.aborted) return;
+      if (addLinkedOutputs(origin, outputs)) {
+        setJobs((current) =>
+          current.map((job) =>
+            job.id === binding.jobId ? { ...job, status: "imported" } : job,
+          ),
         );
-        return;
+        setGenerationTarget(null);
       }
-      if (target.type === "image") {
-        const count = getNodeGenerationSettings(target).count ?? 1;
-        const outputs = Array.from({ length: count }, (_, i) => ({
-          src: studyImage(i, target.data.prompt.slice(0, 16) || "参考画面"),
-          mimeType: "image/svg+xml",
-        }));
-        change((document) => applyPreviewResult(document, submission, outputs));
+    } catch (error) {
+      if (!controller.signal.aborted)
+        notify(error instanceof Error ? error.message : "结果导入失败。");
+    } finally {
+      if (importAbort.current === controller) {
+        importAbort.current = null;
+        setResultBusy(false);
       }
-      setJobs((current) =>
-        current.map((j) => (j.id === id ? { ...j, status: "done" } : j)),
-      );
-      notify(
-        target.type === "image"
-          ? "已生成本地矢量示意图。真实 AI 生成尚未接入。"
-          : "参数与任务流程已演示；请导入本地媒体查看播放效果。",
-      );
-    }, 900);
-    timers.current.set(target.id, timer);
+    }
+  };
+
+  const closeGeneration = () => {
+    importAbort.current?.abort();
+    resultBinding.current = null;
+    setResultBusy(false);
+    setGenerationTarget(null);
   };
 
   useEffect(() => {
@@ -740,6 +1057,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
         setMenu(null);
         setPreview(null);
         setEditing(null);
+        setGenerationTarget(null);
         setRename(null);
         setHelp(false);
         setProjectMenu(false);
@@ -748,7 +1066,15 @@ function Workspace({ onExit }: { onExit: () => void }) {
         if (!editingText) setSelected([]);
         return;
       }
-      if (editingText || rename || preview || editing || help) return;
+      if (
+        editingText ||
+        rename ||
+        preview ||
+        editing ||
+        help ||
+        generationTarget
+      )
+        return;
       const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (mod && key === "z") {
@@ -817,6 +1143,13 @@ function Workspace({ onExit }: { onExit: () => void }) {
     };
     const onPaste = (event: ClipboardEvent) => {
       if (
+        editing ||
+        generationTarget ||
+        preview ||
+        (event.target as HTMLElement).closest("[role=dialog]")
+      )
+        return;
+      if (
         (event.target as HTMLElement).closest(
           "input,textarea,[contenteditable=true]",
         )
@@ -876,6 +1209,58 @@ function Workspace({ onExit }: { onExit: () => void }) {
         }),
         nodeId: id,
       });
+    },
+    edit: (id: string) => {
+      const node = doc.nodes.find((node) => node.id === id);
+      if (node) openEditor(node);
+    },
+    getNode: (id: string) => doc.nodes.find((node) => node.id === id),
+    cycleStack: (id: string, delta: number) => {
+      const node = doc.nodes.find((node) => node.id === id),
+        stack = node?.data.stack;
+      if (!node || !stack?.nodeIds.length) return;
+      try {
+        const next = updateStack(historyRef.current.present, id, {
+          ...stack,
+          activeIndex:
+            (stack.activeIndex + delta + stack.nodeIds.length) %
+            stack.nodeIds.length,
+        });
+        change(() => next);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "堆叠切换失败。");
+      }
+    },
+    metadata: (id: string, media: NonNullable<CanvasNodeData["media"]>) => {
+      const node = historyRef.current.present.nodes.find(
+        (node) => node.id === id,
+      );
+      if (!node) return;
+      const actual = Object.fromEntries(
+        Object.entries(media).filter(
+          ([, value]) =>
+            typeof value === "number" && Number.isFinite(value) && value > 0,
+        ),
+      );
+      if (
+        !Object.keys(actual).length ||
+        Object.entries(actual).every(
+          ([key, value]) =>
+            node.data.media?.[
+              key as keyof NonNullable<CanvasNodeData["media"]>
+            ] === value,
+        )
+      )
+        return;
+      // Decoded dimensions are derived facts; filling them must not consume the user's undo step.
+      setHistory((current) => ({
+        ...current,
+        present: executeCommand(current, {
+          type: "update-node",
+          id,
+          patch: { data: { media: { ...node.data.media, ...actual } } },
+        }).present,
+      }));
     },
     beginEdit: begin,
     endEdit: end,
@@ -957,12 +1342,18 @@ function Workspace({ onExit }: { onExit: () => void }) {
         });
       }}
       onDragOver={(event) => {
+        if ((event.target as HTMLElement).closest("[role=dialog]")) return;
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
         }
       }}
       onDrop={(event) => {
+        if (
+          event.defaultPrevented ||
+          (event.target as HTMLElement).closest("[role=dialog]")
+        )
+          return;
         if (event.dataTransfer.files.length) {
           event.preventDefault();
           uploadTarget.current = null;
@@ -1202,6 +1593,14 @@ function Workspace({ onExit }: { onExit: () => void }) {
           >
             导入画布 JSON
           </button>
+          <button
+            onClick={() => {
+              exportDocument();
+              setMoreMenu(false);
+            }}
+          >
+            导出画布 JSON
+          </button>
           <hr />
           <button
             onClick={() => {
@@ -1245,12 +1644,31 @@ function Workspace({ onExit }: { onExit: () => void }) {
           label="添加音频"
           onClick={() => addNode("audio")}
         />
+        <IconButton
+          name="timeline"
+          label="添加时间线"
+          onClick={() => openEditor(addNode("timeline"))}
+        />
+        <IconButton
+          name="subject"
+          label="添加主体"
+          onClick={() => openEditor(addNode("subject"))}
+        />
+        <IconButton
+          name="external"
+          label="添加导演台"
+          onClick={() => openEditor(addNode("external"))}
+        />
         <span className="cw-divider" />
         <IconButton
-          name="camera"
-          label="导演工具箱"
+          name="tool"
+          label="媒体工具箱"
           active={panel === "tools"}
-          onClick={() => togglePanel("tools")}
+          onClick={() =>
+            panel === "tools"
+              ? setPanel(null)
+              : openTools(single?.data.taskDraft?.tool ?? "layers")
+          }
         />
         <IconButton
           name="folder"
@@ -1408,6 +1826,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
             <CanvasIcon name="group" size={16} />
             编组
           </button>
+          <button onClick={stack}>
+            <CanvasIcon name="stack" size={16} />
+            堆叠
+          </button>
           <button
             onClick={() =>
               change((d) => ({ ...d, nodes: arrangeNodes(d.nodes, selected) }))
@@ -1427,7 +1849,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
         ["image", "video", "audio"].includes(single.type) &&
         !single.locked &&
         !editing &&
-        !preview && (
+        !preview &&
+        !generationTarget && (
           <div className={`cw-composer-dock ${panel ? "has-panel" : ""}`}>
             <div className="cw-selected-tools">
               <span>{single.data.title}</span>
@@ -1438,11 +1861,32 @@ function Workspace({ onExit }: { onExit: () => void }) {
                     全屏
                   </button>
                   {single.type === "image" && (
-                    <button onClick={() => setEditing(single)}>
-                      <CanvasIcon name="crop" size={14} />
-                      编辑图片
-                    </button>
+                    <>
+                      <button onClick={() => openEditor(single)}>
+                        <CanvasIcon name="crop" size={14} />
+                        编辑图片
+                      </button>
+                      <button onClick={() => openEditor(single, "layers")}>
+                        <CanvasIcon name="stack" size={14} />
+                        图层
+                      </button>
+                    </>
                   )}
+                  <button
+                    onClick={() =>
+                      openTools(
+                        single.data.taskDraft?.tool ??
+                          (single.type === "image"
+                            ? "smart-edit"
+                            : single.type === "video"
+                              ? "video-trim"
+                              : "audio-trim"),
+                      )
+                    }
+                  >
+                    <CanvasIcon name="tool" size={14} />
+                    工具
+                  </button>
                   <button onClick={() => downloadNode(single)}>
                     <CanvasIcon name="download" size={14} />
                     下载
@@ -1463,15 +1907,13 @@ function Workspace({ onExit }: { onExit: () => void }) {
                   patch: { data: patch },
                 })
               }
-              onRun={runPreview}
-              onCancel={() => cancelJob(single.id)}
+              onRun={prepareGeneration}
+              onCancel={() => setGenerationTarget(null)}
               onPickReference={() => {
                 referenceTarget.current = single.id;
                 setPanel("assets");
               }}
-              running={jobs.some(
-                (j) => j.nodeId === single.id && j.status === "running",
-              )}
+              running={false}
             />
           </div>
         )}
@@ -1486,6 +1928,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
               {menuButton("复制副本", "copy", () => paste(true), "⌘ D")}
               <hr />
               {menuButton("编组", "group", group, "⌘ G")}
+              {selected.length > 1 && menuButton("资源堆叠", "stack", stack)}
               {menuButton("取消编组", "group", ungroup, "⌘ ⇧ G")}
               {menuButton("自动排列", "map", () =>
                 change((d) => ({
@@ -1517,7 +1960,24 @@ function Workspace({ onExit }: { onExit: () => void }) {
                 menuButton("下载素材", "download", () => downloadNode(single))}
               {single?.type === "image" &&
                 single.data.src &&
-                menuButton("编辑图片", "crop", () => setEditing(single))}
+                menuButton("编辑图片", "crop", () => openEditor(single))}
+              {single &&
+                ["timeline", "subject", "stack", "tool", "external"].includes(
+                  single.type,
+                ) &&
+                menuButton("打开编辑器", single.type, () => openEditor(single))}
+              {single?.data.src &&
+                ["image", "video", "audio"].includes(single.type) &&
+                menuButton("媒体工具箱", "tool", () =>
+                  openTools(
+                    single.data.taskDraft?.tool ??
+                      (single.type === "image"
+                        ? "smart-edit"
+                        : single.type === "video"
+                          ? "video-trim"
+                          : "audio-trim"),
+                  ),
+                )}
               <hr />
               {menuButton("删除", "trash", removeSelected, "⌫")}
             </>
@@ -1542,7 +2002,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
 
       {panel && (
         <aside
-          className={`cw-side-panel ${panel === "assets" || panel === "tools" ? "from-left" : ""}`}
+          className={`cw-side-panel ${panel === "assets" || panel === "tools" ? "from-left" : ""} ${panel === "tools" ? "is-tools" : ""}`}
           aria-label={
             {
               assets: "资产库",
@@ -1740,13 +2200,13 @@ function Workspace({ onExit }: { onExit: () => void }) {
           {panel === "history" && (
             <>
               <p className="cw-panel-note">
-                本次打开期间的本地预览任务。尚未接入即梦生成服务。
+                本次打开期间创建的请求草稿及导入记录。没有向即梦服务提交任务。
               </p>
               {!jobs.length ? (
                 <div className="cw-panel-empty">
                   <CanvasIcon name="history" size={32} />
-                  <p>还没有生成记录</p>
-                  <small>选中媒体节点，输入描述后开始本地预览。</small>
+                  <p>还没有任务草稿</p>
+                  <small>选中媒体节点，填写参数后创建本地任务。</small>
                 </div>
               ) : (
                 jobs.map((job) => (
@@ -1763,9 +2223,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
                       {job.time} ·{" "}
                       {
                         {
-                          running: "处理中",
-                          done: "预览完成",
-                          cancelled: "已取消",
+                          draft: "本地草稿",
+                          imported: "已导入结果",
                         }[job.status]
                       }
                     </small>
@@ -1775,102 +2234,83 @@ function Workspace({ onExit }: { onExit: () => void }) {
             </>
           )}
           {panel === "tools" && (
-            <>
-              <p className="cw-panel-note">将镜头语言加入选中节点的提示词。</p>
-              {[
-                {
-                  title: "景别",
-                  items: ["远景", "全景", "中景", "近景", "特写"],
-                },
-                {
-                  title: "镜头运动",
-                  items: [
-                    "缓慢推进",
-                    "拉远",
-                    "横向移动",
-                    "环绕拍摄",
-                    "固定镜头",
-                  ],
-                },
-                {
-                  title: "光线与情绪",
-                  items: [
-                    "自然晨光",
-                    "柔和逆光",
-                    "蓝调时刻",
-                    "胶片质感",
-                    "低饱和度",
-                  ],
-                },
-              ].map((section) => (
-                <section className="cw-tool-section" key={section.title}>
-                  <h3>{section.title}</h3>
-                  <div>
-                    {section.items.map((item) => (
-                      <button
-                        key={item}
-                        onClick={() => {
-                          if (single)
-                            command({
-                              type: "update-node",
-                              id: single.id,
-                              patch: {
-                                data: {
-                                  prompt: [single.data.prompt, item]
-                                    .filter(Boolean)
-                                    .join("，"),
-                                },
-                              },
-                            });
-                          else addNode("image", undefined, { prompt: item });
-                        }}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ))}
-              <h3>镜头分解</h3>
-              <button
-                className="cw-wide-button"
-                onClick={() => {
-                  const p = center();
-                  const nodes = [
-                    ["镜头 01 · 建立场景", "远景，清晨，自然晨光，缓慢推进"],
-                    ["镜头 02 · 角色入画", "中景，角色从画面左侧进入"],
-                    ["镜头 03 · 情绪特写", "特写，细微表情，柔和逆光"],
-                  ].map(([title, prompt], i) =>
-                    createNode(
-                      "video",
-                      { x: p.x - 480 + i * 440, y: p.y - 150 },
-                      { title, prompt },
-                    ),
-                  );
+            <CanvasToolsPanel
+              key={`${doc.id}:${selected.join(",")}:${toolInitial}`}
+              sources={selectedSources}
+              initialTool={toolInitial}
+              initialDraft={
+                selectedOwner?.data.taskDraft?.tool === toolInitial
+                  ? selectedOwner.data.taskDraft
+                  : undefined
+              }
+              selection={selectedOwner?.data.taskDraft?.selection}
+              selectionTool={selectedOwner?.data.taskDraft?.tool}
+              onClose={() => setPanel(null)}
+              localTools={{
+                layers: () => editSelected("layers"),
+                crop: () => editSelected(),
+                composition: () => editSelected(),
+                annotation: () => editSelected("annotation"),
+                "grid-split": () => editSelected("grid"),
+                "video-trim": () => editSelected("trim", "video"),
+                "audio-trim": () => editSelected("trim", "audio"),
+                "video-frame-capture": () => editSelected("frame", "video"),
+                "extract-audio": () => editSelected("extract-audio", "video"),
+                "director-stage": () =>
+                  openEditor(
+                    single?.type === "external" ? single : addNode("external"),
+                  ),
+              }}
+              onDraftChange={(task) => {
+                const owner = doc.nodes.find((node) => node.id === selected[0]);
+                if (owner && !owner.locked)
                   command({
-                    type: "batch",
-                    commands: [
-                      { type: "add-nodes", nodes },
-                      ...nodes.slice(1).map(
-                        (n, i): CanvasCommand => ({
-                          type: "add-edge",
-                          edge: {
-                            id: crypto.randomUUID(),
-                            source: nodes[i]!.id,
-                            target: n.id,
-                          },
-                        }),
-                      ),
-                    ],
+                    type: "update-node",
+                    id: owner.id,
+                    patch: { data: { taskDraft: task } },
                   });
-                  setSelected(nodes.map((n) => n.id));
-                  setPanel(null);
-                  requestAnimationFrame(() => fit());
-                }}
-              >
-                创建三镜头分镜
-              </button>
-            </>
+              }}
+              onEditSelection={(tool) => {
+                const source = doc.nodes.find(
+                  (node) =>
+                    node.id === selected[0] &&
+                    node.type === "image" &&
+                    node.data.src,
+                );
+                if (!source) {
+                  notify("请先选择有素材的图片节点。");
+                  return;
+                }
+                setMaskTool(tool);
+                openEditor(source, "mask");
+              }}
+              onImportResults={(task) => {
+                const owner = doc.nodes.find(
+                  (node) => node.id === task.sourceNodeIds[0],
+                );
+                if (!owner) {
+                  notify("请选择结果对应的来源素材。");
+                  return;
+                }
+                if (!owner.locked)
+                  command({
+                    type: "update-node",
+                    id: owner.id,
+                    patch: { data: { taskDraft: task } },
+                  });
+                resultBinding.current = {
+                  documentId: doc.id,
+                  nodeId: owner.id,
+                  kind: owner.type,
+                  src: owner.data.src,
+                };
+                if (resultInput.current) {
+                  resultInput.current.accept = "image/*,video/*,audio/*";
+                  resultInput.current.click();
+                }
+              }}
+              importingResults={resultBusy}
+            />
           )}
           {panel === "assistant" && (
             <>
@@ -1963,6 +2403,18 @@ function Workspace({ onExit }: { onExit: () => void }) {
         onChange={(e) => {
           if (e.target.files?.length) void importFiles([...e.target.files]);
           e.target.value = "";
+        }}
+      />
+      <input
+        ref={resultInput}
+        className="sr-only"
+        type="file"
+        multiple
+        aria-label="导入真实生成结果"
+        onChange={(event) => {
+          if (event.target.files?.length)
+            void importGenerationResults([...event.target.files]);
+          event.target.value = "";
         }}
       />
       <input
@@ -2069,22 +2521,229 @@ function Workspace({ onExit }: { onExit: () => void }) {
           </div>
         </div>
       )}
-      {editing && (
-        <ImageEditor
+      {editing && editorMode === "default" && editing.type === "timeline" && (
+        <TimelineEditor
           node={editing}
-          onClose={() => setEditing(null)}
-          onApply={(src) => {
-            command({
-              type: "update-node",
-              id: editing.id,
-              patch: {
-                data: { src, mimeType: "image/png", assetState: "ready" },
-              },
-            });
-            setEditing(null);
-            notify("图片修改已应用，可以撤销。");
+          resources={resources}
+          onApply={(timeline) => applyEditorData({ timeline })}
+          onClose={closeEditor}
+        />
+      )}
+      {editing && editorMode === "default" && editing.type === "subject" && (
+        <SubjectEditor
+          node={editing}
+          resources={resources}
+          onApply={(subject) => applyEditorData({ subject })}
+          onClose={closeEditor}
+        />
+      )}
+      {editing && editorMode === "default" && editing.type === "stack" && (
+        <StackEditor
+          node={editing}
+          nodes={doc.nodes}
+          onApply={(stack) => {
+            const origin = editorOrigin.current,
+              current = historyRef.current.present;
+            const target = current.nodes.find(
+              (node) => node.id === origin?.nodeId,
+            );
+            if (
+              !origin ||
+              current.id !== origin.documentId ||
+              !target ||
+              target.type !== origin.kind ||
+              target.locked
+            ) {
+              notify("编辑来源已改变，堆叠未应用。");
+              return;
+            }
+            try {
+              const next = updateStack(current, target.id, stack);
+              change(() => next);
+            } catch (error) {
+              notify(error instanceof Error ? error.message : "堆叠更新失败。");
+            }
+          }}
+          onClose={closeEditor}
+          onSelectNode={(id) => {
+            const node = doc.nodes.find((node) => node.id === id);
+            if (node) selectAndFocus(node);
           }}
         />
+      )}
+      {editing && editorMode === "default" && editing.type === "tool" && (
+        <ToolEditor
+          node={editing}
+          onApply={(tool) => applyEditorData({ tool })}
+          onClose={closeEditor}
+        />
+      )}
+      {editing && editorMode === "default" && editing.type === "external" && (
+        <Suspense
+          fallback={
+            <EditorModal
+              title="正在打开导演台"
+              subtitle="加载本地 3D 编辑器"
+              onClose={closeEditor}
+            >
+              <p>正在加载…</p>
+            </EditorModal>
+          }
+        >
+          <DirectorStage
+            node={editing}
+            onApply={(localStage, screenshot) =>
+              applyEditorData({
+                localStage,
+                ...(screenshot
+                  ? {
+                      src: screenshot,
+                      mimeType: "image/png",
+                      assetState: "ready",
+                      media: undefined,
+                    }
+                  : {}),
+              })
+            }
+            onClose={closeEditor}
+          />
+        </Suspense>
+      )}
+      {editing &&
+        editing.type === "image" &&
+        ["default", "layers"].includes(editorMode) && (
+          <ImageEditor
+            node={editing}
+            initialTab={editorMode === "layers" ? "layers" : "crop"}
+            initialLayers={editing.data.layers}
+            onClose={closeEditor}
+            onApply={(src, layers) => {
+              applyEditorData({
+                src,
+                mimeType: "image/png",
+                assetState: "ready",
+                layers,
+                media: layers
+                  ? { width: layers.width, height: layers.height }
+                  : undefined,
+                taskDraft: undefined,
+              });
+              closeEditor();
+            }}
+          />
+        )}
+      {editing &&
+        editing.type === "image" &&
+        ["annotation", "grid", "mask"].includes(editorMode) && (
+          <LocalImageTools
+            node={editing}
+            mode={editorMode as "annotation" | "grid" | "mask"}
+            onClose={closeEditor}
+            onApply={(outputs) =>
+              editorOutputs(
+                outputs.map((output) => ({
+                  kind: "image",
+                  src: output.src,
+                  mimeType: output.mimeType,
+                  title: output.title,
+                  media: { width: output.width, height: output.height },
+                })),
+              )
+            }
+            onSelection={(selection) => {
+              const spec = CANVAS_TOOLS.find((tool) => tool.id === maskTool)!;
+              const previous =
+                editing.data.taskDraft?.tool === maskTool
+                  ? editing.data.taskDraft
+                  : undefined;
+              const draft =
+                previous ??
+                createCanvasToolTask(
+                  maskTool,
+                  selectedSources
+                    .filter((source) =>
+                      spec.sources.some((kind) => kind === source.kind),
+                    )
+                    .map((source) => source.nodeId),
+                  initialToolParameters(spec),
+                );
+              applyEditorData({ taskDraft: { ...draft, selection } });
+              setToolInitial(maskTool);
+              setPanel("tools");
+            }}
+          />
+        )}
+      {editing &&
+        ["video", "audio"].includes(editing.type) &&
+        ["trim", "frame", "extract-audio"].includes(editorMode) && (
+          <LocalMediaEditor
+            node={editing}
+            mode={editorMode as "trim" | "frame" | "extract-audio"}
+            onApply={(output) => editorOutputs([output])}
+            onClose={closeEditor}
+          />
+        )}
+      {generationNode && generationSettings && generationDraft && (
+        <EditorModal
+          title={`本地任务 · ${generationNode.data.title}`}
+          subtitle="真实生成服务尚未接入。这里仅保留创作参数；不会调用模型，也不会扣除积分。"
+          onClose={closeGeneration}
+          className="cw-generation-dialog"
+          actions={
+            <>
+              <button onClick={exportGenerationDraft}>导出任务草稿</button>
+              <a href={ORIGINAL_CANVAS_URL} target="_blank" rel="noreferrer">
+                在原站生成 ↗
+              </a>
+            </>
+          }
+        >
+          <div className="cw-generation-summary">
+            <span>待提交 · 本地草稿</span>
+            <strong>{generationSettings.model}</strong>
+            <small>
+              {generationSettings.aspectRatio} · {generationSettings.resolution}{" "}
+              · {generationDraft.references.length} 个参考
+            </small>
+          </div>
+          <label className="cw-generation-prompt">
+            提示词
+            <textarea
+              readOnly
+              value={generationNode.data.prompt}
+              aria-label="任务提示词"
+            />
+          </label>
+          <div className="cw-generation-references">
+            {generationDraft.references.map((reference) => (
+              <div key={reference.nodeId}>
+                <CanvasIcon name={reference.kind} size={17} />
+                <span>{reference.title}</span>
+                <small>
+                  {
+                    {
+                      reference: "参考",
+                      firstFrame: "首帧",
+                      lastFrame: "尾帧",
+                      tool: "工具参数",
+                    }[reference.role]
+                  }
+                </small>
+              </div>
+            ))}
+          </div>
+          <div className="cw-generation-import">
+            <h3>导入实际生成结果</h3>
+            <p>
+              在原站完成生成并下载后，选择实际媒体文件。结果会创建为新节点，连接到本次任务来源；不会覆盖原素材。
+            </p>
+            <button onClick={pickGenerationResults} disabled={resultBusy}>
+              {resultBusy
+                ? "正在读取结果…"
+                : `导入${labels[generationNode.type]}结果`}
+            </button>
+          </div>
+        </EditorModal>
       )}
       {help && (
         <div className="cw-modal-backdrop" onClick={() => setHelp(false)}>

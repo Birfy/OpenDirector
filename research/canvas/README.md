@@ -2,12 +2,14 @@
 
 页面为 `https://jimeng.jianying.com/ai-tool/ai-canvas?enter_from=create_new&from_page=canvas_homepage`。它使用 **octo_web 独立构建**，不是先前首页的 dreamina 资源集合。此前首页归档包含路由入口和画布项目列表，不能证明已恢复画布编辑器。
 
-这次只匿名请求页面 HTML 中明确引用的 18 个资源：15 个 JS、3 个 CSS，共 11,044,459 字节。没有携带 Cookie 或授权头，没有保存 HTML、账号响应、浏览器状态，也没有执行这些应用脚本。`userInfo` 文件是页面引用的公开静态脚本，不是读取用户资料的响应。获取全部成功，格式化全部成功。
+首轮只匿名请求页面 HTML 中明确引用的 18 个资源：15 个 JS、3 个 CSS，共 11,044,459 字节。没有携带 Cookie 或授权头，没有保存 HTML、账号响应、浏览器状态，也没有执行这些应用脚本。`userInfo` 文件是页面引用的公开静态脚本，不是读取用户资料的响应。获取全部成功，格式化全部成功。
+
+后续已按明确功能范围补采 23 个动态 JS（3,278,638 字节），见[节点、生成、图片编辑、时间线、主体和导演台的详细静态证据](features/README.md)。下方原始懒加载清单和首轮未覆盖说明保留当时的范围；最新下载状态以两个 capture manifest 联合判断。
 
 - [原始资源、URL、时间、字节数、SHA-256](capture/manifest.json)
 - [格式化产物与原始摘要的对应关系](readable-manifest.json)
 - [静态提取的中文界面文案](localized-labels.json)：文案存在不证明对应功能对当前用户可用。
-- [229 个潜在懒加载资源](lazy-chunks.json)：从运行时文件名映射静态推导；其中 1 个 Slardar 静态脚本已由 HTML 引用捕获，其余 228 个未抓取。这不是实际加载清单。
+- [229 个潜在懒加载资源](lazy-chunks.json)：从运行时文件名映射静态推导；首轮其中 1 个 Slardar 静态脚本已由 HTML 引用捕获，其余 228 个当时未抓取。这不是实际加载清单；后续补采记录在 `features/capture/manifest.json`。
 
 以下行号针对 `readable/` 格式化产物。这里只归纳静态代码观察；外观、功能可用性和运行效果应以实际页面验证为准。
 
@@ -92,7 +94,7 @@ main 第 65787 行左工具条定位为 `top:72px; bottom:16px` 的纵向居中�
 
 ## 未覆盖与复现
 
-图片、文本、编组节点的具体渲染器与功能 overlays 是动态资源。当前未捕获的代表性资源包括：
+图片、文本、编组节点的具体渲染器与功能 overlays 是动态资源。首轮未捕获、后续已补采的代表性资源包括：
 
 - `async-canvas-node-image.b7788d8e64.js`
 - `async-canvas-node-text.96c30babf4.js`
@@ -102,7 +104,7 @@ main 第 65787 行左工具条定位为 `top:72px; bottom:16px` 的纵向居中�
 - `async-canvas-text-editor.ea809610d3.js`
 - `async-canvas-image-layer-board-fullscreen.928d9bf172.js`
 
-完整来源 URL 在 `lazy-chunks.json`，它们不是已下载文件。现有资源也不包含后端、原始 TSX 工程、原始类型、原始目录名或已验证的全站依赖图。
+完整来源 URL 在 `lazy-chunks.json`，后续已下载文件及摘要在 `features/capture/manifest.json`。现有资源也不包含后端、原始 TSX 工程、原始类型、原始目录名或已验证的全站依赖图。
 
 在项目根目录运行 `node research/canvas/format.mjs` 可重新验证原始摘要并串行格式化，生成 `readable-manifest.json`。此脚本不联网、不执行被分析代码；本次实际格式化使用 120 秒进程期限并成功完成。原始字节是证据，readable 是学习用途的格式化副本。
 

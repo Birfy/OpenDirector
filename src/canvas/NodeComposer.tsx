@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
+import {
+  changeGenerationSettings,
+  generationBlocker,
+  generationDefaults,
+  generationModel,
+  generationModelsFor,
+  generationReferenceIssue,
+  generationReferenceRole,
+  GENERATION_RATIOS,
+  observedGenerationPrice,
+} from "./generationCatalog.ts";
 import "./nodes.css";
 
 export interface NodeComposerProps {
@@ -21,15 +32,9 @@ export interface ComposerSettings extends GenerationSettings {
   audioEnabled?: boolean;
 }
 
-const models = {
-  image: ["Seedream 5.0 Lite", "Seedream 4.5", "Seedream 4.0"],
-  video: ["Seedance 2.0", "Seedance 2.0 Fast", "Seedance 1.5 Pro"],
-  audio: ["本地音频工作流", "配乐创意", "环境音创意"],
-};
-
-const ratios = ["21:9", "16:9", "3:2", "4:3", "1:1", "3:4", "2:3", "9:16"];
+const ratios = GENERATION_RATIOS;
 type PresetKey = "camera" | "palette" | "style";
-type Panel = PresetKey | "parameters" | "references" | null;
+type Panel = PresetKey | "parameters" | "references" | "voices" | null;
 type Preset = { name: string; hint: string; color: string; prompt: string };
 
 const presets: Record<PresetKey, Preset[]> = {
@@ -174,26 +179,27 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
   // A replacement upload can change the node kind while retaining common settings.
   // Model, resolution and duration belong to their original media mode.
   const sameMode = previous?.mode === mode ? previous : undefined;
-  const resolution = sameMode?.resolution;
+  const defaults = generationDefaults(mode);
+  const legacyModel = [
+    "本地交互演示",
+    "本地音频工作流",
+    "配乐创意",
+    "环境音创意",
+  ].includes(sameMode?.model ?? "");
   return {
-    ...previous,
+    ...defaults,
+    ...sameMode,
     mode,
-    model:
-      sameMode?.model && sameMode.model !== "本地交互演示"
-        ? sameMode.model
-        : models[mode][0],
-    aspectRatio: ratios.includes(previous?.aspectRatio ?? "")
+    model: sameMode?.model && !legacyModel ? sameMode.model : defaults.model,
+    aspectRatio: ratios.some((ratio) => ratio === previous?.aspectRatio)
       ? previous!.aspectRatio
-      : "1:1",
-    durationSeconds: sameMode?.durationSeconds ?? 5,
+      : defaults.aspectRatio,
     resolution:
-      resolution && resolution !== "1024"
-        ? resolution
-        : mode === "image"
-          ? "2K"
-          : mode === "video"
-            ? "1080P"
-            : "48kHz",
+      mode === "audio"
+        ? "自动"
+        : sameMode?.resolution && sameMode.resolution !== "1024"
+          ? sameMode.resolution
+          : defaults.resolution,
     prompt: node.data.prompt,
     count: previous?.count ?? 1,
     camera: previous?.camera ?? "默认",
@@ -239,18 +245,24 @@ export function NodeComposer({
   const settings = getNodeGenerationSettings(selectedNode);
   const prompt = selectedNode.data.prompt;
   const mode = settings.mode;
-  const canRun = Boolean(prompt.trim() || incomingNodes.length);
-  const currentModels = models[mode].includes(settings.model)
-    ? models[mode]
-    : [settings.model, ...models[mode]];
-  const resolutions =
-    mode === "image"
-      ? ["2K", "4K"]
-      : mode === "video"
-        ? ["720P", "1080P"]
-        : ["44.1kHz", "48kHz"];
+  const blocker = generationBlocker(settings, incomingNodes);
+  const canRun = !blocker;
+  const model = generationModel(settings);
+  const choices = generationModelsFor(settings).map((item) => item.name);
+  const currentModels = choices.includes(settings.model)
+    ? choices
+    : [settings.model, ...choices];
+  const resolutions = model?.resolutions ?? [];
+  const price = observedGenerationPrice(settings);
+  const firstLast = mode === "video" && settings.videoMode === "first-last";
+  const music = mode === "audio" && settings.audioCreationType === "music";
+  const reading = mode === "audio" && !music && settings.audioMode === "tts";
+  const frameCandidates = incomingNodes.filter(
+    (node) => node.data.kind === "image",
+  );
+  const duration = model?.duration;
   const updateSettings = (patch: Partial<ComposerSettings>) =>
-    onUpdate({ settings: { ...settings, ...patch } });
+    onUpdate({ settings: changeGenerationSettings(settings, patch) });
   const updatePrompt = (value: string) =>
     onUpdate({ prompt: value, settings: { ...settings, prompt: value } });
   const togglePanel = (next: Panel) =>
@@ -295,8 +307,118 @@ export function NodeComposer({
         event.stopPropagation();
         if (event.key === "Escape") setPanel(null);
       }}
-      aria-label={`${selectedNode.data.title}生成器`}
+      aria-label={`${selectedNode.data.title}创作参数`}
     >
+      <div className="cw-creation-mode-row">
+        {mode === "image" && (
+          <label className="cw-creation-mode-field">
+            <span>创作预设</span>
+            <select
+              aria-label="图片创作预设"
+              value={settings.imagePreset ?? "none"}
+              disabled={running}
+              onChange={(event) =>
+                updateSettings({
+                  imagePreset: event.target
+                    .value as ComposerSettings["imagePreset"],
+                })
+              }
+            >
+              <option value="none">自由创作</option>
+              <option
+                value="product-views"
+                disabled={settings.model !== "Seedream 5.0 Pro"}
+              >
+                产品三视图 · 仅 5.0 Pro
+              </option>
+            </select>
+          </label>
+        )}
+        {mode === "video" && (
+          <div
+            className="cw-mode-segments"
+            role="group"
+            aria-label="视频创作模式"
+          >
+            {(
+              [
+                ["reference", "全能参考"],
+                ["first-last", "首尾帧"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={settings.videoMode === value}
+                className={settings.videoMode === value ? "cw-is-active" : ""}
+                disabled={
+                  running ||
+                  Boolean(
+                    model?.videoModes && !model.videoModes.includes(value),
+                  )
+                }
+                title={
+                  model?.videoModes && !model.videoModes.includes(value)
+                    ? "当前模型不支持此模式"
+                    : label
+                }
+                onClick={() => updateSettings({ videoMode: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "audio" && (
+          <>
+            <label className="cw-creation-mode-field">
+              <span>创作类型</span>
+              <select
+                aria-label="音频创作类型"
+                value={settings.audioCreationType ?? "audio"}
+                disabled={running}
+                onChange={(event) =>
+                  updateSettings({
+                    audioCreationType: event.target
+                      .value as ComposerSettings["audioCreationType"],
+                  })
+                }
+              >
+                <option value="audio">音频生成</option>
+                <option value="music">音乐生成</option>
+              </select>
+            </label>
+            {!music && (
+              <div
+                className="cw-mode-segments"
+                role="group"
+                aria-label="音频创作模式"
+              >
+                {(
+                  [
+                    ["unified", "全能配音"],
+                    ["tts", "文本朗读"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={settings.audioMode === value}
+                    disabled={running}
+                    className={
+                      settings.audioMode === value ? "cw-is-active" : ""
+                    }
+                    onClick={() => updateSettings({ audioMode: value })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <span className="cw-service-badge">本地任务 · 生成服务未连接</span>
+      </div>
       {mode !== "audio" && (
         <div className="cw-preset-row">
           {(["camera", "palette", "style"] as const).map((key) => {
@@ -338,7 +460,9 @@ export function NodeComposer({
           aria-label={`${presetLabels[panel as PresetKey]}选项`}
         >
           <div className="cw-popover-heading">
-            <strong>选择{presetLabels[panel as PresetKey]}</strong>
+            <strong>
+              选择{presetLabels[panel as PresetKey]} · 本地提示词预设
+            </strong>
             <button
               type="button"
               className="cw-icon-button"
@@ -374,52 +498,182 @@ export function NodeComposer({
         </div>
       )}
 
-      <div className="cw-composer-body">
-        <div className="cw-reference-strip">
+      {firstLast && (
+        <div className="cw-frame-slots" aria-label="首尾帧参考">
+          {(
+            [
+              ["firstFrameNodeId", "首帧"],
+              ["lastFrameNodeId", "尾帧"],
+            ] as const
+          ).map(([field, label], index) => {
+            const id = settings[field];
+            const node = frameCandidates.find((item) => item.id === id);
+            const unavailable = Boolean(
+              id && (!node?.data.src || node.data.assetState === "missing"),
+            );
+            return (
+              <div
+                key={field}
+                className={`cw-frame-slot${unavailable ? " cw-frame-unavailable" : ""}`}
+              >
+                <span className="cw-frame-thumbnail">
+                  {node?.data.src && node.data.assetState !== "missing" ? (
+                    <img
+                      src={node.data.src}
+                      alt={`${label}：${node.data.title}`}
+                      draggable={false}
+                    />
+                  ) : (
+                    <CanvasIcon name="image" size={24} />
+                  )}
+                </span>
+                <label>
+                  <strong>
+                    {label}{" "}
+                    <small>
+                      {index ? "可选，需先选择首帧" : "可选，可直接文生视频"}
+                    </small>
+                  </strong>
+                  <select
+                    aria-label={`选择${label}`}
+                    value={id ?? ""}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSettings({
+                        [field]: event.target.value || undefined,
+                      })
+                    }
+                  >
+                    <option value="">不使用{label}</option>
+                    {id && !node && (
+                      <option value={id}>原素材未连接，请重选</option>
+                    )}
+                    {frameCandidates.map((item) => (
+                      <option
+                        key={item.id}
+                        value={item.id}
+                        disabled={
+                          !item.data.src || item.data.assetState === "missing"
+                        }
+                      >
+                        {item.data.title}
+                        {!item.data.src || item.data.assetState === "missing"
+                          ? "（素材不可用）"
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            );
+          })}
           <button
             type="button"
-            className="cw-add-reference"
-            onClick={onPickReference}
-            aria-label="添加参考素材"
-            title="添加参考素材"
+            className="cw-frame-swap"
+            aria-label="互换首尾帧"
+            title="两个槽位都有素材时可互换"
+            disabled={
+              running ||
+              !settings.firstFrameNodeId ||
+              !settings.lastFrameNodeId ||
+              [settings.firstFrameNodeId, settings.lastFrameNodeId].some(
+                (id) =>
+                  !frameCandidates.some(
+                    (node) =>
+                      node.id === id &&
+                      node.data.src &&
+                      node.data.assetState !== "missing",
+                  ),
+              )
+            }
+            onClick={() =>
+              updateSettings({
+                firstFrameNodeId: settings.lastFrameNodeId,
+                lastFrameNodeId: settings.firstFrameNodeId,
+              })
+            }
           >
-            <CanvasIcon name="plus" size={20} />
-            <span>参考</span>
+            ⇄
           </button>
-          {incomingNodes.map((node) => (
+          <button
+            type="button"
+            className="cw-frame-add"
+            disabled={running}
+            onClick={onPickReference}
+          >
+            <CanvasIcon name="plus" size={15} />
+            添加图片参考
+          </button>
+        </div>
+      )}
+
+      {reading && (
+        <button
+          type="button"
+          className="cw-voice-trigger"
+          aria-expanded={panel === "voices"}
+          onClick={() => togglePanel("voices")}
+        >
+          <CanvasIcon name="audio" size={16} />
+          <span>语音库</span>
+          <strong>{settings.voiceName || "选择音色"}</strong>
+          <CanvasIcon name="chevronDown" size={12} />
+        </button>
+      )}
+
+      <div className="cw-composer-body">
+        {!firstLast && !reading && !music && (
+          <div className="cw-reference-strip">
             <button
               type="button"
-              className="cw-reference-chip"
-              key={node.id}
-              onClick={() => insertReference(node)}
-              title={`引用 ${node.data.title}`}
+              className="cw-add-reference"
+              onClick={onPickReference}
+              aria-label="添加参考素材"
+              title="添加参考素材"
             >
-              {node.data.kind === "image" &&
-              node.data.src &&
-              node.data.assetState !== "missing" ? (
-                <img
-                  src={node.data.src}
-                  alt={node.data.title}
-                  draggable={false}
-                />
-              ) : (
-                <CanvasIcon name={node.data.kind} size={22} />
-              )}
-              <span>{node.data.title}</span>
+              <CanvasIcon name="plus" size={20} />
+              <span>参考</span>
             </button>
-          ))}
-        </div>
+            {incomingNodes.map((node) => (
+              <button
+                type="button"
+                className="cw-reference-chip"
+                key={node.id}
+                onClick={() => insertReference(node)}
+                disabled={Boolean(generationReferenceIssue(node, settings))}
+                title={`${generationReferenceRole(node)}：${node.data.title}${generationReferenceIssue(node, settings) ? ` · ${generationReferenceIssue(node, settings)}` : ""}`}
+              >
+                {node.data.kind === "image" &&
+                node.data.src &&
+                node.data.assetState !== "missing" ? (
+                  <img
+                    src={node.data.src}
+                    alt={node.data.title}
+                    draggable={false}
+                  />
+                ) : (
+                  <CanvasIcon name={node.data.kind} size={22} />
+                )}
+                <span>{node.data.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           className="cw-prompt-input"
-          aria-label="生成提示词"
+          aria-label={reading ? "朗读文本" : "生成提示词"}
           value={prompt}
           placeholder={
             mode === "image"
               ? "描述你想要的画面，或添加图片作为参考…"
               : mode === "video"
                 ? "描述画面的运动、镜头和故事…"
-                : "描述音色、节奏、情绪或声音场景…"
+                : reading
+                  ? "输入需要朗读的文本…"
+                  : music
+                    ? "描述音乐风格、情绪、节奏和乐器…"
+                    : "描述台词、音色和声音场景，可添加音频参考…"
           }
           spellCheck={false}
           onChange={(event) => updatePrompt(event.target.value)}
@@ -443,10 +697,16 @@ export function NodeComposer({
           <select
             aria-label="生成模型"
             value={settings.model}
+            disabled={running}
             onChange={(event) => updateSettings({ model: event.target.value })}
           >
             {currentModels.map((model) => (
-              <option key={model}>{model}</option>
+              <option key={model} value={model}>
+                {model}
+                {["Seedance 2.0", "Seedance 2.0 Fast"].includes(model)
+                  ? " · VIP"
+                  : ""}
+              </option>
             ))}
           </select>
           <CanvasIcon name="chevronDown" size={12} />
@@ -461,32 +721,36 @@ export function NodeComposer({
           <CanvasIcon name="sliders" size={15} />
           <span>
             {mode === "audio"
-              ? `${settings.durationSeconds}s`
-              : settings.aspectRatio}{" "}
-            · {settings.resolution} ·{" "}
-            {mode === "video" ? `${settings.durationSeconds}s` : settings.count}
+              ? music
+                ? `${settings.durationSeconds} 秒`
+                : reading
+                  ? "文本朗读"
+                  : "全能配音"
+              : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${settings.durationSeconds} 秒` : ` · ${settings.count} 张`}`}
           </span>
         </button>
-        <button
-          type="button"
-          className={`cw-reference-trigger${panel === "references" ? " cw-is-active" : ""}`}
-          aria-label="引用已连接节点"
-          aria-expanded={panel === "references"}
-          onClick={() => togglePanel("references")}
-        >
-          @ <span>引用</span>
-        </button>
+        {!firstLast && !reading && !music && (
+          <button
+            type="button"
+            className={`cw-reference-trigger${panel === "references" ? " cw-is-active" : ""}`}
+            aria-label="引用已连接节点"
+            aria-expanded={panel === "references"}
+            onClick={() => togglePanel("references")}
+          >
+            @ <span>引用</span>
+          </button>
+        )}
         <span className="cw-footer-spacer" />
         <button
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={running ? "取消生成" : "生成本地预览"}
+          aria-label={running ? "取消本地任务" : "创建本地任务"}
           title={
             running
-              ? "取消本次预览"
+              ? "取消本地任务"
               : canRun
-                ? "生成本地预览 · ⌘/Ctrl + Enter"
-                : "先描述画面或添加参考素材"
+                ? "创建本地任务 · ⌘/Ctrl + Enter · 未连接生成服务"
+                : (blocker ?? "请补全创作参数")
           }
           disabled={!running && !canRun}
           onClick={running ? onCancel : onRun}
@@ -494,14 +758,44 @@ export function NodeComposer({
           <CanvasIcon name={running ? "stop" : "arrowUp"} size={20} />
         </button>
       </div>
+      <div className="cw-generation-evidence">
+        <span
+          title={
+            price?.context ??
+            "未观察到当前模型、模式、清晰度、时长与数量组合的价格"
+          }
+        >
+          {price ? (
+            <>
+              <strong>{price.credits} 积分</strong>
+              {price.beforeDiscount && <del>{price.beforeDiscount}</del>}
+              <small>{price.context}</small>
+            </>
+          ) : (
+            <span>当前组合价格未核实</span>
+          )}
+        </span>
+        <small>原站实测参考，非本地报价</small>
+      </div>
+      {model?.note && <p className="cw-generation-note">{model.note}</p>}
+      {settings.imagePreset === "product-views" && (
+        <p className="cw-generation-note">
+          产品三视图预设已记录；需要连接支持此预设的生成服务后才能得到图片。
+        </p>
+      )}
+      {blocker && (
+        <p className="cw-generation-blocker" role="status">
+          {blocker}
+        </p>
+      )}
       <div className="cw-local-note">
         {running ? (
           <>
             <span className="cw-running-dot" />
-            正在准备本地预览，可随时取消
+            正在准备本地任务，可随时取消
           </>
         ) : (
-          "本地预览 · 不调用生成服务"
+          "仅保存创作请求，不生成媒体，不扣除积分"
         )}
       </div>
 
@@ -552,54 +846,85 @@ export function NodeComposer({
               </div>
             </div>
           )}
-          <div className="cw-parameter-section">
-            <span className="cw-field-label">
-              {mode === "audio" ? "采样率" : "清晰度"}
-            </span>
-            <div className="cw-segment-options">
-              {resolutions.map((resolution) => (
-                <button
-                  type="button"
-                  key={resolution}
-                  className={
-                    settings.resolution === resolution ? "cw-is-active" : ""
-                  }
-                  onClick={() => updateSettings({ resolution })}
-                  aria-pressed={settings.resolution === resolution}
-                >
-                  {resolution}
-                </button>
-              ))}
-            </div>
-          </div>
-          {mode !== "image" && (
+          {mode !== "audio" && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">时长</span>
+              <span className="cw-field-label">已核实清晰度</span>
               <div className="cw-segment-options">
-                {(mode === "video" ? [5, 10, 15] : [5, 10, 15, 30]).map(
-                  (durationSeconds) => (
-                    <button
-                      type="button"
-                      key={durationSeconds}
-                      className={
-                        settings.durationSeconds === durationSeconds
-                          ? "cw-is-active"
-                          : ""
-                      }
-                      onClick={() => updateSettings({ durationSeconds })}
-                      aria-pressed={
-                        settings.durationSeconds === durationSeconds
-                      }
-                    >
-                      {durationSeconds} 秒
-                    </button>
-                  ),
+                {resolutions.map((resolution) => (
+                  <button
+                    type="button"
+                    key={resolution}
+                    className={
+                      settings.resolution === resolution ? "cw-is-active" : ""
+                    }
+                    onClick={() => updateSettings({ resolution })}
+                    aria-pressed={settings.resolution === resolution}
+                  >
+                    {resolution}
+                  </button>
+                ))}
+                {!resolutions.length && (
+                  <span className="cw-parameter-unknown">
+                    等待服务能力，尚未核实
+                  </span>
                 )}
               </div>
             </div>
           )}
+          {(mode === "video" || music) && (
+            <div className="cw-parameter-section">
+              <span className="cw-field-label">
+                时长
+                {duration &&
+                  ` · ${duration.min === duration.max ? `${duration.min} 秒已核实` : `${duration.min}–${duration.max} 秒`}`}
+              </span>
+              {duration ? (
+                <div className="cw-duration-controls">
+                  <input
+                    type="range"
+                    aria-label="创作时长"
+                    min={duration.min}
+                    max={duration.max}
+                    step={duration.step}
+                    disabled={running || duration.min === duration.max}
+                    value={settings.durationSeconds}
+                    onChange={(event) =>
+                      updateSettings({
+                        durationSeconds: Number(event.target.value),
+                      })
+                    }
+                  />
+                  <select
+                    aria-label="精确创作时长"
+                    value={settings.durationSeconds}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSettings({
+                        durationSeconds: Number(event.target.value),
+                      })
+                    }
+                  >
+                    {Array.from(
+                      { length: duration.max - duration.min + 1 },
+                      (_, index) => duration.min + index,
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {value} 秒
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span className="cw-parameter-unknown">
+                  该模型普通生成的时长范围尚未核实
+                </span>
+              )}
+            </div>
+          )}
           <div className="cw-parameter-section">
-            <span className="cw-field-label">数量</span>
+            <span className="cw-field-label">
+              本地任务数量 · 多份请求不推算原站价格
+            </span>
             <div className="cw-count-options">
               {Array.from({ length: 8 }, (_, index) => index + 1).map(
                 (count) => (
@@ -620,7 +945,7 @@ export function NodeComposer({
             <label className="cw-audio-toggle">
               <span>
                 <CanvasIcon name="volume" size={16} />
-                生成音频
+                请求包含音频（服务能力待确认）
               </span>
               <input
                 type="checkbox"
@@ -631,6 +956,54 @@ export function NodeComposer({
               />
             </label>
           )}
+          {mode === "audio" && !music && (
+            <p className="cw-generation-note">
+              音频时长由内容与服务结果决定；此处不虚构时长、采样率或可用音色。
+            </p>
+          )}
+          {mode !== "audio" && (
+            <p className="cw-generation-note">
+              比例为本地创作偏好；各模型的完整能力须由真实服务确认。
+            </p>
+          )}
+        </div>
+      )}
+
+      {panel === "voices" && (
+        <div
+          className="cw-popover cw-voices-popover"
+          role="dialog"
+          aria-label="语音库"
+        >
+          <div className="cw-popover-heading">
+            <strong>语音库 · 已观察音色</strong>
+            <button
+              type="button"
+              className="cw-icon-button"
+              aria-label="关闭语音库"
+              onClick={() => setPanel(null)}
+            >
+              <CanvasIcon name="close" size={15} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`cw-observed-voice${settings.voiceName === "动漫海绵" ? " cw-is-active" : ""}`}
+            aria-pressed={settings.voiceName === "动漫海绵"}
+            onClick={() => {
+              updateSettings({ voiceName: "动漫海绵" });
+              setPanel(null);
+            }}
+          >
+            <CanvasIcon name="audio" size={22} />
+            <span>
+              <strong>动漫海绵</strong>
+              <small>文本朗读默认音色 · 原站实测</small>
+            </span>
+          </button>
+          <p className="cw-generation-note">
+            完整音色库与试听需要真实服务；本地只保留已观察音色名称。
+          </p>
         </div>
       )}
 
@@ -658,9 +1031,20 @@ export function NodeComposer({
                 className="cw-reference-option"
                 key={node.id}
                 onClick={() => insertReference(node)}
+                disabled={Boolean(generationReferenceIssue(node, settings))}
+                title={
+                  generationReferenceIssue(node, settings) ??
+                  `插入 ${node.data.title} 的名称引用`
+                }
               >
                 <CanvasIcon name={node.data.kind} size={17} />
-                <span>{node.data.title}</span>
+                <span>
+                  {node.data.title}
+                  <small className="cw-reference-role">
+                    {generationReferenceIssue(node, settings) ??
+                      generationReferenceRole(node)}
+                  </small>
+                </span>
                 <span>@</span>
               </button>
             ))

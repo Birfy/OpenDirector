@@ -6,7 +6,15 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import type { CanvasNodeData, CanvasNodeKind } from "./model";
+import type {
+  CanvasNode,
+  CanvasNodeData,
+  CanvasNodeKind,
+  CanvasResource,
+} from "./model";
+import { ResourcePreview } from "./EditorModal";
+import { resourceFromNode } from "./operations";
+import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
 import "./nodes.css";
 
@@ -19,6 +27,13 @@ export interface CanvasActions {
   contextMenu: (id: string, event: MouseEvent) => void;
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
+  edit: (id: string) => void;
+  getNode: (id: string) => CanvasNode | undefined;
+  cycleStack: (id: string, delta: number) => void;
+  metadata: (
+    id: string,
+    media: { width?: number; height?: number; durationSeconds?: number },
+  ) => void;
 }
 
 export const CanvasActionsContext = createContext<CanvasActions | null>(null);
@@ -31,6 +46,11 @@ const names: Record<CanvasNodeKind, string> = {
   text: "文本",
   file: "文件",
   group: "分组",
+  timeline: "时间线",
+  subject: "主体",
+  stack: "资源堆叠",
+  tool: "工具",
+  external: "导演台",
 };
 
 export const CanvasNodeView = memo(function CanvasNodeView({
@@ -99,6 +119,10 @@ export const CanvasNodeView = memo(function CanvasNodeView({
 
       {kind === "group" ? (
         <div className="cw-group-interior" />
+      ) : ["timeline", "subject", "stack", "tool", "external"].includes(
+          kind,
+        ) ? (
+        <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
         <textarea
           className="cw-text-editor nodrag nopan nowheel"
@@ -122,6 +146,12 @@ export const CanvasNodeView = memo(function CanvasNodeView({
               src={data.src}
               alt={data.title}
               draggable={false}
+              onLoad={(event) =>
+                actions?.metadata(id, {
+                  width: event.currentTarget.naturalWidth,
+                  height: event.currentTarget.naturalHeight,
+                })
+              }
             />
           )}
           {kind === "video" && (
@@ -132,6 +162,18 @@ export const CanvasNodeView = memo(function CanvasNodeView({
               playsInline
               preload="metadata"
               onClick={(event) => event.stopPropagation()}
+              onDurationChange={(event) =>
+                actions?.metadata(id, {
+                  durationSeconds: event.currentTarget.duration,
+                })
+              }
+              onLoadedMetadata={(event) =>
+                actions?.metadata(id, {
+                  width: event.currentTarget.videoWidth,
+                  height: event.currentTarget.videoHeight,
+                  durationSeconds: event.currentTarget.duration,
+                })
+              }
             />
           )}
           {kind === "audio" && (
@@ -152,6 +194,16 @@ export const CanvasNodeView = memo(function CanvasNodeView({
                 controls
                 preload="metadata"
                 onClick={(event) => event.stopPropagation()}
+                onDurationChange={(event) =>
+                  actions?.metadata(id, {
+                    durationSeconds: event.currentTarget.duration,
+                  })
+                }
+                onLoadedMetadata={(event) =>
+                  actions?.metadata(id, {
+                    durationSeconds: event.currentTarget.duration,
+                  })
+                }
               />
             </div>
           )}
@@ -221,5 +273,205 @@ export const CanvasNodeView = memo(function CanvasNodeView({
     </div>
   );
 });
+
+function DomainCard({
+  id,
+  data,
+  actions,
+}: {
+  id: string;
+  data: CanvasNodeData;
+  actions: CanvasActions | null;
+}) {
+  const kind = data.kind;
+  const stack = data.stack;
+  const member =
+    stack && actions?.getNode(stack.nodeIds[stack.activeIndex] ?? "");
+  const stackResource = member
+    ? (resourceFromNode(member) ?? member.data.subject?.main)
+    : undefined;
+  const timeline = data.timeline;
+  const firstClip = timeline?.tracks.find((track) => track.kind === "visual")
+    ?.clips[0];
+  const resource: CanvasResource | undefined =
+    kind === "subject"
+      ? data.subject?.main
+      : kind === "stack"
+        ? stackResource
+        : kind === "timeline"
+          ? firstClip?.resource
+          : data.src
+            ? { id, kind: "image", title: data.title, src: data.src }
+            : undefined;
+  return (
+    <div
+      className={`cw-domain-card cw-domain-card-${kind}`}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        actions?.edit(id);
+      }}
+    >
+      {(kind === "subject" ||
+        kind === "stack" ||
+        kind === "timeline" ||
+        kind === "external") && (
+        <div className="cw-domain-card-preview">
+          {resource ? (
+            <ResourcePreview resource={resource} controls={false} />
+          ) : kind === "stack" && member?.type === "text" ? (
+            <pre>{member.data.text || member.data.prompt || "空文本"}</pre>
+          ) : (
+            <div className="cw-domain-card-empty">
+              <CanvasIcon name={kind} size={38} />
+              <span>
+                {kind === "timeline"
+                  ? "把素材编排成故事"
+                  : kind === "subject"
+                    ? "添加主素材与角色声音"
+                    : kind === "stack"
+                      ? "整理画布资源"
+                      : "布景、镜头与动作预演"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+      {kind === "timeline" && (
+        <div className="cw-card-timeline">
+          <div className="cw-card-timeline-meta">
+            <span>
+              {timeline?.width ?? 1920} × {timeline?.height ?? 1080}
+            </span>
+            <span>
+              {timeline ? timelineDuration(timeline).toFixed(1) : "0.0"}s ·{" "}
+              {timeline?.fps ?? 30}fps
+            </span>
+          </div>
+          {timeline?.tracks.slice(0, 3).map((track) => (
+            <div className="cw-card-track" key={track.id}>
+              <CanvasIcon
+                name={track.kind === "audio" ? "audio" : "video"}
+                size={11}
+              />
+              <span>
+                {track.clips.length ? (
+                  track.clips.slice(0, 10).map((clip) => (
+                    <i
+                      key={clip.id}
+                      title={clip.resource.title}
+                      style={{
+                        flex: Math.max(
+                          0.1,
+                          (clip.outPoint - clip.inPoint) / clip.speed,
+                        ),
+                      }}
+                    />
+                  ))
+                ) : (
+                  <small>添加{track.kind === "audio" ? "音轨" : "片段"}</small>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {kind === "subject" && (
+        <div className="cw-card-subject">
+          <span>{data.subject?.description || "主体描述尚未填写"}</span>
+          <div>
+            {data.subject?.auxiliaries.map((item) => (
+              <img key={item.id} src={item.src} alt={item.title} />
+            ))}
+            <small>
+              {data.subject?.auxiliaries.length ?? 0}/3 辅助视角 ·{" "}
+              {data.subject?.voice ? "已添加声音" : "无声音"}
+            </small>
+          </div>
+        </div>
+      )}
+      {kind === "stack" && (
+        <div className="cw-card-stack-controls nodrag nopan">
+          <button
+            aria-label="上一个堆叠素材"
+            disabled={!stack?.nodeIds.length}
+            onClick={() => actions?.cycleStack(id, -1)}
+          >
+            ‹
+          </button>
+          <span>
+            {stack?.nodeIds.length ? stack.activeIndex + 1 : 0} /{" "}
+            {stack?.nodeIds.length ?? 0}
+            <small>{member?.data.title ?? "尚无资源"}</small>
+          </span>
+          <button
+            aria-label="下一个堆叠素材"
+            disabled={!stack?.nodeIds.length}
+            onClick={() => actions?.cycleStack(id, 1)}
+          >
+            ›
+          </button>
+        </div>
+      )}
+      {kind === "tool" && (
+        <div className="cw-card-tool">
+          <span>
+            <CanvasIcon
+              name={
+                data.tool?.kind === "palette"
+                  ? "palette"
+                  : data.tool?.kind === "style"
+                    ? "sparkle"
+                    : "camera"
+              }
+              size={25}
+            />
+            {
+              {
+                camera: "相机参数",
+                style: "风格参考",
+                palette: "调色板",
+                camera_motion: "运镜参数",
+              }[data.tool?.kind ?? "camera"]
+            }
+          </span>
+          {data.tool?.fields.length ? (
+            data.tool.fields.slice(0, 4).map((field, index) => (
+              <div key={index}>
+                <small>{field.name}</small>
+                <strong>{field.values.join(" · ")}</strong>
+              </div>
+            ))
+          ) : (
+            <p>添加可被下游节点引用的创作参数</p>
+          )}
+        </div>
+      )}
+      {kind === "external" && (
+        <div className="cw-card-stage-summary">
+          <span>导演台 · 本地舞台草稿</span>
+          {data.external?.current && (
+            <small>外部版本 {data.external.current.versionId}</small>
+          )}
+        </div>
+      )}
+      <button
+        className="cw-card-open nodrag nopan"
+        onClick={() => actions?.edit(id)}
+      >
+        <CanvasIcon name="edit" size={13} />
+        {kind === "timeline"
+          ? "打开时间线"
+          : kind === "subject"
+            ? "编辑主体"
+            : kind === "stack"
+              ? "管理堆叠"
+              : kind === "tool"
+                ? "编辑参数"
+                : "进入导演台"}
+        <CanvasIcon name="chevronRight" size={13} />
+      </button>
+    </div>
+  );
+}
 
 export default CanvasNodeView;

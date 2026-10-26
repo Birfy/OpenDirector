@@ -1,6 +1,16 @@
+import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
+import { mapSettingsNodeReferences } from "./model.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
 import { createNode } from "./model.ts";
-import type { CanvasDocument, CanvasEdge, CanvasNode, Point } from "./model.ts";
+import type {
+  CanvasDocument,
+  CanvasEdge,
+  CanvasNode,
+  CanvasNodeData,
+  CanvasResource,
+  Point,
+  StackData,
+} from "./model.ts";
 
 export interface CanvasFragment {
   nodes: CanvasNode[];
@@ -61,8 +71,15 @@ export function groupSelection(
 ): CanvasDocument {
   const byId = indexNodes(document.nodes);
   const selected = new Set(ids);
+  const stackedIds = new Set(
+    document.nodes.flatMap((node) => node.data.stack?.nodeIds ?? []),
+  );
   const eligible = document.nodes.filter(
-    (node) => selected.has(node.id) && canReparent(node, byId),
+    (node) =>
+      selected.has(node.id) &&
+      canReparent(node, byId) &&
+      node.type !== "stack" &&
+      !stackedIds.has(node.id),
   );
   const eligibleIds = new Set(eligible.map((node) => node.id));
   const roots = eligible.filter(
@@ -183,9 +200,15 @@ export function copySelection(
       .filter((node) => selected.has(node.id) && node.type === "group")
       .map((node) => node.id),
   );
+  const stackMembers = new Set(
+    document.nodes
+      .filter((node) => selected.has(node.id) && node.type === "stack")
+      .flatMap((node) => node.data.stack?.nodeIds ?? []),
+  );
   const included = document.nodes.filter(
     (node) =>
       selected.has(node.id) ||
+      stackMembers.has(node.id) ||
       ancestors(node, byId).some((parent) => selectedGroups.has(parent.id)),
   );
   const includedIds = new Set(included.map((node) => node.id));
@@ -221,6 +244,9 @@ export function pasteFragment(
     throw new Error("粘贴偏移必须是有限数字。");
   const byId = indexNodes(fragment.nodes);
   for (const node of fragment.nodes) ancestors(node, byId);
+  for (const node of fragment.nodes)
+    if (node.data.stack?.nodeIds.some((id) => !byId.has(id)))
+      throw new Error("复制的堆叠必须包含其引用的节点。");
   const edgeIds = new Set<string>();
   for (const edge of fragment.edges) {
     if (edgeIds.has(edge.id)) throw new Error("连线 ID 重复。");
@@ -245,6 +271,7 @@ export function pasteFragment(
   const nodes = fragment.nodes.map((node) => {
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
+    copy.data = remapDataReferences(copy.data, remapped);
     if (node.parentId) copy.parentId = remapped.get(node.parentId)!;
     else
       copy.position = {
@@ -267,5 +294,185 @@ export function pasteFragment(
       edges: [...document.edges, ...edges],
     },
     ids: ordered.map((node) => node.id),
+  };
+}
+
+/** Rewrites node identities only; retained media resource IDs and sources are not node identities. */
+function remapDataReferences(
+  data: CanvasNodeData,
+  ids: ReadonlyMap<string, string>,
+): CanvasNodeData {
+  const remapResource = (resource: CanvasResource): CanvasResource =>
+    resource.nodeId && ids.has(resource.nodeId)
+      ? { ...resource, nodeId: ids.get(resource.nodeId)! }
+      : resource;
+  return {
+    ...data,
+    ...(data.taskDraft
+      ? {
+          taskDraft: mapCanvasToolTaskReferences(data.taskDraft, (id) =>
+            ids.get(id),
+          ),
+        }
+      : {}),
+    ...(data.settings
+      ? {
+          settings: mapSettingsNodeReferences(data.settings, (id) =>
+            ids.get(id),
+          ),
+        }
+      : {}),
+    ...(data.stack
+      ? {
+          stack: {
+            ...data.stack,
+            nodeIds: data.stack.nodeIds.map((id) => ids.get(id) ?? id),
+          },
+        }
+      : {}),
+    ...(data.timeline
+      ? {
+          timeline: {
+            ...data.timeline,
+            tracks: data.timeline.tracks.map((track) => ({
+              ...track,
+              clips: track.clips.map((clip) => ({
+                ...clip,
+                resource: remapResource(clip.resource),
+              })),
+            })),
+          },
+        }
+      : {}),
+    ...(data.subject
+      ? {
+          subject: {
+            ...data.subject,
+            auxiliaries: data.subject.auxiliaries.map(remapResource),
+            ...(data.subject.main
+              ? { main: remapResource(data.subject.main) }
+              : {}),
+            ...(data.subject.voice
+              ? { voice: remapResource(data.subject.voice) }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+export const STACK_MEMBER_KINDS = [
+  "image",
+  "video",
+  "audio",
+  "text",
+  "subject",
+  "timeline",
+  "external",
+] as const;
+
+/** Creates an ordered stack without reparenting or discarding its source nodes. */
+export function stackSelection(
+  document: CanvasDocument,
+  ids: readonly string[],
+): CanvasDocument {
+  const selected = [...new Set(ids)];
+  if (selected.length < 2 || selected.length > 50)
+    throw new Error("创建堆叠需要选择 2–50 个节点。");
+  const existing = new Set(
+    document.nodes.flatMap((node) => node.data.stack?.nodeIds ?? []),
+  );
+  const members = selected.map((id) =>
+    document.nodes.find((node) => node.id === id),
+  );
+  if (
+    members.some(
+      (node) =>
+        !node ||
+        node.parentId ||
+        node.locked ||
+        !STACK_MEMBER_KINDS.includes(
+          node.type as (typeof STACK_MEMBER_KINDS)[number],
+        ) ||
+        existing.has(node.id),
+    )
+  )
+    throw new Error(
+      "堆叠成员必须是未锁定、未分组、且不属于其他堆叠的可引用节点。",
+    );
+  const first = members[0]!;
+  const stack = createNode(
+    "stack",
+    { x: first.position.x + first.width + 60, y: first.position.y },
+    { stack: { nodeIds: selected, activeIndex: 0 } },
+  );
+  return { ...document, nodes: [...document.nodes, stack] };
+}
+
+export function updateStack(
+  document: CanvasDocument,
+  id: string,
+  stack: StackData,
+): CanvasDocument {
+  const target = document.nodes.find((node) => node.id === id);
+  if (!target || target.type !== "stack" || target.locked) return document;
+  const existing = new Set(
+    document.nodes
+      .filter((node) => node.id !== id)
+      .flatMap((node) => node.data.stack?.nodeIds ?? []),
+  );
+  if (
+    stack.nodeIds.length > 50 ||
+    new Set(stack.nodeIds).size !== stack.nodeIds.length ||
+    !Number.isSafeInteger(stack.activeIndex) ||
+    stack.activeIndex < 0 ||
+    stack.activeIndex >= Math.max(1, stack.nodeIds.length) ||
+    stack.nodeIds.some((id) => {
+      const node = document.nodes.find((node) => node.id === id);
+      return (
+        !node ||
+        node.parentId ||
+        existing.has(id) ||
+        !STACK_MEMBER_KINDS.includes(
+          node.type as (typeof STACK_MEMBER_KINDS)[number],
+        )
+      );
+    })
+  )
+    throw new Error("堆叠引用无效，或成员已属于其他堆叠。");
+  return {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === id
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              stack: {
+                nodeIds: [...stack.nodeIds],
+                activeIndex: stack.activeIndex,
+              },
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+/** Captures a media snapshot so timeline/subject edits do not lose assets when the source node is removed. */
+export function resourceFromNode(node: CanvasNode): CanvasResource | null {
+  if (
+    !["image", "video", "audio", "file"].includes(node.type) ||
+    !node.data.src
+  )
+    return null;
+  return {
+    id: `node:${node.id}`,
+    nodeId: node.id,
+    kind: node.type as CanvasResource["kind"],
+    title: node.data.title,
+    src: node.data.src,
+    ...node.data.media,
+    ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
   };
 }

@@ -1,0 +1,3454 @@
+"use strict";
+(globalThis.__LOADABLE_LOADED_CHUNKS__ =
+  globalThis.__LOADABLE_LOADED_CHUNKS__ || []).push([
+  [563],
+  {
+    2974(e, r, t) {
+      var a = t(24548);
+      function o(e) {
+        var r, t, o, n, s, i, u, l, c;
+        let d =
+            null == e || null == (t = e.audio) || null == (r = t.gen)
+              ? void 0
+              : r.audio_model,
+          p = null == e || null == (o = e.reference_sources) ? void 0 : o[0],
+          v = null == d || null == (n = d.materials) ? void 0 : n[0];
+        return (
+          (null == e ? void 0 : e.type) === a._x.audio &&
+          e.status === a.ao.failed &&
+          (null == (i = e.audio) || null == (s = i.gen) ? void 0 : s.mode) ===
+            1 &&
+          (null == d ? void 0 : d.model_name) === "seed_audio_v1_5" &&
+          4 === d.scenario &&
+          !!d.prompt.trim() &&
+          (null == (u = e.reference_sources) ? void 0 : u.length) === 1 &&
+          (null == p ? void 0 : p.material_idx) === 0 &&
+          !!(p.node_id.trim() && p.resource_id.trim()) &&
+          (null == (l = d.materials) ? void 0 : l.length) === 1 &&
+          (null == v ? void 0 : v.role) === 4 &&
+          (4 === v.type || 3 === v.type) &&
+          !!(null == (c = v.vid) ? void 0 : c.trim())
+        );
+      }
+      t.d(r, { I: () => o });
+    },
+    60665(e, r, t) {
+      var a = t(96783),
+        o = t(92169);
+      function n(e) {
+        return (
+          "CONFIRMATION_CANCELLED" === e ||
+          "SUBMIT_CANCELLED" === e ||
+          "COMMERCIAL_BLOCKED" === e
+        );
+      }
+      function s(e, r, t) {
+        if (
+          (null == r ? void 0 : r.aborted) ||
+          (e instanceof Error && "AbortError" === e.name)
+        )
+          return { code: "SUBMIT_CANCELLED" };
+        let n = (0, o.fG)(e);
+        return {
+          code: "SUBMIT_FAILED",
+          message: n ? (0, o.Cp)(n) : (t ?? (0, a._y)()),
+        };
+      }
+      t.d(r, { b: () => s, s: () => n });
+    },
+    67534(e, r, t) {
+      t.d(r, { AudioFlowNode: () => eK });
+      var a = t(90561),
+        o = t(24548),
+        n = t(4081),
+        s = t(87429),
+        i = t(66876),
+        u = t(96783),
+        l = t(39243),
+        c = t(91147),
+        d = t(172),
+        p = t(93998),
+        v = t(2974);
+      function m() {
+        return !1;
+      }
+      var g = t(60794),
+        y = t(30531),
+        h = t(60665),
+        f = t(85871),
+        b = t(37046),
+        I = t(99982),
+        R = t(41447),
+        x = t(40627),
+        w = t(74780),
+        k = t(91229),
+        C = t(11567),
+        P = t(40962),
+        M = t(88023),
+        S = t(37350),
+        E = t(88081),
+        j = t(7784),
+        B = t(30962),
+        A = t(36295),
+        D = t(77730),
+        T = t(77073),
+        L = t(9233),
+        U = t(51887),
+        _ = t(85817),
+        F = t(63416),
+        q = t(52902),
+        N = t(62799),
+        O = t(7379),
+        W = t(7386),
+        K = t(93176),
+        H = t(7352),
+        V = t(98046),
+        z = t(50647),
+        $ = t(12962),
+        Q = t(8459),
+        Z = t(68227),
+        J = t(93837),
+        Y = t(12586),
+        G = t(85367),
+        X = t(1265),
+        ee = t(65004),
+        er = t(35008),
+        et = t(32006);
+      function ea(e, r) {
+        switch (r) {
+          case "play":
+          case "waiting":
+            return "buffering";
+          case "playing":
+            return "playing";
+          case "pause":
+          case "ended":
+            return "paused";
+          case "error":
+            return "error";
+          case "revoked":
+            return "idle";
+          case "seeking":
+          case "timeupdate":
+            return e;
+        }
+      }
+      let eo = (0, s.memo)(function (e) {
+        return e.trimActive
+          ? (0, a.jsx)(es, { ...e })
+          : (0, a.jsx)(en, { ...e });
+      });
+      function en(e) {
+        let r = (function (e) {
+            var r, t, a, o, n, i, u, l, d, v, m, g, y, h, f, b, I, R, x, w;
+            let k,
+              C,
+              P,
+              M,
+              S,
+              E,
+              j,
+              B,
+              A,
+              D,
+              T,
+              L,
+              { onPlaybackStarted: U, resourceId: _ } = e,
+              [F, q] = (0, s.useReducer)(ea, "idle"),
+              N = (0, s.useRef)(null),
+              O = (0, s.useRef)(null),
+              W = (0, s.useRef)(null),
+              K = (0, s.useRef)(),
+              H = (0, s.useRef)(e.playbackUrl),
+              V = (0, s.useRef)(),
+              z = (0, s.useRef)(!1),
+              $ = (0, s.useRef)(!1),
+              Q = (0, er.r)(),
+              { cancelPlaybackRequest: Z, schedulePlaybackRequest: J } =
+                ((r = N),
+                (t = U),
+                (a = _),
+                (o = r),
+                (n = (0, s.useCallback)(
+                  () => (null == t ? void 0 : t(a)),
+                  [t, a],
+                )),
+                (k = (0, s.useRef)(0)),
+                (C = (0, s.useRef)()),
+                (P = (0, s.useCallback)(() => {
+                  ((k.current += 1),
+                    void 0 !== C.current &&
+                      (window.clearTimeout(C.current), (C.current = void 0)));
+                }, [])),
+                (M = (0, s.useCallback)(
+                  (e) => {
+                    P();
+                    let r = k.current;
+                    C.current = window.setTimeout(() => {
+                      if (((C.current = void 0), k.current === r))
+                        try {
+                          var t;
+                          let a = null == (t = o.current) ? void 0 : t.play();
+                          a &&
+                            a.then(
+                              () => {
+                                k.current === r && n();
+                              },
+                              () => {
+                                k.current === r && e("play_rejected");
+                              },
+                            );
+                        } catch {
+                          k.current === r && e("play_threw");
+                        }
+                    }, 0);
+                  },
+                  [o, P, n],
+                )),
+                (0, s.useEffect)(() => P, [P]),
+                { cancelPlaybackRequest: P, schedulePlaybackRequest: M }),
+              Y =
+                ((i = K),
+                (u = q),
+                (0, s.useCallback)(
+                  (e, r) => {
+                    ((i.current = r), u(e));
+                  },
+                  [u, i],
+                )),
+              { applyPendingSeek: G, seek: ee } =
+                ((l = N),
+                (d = e.playbackUrl),
+                (v = F),
+                (m = Y),
+                (S = (0, s.useRef)()),
+                (E = (0, s.useCallback)(() => {
+                  let e = l.current,
+                    r = S.current;
+                  if (e && void 0 !== r)
+                    try {
+                      ((e.currentTime = r), (S.current = void 0));
+                    } catch {
+                      return;
+                    }
+                }, [l])),
+                (j = (0, s.useCallback)(
+                  (e) => {
+                    ((S.current = Math.max(0, Number.isFinite(e) ? e : 0)),
+                      E(),
+                      "idle" === v && m("pause"));
+                  },
+                  [E, v, m],
+                )),
+                (0, s.useLayoutEffect)(E, [E, d, v]),
+                { applyPendingSeek: E, seek: j }),
+              eo = (function (e) {
+                let {
+                  audioRef: r,
+                  cancelPlaybackRequest: t,
+                  continuity: a,
+                  failureReportedForAttempt: o,
+                  onPlaybackFailure: n,
+                  playButtonRef: i,
+                  resourceId: u,
+                  retryAttempt: l,
+                  transition: c,
+                } = e;
+                return (0, s.useCallback)(
+                  (e) => {
+                    (a.finishRecovery(),
+                      t(),
+                      o.current ||
+                        ((o.current = !0),
+                        n({ reason: e, resourceId: u, retry: l.current })),
+                      c("error", ei(r, i) ? "retry" : void 0));
+                  },
+                  [r, t, a, o, n, i, u, l, c],
+                );
+              })({
+                audioRef: N,
+                cancelPlaybackRequest: Z,
+                continuity: Q,
+                failureReportedForAttempt: $,
+                onPlaybackFailure: e.onPlaybackFailure,
+                playButtonRef: O,
+                resourceId: e.resourceId,
+                retryAttempt: z,
+                transition: Y,
+              }),
+              { playbackStopped: en, recovery: es } =
+                ((B = (function (e) {
+                  let {
+                      audioRef: r,
+                      cancelPlaybackRequest: t,
+                      continuity: a,
+                      handlePlaybackFailure: o,
+                      onRecoverPlaybackUrl: n,
+                      resourceId: i,
+                      transition: u,
+                    } = e,
+                    l = (0, p.uq)(),
+                    d = (0, s.useCallback)(() => {
+                      let e = r.current;
+                      (e && a.beginRecovery(e), t(), u("waiting"));
+                    }, [r, t, a, u]),
+                    v = (0, s.useCallback)(
+                      async (e, t) => {
+                        let n = r.current;
+                        if (!n) {
+                          ((0, X.JW)(l, c.TM, `element_unavailable:${i}`, {
+                            resourceId: i,
+                            reason: "element_unavailable",
+                            retry: !1,
+                          }),
+                            a.finishRecovery(),
+                            o("media_error"));
+                          return;
+                        }
+                        if ((await a.restoreSource(n, e, t), !a.shouldPlay())) {
+                          (n.pause(), u("pause"), a.finishRecovery());
+                          return;
+                        }
+                        (u("play"),
+                          await n.play(),
+                          a.shouldPlay() || (n.pause(), u("pause")),
+                          a.finishRecovery());
+                      },
+                      [r, a, l, o, i, u],
+                    ),
+                    m = (0, s.useCallback)(() => {
+                      (a.finishRecovery(), o("media_error"));
+                    }, [a, o]);
+                  return (0, et.O)({
+                    resourceId: i,
+                    recoverPlaybackUrl: n,
+                    onRecoveryStarted: d,
+                    onPlaybackUrlRecovered: v,
+                    onRecoveryFailed: m,
+                  });
+                })({
+                  audioRef: (g = {
+                    audioRef: N,
+                    cancelPlaybackRequest: Z,
+                    continuity: Q,
+                    handlePlaybackFailure: eo,
+                    playButtonRef: O,
+                    props: e,
+                    retryAttempt: z,
+                    retryPlaybackUrl: V,
+                    transition: Y,
+                  }).audioRef,
+                  cancelPlaybackRequest: g.cancelPlaybackRequest,
+                  continuity: g.continuity,
+                  handlePlaybackFailure: g.handlePlaybackFailure,
+                  onRecoverPlaybackUrl: g.props.onRecoverPlaybackUrl,
+                  resourceId: g.props.resourceId,
+                  transition: g.transition,
+                })),
+                {
+                  playbackStopped:
+                    ((y = {
+                      audioRef: g.audioRef,
+                      cancelPlaybackRequest: g.cancelPlaybackRequest,
+                      continuity: g.continuity,
+                      coordinator: g.props.coordinator,
+                      playButtonRef: g.playButtonRef,
+                      recovery: B,
+                      retryAttempt: g.retryAttempt,
+                      retryPlaybackUrl: g.retryPlaybackUrl,
+                      sourceKey: g.props.sourceKey,
+                      transition: g.transition,
+                    }),
+                    (A = (0, s.useRef)(!1)),
+                    (D = (0, s.useCallback)(() => {
+                      var e;
+                      ((A.current = !0),
+                        y.cancelPlaybackRequest(),
+                        y.recovery.cancel(),
+                        y.continuity.reset(),
+                        (y.retryAttempt.current = !1),
+                        (y.retryPlaybackUrl.current = void 0),
+                        null == (e = y.audioRef.current) || e.pause());
+                    }, [y])),
+                    ((T = (0, s.useRef)(D)).current = D),
+                    (h = y.coordinator),
+                    (f = y.sourceKey),
+                    (b = () => {
+                      let e = ei(y.audioRef, y.playButtonRef);
+                      (T.current(),
+                        y.transition("revoked", e ? "play" : void 0));
+                    }),
+                    ((L = (0, s.useRef)(b)).current = b),
+                    (0, s.useEffect)(
+                      () => h.acquire(f, () => L.current()).release,
+                      [h, f],
+                    ),
+                    (0, s.useLayoutEffect)(() => () => T.current(), []),
+                    A),
+                  recovery: B,
+                });
+            ((I = F),
+              (R = K),
+              (x = O),
+              (w = W),
+              (0, s.useLayoutEffect)(() => {
+                var e, r;
+                let t = R.current;
+                ((R.current = void 0),
+                  "play" === t
+                    ? null == (e = x.current) || e.focus()
+                    : "retry" === t && (null == (r = w.current) || r.focus()));
+              }, [R, x, w, I]),
+              (function (e) {
+                let {
+                  failureReportedForAttempt: r,
+                  handlePlaybackFailure: t,
+                  playbackUrl: a,
+                  previousPlaybackUrl: o,
+                  retryButtonRef: n,
+                  retryPlaybackUrl: i,
+                  schedulePlaybackRequest: u,
+                  transition: l,
+                } = e;
+                (0, s.useLayoutEffect)(() => {
+                  o.current === a ||
+                    ((o.current = a),
+                    void 0 === i.current ||
+                      ((i.current = void 0),
+                      (r.current = !1),
+                      l(
+                        "play",
+                        document.activeElement === n.current ? "play" : void 0,
+                      ),
+                      u(t)));
+                }, [r, t, a, o, n, i, u, l]);
+              })({
+                failureReportedForAttempt: $,
+                handlePlaybackFailure: eo,
+                playbackUrl: e.playbackUrl,
+                previousPlaybackUrl: H,
+                retryButtonRef: W,
+                retryPlaybackUrl: V,
+                schedulePlaybackRequest: J,
+                transition: Y,
+              }));
+            let eu = (function (e) {
+              let {
+                audioRef: r,
+                continuity: t,
+                playbackStopped: a,
+                recovery: o,
+                transition: n,
+              } = e;
+              return (0, s.useCallback)(
+                (e) => {
+                  var s;
+                  if (a.current) return;
+                  if ("error" === e) return void o.handleMediaError();
+                  let i = r.current;
+                  (i &&
+                    ("play" === (s = e) ||
+                      "playing" === s ||
+                      "pause" === s ||
+                      "ended" === s ||
+                      "seeking" === s ||
+                      "timeupdate" === s) &&
+                    t.observe(i, e),
+                    "seeking" === e ||
+                      "timeupdate" === e ||
+                      o.isRecovering() ||
+                      n(e));
+                },
+                [r, t, a, o, n],
+              );
+            })({
+              audioRef: N,
+              continuity: Q,
+              playbackStopped: en,
+              recovery: es,
+              transition: Y,
+            });
+            return {
+              ...(function (e) {
+                let {
+                    audioRef: r,
+                    cancelPlaybackRequest: t,
+                    continuity: a,
+                    failureReportedForAttempt: o,
+                    handlePlaybackFailure: n,
+                    onRefreshResourceIds: i,
+                    playbackUrl: u,
+                    playbackStopped: l,
+                    playButtonRef: c,
+                    recovery: d,
+                    resourceId: p,
+                    retryAttempt: v,
+                    retryButtonRef: m,
+                    retryPlaybackUrl: g,
+                    schedulePlaybackRequest: y,
+                    transition: h,
+                  } = e,
+                  f = (0, s.useCallback)(() => {
+                    ((l.current = !1),
+                      (v.current = !1),
+                      d.reset(),
+                      a.requestPlayback(),
+                      (o.current = !1),
+                      h(
+                        "play",
+                        document.activeElement === c.current ? "play" : void 0,
+                      ),
+                      y(n));
+                  }, [o, n, a, c, l, d, v, y, h]);
+                return {
+                  activate: f,
+                  pause: (0, s.useCallback)(() => {
+                    t();
+                    let e = r.current;
+                    (e && (a.observe(e, "pause"), e.pause()),
+                      h(
+                        "pause",
+                        document.activeElement === c.current ? "play" : void 0,
+                      ));
+                  }, [r, t, a, c, h]),
+                  retry: (0, s.useCallback)(() => {
+                    ((l.current = !1),
+                      (v.current = !0),
+                      d.reset(),
+                      a.requestPlayback(),
+                      (o.current = !1),
+                      (g.current = u),
+                      i([p]),
+                      h(
+                        "play",
+                        document.activeElement === m.current ? "play" : void 0,
+                      ),
+                      y(n));
+                  }, [o, n, a, i, u, l, d, p, v, m, g, y, h]),
+                };
+              })({
+                audioRef: N,
+                cancelPlaybackRequest: Z,
+                failureReportedForAttempt: $,
+                handlePlaybackFailure: eo,
+                continuity: Q,
+                onRefreshResourceIds: e.onRefreshResourceIds,
+                playbackUrl: e.playbackUrl,
+                playbackStopped: en,
+                playButtonRef: O,
+                recovery: es,
+                resourceId: e.resourceId,
+                retryAttempt: z,
+                retryButtonRef: W,
+                retryPlaybackUrl: V,
+                schedulePlaybackRequest: J,
+                transition: Y,
+              }),
+              applyPendingSeek: G,
+              audioRef: N,
+              handleMediaEvent: eu,
+              playButtonRef: O,
+              retryButtonRef: W,
+              seek: ee,
+              status: F,
+            };
+          })(e),
+          { activate: t, status: o } = r,
+          n = (0, s.useRef)(!1);
+        return ((0, s.useLayoutEffect)(() => {
+          var t;
+          e.focusPlaybackControlOnMount &&
+            (null == (t = r.playButtonRef.current) || t.focus());
+        }, [r.playButtonRef, e.focusPlaybackControlOnMount]),
+        (0, s.useLayoutEffect)(() => {
+          e.autoPlay && "idle" === o && !n.current && ((n.current = !0), t());
+        }, [t, e.autoPlay, o]),
+        "error" === o)
+          ? (0, a.jsx)(eu, { controller: r })
+          : (0, a.jsx)(el, { controller: r, props: e });
+      }
+      function es(e) {
+        let {
+            durationMs: r,
+            onAudioElementChange: t,
+            playbackUrl: o,
+            sourceKey: n,
+            title: i,
+          } = e,
+          [u, l] = (0, s.useState)("loading"),
+          c = ec(e);
+        return (0, a.jsxs)("div", {
+          className: "flex h-full w-full flex-col",
+          "data-testid": "audio-trim-source-player",
+          children: [
+            (0, a.jsx)(J.e1, {
+              action: (0, a.jsx)(J.uh, {}),
+              durationMs: r,
+              loading: "loading" === u,
+              waveform: (0, a.jsx)(Y.xZ, {
+                currentTimeMs: 0,
+                durationMs: r,
+                interactive: !1,
+                playbackUrl: o,
+                sourceKey: n,
+                title: i,
+                tone: e.waveformTone,
+                onStatusChange: l,
+                onWaveformDegraded: c,
+                onSeek: ed,
+              }),
+            }),
+            (0, a.jsx)(
+              "audio",
+              {
+                ref: t,
+                "aria-hidden": "true",
+                className: "sr-only",
+                crossOrigin: "anonymous",
+                "data-testid": "audio-trim-source-audio",
+                preload: "auto",
+                src: o,
+                tabIndex: -1,
+              },
+              n,
+            ),
+          ],
+        });
+      }
+      function ei(e, r) {
+        let t = document.activeElement;
+        return t === e.current || t === r.current;
+      }
+      function eu(e) {
+        return (0, a.jsxs)("div", {
+          className:
+            "flex h-full w-full flex-col items-center justify-center gap-2",
+          "data-testid": "audio-playback-error",
+          children: [
+            (0, a.jsx)(d.W5n, { className: "h-auto", message: (0, i.Weg)() }),
+            (0, a.jsx)(d.$nd, {
+              ref: e.controller.retryButtonRef,
+              "aria-label": (0, i.YtW)(),
+              className: "nodrag",
+              size: "sm",
+              onClick: e.controller.retry,
+              children: (0, i.YtW)(),
+            }),
+          ],
+        });
+      }
+      function el(e) {
+        var r, t, o, n, u;
+        let l,
+          c = "idle" !== e.controller.status,
+          d =
+            "playing" === e.controller.status ||
+            "buffering" === e.controller.status,
+          [p, v] = (0, s.useState)("loading"),
+          m = (function (e, r, t) {
+            let [a, o] = (0, s.useState)(0);
+            return (
+              (0, s.useEffect)(() => o(0), [t]),
+              (0, s.useEffect)(() => {
+                let r = e.current;
+                if (!r) return;
+                let t = () => o(Math.max(0, 1e3 * r.currentTime));
+                return (
+                  t(),
+                  r.addEventListener("durationchange", t),
+                  r.addEventListener("ended", t),
+                  r.addEventListener("loadedmetadata", t),
+                  r.addEventListener("seeked", t),
+                  r.addEventListener("seeking", t),
+                  r.addEventListener("timeupdate", t),
+                  () => {
+                    (r.removeEventListener("durationchange", t),
+                      r.removeEventListener("ended", t),
+                      r.removeEventListener("loadedmetadata", t),
+                      r.removeEventListener("seeked", t),
+                      r.removeEventListener("seeking", t),
+                      r.removeEventListener("timeupdate", t));
+                  }
+                );
+              }, [e, r]),
+              (0, s.useEffect)(() => {
+                if (
+                  "playing" !== r ||
+                  "function" != typeof globalThis.requestAnimationFrame
+                )
+                  return;
+                let t = 0,
+                  a = () => {
+                    let r = e.current;
+                    (r && o(Math.max(0, 1e3 * r.currentTime)),
+                      (t = globalThis.requestAnimationFrame(a)));
+                  };
+                return (
+                  (t = globalThis.requestAnimationFrame(a)),
+                  () => globalThis.cancelAnimationFrame(t)
+                );
+              }, [e, r]),
+              (0, s.useMemo)(
+                () => ({ currentTimeMs: a, setCurrentTimeMs: o }),
+                [a],
+              )
+            );
+          })(e.controller.audioRef, e.controller.status, e.props.sourceKey),
+          g = (0, s.useCallback)(
+            (r) => {
+              (m.setCurrentTimeMs(r), e.controller.seek(r / 1e3));
+            },
+            [m, e.controller],
+          ),
+          y = ec(e.props),
+          h =
+            ((r = e.controller),
+            (l = (0, ee.PF)()),
+            (0, s.useCallback)(() => {
+              if (d) {
+                (l.declarePause(), r.pause());
+                return;
+              }
+              (l.declarePlay(), r.activate());
+            }, [r, l, d])),
+          f =
+            m.currentTimeMs > 0 ||
+            "playing" === e.controller.status ||
+            "buffering" === e.controller.status,
+          b =
+            ((t = e.controller),
+            (o = e.props),
+            c
+              ? (0, a.jsxs)(a.Fragment, {
+                  children: [
+                    (0, a.jsx)(ep, {
+                      audioRef: t.audioRef,
+                      playbackUrl: o.playbackUrl,
+                      sourceKey: o.sourceKey,
+                      dispatch: t.handleMediaEvent,
+                      onLoadedMetadata: t.applyPendingSeek,
+                      onPlayStart: o.onPlayStart
+                        ? () => {
+                            var e;
+                            return null == (e = o.onPlayStart)
+                              ? void 0
+                              : e.call(o, o.resourceId);
+                          }
+                        : void 0,
+                    }),
+                    (0, a.jsx)("div", {
+                      "aria-live": "polite",
+                      className: "sr-only",
+                      role: "status",
+                      children:
+                        ((n = t.status),
+                        (u = o.title),
+                        "playing" === n
+                          ? (0, i.RdC)(u)
+                          : "buffering" === n
+                            ? (0, i.JZL)(u)
+                            : (0, i.NaK)(u)),
+                    }),
+                  ],
+                })
+              : null);
+        return (0, a.jsxs)("div", {
+          className: "flex h-full w-full flex-col",
+          "data-testid": c
+            ? "audio-simple-player-active"
+            : "audio-simple-player",
+          children: [
+            (0, a.jsx)(J.e1, {
+              action: (0, a.jsx)(J.G, {
+                ref: e.controller.playButtonRef,
+                label: d
+                  ? (0, i.pW2)(e.props.title)
+                  : (0, i.BXv)(e.props.title),
+                playing: d,
+                onClick: h,
+              }),
+              durationMs: f ? m.currentTimeMs : e.props.durationMs,
+              loading: "loading" === p,
+              waveform: (0, a.jsx)(Y.xZ, {
+                currentTimeMs: m.currentTimeMs,
+                durationMs: e.props.durationMs,
+                playbackUrl: e.props.playbackUrl,
+                sourceKey: e.props.sourceKey,
+                title: e.props.title,
+                tone: e.props.waveformTone,
+                onStatusChange: v,
+                onWaveformDegraded: y,
+                onSeek: g,
+              }),
+            }),
+            b,
+          ],
+        });
+      }
+      function ec(e) {
+        let { onWaveformDegradation: r, resourceId: t } = e;
+        return (0, s.useCallback)(
+          (e) => {
+            r({ ...e, resourceId: t });
+          },
+          [r, t],
+        );
+      }
+      function ed() {}
+      function ep(e) {
+        return (0, a.jsx)(
+          "audio",
+          {
+            ref: e.audioRef,
+            "aria-hidden": "true",
+            className: "sr-only",
+            crossOrigin: "anonymous",
+            "data-testid": "audio-playback-media",
+            preload: "none",
+            src: e.playbackUrl,
+            tabIndex: -1,
+            onEnded: () => e.dispatch("ended"),
+            onError: () => e.dispatch("error"),
+            onLoadedMetadata: e.onLoadedMetadata,
+            onPause: () => e.dispatch("pause"),
+            onPlay: () => {
+              var r;
+              (e.dispatch("play"), null == (r = e.onPlayStart) || r.call(e));
+            },
+            onPlaying: () => e.dispatch("playing"),
+            onSeeking: () => e.dispatch("seeking"),
+            onTimeUpdate: () => e.dispatch("timeupdate"),
+            onWaiting: () => e.dispatch("waiting"),
+          },
+          e.sourceKey,
+        );
+      }
+      var ev = t(14966),
+        em = t(1727);
+      let eg = {
+          waiting: i.fcd,
+          processing: i.VzG,
+          progress: i.pfP,
+          preparing: i.bkw,
+          cancelled: i.feP,
+          fileTooLarge: i.z61,
+          unsupportedType: i.FJQ,
+          timedOut: i.$Gt,
+          failed: i.JK,
+          retry: i.QhN,
+          retryNode: i.aKI,
+          statusAnnouncement: i.Adi,
+        },
+        ey = (0, a.jsx)(d.mPE, {
+          className:
+            "text-dreamina-on-media-text-placeholder motion-safe:animate-spin motion-reduce:animate-none",
+          "data-icon": "media-node-upload-loading",
+          size: 24,
+        }),
+        eh = (0, s.memo)(function (e) {
+          var r, t;
+          let { active: o, renderMode: n, state: s, title: u } = e,
+            l = "result" === s.type ? (0, G.me)(s.currentBatch) : void 0,
+            c = (function (e, r, t) {
+              let a;
+              if ("result" === r.type)
+                return { "aria-label": (0, i.hbr)(t), role: "img" };
+              a =
+                "error" === r.type
+                  ? r.message
+                  : "queued" === r.type
+                    ? (0, P.b)(r.queue, {
+                        estimateLabel: i.AcJ,
+                        positionLabel: i.j9W,
+                      }).message
+                    : "loading" === r.type
+                      ? (r.message ??
+                        ("progress" === r.appearance
+                          ? (0, i.VWJ)()
+                          : (0, i.Vz7)()))
+                      : (0, i.UHI)();
+              let o = (0, i.Adi)({ message: a, title: t });
+              return e
+                ? "error" === r.type
+                  ? {
+                      "aria-atomic": !0,
+                      "aria-label": o,
+                      "aria-live": "assertive",
+                      role: "alert",
+                    }
+                  : "loading" === r.type || "queued" === r.type
+                    ? {
+                        "aria-atomic": !0,
+                        "aria-busy": !0,
+                        "aria-label": o,
+                        "aria-live": "polite",
+                        role: "status",
+                      }
+                    : { "aria-label": o, role: "img" }
+                : { "aria-label": o, role: "img" };
+            })(o, s, u),
+            p = "result" === s.type,
+            v =
+              ((r = s),
+              (t = n),
+              "loading" === r.type || "queued" === r.type
+                ? `${K.fP} ${K.vE}`
+                : "result" === r.type
+                  ? (0, d.cn)(O.S1, J.W3, "compact" === t ? J.H : J.C$)
+                  : O.S1),
+            m = null;
+          return (p &&
+            "compact" === n &&
+            (m = (0, a.jsx)("div", {
+              className: J.D2,
+              children: (0, a.jsx)(J.z3, {
+                durationMs: null == l ? void 0 : l.durationMs,
+              }),
+            })),
+          "error" === s.type)
+            ? (0, a.jsx)(ex, {
+                active: o,
+                announce: o,
+                message: s.message,
+                testId: `audio-node-${n}`,
+                title: u,
+              })
+            : (0, a.jsxs)("div", {
+                ...c,
+                ...(0, q.YR)(s),
+                className: v,
+                "data-loading-appearance":
+                  "loading" === s.type ? "skeleton" : void 0,
+                "data-state": s.type,
+                "data-testid": `audio-node-${n}`,
+                children: [
+                  "empty" === s.type
+                    ? (0, a.jsx)(J.oC, { tone: "placeholder" })
+                    : null,
+                  p ? (0, a.jsx)(ef, {}) : null,
+                  m,
+                ],
+              });
+        });
+      function ef() {
+        var e;
+        let r,
+          t =
+            ((e = (0, ev.$)()),
+            {
+              "--canvas-audio-light-waveform-clip": String(
+                (r = (0, Y.VV)(Y.vH, !1, e, 192)).clipPath ?? "none",
+              ),
+              "--canvas-audio-light-waveform-height":
+                "number" == typeof r.height ? `${r.height}px` : "48px",
+              "--canvas-audio-light-waveform-mask": String(
+                r.maskImage ?? "none",
+              ),
+            });
+        return (0, a.jsx)("span", {
+          "aria-hidden": "true",
+          className: J.ZE,
+          "data-canvas-content-evidence": "frame_estimate",
+          "data-canvas-content-state": "content",
+          "data-testid": "audio-node-light-waveform",
+          style: t,
+          children: (0, a.jsx)("span", {
+            className:
+              "relative block max-w-full bg-dreamina-on-media-text-placeholder [mask-image:var(--canvas-audio-light-waveform-mask)] [mask-repeat:no-repeat] [mask-size:100%_100%] [-webkit-mask-image:var(--canvas-audio-light-waveform-mask)] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%] [clip-path:var(--canvas-audio-light-waveform-clip)]",
+            style: {
+              height: t["--canvas-audio-light-waveform-height"],
+              width: 192,
+            },
+          }),
+        });
+      }
+      let eb = (0, s.memo)(function (e) {
+        let { ...r } = e;
+        return (0, a.jsx)(Z.f, {
+          active: r.active,
+          announceFailure: r.announceFailure,
+          announcePending: r.announcePending,
+          description: r.description,
+          descriptionId: r.descriptionId,
+          errorIcon: (0, a.jsx)(N.Yu, {}),
+          icon: ey,
+          resource: r.resource,
+          testIdPrefix: "audio-node",
+          texts: eg,
+          title: r.title,
+          visuallyHidePendingMessage: !0,
+          onRetry: r.onRetry,
+        });
+      });
+      function eI(e) {
+        let r =
+            e.message ??
+            ("progress" === e.appearance ? (0, i.VWJ)() : (0, i.Vz7)()),
+          t = (0, i.Adi)({ title: e.title, message: r });
+        return (0, a.jsx)(K.De, {
+          active: e.announce,
+          announcement: t,
+          appearance: e.appearance,
+          description: e.description,
+          descriptionId: e.descriptionId,
+          generatingFieldSize: 240,
+          logicalHeight: e.logicalHeight,
+          logicalWidth: e.logicalWidth,
+          message: r,
+          processingBorder: { startedAtMs: e.startedAtMs },
+          selected: e.selected,
+          showMessage: e.showMessage ?? !1,
+          surfaceClassName: O.S1,
+          testId: "audio-node-loading",
+        });
+      }
+      let eR = (0, s.memo)(function (e) {
+        let {
+            active: r,
+            description: t,
+            descriptionId: o,
+            logicalHeight: n,
+            logicalWidth: s,
+            queue: u,
+            resourceId: l,
+            title: c,
+            onCancel: d,
+          } = e,
+          p = (0, P.b)(u, { estimateLabel: i.AcJ, positionLabel: i.j9W });
+        return (0, a.jsx)(W.T, {
+          active: r,
+          announcement: (0, i.Adi)({ title: c, message: p.message }),
+          cancelLabel: (0, i.cWO)(),
+          description: t,
+          descriptionId: o,
+          estimate: p.estimate,
+          logicalHeight: n,
+          logicalWidth: s,
+          position: p.position,
+          resourceId: l,
+          testId: "audio-node-queued",
+          onCancel: d,
+        });
+      });
+      function ex(e) {
+        var r, t;
+        let { writeChromeVisible: o } = (0, g.A1)(),
+          n =
+            ((r = e),
+            (t = o),
+            r.active && (void 0 === r.retryResourceId || t) && r.onRetry
+              ? (0, a.jsx)(ew, { props: r })
+              : (0, a.jsx)("span", {
+                  className:
+                    "flex size-5 items-center justify-center text-dreamina-on-media-text-placeholder",
+                  "data-testid": "audio-error-control",
+                  children: (0, a.jsx)(ek, {}),
+                }));
+        return (0, a.jsxs)("div", {
+          className: `${O.S1} flex-col gap-2 px-6`,
+          "data-state": "error",
+          "data-testid": e.testId ?? "audio-node-error",
+          children: [
+            n,
+            (0, a.jsx)("p", {
+              ...(0, q.s4)("element", "business_error"),
+              className:
+                "max-w-canvas-media-node-message text-center text-xs font-normal leading-5 text-dreamina-on-media-text-tertiary",
+              children: e.message,
+            }),
+            (0, a.jsx)("span", {
+              "aria-label": e.announce
+                ? (0, i.Adi)({ title: e.title, message: e.message })
+                : void 0,
+              className: "sr-only",
+              role: e.announce ? "alert" : void 0,
+              children: e.message,
+            }),
+          ],
+        });
+      }
+      function ew(e) {
+        let { props: r } = e,
+          t = (0, S.P)(),
+          o =
+            void 0 !== r.retryResourceId &&
+            t.pendingResourceId === r.retryResourceId,
+          n = void 0 !== r.retryResourceId && t.pending;
+        return (0, a.jsxs)(d.$nd, {
+          "aria-label": r.retryLabel ?? (0, i.Nwy)(r.title),
+          busy: o || void 0,
+          className:
+            "nodrag relative size-5 rounded-canvas-media-node-error-action bg-transparent p-0 text-dreamina-on-media-text-placeholder shadow-none after:absolute after:-inset-1.5 after:rounded-canvas-media-node-error-action after:content-[''] hover:bg-white/5 hover:text-dreamina-on-media-text-placeholder",
+          "data-testid": "audio-error-control",
+          disabled: n,
+          size: "icon",
+          variant: "text",
+          onClick: () => {
+            var e;
+            n || null == (e = r.onRetry) || e.call(r);
+          },
+          children: [
+            o
+              ? (0, a.jsx)(d.mPE, {
+                  "aria-hidden": !0,
+                  className: "animate-spin",
+                  size: 16,
+                })
+              : (0, a.jsx)(ek, {}),
+            o
+              ? (0, a.jsx)("span", {
+                  className: "sr-only",
+                  children: (0, i.COb)(),
+                })
+              : null,
+          ],
+        });
+      }
+      function ek() {
+        return (0, a.jsx)("span", {
+          "aria-hidden": "true",
+          className:
+            "flex size-4 items-center justify-center rounded-canvas-media-node-error-action border border-current text-[10px] font-semibold leading-none",
+          "data-testid": "audio-error-info-icon",
+          children: "i",
+        });
+      }
+      let eC = (0, s.memo)(function (e) {
+          let r = (0, s.useId)(),
+            t = (0, G.me)(e.batch);
+          return (0, a.jsx)("div", {
+            className: "relative flex h-full w-full shrink-0",
+            "data-testid": "audio-node-async-batch",
+            children: (0, a.jsx)(eS, {
+              batch: e.batch,
+              collapsedContent: e.collapsedContent,
+              collectionCount: e.collectionCount,
+              coordinator: e.coordinator,
+              controlsId: `audio-async-batch-panel-${r.replaceAll(":", "")}`,
+              currentResourceId: e.currentResourceId ?? t.resourceId,
+              expanded: e.expanded,
+              highlightedResourceId: e.highlightedResourceId,
+              revealRequest: e.revealRequest,
+              history: e.history,
+              motion: e.motion,
+              regenerableResourceIds: e.regenerableResourceIds,
+              showToggle: !0,
+              toggleTabbable: e.active || e.expanded,
+              viewportDecoration: e.viewportDecoration,
+              waveformDecodeEnabled: e.waveformDecodeEnabled,
+              onRegenerateResource: e.onRegenerateResource,
+              onPlaybackFailure: e.onPlaybackFailure,
+              onPlaybackStarted: e.onPlaybackStarted,
+              onRecoverPlaybackUrl: e.onRecoverPlaybackUrl,
+              onRefreshResourceIds: e.onRefreshResourceIds,
+              onSelectResource: e.onSelectResource,
+              onToggleExpansion: e.onToggleExpanded,
+              onWaveformDegradation: e.onWaveformDegradation,
+            }),
+          });
+        }),
+        eP = (0, s.memo)(function (e) {
+          var r, t, o, n;
+          let { writeChromeVisible: i } = (0, g.A1)(),
+            u = (0, s.useId)(),
+            l = `audio-batch-panel-${u.replaceAll(":", "")}`,
+            c = (0, G.me)(e.state.currentBatch),
+            d = e.trimActive ?? !1,
+            p =
+              ((r = e),
+              (t = c),
+              (o = d),
+              (n = !i),
+              void 0 !== t.playbackUrl &&
+              (o || ((r.active || n) && !r.isSmallSurface))
+                ? (0, a.jsx)(
+                    eo,
+                    {
+                      coordinator: r.coordinator,
+                      durationMs: t.durationMs,
+                      onAudioElementChange: r.onAudioElementChange,
+                      onPlaybackFailure: r.onPlaybackFailure,
+                      onPlaybackStarted: r.onPlaybackStarted,
+                      onRecoverPlaybackUrl: r.onRecoverPlaybackUrl,
+                      onRefreshResourceIds: r.onRefreshResourceIds,
+                      onWaveformDegradation: r.onWaveformDegradation,
+                      playbackUrl: t.playbackUrl,
+                      resourceId: t.resourceId,
+                      sourceKey: t.sourceKey ?? t.resourceId,
+                      title: r.title,
+                      trimActive: o,
+                      waveformTone: "theme",
+                    },
+                    t.sourceKey ?? t.resourceId,
+                  )
+                : (0, a.jsx)(eM, {
+                    announceLoading: r.active,
+                    decodeEnabled: r.waveformDecodeEnabled ?? !1,
+                    resource: t,
+                    tone: "theme",
+                    title: r.title,
+                    onWaveformDegradation: r.onWaveformDegradation,
+                  })),
+            v = e.expanded && !d,
+            m = e.state.batches.length > 1 || !!e.hasIndependentPrimaryPreview,
+            y =
+              e.resultBrowsingAvailable &&
+              !d &&
+              (e.active || !(e.selected ?? e.active) || e.expanded) &&
+              (e.state.currentBatch.resources.length > 1 || m || v);
+          return (0, a.jsx)("div", {
+            className: "relative flex h-full w-full shrink-0",
+            "data-testid": "audio-node-result",
+            children: (0, a.jsx)(eS, {
+              batch: e.state.currentBatch,
+              collapsedContent: p,
+              collectionCount: e.collectionCount,
+              coordinator: e.coordinator,
+              controlsId: l,
+              currentResourceId: e.currentResourceId ?? c.resourceId,
+              expanded: v,
+              highlightedResourceId: e.highlightedResourceId,
+              revealRequest: e.revealRequest,
+              history: e.history,
+              motion: e.motion,
+              regenerableResourceIds: e.regenerableResourceIds,
+              onWaveformDegradation: e.onWaveformDegradation,
+              waveformDecodeEnabled: e.waveformDecodeEnabled ?? !1,
+              viewportDecoration: e.viewportDecoration,
+              showToggle: y,
+              toggleTabbable: e.active || e.expanded,
+              copyResourceDisabledReason: e.copyResourceDisabledReason,
+              getDownloadResourceState: e.getDownloadResourceState,
+              onCopyResource: e.onCopyResource,
+              onDownloadResource: e.onDownloadResource,
+              onRegenerateResource: e.onRegenerateResource,
+              onPlaybackFailure: e.onPlaybackFailure,
+              onPlaybackStarted: e.onPlaybackStarted,
+              onRecoverPlaybackUrl: e.onRecoverPlaybackUrl,
+              onRefreshResourceIds: e.onRefreshResourceIds,
+              onSelectResource: e.onSelectResource,
+              onToggleExpansion: e.onToggleExpanded,
+            }),
+          });
+        });
+      function eM(e) {
+        let {
+            announceLoading: r,
+            onWaveformDegradation: t,
+            resource: o,
+            title: n,
+          } = e,
+          [u, l] = (0, s.useState)("loading"),
+          c = (0, s.useCallback)(
+            (e) => t({ ...e, resourceId: o.resourceId }),
+            [t, o.resourceId],
+          );
+        return o.playbackUrl
+          ? (0, a.jsx)("div", {
+              "aria-label": (0, i.hbr)(n),
+              className: "flex h-full w-full flex-col",
+              "data-testid": "audio-passive-preview",
+              role: "img",
+              children: (0, a.jsx)(J.e1, {
+                action: e.action ?? (0, a.jsx)(J.uh, {}),
+                durationMs: o.durationMs,
+                loading: "loading" === u,
+                loadingAnnouncement: (function (e, r, t) {
+                  if (e && r)
+                    return (0, i.Adi)({ title: t, message: (0, i.Vz7)() });
+                })("loading" === u, r, n),
+                waveform: (0, a.jsx)(Y.xZ, {
+                  currentTimeMs: 0,
+                  decodeEnabled: e.decodeEnabled,
+                  durationMs: o.durationMs,
+                  interactive: !1,
+                  playbackUrl: o.playbackUrl,
+                  presentationProgress: 0.5,
+                  sourceKey: o.sourceKey ?? o.resourceId,
+                  title: n,
+                  tone: e.tone,
+                  onStatusChange: l,
+                  onWaveformDegraded: c,
+                  onSeek: eA,
+                }),
+              }),
+            })
+          : (0, a.jsx)(d.ppr, {
+              className: "h-full w-full",
+              titleProps: (0, q.s4)("element", "media_error"),
+              "data-testid": "audio-preview-unavailable",
+              title: (0, i.vDQ)(),
+            });
+      }
+      function eS(e) {
+        return (0, a.jsx)(eE, { ...e });
+      }
+      function eE(e) {
+        var r, t, o, n;
+        let u,
+          { onToggleExpansion: l } = e,
+          c = e.collectionCount ?? e.batch.resources.length,
+          d = (0, G.IZ)(e.batch),
+          [p, v] = (0, s.useState)(),
+          m = null == p ? void 0 : p.resourceId;
+        (0, s.useEffect)(() => {
+          e.expanded || v(void 0);
+        }, [d, e.expanded]);
+        let g = (0, s.useCallback)(
+            (e, r) => v({ focusControl: r, resourceId: e }),
+            [],
+          ),
+          y = (0, s.useCallback)(() => {
+            (v(void 0), l());
+          }, [l]),
+          h = { playingResourceId: m, playback: p, props: e, onPlay: g },
+          f = e.batch.resources.map((r, t) =>
+            ej({
+              index: t,
+              itemInput: h,
+              resource: r,
+              setSize: e.batch.resources.length,
+            }),
+          ),
+          b = (function (e, r, t) {
+            if (e.showToggle && r)
+              return { onInvoke: t, tabbable: e.toggleTabbable };
+          })(e, e.batch.resources.length > 0, y),
+          I =
+            ((r = e),
+            (t = f),
+            (o = c),
+            (n = h),
+            (u = t.find((e) => e.id === r.currentResourceId)),
+            r.expanded
+              ? {
+                  type: "history",
+                  content: r.collapsedContent,
+                  count: o,
+                  currentItem: u,
+                  history: (function (e, r) {
+                    let { batches: t, resourceById: a } = e.history,
+                      o = (0, V.fD)({
+                        nodeType: "audio",
+                        primaryResourceId: e.currentResourceId,
+                        resourceBatches: t.map((e) => ({
+                          id: e.id,
+                          resourceIds: e.resources.map((e) => e.resourceId),
+                        })),
+                        resources: [...a.values()],
+                      }),
+                      n = new Map(
+                        t.flatMap((e) =>
+                          e.resources.map((e) => [e.resourceId, e]),
+                        ),
+                      ),
+                      s = [];
+                    o.items.forEach((e, t) => {
+                      let a = n.get(e.id);
+                      a &&
+                        s.push({
+                          ...ej({
+                            index: t,
+                            itemInput: r,
+                            resource: a,
+                            setSize: o.total,
+                          }),
+                          batchId: e.batchId,
+                          ratio: e.ratio,
+                          status: e.status,
+                        });
+                    });
+                    let u =
+                        void 0 === o.latestBatchId
+                          ? 0
+                          : s.filter((e) => e.batchId === o.latestBatchId)
+                              .length,
+                      l = {
+                        items: s,
+                        labels: {
+                          currentItem: (0, i.VRs)(),
+                          latestSection: (0, i.lMv)(u),
+                          list: (0, i.JfB)(),
+                          pastSection: (0, i.ok3)(),
+                        },
+                      };
+                    return (
+                      void 0 !== o.latestBatchId &&
+                        (l.latestBatchId = o.latestBatchId),
+                      void 0 !== o.primaryId && (l.primaryId = o.primaryId),
+                      void 0 !== e.highlightedResourceId &&
+                        (l.highlightedItemId = e.highlightedResourceId),
+                      e.revealRequest && (l.revealRequest = e.revealRequest),
+                      l
+                    );
+                  })(r, n),
+                }
+              : {
+                  type: "collapsed",
+                  content: r.collapsedContent,
+                  count: o,
+                  currentItem: u,
+                });
+        return (0, a.jsx)(z.Ip, {
+          collapsedSurfaceClassName: J.p2,
+          controlsId: e.controlsId,
+          labels: {
+            collapse: (0, i.ORk)(),
+            currentItem: (0, i.VRs)(),
+            expand: (0, i.LsD)(c),
+            list: (0, i.JfB)(),
+          },
+          motion: e.motion,
+          testIdPrefix: "audio",
+          toggle: b,
+          view: I,
+          viewportDecoration: e.viewportDecoration,
+          onSelectItem: e.onSelectResource,
+        });
+      }
+      function ej(e) {
+        let r,
+          t,
+          { index: n, resource: s, setSize: u } = e,
+          {
+            playback: l,
+            playingResourceId: c,
+            props: d,
+            onPlay: p,
+          } = e.itemInput,
+          v = s.resourceId === c,
+          m = (null == l ? void 0 : l.focusControl) === !0 && v,
+          g = (0, i.QLC)(n),
+          y = (function (e, r, t, n) {
+            if (!n && e.status === o.ao.success && void 0 !== e.playbackUrl)
+              return (0, a.jsx)(J.G, {
+                label: (0, i.BXv)(r),
+                onClick: (r) =>
+                  t(
+                    e.resourceId,
+                    0 === r.detail &&
+                      document.activeElement === r.currentTarget,
+                  ),
+              });
+          })(s, g, p, v);
+        return (
+          y &&
+            ((r = (0, a.jsx)("div", {
+              className: "nodrag nopan absolute",
+              style: { bottom: 19, right: 23 },
+              children: y,
+            })),
+            (t = (0, a.jsx)("span", {
+              "aria-hidden": "true",
+              className: "size-9 shrink-0",
+            }))),
+          {
+            actions: (function (e, r, t) {
+              var n;
+              if (r.status === o.ao.failed) return;
+              let s = e.onRegenerateResource;
+              if (
+                s &&
+                (null == (n = e.regenerableResourceIds)
+                  ? void 0
+                  : n.has(r.resourceId)) === !0
+              )
+                return (0, a.jsx)(Q.i, {
+                  label: (0, i.Tm8)((0, i.QLC)(t)),
+                  resourceId: r.resourceId,
+                  text: (0, i.Gqs)(),
+                  onInvoke: () => s(r.resourceId),
+                });
+            })(d, s, n),
+            currentItemLabelAppearance: "solid",
+            content: (0, a.jsx)("div", {
+              className: J.v$,
+              children: (0, a.jsx)(eB, {
+                action: t,
+                decodeEnabled: d.waveformDecodeEnabled,
+                focusPlaybackControl: m,
+                playing: v,
+                resource: s,
+                title: g,
+                playback: {
+                  coordinator: d.coordinator,
+                  onPlaybackFailure: d.onPlaybackFailure,
+                  onPlaybackStarted: d.onPlaybackStarted,
+                  onRecoverPlaybackUrl: d.onRecoverPlaybackUrl,
+                  onRefreshResourceIds: d.onRefreshResourceIds,
+                },
+                onWaveformDegradation: d.onWaveformDegradation,
+              }),
+            }),
+            id: s.resourceId,
+            interactiveContent: v,
+            label: g,
+            overlayAction: r,
+            position: n + 1,
+            resourceActions: (function (e, r, t) {
+              if (r.status !== o.ao.success || !0 === r.mediaTypeMismatch)
+                return;
+              let a = e.onCopyResource
+                ? () => {
+                    var t;
+                    return null == (t = e.onCopyResource)
+                      ? void 0
+                      : t.call(e, r.resourceId);
+                  }
+                : void 0;
+              return (0, $.zV)({
+                copyDisabledReason: e.copyResourceDisabledReason,
+                downloadUrl: r.downloadUrl,
+                getDownloadResourceState: e.getDownloadResourceState,
+                onCopyResource: a,
+                onDownloadResource: e.onDownloadResource,
+                resultLabel: t,
+                resourceId: r.resourceId,
+                audioOutputIndex: r.audioOutputIndex,
+                suggestedFileName: r.name,
+              });
+            })(d, s, g),
+            selectLabel: (0, i.tkq)(n),
+            setSize: u,
+          }
+        );
+      }
+      function eB(e) {
+        if (
+          !0 !== e.resource.mediaTypeMismatch &&
+          (void 0 === e.resource.status || e.resource.status === o.ao.running)
+        )
+          return (0, a.jsx)(H.z, {
+            generatingLabel: (0, i.VWJ)(),
+            loadingLabel: (0, i.Vz7)(),
+            resourceId: e.resource.resourceId,
+            status: e.resource.status,
+            testId: "audio-batch-resource-pending",
+          });
+        if (e.resource.status === o.ao.failed) {
+          let r = (0, em.S)(e.resource);
+          return (0, a.jsx)(K.tQ, {
+            active: !1,
+            announcement: r,
+            description: r,
+            errorIcon: (0, a.jsx)(N.Yu, {}),
+            message: r,
+            testId: "audio-batch-resource-failed",
+          });
+        }
+        return e.playing && void 0 !== e.resource.playbackUrl
+          ? (0, a.jsx)(eo, {
+              autoPlay: !0,
+              coordinator: e.playback.coordinator,
+              durationMs: e.resource.durationMs,
+              focusPlaybackControlOnMount: e.focusPlaybackControl,
+              playbackUrl: e.resource.playbackUrl,
+              resourceId: e.resource.resourceId,
+              sourceKey: e.resource.sourceKey ?? e.resource.resourceId,
+              title: e.title,
+              waveformTone: "theme",
+              onPlaybackFailure: e.playback.onPlaybackFailure,
+              onPlaybackStarted: e.playback.onPlaybackStarted,
+              onRecoverPlaybackUrl: e.playback.onRecoverPlaybackUrl,
+              onRefreshResourceIds: e.playback.onRefreshResourceIds,
+              onWaveformDegradation: e.onWaveformDegradation,
+            })
+          : (0, a.jsx)(eM, {
+              action: e.action,
+              decodeEnabled: e.decodeEnabled,
+              resource: e.resource,
+              title: e.title,
+              tone: "theme",
+              onWaveformDegradation: e.onWaveformDegradation,
+            });
+      }
+      function eA() {}
+      class eD {
+        acquire(e, r) {
+          var t;
+          null == (t = this.active) || t.onRevoke();
+          let a = { sourceKey: e, onRevoke: r };
+          return (
+            (this.active = a),
+            {
+              release: () => {
+                this.active === a && (this.active = void 0);
+              },
+            }
+          );
+        }
+      }
+      let eT = new WeakMap(),
+        eL = [],
+        eU = n.ZL.audio.width,
+        e_ = n.ZL.audio.height,
+        eF = Object.freeze({ minHeight: e_, width: eU }),
+        eq = new Map(
+          I.NF.map((e) => {
+            let r = Object.freeze({
+              "--canvas-audio-result-stripe-opacity": 0.008 * (64 !== e),
+              "--canvas-audio-visual-sampling-step": e,
+            });
+            return [e, r];
+          }),
+        ),
+        eN = new Map(
+          I.NF.map((e) => [e, Object.freeze({ ...eF, ...eq.get(e) })]),
+        ),
+        eO = "rounded-[8px]",
+        eW = (0, a.jsx)(d.ck3, { size: 16 }),
+        eK = (0, s.memo)(function (e) {
+          let r = (function (e) {
+              var r,
+                t,
+                a,
+                n,
+                i,
+                d,
+                g,
+                b,
+                I,
+                k,
+                C,
+                P,
+                S,
+                q,
+                N,
+                O,
+                W,
+                K,
+                H,
+                V,
+                z,
+                $,
+                Q,
+                Z,
+                J,
+                Y,
+                X,
+                ee,
+                er,
+                et,
+                ea,
+                eo,
+                en,
+                es,
+                ei;
+              let eu,
+                el,
+                ec,
+                ed,
+                ep,
+                ev,
+                eg,
+                ey,
+                eh,
+                ef,
+                eb,
+                eI,
+                eR,
+                ex,
+                ew,
+                ek,
+                eC,
+                eP,
+                eM,
+                eS,
+                eE,
+                ej,
+                eB,
+                eA,
+                eU,
+                e_ = (0, p.FY)(),
+                eF = (0, _.V)(e.id, e.selected),
+                eq =
+                  ((i = e.id),
+                  (ej =
+                    null == (d = (0, p.FY)().featuresApi)
+                      ? void 0
+                      : d.canvas.audioTrim),
+                  (eB = (0, s.useCallback)(
+                    (e) =>
+                      (null == ej ? void 0 : ej.subscribeSource(i, e)) ??
+                      (() => void 0),
+                    [i, ej],
+                  )),
+                  (eA = (0, s.useCallback)(
+                    () => (null == ej ? void 0 : ej.isSourceActive(i)) ?? !1,
+                    [i, ej],
+                  )),
+                  (eU = (0, s.useSyncExternalStore)(eB, eA, m)),
+                  (g = null == ej ? void 0 : ej.sourceAudioElements),
+                  (b = i),
+                  (I = eU),
+                  (eu = (0, s.useRef)(null)),
+                  {
+                    active: eU,
+                    onAudioElementChange: (0, s.useCallback)(
+                      (e) => {
+                        var r;
+                        (null == (r = eu.current) || r.call(eu),
+                          (eu.current = I && e && g ? g.register(b, e) : null));
+                      },
+                      [I, b, g],
+                    ),
+                  }),
+                { resourceId: eN, title: eO } = e.data,
+                {
+                  isUploadSession: eW,
+                  mode: eK,
+                  renderMode: eV,
+                } = ((k = e),
+                (C = e_),
+                (P = eq.active),
+                (el = C.isSessionNode(k.id)),
+                (ec = k.data.renderMode ?? "full"),
+                (ed =
+                  "imported" === k.data.source &&
+                  (0, M.ek)(
+                    k.data.source,
+                    (0, M.Y$)(k.data.resourceId, k.data.resourceBatches ?? eL),
+                  )),
+                (el || ed || P) && (ec = "full"),
+                (ep = "full" === ec),
+                (ev = (0, s.useMemo)(
+                  () =>
+                    (function (e, r, t) {
+                      if (t) {
+                        if (e) return e;
+                        for (let e of r ?? eL) {
+                          let r = e.resourceIds.find(Boolean);
+                          if (r) return r;
+                        }
+                      }
+                    })(k.data.resourceId, k.data.resourceBatches, !ep),
+                  [ep, k.data.resourceBatches, k.data.resourceId],
+                )),
+                {
+                  isUploadSession: el,
+                  mode: (0, s.useMemo)(
+                    () => ({ full: ep, lightResourceId: ev }),
+                    [ep, ev],
+                  ),
+                  renderMode: ec,
+                }),
+                ez =
+                  ((S = e),
+                  (q = e_),
+                  (N = eK),
+                  (eg =
+                    ((W = S.data),
+                    (K = N).full
+                      ? !(
+                          void 0 !== W.resourceId ||
+                          (W.resourceBatches ?? eL).some(
+                            (e) => e.resourceIds.length > 0,
+                          )
+                        )
+                      : void 0 === K.lightResourceId)),
+                  (eh = !!(
+                    (ey = (0, x.K_)(S.id, eg)) &&
+                    (ey.status === o.ao.failed ||
+                      ey.status === o.ao.canceled) &&
+                    (null == (O = ey.nodeUpload) ? void 0 : O.retryable)
+                  )),
+                  (ef = (0, w._N)(S.id, eg && eh)),
+                  (eb = (0, s.useCallback)(() => {
+                    ef && q.uploadCommands.retry(S.id);
+                  }, [q, ef, S.id])),
+                  { canRetry: eh && ef, resource: ey, retry: eb }),
+                e$ =
+                  ((H = {
+                    active: eK.full && eF,
+                    data: e.data,
+                    editor: e_,
+                    full: eK.full,
+                    nodeId: e.id,
+                    suspended: eq.active,
+                  }),
+                  (eI = (0, A.Ao)(H.data.source)),
+                  (eR = (0, s.useMemo)(() => {
+                    let e = eL;
+                    return (
+                      H.full && (e = H.data.resourceBatches ?? eL),
+                      (0, G.MK)({
+                        primaryResourceId: H.data.resourceId,
+                        resourceBatches: e,
+                        resourceViews: eG(e, H.data.resourceId).map((e) => ({
+                          resourceId: e,
+                        })),
+                      })
+                    );
+                  }, [H.data.resourceBatches, H.data.resourceId, H.full])),
+                  (ex = (0, s.useMemo)(
+                    () => (eI ? eR.map((e) => (0, G.IZ)(e)) : []),
+                    [eR, eI],
+                  )),
+                  (ew = (0, A.cl)({ availableKeys: ex })),
+                  (ek = (0, L.h)({
+                    active: H.active,
+                    browsing: ew,
+                    editor: H.editor,
+                    nodeId: H.nodeId,
+                    resultsAvailable: ex.length > 0,
+                    suspended: H.suspended,
+                  })),
+                  (0, B.M)({
+                    editor: H.editor,
+                    expandOnClaim: !0,
+                    expandFromCompletion: ek.expandFromCompletion,
+                    nodeId: H.nodeId,
+                    request: H.data.mediaResultAutoExpansionRequest,
+                    resultsAvailable: ex.length > 0,
+                    suspended: H.suspended,
+                  }),
+                  {
+                    batches: eR,
+                    browsing: ew,
+                    expansionControl: ek,
+                    resultBrowsingAvailable: eI,
+                    resultExpanded: ew.expanded && !H.suspended,
+                  }),
+                {
+                  counts: eQ,
+                  currentBatchIndex: eZ,
+                  projection: eJ,
+                  refreshResourceIds: eY,
+                  renderState: e0,
+                } = (function (e) {
+                  var r, t, a;
+                  let n,
+                    i,
+                    u,
+                    l,
+                    c,
+                    d,
+                    p,
+                    v,
+                    m,
+                    g,
+                    y,
+                    h,
+                    f,
+                    { browsingState: b, data: I, mode: R, resourceId: w } = e,
+                    k =
+                      ((n = (r = {
+                        data: I,
+                        expanded: b.resultExpanded,
+                        fullMode: R.full,
+                        lightResourceId: R.lightResourceId,
+                        viewingBatchKey: b.browsing.selectedKey,
+                      }).lightResourceId),
+                      (i = eL),
+                      r.fullMode &&
+                        ((n = r.data.resourceId),
+                        (i = r.data.resourceBatches ?? eL)),
+                      (u = (0, s.useMemo)(() => eG(i, n), [i, n])),
+                      (l = (0, s.useMemo)(
+                        () =>
+                          (function (e) {
+                            if (
+                              void 0 !== e.primaryResourceId &&
+                              !e.expanded &&
+                              void 0 === e.viewingBatchKey
+                            )
+                              return [e.primaryResourceId];
+                            if (e.expanded)
+                              return eG(e.resourceBatches, e.primaryResourceId);
+                            let r = (function (e, r) {
+                              if (void 0 !== r.viewingBatchKey) {
+                                let t = e.find(
+                                  (e) => (0, G.IZ)(e) === r.viewingBatchKey,
+                                );
+                                if (t) return t;
+                              }
+                              return void 0 !== r.primaryResourceId
+                                ? e.find((e) =>
+                                    e.resources.some(
+                                      (e) =>
+                                        e.resourceId === r.primaryResourceId,
+                                    ),
+                                  )
+                                : e[0];
+                            })(
+                              (0, G.MK)({
+                                primaryResourceId: e.primaryResourceId,
+                                resourceBatches: e.resourceBatches,
+                                resourceViews: eG(
+                                  e.resourceBatches,
+                                  e.primaryResourceId,
+                                ).map((e) => ({ resourceId: e })),
+                              }),
+                              e,
+                            );
+                            return r
+                              ? r.resources.map((e) => e.resourceId)
+                              : e.primaryResourceId
+                                ? [e.primaryResourceId]
+                                : [];
+                          })({
+                            expanded: r.expanded,
+                            primaryResourceId: n,
+                            resourceBatches: i,
+                            viewingBatchKey: r.viewingBatchKey,
+                          }),
+                        [r.expanded, r.viewingBatchKey, i, n],
+                      )),
+                      (c = (0, x.xO)(l)),
+                      (d = (0, s.useMemo)(() => {
+                        var e, r;
+                        let t;
+                        return (
+                          (e = l),
+                          (r = c.resources),
+                          (t = new Map()),
+                          e.forEach((e, a) => t.set(e, r[a])),
+                          t
+                        );
+                      }, [c.resources, l])),
+                      (p = (0, s.useMemo)(
+                        () =>
+                          new Map(
+                            l.map((e, r) => [e, c.generationQueueStates[r]]),
+                          ),
+                        [c.generationQueueStates, l],
+                      )),
+                      (v = (0, s.useMemo)(
+                        () =>
+                          u.map((e) =>
+                            (0, G.O6)({
+                              resourceId: e,
+                              resource: d.get(e),
+                              ...(void 0 === r.data.audioOutputIndex
+                                ? {}
+                                : {
+                                    audioOutputIndex: r.data.audioOutputIndex,
+                                  }),
+                            }),
+                          ),
+                        [u, r.data.audioOutputIndex, d],
+                      )),
+                      (m = (0, s.useMemo)(
+                        () =>
+                          (0, G.MK)({
+                            primaryResourceId: n,
+                            resourceBatches: i,
+                            resourceViews: v,
+                          }),
+                        [i, n, v],
+                      )),
+                      (g = (0, s.useMemo)(
+                        () =>
+                          void 0 !== n &&
+                          !m.some((e) => e.primaryResourceId === n),
+                        [m, n],
+                      )),
+                      (y = (0, s.useMemo)(
+                        () => (g ? v.find((e) => e.resourceId === n) : void 0),
+                        [g, n, v],
+                      )),
+                      (h = (0, s.useMemo)(
+                        () =>
+                          l.map((e) =>
+                            (0, G.O6)({
+                              resourceId: e,
+                              resource: d.get(e),
+                              ...(void 0 === r.data.audioOutputIndex
+                                ? {}
+                                : {
+                                    audioOutputIndex: r.data.audioOutputIndex,
+                                  }),
+                            }),
+                          ),
+                        [r.data.audioOutputIndex, d, l],
+                      )),
+                      {
+                        batches: m,
+                        generationQueueByResourceId: p,
+                        hasIndependentPrimaryPreview: g,
+                        primaryPreview: y,
+                        resourceById: d,
+                        subscribedResourceIds: l,
+                        subscribedResourceViews: h,
+                      }),
+                    C = (0, s.useMemo)(() => {
+                      var e;
+                      return (0, em.Y)({
+                        batches: k.batches,
+                        evaluateFullBatch:
+                          void 0 ===
+                            (e = {
+                              expanded: b.resultExpanded,
+                              primaryResourceId: w,
+                              viewingBatchKey: b.browsing.selectedKey,
+                            }).primaryResourceId ||
+                          e.expanded ||
+                          void 0 !== e.viewingBatchKey,
+                        generationQueueByResourceId:
+                          k.generationQueueByResourceId,
+                        primaryPreview: k.primaryPreview,
+                        viewingBatchKey: b.browsing.selectedKey,
+                      });
+                    }, [
+                      b.browsing.selectedKey,
+                      b.resultExpanded,
+                      k.batches,
+                      k.generationQueueByResourceId,
+                      k.primaryPreview,
+                      w,
+                    ]),
+                    P = (0, s.useMemo)(() => {
+                      var e, r;
+                      return (
+                        (e = C),
+                        (r = k.subscribedResourceIds),
+                        "error" !== e.type || void 0 === e.batch
+                          ? r
+                          : e.refreshResourceIds
+                      );
+                    }, [k.subscribedResourceIds, C]);
+                  return {
+                    counts: (0, s.useMemo)(
+                      () =>
+                        (function (e) {
+                          let r = 0,
+                            t = 0,
+                            a = 0;
+                          for (let n of e)
+                            n.mediaTypeMismatch
+                              ? (a += 1)
+                              : void 0 === n.status || n.status === o.ao.running
+                                ? (t += 1)
+                                : n.status === o.ao.success &&
+                                    void 0 !== n.playbackUrl
+                                  ? (r += 1)
+                                  : (a += 1);
+                          return {
+                            readyCount: r,
+                            pendingCount: t,
+                            errorCount: a,
+                          };
+                        })(k.subscribedResourceViews),
+                      [k.subscribedResourceViews],
+                    ),
+                    currentBatchIndex:
+                      ((t = C),
+                      (a = k.batches),
+                      (f = eX(t))
+                        ? a.findIndex((e) => (0, G.IZ)(e) === (0, G.IZ)(f))
+                        : -1),
+                    projection: k,
+                    refreshResourceIds: P,
+                    renderState: C,
+                  };
+                })({
+                  browsingState: e$,
+                  data: e.data,
+                  mode: eK,
+                  resourceId: eN,
+                }),
+                { asyncHistoryProjection: e1, resultCollectionCount: e6 } =
+                  (function (e) {
+                    let {
+                        browsingState: r,
+                        fullMode: t,
+                        projection: a,
+                        renderState: o,
+                        resourceBatches: n,
+                        resourceId: i,
+                      } = e,
+                      u = eX(o);
+                    return {
+                      asyncHistoryProjection: (0, E.r)({
+                        currentBatchKey: null == u ? void 0 : u.id,
+                        currentResultCount:
+                          (null == u ? void 0 : u.resources.length) ?? 0,
+                        enabled:
+                          t &&
+                          r.resultBrowsingAvailable &&
+                          ("loading" === o.type ||
+                            "queued" === o.type ||
+                            "error" === o.type),
+                        hasIndependentPrimaryPreview:
+                          a.hasIndependentPrimaryPreview,
+                        includeCurrentBatchSnapshot:
+                          "loading" === o.type || "queued" === o.type,
+                        isBrowsableResource: eH,
+                        knownResourcesById: a.resourceById,
+                        primaryResourceId: i,
+                        resourceBatches: n,
+                      }),
+                      resultCollectionCount: (0, s.useMemo)(() => {
+                        let e = {
+                          batchResultCounts: r.batches.map(
+                            (e) => e.resources.length,
+                          ),
+                          hasIndependentPrimaryPreview:
+                            a.hasIndependentPrimaryPreview,
+                        };
+                        return void 0 === i
+                          ? (0, A.Zl)(e)
+                          : (0, A.Zl)({ ...e, emptyFallbackCount: 1 });
+                      }, [r.batches, a.hasIndependentPrimaryPreview, i]),
+                    };
+                  })({
+                    browsingState: e$,
+                    fullMode: eK.full,
+                    projection: eJ,
+                    renderState: e0,
+                    resourceBatches: e.data.resourceBatches ?? eL,
+                    resourceId: eN,
+                  }),
+                e7 =
+                  ((V = eN),
+                  (z = eJ.batches),
+                  ($ = eJ.resourceById),
+                  (Q =
+                    (null == (r = e_.featuresApi)
+                      ? void 0
+                      : r.canvas.audioSeparation) !== void 0),
+                  (eC = (0, s.useMemo)(() => {
+                    var e, r, t;
+                    return (
+                      (e = z),
+                      (r = $),
+                      (t = Q),
+                      new Map(
+                        e.flatMap((e) =>
+                          e.resources.flatMap((e) => {
+                            let a = r.get(e.resourceId);
+                            return a && ((0, f.dw)(a) || (t && (0, v.I)(a)))
+                              ? [[e.resourceId, a]]
+                              : [];
+                          }),
+                        ),
+                      )
+                    );
+                  }, [Q, $, z])),
+                  (eP = (0, s.useMemo)(() => new Set(eC.keys()), [eC])),
+                  {
+                    regenerableResource: (0, s.useMemo)(() => {
+                      var e, r;
+                      let t, a;
+                      return (
+                        (e = eC),
+                        (r = V),
+                        (a = (t = [...e.values()]).find(
+                          (e) => e.resource_id === r,
+                        )) || (1 === t.length ? t[0] : void 0)
+                      );
+                    }, [eC, V]),
+                    regenerableResourceIds: eP,
+                    regenerableResourcesById: eC,
+                  }),
+                e3 =
+                  ((Z = eW),
+                  (J = eN),
+                  (Y = eJ.resourceById),
+                  (X = ez.resource),
+                  Z ? (J ? Y.get(J) : void 0) : X),
+                e2 = (0, s.useMemo)(
+                  () =>
+                    (function (e) {
+                      let r = eT.get(e);
+                      if (r) return r;
+                      let t = new eD();
+                      return (eT.set(e, t), t);
+                    })(e_),
+                  [e_],
+                ),
+                e4 =
+                  ((ee = e_),
+                  (er = e.id),
+                  (0, s.useCallback)(
+                    (e) => {
+                      var r, t;
+                      null == (t = ee.featuresApi) ||
+                        null == (r = t.app) ||
+                        r.observability.facts.emit(c.TM, {
+                          nodeId: er,
+                          resourceId: e.resourceId,
+                          reason: e.reason,
+                          retry: e.retry,
+                        });
+                    },
+                    [ee, er],
+                  )),
+                e9 =
+                  ((et = e_),
+                  (ea = e.id),
+                  (0, s.useCallback)(
+                    (e) => {
+                      var r, t;
+                      null == (t = et.featuresApi) ||
+                        null == (r = t.app) ||
+                        r.observability.facts.emit(c.GV, {
+                          nodeId: ea,
+                          resourceId: e.resourceId,
+                          sourceKey: e.sourceKey,
+                          reason: e.reason,
+                        });
+                    },
+                    [et, ea],
+                  ));
+              (0, F.B)({ browsing: e$.browsing, displayedIndex: eZ });
+              let e8 = (0, s.useMemo)(
+                  () => ({
+                    batches: eJ.batches,
+                    resourceById: eJ.resourceById,
+                  }),
+                  [eJ.batches, eJ.resourceById],
+                ),
+                e5 = (function (e) {
+                  var r, t, a, o, n, i, c, d;
+                  let {
+                      editor: p,
+                      expansionControl: m,
+                      nodeId: g,
+                      regenerableResource: f,
+                      regenerableResourcesById: b,
+                      refreshResourceIds: I,
+                      resourceRegeneration: R,
+                      audioSeparation: x,
+                    } = e,
+                    w = (0, D.U)("audio", g, e.resultExpanded),
+                    k = (0, l.QQ)(),
+                    C = (0, T.t)("audio", e.resultExpanded),
+                    { onDownloadResource: P } = C,
+                    M =
+                      ((r = p),
+                      (t = g),
+                      (a = P),
+                      (0, s.useCallback)(
+                        async (e) => {
+                          var o, n;
+                          (null == (n = r.featuresApi) ||
+                            null == (o = n.canvas.gestures) ||
+                            o.declare({
+                              surface: "mediaResult",
+                              mediaType: "audio",
+                              gesture: "download",
+                              nodeId: t,
+                              resourceId: e.resourceId,
+                            }),
+                            await (null == a ? void 0 : a(e)));
+                        },
+                        [r, t, a],
+                      )),
+                    S =
+                      ((o = p),
+                      (n = g),
+                      (0, s.useCallback)(
+                        (e) => {
+                          var r, t;
+                          null == (t = o.featuresApi) ||
+                            null == (r = t.canvas.gestures) ||
+                            r.declare({
+                              surface: "mediaResult",
+                              mediaType: "audio",
+                              gesture: "play_start",
+                              nodeId: n,
+                              resourceId: e,
+                            });
+                        },
+                        [o, n],
+                      )),
+                    E = (0, s.useCallback)(
+                      (r, t) =>
+                        p.recoverMediaPlaybackUrl(r, {
+                          ...t,
+                          audioOutputIndex: e.audioOutputIndex,
+                        }),
+                      [p, e.audioOutputIndex],
+                    ),
+                    j = (0, s.useCallback)((e) => p.refreshResourceIds(e), [p]),
+                    B = (0, s.useCallback)(
+                      (e) => {
+                        x &&
+                          x
+                            .retryFailedResource({
+                              nodeId: g,
+                              resourceId: e.resource_id,
+                            })
+                            .then((r) => {
+                              var t, a, o;
+                              if (!r.ok) {
+                                if ((0, h.s)(r.code)) return;
+                                (0, y.N)(k, {
+                                  durationMs: 6e3,
+                                  message:
+                                    (null == (o = r.message)
+                                      ? void 0
+                                      : o.trim()) || (0, u._y)(),
+                                  status: "warning",
+                                });
+                                return;
+                              }
+                              null == (a = p.featuresApi) ||
+                                null == (t = a.canvas.gestures) ||
+                                t.declare({
+                                  surface: "mediaResult",
+                                  mediaType: "audio",
+                                  gesture: "regenerate",
+                                  nodeId: g,
+                                  resourceId: e.resource_id,
+                                });
+                            })
+                            .catch((e) => {
+                              var r, t, a;
+                              (null == (a = p.featuresApi) ||
+                                null == (t = a.app) ||
+                                null == (r = t.observability) ||
+                                r.logger.error(
+                                  "canvas.audio_separation.retry_failed",
+                                  e,
+                                ),
+                                (0, y.N)(k, {
+                                  durationMs: 6e3,
+                                  message: (0, u._y)(),
+                                  status: "warning",
+                                }));
+                            });
+                      },
+                      [x, p, g, k],
+                    ),
+                    A = (0, s.useCallback)(() => {
+                      if (f && (0, v.I)(f)) return void B(f);
+                      if (f && R) {
+                        if (R.regenerate({ nodeId: g, resource: f })) {
+                          var e, r;
+                          null == (r = p.featuresApi) ||
+                            null == (e = r.canvas.gestures) ||
+                            e.declare({
+                              surface: "mediaResult",
+                              mediaType: "audio",
+                              gesture: "regenerate",
+                              nodeId: g,
+                              resourceId: f.resource_id,
+                            });
+                        }
+                        return;
+                      }
+                      I.length > 0 && j(I);
+                    }, [p, j, g, I, f, R, B]),
+                    L =
+                      ((i = p),
+                      (c = g),
+                      (d = m.collapseAfterSelection),
+                      (0, s.useCallback)(
+                        async (e) => {
+                          await d(async () => {
+                            var r;
+                            let t =
+                              null == (r = i.featuresApi)
+                                ? void 0
+                                : r.canvas.actions.selectResourceCandidate;
+                            return (
+                              !!(null == t ? void 0 : t.getState().available) &&
+                              (
+                                await t.execute({
+                                  nodeId: c,
+                                  nodeType: "audio",
+                                  resourceId: e,
+                                })
+                              ).ok
+                            );
+                          });
+                        },
+                        [d, i, c],
+                      )),
+                    U = (0, s.useCallback)(
+                      (e) => {
+                        let r = b.get(e);
+                        if (r) {
+                          if ((0, v.I)(r)) return void B(r);
+                          if (R && R.regenerate({ nodeId: g, resource: r })) {
+                            var t, a;
+                            null == (a = p.featuresApi) ||
+                              null == (t = a.canvas.gestures) ||
+                              t.declare({
+                                surface: "mediaResult",
+                                mediaType: "audio",
+                                gesture: "regenerate",
+                                nodeId: g,
+                                resourceId: e,
+                              });
+                          }
+                        }
+                      },
+                      [p, g, b, R, B],
+                    );
+                  return {
+                    canRecoverCurrentBatch:
+                      !!(f && ((0, v.I)(f) ? x : R)) || I.length > 0,
+                    handleCurrentBatchRetry: A,
+                    handleCopyResource: w.onCopyResource,
+                    handleDownloadResource: P ? M : void 0,
+                    getDownloadResourceState: C.getDownloadResourceState,
+                    handleRecoverPlaybackUrl: E,
+                    handlePlaybackStarted: S,
+                    handleRefreshResourceIds: j,
+                    handleRegenerateResource: U,
+                    handleSelectResource: L,
+                    handleToggleExpanded: m.toggle,
+                    copyResourceDisabledReason: w.disabledReason,
+                  };
+                })({
+                  editor: e_,
+                  expansionControl: e$.expansionControl,
+                  nodeId: e.id,
+                  audioOutputIndex: e.data.audioOutputIndex,
+                  regenerableResource: e7.regenerableResource,
+                  regenerableResourcesById: e7.regenerableResourcesById,
+                  refreshResourceIds: eY,
+                  resultExpanded: e$.resultExpanded,
+                  resourceRegeneration:
+                    null == (t = e_.featuresApi)
+                      ? void 0
+                      : t.canvas.resourceRegeneration,
+                  audioSeparation:
+                    null == (a = e_.featuresApi)
+                      ? void 0
+                      : a.canvas.audioSeparation,
+                }),
+                re = (0, U.a)(e_),
+                rr =
+                  ((eo = e),
+                  (en = e_),
+                  (eM = (function (e) {
+                    let r = (0, s.useCallback)(
+                        (r) => {
+                          r
+                            ? e.editor.actions.patchNodeRenderInteraction(
+                                e.nodeId,
+                                { mediaResourceReveal: null },
+                                "system",
+                              )
+                            : e.editor.actions.patchNodeRenderInteraction(
+                                e.nodeId,
+                                { isExpanded: !1, mediaResourceReveal: null },
+                                "system",
+                              );
+                        },
+                        [e.editor, e.nodeId],
+                      ),
+                      t = (0, s.useMemo)(
+                        () =>
+                          e.request
+                            ? e.batches.map((e) => ({
+                                key: (0, G.IZ)(e),
+                                resourceIds: e.resources.map((e) => {
+                                  let { resourceId: r } = e;
+                                  return r;
+                                }),
+                              }))
+                            : [],
+                        [e.batches, e.request],
+                      );
+                    if (e.request)
+                      return {
+                        acknowledge: r,
+                        batches: t,
+                        collapseFromLocation:
+                          e.expansionControl.collapseFromLocation,
+                        expandFromLocation:
+                          e.expansionControl.expandFromLocation,
+                        request: e.request,
+                        selectAtIndex: e.browsing.selectAtIndex,
+                      };
+                  })({
+                    batches: (es = e$).batches,
+                    browsing: es.browsing,
+                    editor: en,
+                    expansionControl: es.expansionControl,
+                    nodeId: eo.id,
+                    request: eo.data.mediaResourceReveal,
+                  })),
+                  (eS = (0, j.b6)(
+                    eo.data.mediaResourceReveal,
+                    es.resultExpanded,
+                  )),
+                  (eE = (0, s.useMemo)(
+                    () => ({
+                      nodeId: eo.id,
+                      viewportPresentation: en.viewport,
+                    }),
+                    [en.viewport, eo.id],
+                  )),
+                  {
+                    highlightedResourceId: null == eS ? void 0 : eS.resourceId,
+                    revealRequest: eS,
+                    resourceReveal: eM,
+                    viewportDecoration: eE,
+                  });
+              return {
+                active: eF,
+                asyncHistoryProjection: e1,
+                audioTrim: eq,
+                browsing: e$.browsing,
+                coordinator: e2,
+                counts: eQ,
+                currentBatchIndex: eZ,
+                expanded: e$.resultExpanded,
+                expandedFromCompletion:
+                  e$.expansionControl.expandedFromCompletion,
+                handlePlaybackFailure: e4,
+                history: e8,
+                handleWaveformDegradation: e9,
+                ...e5,
+                ...re,
+                isSmallSurface:
+                  (void 0 !== (ei = e).width && ei.width < R.VH.width) ||
+                  (void 0 !== ei.height && ei.height < R.VH.height),
+                isUploadSession: eW,
+                projection: eJ,
+                renderState: e0,
+                ...e7,
+                renderMode: eV,
+                resourceRegeneration:
+                  null == (n = e_.featuresApi)
+                    ? void 0
+                    : n.canvas.resourceRegeneration,
+                resultBrowsingAvailable: e$.resultBrowsingAvailable,
+                resultCollectionCount: e6,
+                title: eO,
+                upload: ez,
+                uploadResource: e3,
+                ...rr,
+              };
+            })(e),
+            t = (0, b.m)(r.resourceRegeneration, e.id);
+          return (0, a.jsx)(ev.w, {
+            samplingStep: e.data.audioVisualSamplingStep,
+            children: (0, a.jsxs)(S.a, {
+              state: t,
+              children: [
+                r.resourceReveal
+                  ? (0, a.jsx)(j.fu, { ...r.resourceReveal })
+                  : null,
+                (0, a.jsx)(eV, { nodeProps: e, viewModel: r }),
+              ],
+            }),
+          });
+        });
+      function eH(e) {
+        let r = e.urls && "url" in e.urls ? e.urls.url : void 0;
+        return (
+          e.status === o.ao.success &&
+          e.type === o._x.audio &&
+          "string" == typeof r &&
+          r.trim().length > 0
+        );
+      }
+      function eV(e) {
+        var r, t, o, n, s, u, l, c;
+        let d,
+          p,
+          v,
+          m,
+          y,
+          h,
+          f,
+          { nodeProps: b, viewModel: I } = e,
+          { writeChromeVisible: R } = (0, g.A1)(),
+          x = "full" === (r = I.renderMode) ? void 0 : r,
+          S = void 0 === x,
+          E =
+            ((d = eY((t = b).width) ? t.width : eU),
+            (p = eY(t.height) ? t.height : e_),
+            { explicit: eY(t.width) && eY(t.height), height: p, width: d }),
+          j = (0, k.Bf)("audio"),
+          B =
+            ((o = b),
+            (n = I),
+            (v =
+              "imported" === o.data.source &&
+              (0, M.ek)(
+                o.data.source,
+                (0, M.Y$)(o.data.resourceId, o.data.resourceBatches ?? eL),
+              )),
+            (m =
+              !n.isUploadSession &&
+              !!n.upload.resource &&
+              "empty" === n.renderState.type),
+            (y = v || n.isUploadSession || m),
+            {
+              isEmpty: "empty" === n.renderState.type && !y,
+              isImportedPlaceholder: v,
+              isUploadPlaceholder: y,
+              uploadPending: y && (0, w.l5)(n.uploadResource),
+            }),
+          A = (0, w.YV)(b.id, B.uploadPending),
+          D =
+            ((s = b),
+            (u = I),
+            (l = B.isImportedPlaceholder),
+            (h =
+              u.counts.readyCount +
+              u.counts.pendingCount +
+              u.counts.errorCount +
+              +!!l),
+            {
+              pendingCount: u.counts.pendingCount + +!!l,
+              resourceCount: Math.max(s.data.totalResourceCount ?? 0, h),
+              subscribedResourceCount: h,
+            }),
+          T = (function (e) {
+            let {
+                description: r,
+                isEmpty: t,
+                isImportedPlaceholder: o,
+                isUploadPlaceholder: n,
+                lightRenderMode: s,
+                logicalSize: i,
+                nodeProps: u,
+                viewModel: l,
+              } = e,
+              c = (0, M.$S)({
+                renderMode: s ?? "full",
+                stateType: l.renderState.type,
+                uploadLifecycle: n,
+              });
+            return void 0 === s || c
+              ? (0, a.jsx)(e$, {
+                  description: r,
+                  isEmpty: t,
+                  isImportedPlaceholder: o,
+                  isUploadPlaceholder: n,
+                  logicalSize: i,
+                  nodeProps: u,
+                  viewModel: l,
+                })
+              : (0, a.jsx)(eh, {
+                  active: l.active,
+                  renderMode: s,
+                  state: l.renderState,
+                  title: l.title,
+                });
+          })({
+            description: (0, i.rHd)({
+              errorCount: I.counts.errorCount,
+              pendingCount: D.pendingCount,
+              readyCount: I.counts.readyCount,
+              resourceCount: D.resourceCount,
+              selected: b.selected,
+            }),
+            isEmpty: B.isEmpty,
+            isImportedPlaceholder: B.isImportedPlaceholder,
+            isUploadPlaceholder: B.isUploadPlaceholder,
+            lightRenderMode: x,
+            logicalSize: E,
+            nodeProps: b,
+            viewModel: I,
+          }),
+          L =
+            "error" === I.renderState.type
+              ? `${eO} [&_[data-testid=flow-node-media-stroke]]:hidden`
+              : eO;
+        return (
+          (S && D.subscribedResourceCount === D.resourceCount) ||
+            (f = (0, i.SAB)({
+              previewStatus:
+                "result" === (c = I.renderState).type
+                  ? (0, i.yjf)()
+                  : "error" === c.type
+                    ? c.message
+                    : "queued" === c.type
+                      ? (0, P.b)(c.queue, {
+                          estimateLabel: i.AcJ,
+                          positionLabel: i.j9W,
+                        }).message
+                      : "loading" === c.type
+                        ? (c.message ??
+                          ("progress" === c.appearance
+                            ? (0, i.VWJ)()
+                            : (0, i.Vz7)()))
+                        : (0, i.UHI)(),
+              resourceCount: D.resourceCount,
+              selected: b.selected,
+            })),
+          (0, a.jsxs)(k.Jm, {
+            accessibleDescription: f,
+            chromeSuppressed: !0 === b.data.isEditing,
+            connectable: !!R && b.isConnectable,
+            connectionHandleDisabledReason: R
+              ? b.data.connectionHandleDisabledReason
+              : void 0,
+            connectionHandles: b.data.targetConnectable ? "both" : "source",
+            handlesInteractive: !A,
+            handlesVisible: !A,
+            dragging: b.dragging,
+            className: L,
+            errorCount: I.counts.errorCount,
+            frame: "overlay",
+            multiSelectionConnection: R
+              ? b.data.multiSelectionConnection
+              : void 0,
+            nodeId: b.id,
+            pendingCount: D.pendingCount,
+            readyCount: I.counts.readyCount,
+            resourceCount: D.resourceCount,
+            resultsExpanded: !!S && I.expanded,
+            selected: b.selected,
+            showHeader: !1,
+            style: (function (e, r) {
+              let t = eN.get(r);
+              if ((e && (t = eq.get(r)), !t))
+                throw Error(`Unsupported audio visual sampling step: ${r}`);
+              return t;
+            })(E.explicit, b.data.audioVisualSamplingStep ?? 1),
+            tagPresentation: b.data.tagPresentation,
+            title: I.title,
+            titleEditable: !!R && I.active,
+            titleEditorOptions: j,
+            titleIcon: eW,
+            titleVariant: "media",
+            children: [
+              T,
+              R &&
+              !I.expanded &&
+              void 0 !== b.data.resourceId &&
+              "uploaded" === b.data.source
+                ? (0, a.jsx)(C.Q, {
+                    mediaKind: "audio",
+                    nodeId: b.id,
+                    resourceId: b.data.resourceId,
+                  })
+                : null,
+            ],
+          })
+        );
+      }
+      function ez(e) {
+        return (0, a.jsxs)(a.Fragment, {
+          children: [
+            (0, a.jsx)(eR, {
+              active: e.active,
+              description: e.description,
+              logicalHeight: e.logicalHeight,
+              logicalWidth: e.logicalWidth,
+              queue: e.queue,
+              resourceId: e.resourceId,
+              title: e.title,
+              onCancel: (function (e, r) {
+                let t = e.queuedGenerationCancellation;
+                if (null == t ? void 0 : t.getState(r).available)
+                  return e.handleCancelQueuedResource;
+              })(e.viewModel, e.resourceId),
+            }),
+            e.viewModel.cancellationFailureAlert,
+          ],
+        });
+      }
+      function e$(e) {
+        let {
+          description: r,
+          isEmpty: t,
+          isImportedPlaceholder: o,
+          isUploadPlaceholder: n,
+          viewModel: s,
+        } = e;
+        return t
+          ? (0, a.jsx)(J.FV, { description: r })
+          : n
+            ? (0, a.jsx)(eb, {
+                active: s.active,
+                announceFailure: s.isUploadSession,
+                announcePending: s.isUploadSession || o,
+                description: r,
+                resource: s.uploadResource,
+                title: s.title,
+                onRetry: s.upload.canRetry ? s.upload.retry : void 0,
+              })
+            : (function (e) {
+                let {
+                    description: r,
+                    logicalSize: t,
+                    nodeProps: o,
+                    viewModel: n,
+                  } = e,
+                  s = (function (e) {
+                    var r, t, o, n;
+                    let {
+                        description: s,
+                        logicalSize: i,
+                        nodeProps: u,
+                        viewModel: l,
+                      } = e,
+                      c = l.renderState;
+                    if (
+                      ("loading" !== c.type &&
+                        "error" !== c.type &&
+                        "queued" !== c.type) ||
+                      void 0 === c.batch ||
+                      ((r = c),
+                      (t = l),
+                      !(0, A.Jg)({
+                        pendingCollectionCount:
+                          "loading" === r.type || "queued" === r.type
+                            ? t.asyncHistoryProjection.collectionCount
+                            : 0,
+                        browsableBatchCount:
+                          t.asyncHistoryProjection.browsableBatchCount,
+                        browsableHistoryResultCount:
+                          t.asyncHistoryProjection.browsableHistoryResultCount,
+                        browsingAvailable: t.resultBrowsingAvailable,
+                        expandedFromCompletion: t.expandedFromCompletion,
+                        hasIndependentPrimaryPreview:
+                          t.projection.hasIndependentPrimaryPreview,
+                        resultExpanded: t.expanded,
+                        showFailureRecovery: eQ(r),
+                      }))
+                    )
+                      return;
+                    let d = (function (e) {
+                      var r;
+                      let {
+                        description: t,
+                        logicalSize: o,
+                        nodeProps: n,
+                        state: s,
+                        viewModel: i,
+                      } = e;
+                      return "queued" === s.type
+                        ? ez({
+                            active: i.active,
+                            description: t,
+                            logicalHeight: o.height,
+                            logicalWidth: o.width,
+                            queue: s.queue,
+                            resourceId: s.resourceId,
+                            title: i.title,
+                            viewModel: i,
+                          })
+                        : "loading" === s.type
+                          ? (0, a.jsx)(eI, {
+                              announce: i.active,
+                              appearance: s.appearance,
+                              description: t,
+                              logicalHeight: o.height,
+                              logicalWidth: o.width,
+                              message: s.message,
+                              selected: n.selected,
+                              showMessage: s.showMessage,
+                              startedAtMs: s.startedAtMs,
+                              title: i.title,
+                            })
+                          : (0, a.jsx)(ex, {
+                              active: i.active,
+                              announce: i.active,
+                              message: s.message,
+                              retryLabel: eZ(i),
+                              retryResourceId:
+                                null == (r = i.regenerableResource)
+                                  ? void 0
+                                  : r.resource_id,
+                              title: i.title,
+                              onRetry: i.canRecoverCurrentBatch
+                                ? i.handleCurrentBatchRetry
+                                : void 0,
+                            });
+                    })({
+                      description: s,
+                      logicalSize: i,
+                      nodeProps: u,
+                      state: c,
+                      viewModel: l,
+                    });
+                    return (0, a.jsx)(eC, {
+                      active: l.active,
+                      batch: c.batch,
+                      collapsedContent: d,
+                      collectionCount:
+                        ((o = c),
+                        (n = l),
+                        eQ(o)
+                          ? n.resultCollectionCount
+                          : n.asyncHistoryProjection.collectionCount),
+                      coordinator: l.coordinator,
+                      currentResourceId: u.data.resourceId,
+                      expanded: l.expanded,
+                      highlightedResourceId: l.highlightedResourceId,
+                      revealRequest: l.revealRequest,
+                      history: l.history,
+                      logicalHeight: i.height,
+                      logicalWidth: i.width,
+                      motion: l.browsing.motion,
+                      regenerableResourceIds: l.regenerableResourceIds,
+                      viewportDecoration: l.viewportDecoration,
+                      waveformDecodeEnabled:
+                        l.active || !0 === u.data.waveformInViewport,
+                      onRegenerateResource: l.handleRegenerateResource,
+                      onPlaybackFailure: l.handlePlaybackFailure,
+                      onPlaybackStarted: l.handlePlaybackStarted,
+                      onRecoverPlaybackUrl: l.handleRecoverPlaybackUrl,
+                      onRefreshResourceIds: l.handleRefreshResourceIds,
+                      onSelectResource: l.handleSelectResource,
+                      onToggleExpanded: l.handleToggleExpanded,
+                      onWaveformDegradation: l.handleWaveformDegradation,
+                    });
+                  })({
+                    description: r,
+                    logicalSize: t,
+                    nodeProps: o,
+                    viewModel: n,
+                  });
+                if (void 0 !== s) return s;
+                if ("queued" === n.renderState.type)
+                  return ez({
+                    active: n.active,
+                    description: r,
+                    logicalHeight: t.height,
+                    logicalWidth: t.width,
+                    queue: n.renderState.queue,
+                    resourceId: n.renderState.resourceId,
+                    title: n.title,
+                    viewModel: n,
+                  });
+                if ("loading" === n.renderState.type)
+                  return (0, a.jsx)(eI, {
+                    announce: n.active,
+                    appearance: n.renderState.appearance,
+                    description: r,
+                    logicalHeight: t.height,
+                    logicalWidth: t.width,
+                    message: n.renderState.message,
+                    selected: o.selected,
+                    showMessage: n.renderState.showMessage,
+                    startedAtMs: n.renderState.startedAtMs,
+                    title: n.title,
+                  });
+                if ("error" === n.renderState.type) {
+                  var i;
+                  return (0, a.jsx)(ex, {
+                    active: n.active,
+                    announce: n.active,
+                    message: n.renderState.message,
+                    retryLabel: eZ(n),
+                    retryResourceId:
+                      null == (i = n.regenerableResource)
+                        ? void 0
+                        : i.resource_id,
+                    title: n.title,
+                    onRetry: n.canRecoverCurrentBatch
+                      ? n.handleCurrentBatchRetry
+                      : void 0,
+                  });
+                }
+                return "result" === n.renderState.type
+                  ? (0, a.jsx)(eJ, {
+                      logicalSize: t,
+                      nodeProps: o,
+                      viewModel: n,
+                    })
+                  : null;
+              })(e);
+      }
+      function eQ(e) {
+        var r;
+        return (
+          "error" === e.type &&
+          ((null == (r = e.batch) ? void 0 : r.resources.length) ?? 0) > 1
+        );
+      }
+      function eZ(e) {
+        if (e.regenerableResource) return (0, i.Tm8)(e.title);
+      }
+      function eJ(e) {
+        let { logicalSize: r, nodeProps: t, viewModel: o } = e;
+        return "result" !== o.renderState.type
+          ? null
+          : (0, a.jsx)(eP, {
+              active: o.active,
+              collectionCount: o.resultCollectionCount,
+              coordinator: o.coordinator,
+              currentResourceId: t.data.resourceId,
+              expanded: o.expanded,
+              highlightedResourceId: o.highlightedResourceId,
+              revealRequest: o.revealRequest,
+              hasIndependentPrimaryPreview:
+                o.projection.hasIndependentPrimaryPreview,
+              history: o.history,
+              isSmallSurface: o.isSmallSurface,
+              logicalHeight: r.height,
+              logicalWidth: r.width,
+              motion: o.browsing.motion,
+              resultBrowsingAvailable: o.resultBrowsingAvailable,
+              selected: t.selected,
+              state: o.renderState,
+              title: o.title,
+              trimActive: o.audioTrim.active,
+              viewportDecoration: o.viewportDecoration,
+              waveformDecodeEnabled:
+                o.active || !0 === t.data.waveformInViewport,
+              onAudioElementChange: o.audioTrim.onAudioElementChange,
+              onPlaybackFailure: o.handlePlaybackFailure,
+              onPlaybackStarted: o.handlePlaybackStarted,
+              onRecoverPlaybackUrl: o.handleRecoverPlaybackUrl,
+              onRefreshResourceIds: o.handleRefreshResourceIds,
+              regenerableResourceIds: o.regenerableResourceIds,
+              copyResourceDisabledReason: o.copyResourceDisabledReason,
+              getDownloadResourceState: o.getDownloadResourceState,
+              onCopyResource: o.handleCopyResource,
+              onDownloadResource: o.handleDownloadResource,
+              onWaveformDegradation: o.handleWaveformDegradation,
+              onRegenerateResource: o.handleRegenerateResource,
+              onSelectResource: o.handleSelectResource,
+              onToggleExpanded: o.handleToggleExpanded,
+            });
+      }
+      function eY(e) {
+        return void 0 !== e && Number.isFinite(e) && e > 0;
+      }
+      function eG(e, r) {
+        let t = new Set(e.flatMap((e) => e.resourceIds));
+        return (void 0 !== r && t.add(r), [...t]);
+      }
+      function eX(e) {
+        return "result" === e.type
+          ? e.currentBatch
+          : "empty" !== e.type
+            ? e.batch
+            : void 0;
+      }
+    },
+    85367(e, r, t) {
+      var a = t(24548),
+        o = t(40627),
+        n = t(51472),
+        s = t(39976);
+      function i(e) {
+        var r, t, s, i;
+        let u = e.resource;
+        if (!u) return { resourceId: e.resourceId };
+        if (u.type !== a._x.audio)
+          return {
+            resourceId: e.resourceId,
+            mediaTypeMismatch: !0,
+            status: u.status,
+          };
+        let l = (0, o.a0)(u, e.audioOutputIndex),
+          c = d(
+            (null == l ? void 0 : l.urls) && "url" in l.urls
+              ? l.urls.url
+              : void 0,
+          ),
+          p = (0, n.v)(
+            null == l || null == (r = l.urls) ? void 0 : r.download_url,
+          ),
+          v = null == l ? void 0 : l.vid,
+          m = null == l ? void 0 : l.durationMs,
+          g = d(u.submit_id),
+          y =
+            void 0 !== (i = u.created_at) && Number.isFinite(i) && i > 0
+              ? i
+              : void 0,
+          h = null == (s = u.audio) || null == (t = s.gen) ? void 0 : t.mode,
+          f =
+            void 0 === e.audioOutputIndex
+              ? e.resourceId + ":" + (v ?? "audio")
+              : `${e.resourceId}:audio-output:${e.audioOutputIndex}:${v ?? "audio"}`,
+          b = d(u.error_message),
+          I = {
+            resourceId: e.resourceId,
+            ...(void 0 !== e.audioOutputIndex
+              ? { audioOutputIndex: e.audioOutputIndex }
+              : {}),
+            status: u.status,
+            ...(void 0 !== u.error_code ? { errorCode: u.error_code } : {}),
+            ...(d((null == l ? void 0 : l.label) ?? u.name)
+              ? { name: d((null == l ? void 0 : l.label) ?? u.name) }
+              : {}),
+            ...(c ? { playbackUrl: c } : {}),
+            ...(y ? { startedAtMs: y } : {}),
+            ...(g ? { submit_id: g } : {}),
+            ...(v ? { vid: v } : {}),
+            ...(m ? { durationMs: m } : {}),
+            ...(void 0 !== h ? { generationMode: h } : {}),
+            sourceKey: f,
+          };
+        return (void 0 !== b && (I = { ...I, errorMessage: b }), p)
+          ? { ...I, downloadUrl: p }
+          : I;
+      }
+      function u(e) {
+        return e.id;
+      }
+      function l(e) {
+        if (void 0 !== e.primaryResourceId) {
+          let r = e.resources.find((r) => r.resourceId === e.primaryResourceId);
+          if (!r)
+            throw Error(
+              "audio batch primary resource must belong to the batch",
+            );
+          if (r.status === a.ao.success) return r;
+        }
+        return (
+          e.resources.find(
+            (e) => e.status === a.ao.success && void 0 !== e.playbackUrl,
+          ) ??
+          e.resources.find((e) => e.status === a.ao.success) ??
+          e.resources[0]
+        );
+      }
+      function c(e) {
+        return (0, s.Z)({
+          resourceBatches: e.resourceBatches,
+          resources: e.resourceViews,
+          primaryResourceId: e.primaryResourceId,
+        }).map((e) => {
+          let r;
+          return {
+            ...e,
+            submit_id:
+              1 ===
+              (r = new Set(
+                e.resources.flatMap((e) => (e.submit_id ? [e.submit_id] : [])),
+              )).size
+                ? r.values().next().value
+                : void 0,
+          };
+        });
+      }
+      function d(e) {
+        return (null == e ? void 0 : e.trim()) || void 0;
+      }
+      t.d(r, { IZ: () => u, MK: () => c, O6: () => i, me: () => l });
+    },
+    1727(e, r, t) {
+      var a = t(24548),
+        o = t(66876),
+        n = t(9098),
+        s = t(64534),
+        i = t(68130),
+        u = t(85367);
+      function l(e) {
+        if (0 === e.batches.length && void 0 === e.primaryPreview)
+          return { type: "empty" };
+        let r = (function (e) {
+          if (void 0 !== e.viewingBatchKey) {
+            let r = e.batches.find((r) => (0, u.IZ)(r) === e.viewingBatchKey);
+            if (r) return r;
+          }
+          let r = e.batches.find((e) => void 0 !== e.primaryResourceId);
+          return (
+            r ||
+            (!0 === e.evaluateFullBatch && e.batches[0]
+              ? e.batches[0]
+              : e.primaryPreview
+                ? {
+                    id: `primary:${e.primaryPreview.resourceId}`,
+                    primaryResourceId: e.primaryPreview.resourceId,
+                    resources: [e.primaryPreview],
+                  }
+                : e.batches[0])
+          );
+        })(e);
+        if (!r) return p();
+        if (void 0 === r.primaryResourceId)
+          return (function (e, r, t) {
+            if (e.resources.some((e) => c(e))) return d(e, t);
+            let n = e.resources
+              .filter((e) => e.mediaTypeMismatch)
+              .map((e) => e.resourceId);
+            if (n.length > 0) return v(e, (0, o.OJw)(), n);
+            let s = (0, u.me)(e);
+            return s.status !== a.ao.success
+              ? v(e, m(s), [])
+              : void 0 === s.playbackUrl
+                ? v(e, (0, o.vDQ)(), [s.resourceId])
+                : { type: "result", currentBatch: e, batches: r };
+          })(r, e.batches, e.generationQueueByResourceId);
+        let t = (0, u.me)(r);
+        return t.mediaTypeMismatch
+          ? v(r, (0, o.OJw)(), [t.resourceId])
+          : c(t)
+            ? d(r, e.generationQueueByResourceId)
+            : t.status !== a.ao.success
+              ? v(r, m(t), [])
+              : void 0 === t.playbackUrl
+                ? v(r, (0, o.vDQ)(), [t.resourceId])
+                : !1 !== e.evaluateFullBatch && r.resources.some((e) => c(e))
+                  ? d(r, e.generationQueueByResourceId)
+                  : { type: "result", currentBatch: r, batches: e.batches };
+      }
+      function c(e) {
+        return void 0 === e.status || e.status === a.ao.running;
+      }
+      function d(e, r) {
+        let t = (0, i.j)(e.resources, r);
+        return t
+          ? {
+              type: "queued",
+              batch: e,
+              resourceId: t.resourceId,
+              queue: t.queue,
+            }
+          : p(e);
+      }
+      function p(e) {
+        var r, t;
+        let o =
+            (null == e
+              ? void 0
+              : e.resources.filter((e) => e.status === a.ao.running)) ?? [],
+          s =
+            (null == (r = o.find((e) => void 0 !== e.generationMode))
+              ? void 0
+              : r.generationMode) ??
+            (null == e ||
+            null == (t = e.resources.find((e) => void 0 !== e.generationMode))
+              ? void 0
+              : t.generationMode),
+          i = o.reduce(
+            (e, r) =>
+              void 0 === r.startedAtMs
+                ? e
+                : void 0 === e
+                  ? r.startedAtMs
+                  : Math.min(e, r.startedAtMs),
+            void 0,
+          );
+        return {
+          type: "loading",
+          appearance: o.length > 0 ? "progress" : "skeleton",
+          ...(e ? { batch: e } : {}),
+          ...(3 === s ? { message: (0, n.Xl)() } : {}),
+          ...(void 0 !== i ? { startedAtMs: i } : {}),
+        };
+      }
+      function v(e, r, t) {
+        return { type: "error", batch: e, message: r, refreshResourceIds: t };
+      }
+      function m(e) {
+        if (e.status === a.ao.canceled) return (0, o.V9n)();
+        if (void 0 !== e.errorMessage) return e.errorMessage;
+        switch ((0, s.d)(e.errorCode)) {
+          case "input_text_copyright":
+            return (0, o.M3N)();
+          case "content_safety":
+            return (0, o.Lu4)();
+          case "generation_failed":
+            return (0, o.pA6)();
+        }
+      }
+      t.d(r, { S: () => m, Y: () => l });
+    },
+    35008(e, r, t) {
+      var a = t(87429);
+      function o() {
+        let e = (0, a.useRef)(!1),
+          r = (0, a.useRef)(),
+          t = (0, a.useRef)(!1),
+          o = (0, a.useCallback)((t) => {
+            r.current ??
+              (r.current = { currentTime: n(t), shouldPlay: e.current });
+          }, []),
+          s = (0, a.useCallback)(() => {
+            ((r.current = void 0), (t.current = !1));
+          }, []),
+          i = (0, a.useCallback)((a, o) => {
+            if (t.current) return;
+            (("play" === o || "playing" === o) && (e.current = !0),
+              ("pause" === o || "ended" === o) && (e.current = !1));
+            let s = r.current;
+            s && ((s.currentTime = n(a)), (s.shouldPlay = e.current));
+          }, []),
+          u = (0, a.useCallback)(() => {
+            ((e.current = !0), r.current && (r.current.shouldPlay = !0));
+          }, []),
+          l = (0, a.useCallback)(() => {
+            ((e.current = !1), r.current && (r.current.shouldPlay = !1));
+          }, []),
+          c = (0, a.useCallback)(() => {
+            ((e.current = !1), (r.current = void 0), (t.current = !1));
+          }, []),
+          d = (0, a.useCallback)((a, o, s) => {
+            var i, u, l;
+            let c = r.current ?? { currentTime: n(a), shouldPlay: e.current };
+            return (
+              (r.current = c),
+              (t.current = !0),
+              ((i = a),
+              (u = o),
+              (l = s),
+              new Promise((e, r) => {
+                let t = () => {
+                    (i.removeEventListener("loadedmetadata", a),
+                      i.removeEventListener("error", o),
+                      l.removeEventListener("abort", n));
+                  },
+                  a = () => {
+                    (t(), e());
+                  },
+                  o = () => {
+                    (t(),
+                      r(
+                        Error(
+                          "fresh media source failed before metadata became available",
+                        ),
+                      ));
+                  },
+                  n = () => {
+                    (t(),
+                      r(
+                        l.reason instanceof Error
+                          ? l.reason
+                          : Error("media source recovery was aborted"),
+                      ));
+                  };
+                l.aborted
+                  ? n()
+                  : (i.addEventListener("loadedmetadata", a, { once: !0 }),
+                    i.addEventListener("error", o, { once: !0 }),
+                    l.addEventListener("abort", n, { once: !0 }),
+                    i.setAttribute("src", u),
+                    i.load());
+              }))
+                .then(() => {
+                  var e, r;
+                  let t;
+                  ((e = a),
+                    (r = c.currentTime),
+                    (a.currentTime =
+                      !Number.isFinite((t = e.duration)) || t <= 0
+                        ? Math.max(0, r)
+                        : Math.min(Math.max(0, r), t)));
+                })
+                .finally(() => {
+                  t.current = !1;
+                })
+            );
+          }, []),
+          p = (0, a.useCallback)(() => {
+            var t;
+            return (
+              (null == (t = r.current) ? void 0 : t.shouldPlay) ?? e.current
+            );
+          }, []);
+        return (0, a.useMemo)(
+          () => ({
+            beginRecovery: o,
+            finishRecovery: s,
+            observe: i,
+            requestPause: l,
+            requestPlayback: u,
+            reset: c,
+            restoreSource: d,
+            shouldPlay: p,
+          }),
+          [o, s, i, l, u, c, d, p],
+        );
+      }
+      function n(e) {
+        return Number.isFinite(e.currentTime) && e.currentTime > 0
+          ? e.currentTime
+          : 0;
+      }
+      t.d(r, { r: () => o });
+    },
+    32006(e, r, t) {
+      var a = t(87429);
+      function o(e) {
+        let { onRecoveryFailed: r } = e,
+          t = (0, a.useRef)({ available: !0, generation: 0, phase: "idle" }),
+          o = (0, a.useCallback)(
+            (e, a) => {
+              var o;
+              t.current.generation === e &&
+                ((t.current.generation += 1),
+                (t.current.phase = "idle"),
+                null == (o = t.current.controller) || o.abort(),
+                (t.current.controller = void 0),
+                r(a));
+            },
+            [r],
+          ),
+          s = (function (e, r, t) {
+            let {
+              onPlaybackUrlRecovered: o,
+              onRecoveryStarted: n,
+              recoverPlaybackUrl: s,
+              recoveryResolution: i,
+              resourceId: u,
+            } = e;
+            return (0, a.useCallback)(() => {
+              let e;
+              if ("requesting" === r.current.phase) return;
+              if ("restoring" === r.current.phase)
+                return void t(
+                  r.current.generation,
+                  Error("fresh media source failed during playback recovery"),
+                );
+              if (!r.current.available)
+                return void t(
+                  r.current.generation,
+                  Error("media playback failed after URL recovery"),
+                );
+              ((r.current.available = !1), (r.current.phase = "requesting"));
+              let a = ++r.current.generation,
+                l = new AbortController();
+              ((r.current.controller = l), n());
+              try {
+                let r = { signal: l.signal };
+                (i && (r = { resolution: i, signal: l.signal }), (e = s(u, r)));
+              } catch (e) {
+                t(a, e);
+                return;
+              }
+              e.then(
+                (e) => {
+                  if (r.current.generation === a) {
+                    r.current.phase = "restoring";
+                    try {
+                      let n = o(e, l.signal);
+                      Promise.resolve(n).then(
+                        () => {
+                          r.current.generation === a &&
+                            ((r.current.phase = "idle"),
+                            (r.current.available = !0),
+                            (r.current.controller = void 0));
+                        },
+                        (e) => t(a, e),
+                      );
+                    } catch (e) {
+                      t(a, e);
+                    }
+                  }
+                },
+                (e) => t(a, e),
+              );
+            }, [t, o, n, s, i, u, r]);
+          })(e, t, o),
+          i = (0, a.useCallback)(() => {
+            n(t.current, !1);
+          }, []),
+          u = (0, a.useCallback)(() => {
+            n(t.current, !0);
+          }, []),
+          l = (0, a.useCallback)(() => "idle" !== t.current.phase, []);
+        return (
+          (0, a.useEffect)(() => i, [i]),
+          (0, a.useMemo)(
+            () => ({
+              cancel: i,
+              handleMediaError: s,
+              isRecovering: l,
+              reset: u,
+            }),
+            [i, s, l, u],
+          )
+        );
+      }
+      function n(e, r) {
+        var t;
+        ((e.generation += 1),
+          (e.phase = "idle"),
+          (e.available = r),
+          null == (t = e.controller) || t.abort(),
+          (e.controller = void 0));
+      }
+      t.d(r, { O: () => o });
+    },
+  },
+]);

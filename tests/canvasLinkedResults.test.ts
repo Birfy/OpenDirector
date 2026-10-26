@@ -1,0 +1,161 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createDocument, createNode } from "../src/canvas/model.ts";
+import { createHistory, recordChange, undo } from "../src/canvas/history.ts";
+import { serializeDocument, parseDocument } from "../src/canvas/storage.ts";
+import { absolutePosition } from "../src/canvas/geometry.ts";
+import {
+  appendLinkedMediaResults,
+  type LinkedMediaResult,
+} from "../src/canvas/linkedResults.ts";
+
+const outputs: LinkedMediaResult[] = [
+  {
+    kind: "image",
+    src: "data:image/png;base64,YQ==",
+    mimeType: "image/png",
+    title: "裁剪结果",
+    media: { width: 1024, height: 512 },
+  },
+  {
+    kind: "audio",
+    src: "data:audio/wav;base64,YQ==",
+    mimeType: "audio/wav",
+    title: "提取音轨",
+    media: { durationSeconds: 4 },
+  },
+];
+
+test("repeated results avoid existing grouped media and other new outputs without moving sources", () => {
+  const source = createNode("video", { x: 0, y: 0 }, { src: "original" });
+  const group = createNode("group", { x: source.width + 100, y: 0 });
+  const obstacle = {
+    ...createNode("image", { x: 0, y: 0 }),
+    parentId: group.id,
+  };
+  const original = { ...createDocument(), nodes: [source, group, obstacle] };
+  const origin = {
+    documentId: original.id,
+    nodeId: source.id,
+    kind: source.type,
+    src: source.data.src,
+  };
+  const first = appendLinkedMediaResults(original, origin, outputs);
+  const second = appendLinkedMediaResults(first.document, origin, outputs);
+  assert.deepEqual(second.document.nodes.slice(0, 3), original.nodes);
+  const media = second.document.nodes.filter((node) => node.type !== "group");
+  for (let i = 0; i < media.length; i++) {
+    for (const other of media.slice(i + 1)) {
+      const node = media[i]!;
+      const a = absolutePosition(node, second.document.nodes);
+      const b = absolutePosition(other, second.document.nodes);
+      assert.ok(
+        a.x + node.width <= b.x ||
+          b.x + other.width <= a.x ||
+          a.y + node.height <= b.y ||
+          b.y + other.height <= a.y,
+      );
+    }
+  }
+});
+
+test("local results retain provenance and pixel metadata through save/restore, and undo as one operation", () => {
+  const group = createNode("group", { x: 500, y: 300 });
+  const source = {
+    ...createNode(
+      "video",
+      { x: 30, y: 40 },
+      { src: "data:video/mp4;base64,YQ==", title: "原素材" },
+    ),
+    parentId: group.id,
+  };
+  const document = { ...createDocument(), nodes: [group, source] };
+  const result = appendLinkedMediaResults(
+    document,
+    {
+      documentId: document.id,
+      nodeId: source.id,
+      kind: source.type,
+      src: source.data.src,
+    },
+    outputs,
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.ids.length, 2);
+  assert.equal(result.document.nodes[1], source);
+  assert.equal(result.document.nodes[2]!.parentId, undefined);
+  assert.deepEqual(result.document.nodes[2]!.position, {
+    x: 530 + source.width + 100,
+    y: 340,
+  });
+  assert.deepEqual(
+    result.document.edges.map((edge) => edge.source),
+    [source.id, source.id],
+  );
+  assert.deepEqual(
+    result.document.edges.map((edge) => edge.target),
+    result.ids,
+  );
+  const saved = serializeDocument(result.document);
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  const restored = parseDocument(saved.value);
+  assert.equal(restored.ok, true);
+  if (restored.ok) {
+    assert.deepEqual(restored.value.nodes[2]!.data.media, {
+      width: 1024,
+      height: 512,
+    });
+    assert.deepEqual(restored.value.nodes[3]!.data.media, {
+      durationSeconds: 4,
+    });
+  }
+  assert.deepEqual(
+    undo(recordChange(createHistory(document), result.document)).present,
+    document,
+  );
+  assert.equal(document.nodes.length, 2);
+});
+
+test("late result imports do not enter another project, deleted source, or replaced media", () => {
+  const source = createNode(
+    "image",
+    { x: 0, y: 0 },
+    { src: "data:image/png;base64,b2xk" },
+  );
+  const document = { ...createDocument(), nodes: [source] };
+  const origin = {
+    documentId: document.id,
+    nodeId: source.id,
+    kind: source.type,
+    src: source.data.src,
+  };
+  for (const changed of [
+    { ...document, id: "another-project" },
+    { ...document, nodes: [] },
+    {
+      ...document,
+      nodes: [
+        { ...createNode("video"), id: source.id, data: { ...source.data } },
+      ],
+    },
+    {
+      ...document,
+      nodes: [
+        {
+          ...source,
+          data: { ...source.data, src: "data:image/png;base64,bmV3" },
+        },
+      ],
+    },
+  ]) {
+    const result = appendLinkedMediaResults(changed, origin, outputs);
+    assert.equal(result.document, changed);
+    assert.equal(result.ids.length, 0);
+    assert.ok(result.error);
+  }
+  assert.equal(
+    appendLinkedMediaResults(document, origin, []).document,
+    document,
+  );
+});

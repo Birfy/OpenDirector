@@ -1,10 +1,6 @@
 import { applyCommand } from "./model.ts";
-import type {
-  CanvasCommand,
-  CanvasDocument,
-  CanvasNode,
-  GenerationSettings,
-} from "./model.ts";
+import { sameGenerationSettings, sameNodeData } from "./dataBoundary.ts";
+import type { CanvasCommand, CanvasDocument, CanvasNode } from "./model.ts";
 
 export interface CanvasHistory {
   past: CanvasDocument[];
@@ -104,27 +100,6 @@ export function redo(history: CanvasHistory): CanvasHistory {
   };
 }
 
-function sameSettings(
-  a: GenerationSettings | undefined,
-  b: GenerationSettings | undefined,
-): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return (
-    a.mode === b.mode &&
-    a.model === b.model &&
-    a.aspectRatio === b.aspectRatio &&
-    a.durationSeconds === b.durationSeconds &&
-    a.resolution === b.resolution &&
-    a.prompt === b.prompt &&
-    a.count === b.count &&
-    a.camera === b.camera &&
-    a.palette === b.palette &&
-    a.style === b.style &&
-    a.audioEnabled === b.audioEnabled
-  );
-}
-
 function sameNode(a: CanvasNode, b: CanvasNode): boolean {
   if (a === b) return true;
   return (
@@ -137,14 +112,7 @@ function sameNode(a: CanvasNode, b: CanvasNode): boolean {
     a.locked === b.locked &&
     a.zIndex === b.zIndex &&
     a.parentId === b.parentId &&
-    a.data.kind === b.data.kind &&
-    a.data.title === b.data.title &&
-    a.data.prompt === b.data.prompt &&
-    a.data.src === b.data.src &&
-    a.data.mimeType === b.data.mimeType &&
-    a.data.text === b.data.text &&
-    a.data.assetState === b.data.assetState &&
-    sameSettings(a.data.settings, b.data.settings)
+    sameNodeData(a.data, b.data)
   );
 }
 
@@ -155,7 +123,7 @@ function sameContent(a: CanvasDocument, b: CanvasDocument): boolean {
     a.id !== b.id ||
     a.title !== b.title ||
     a.version !== b.version ||
-    !sameSettings(a.settings, b.settings)
+    !sameGenerationSettings(a.settings, b.settings)
   )
     return false;
   if (a.nodes.length !== b.nodes.length || a.edges.length !== b.edges.length)

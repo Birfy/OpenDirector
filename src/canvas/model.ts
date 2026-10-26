@@ -1,3 +1,7 @@
+import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
+import type { CanvasToolTask } from "./toolCatalog.ts";
+import type { LocalStageDocument } from "./stageDocument.ts";
+import type { LayerDocument } from "./layerDocument.ts";
 /** Authored local canvas model, compatible with React Flow's node/edge shape. */
 export type CanvasNodeKind =
   | "image"
@@ -5,7 +9,12 @@ export type CanvasNodeKind =
   | "audio"
   | "file"
   | "text"
-  | "group";
+  | "group"
+  | "timeline"
+  | "subject"
+  | "stack"
+  | "tool"
+  | "external";
 export interface Point {
   x: number;
   y: number;
@@ -30,6 +39,81 @@ export interface GenerationSettings {
   palette?: string;
   style?: string;
   audioEnabled?: boolean;
+  videoMode?: "reference" | "first-last";
+  firstFrameNodeId?: string;
+  lastFrameNodeId?: string;
+  audioCreationType?: "audio" | "music";
+  audioMode?: "unified" | "tts";
+  voiceName?: string;
+  imagePreset?: "none" | "product-views";
+}
+
+/** A retained media snapshot. nodeId records provenance, not ownership of the source. */
+export interface CanvasResource {
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
+  title: string;
+  src?: string;
+  mimeType?: string;
+  nodeId?: string;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface TimelineClip {
+  id: string;
+  resource: CanvasResource;
+  /** Audio placement only. Visual placement is derived from the track's clip order. */
+  start?: number;
+  /** Source trim uses seconds in this local model; original runtime tick units are not assumed. */
+  inPoint: number;
+  outPoint: number;
+  speed: number;
+  volume: number;
+  muted: boolean;
+}
+
+export interface TimelineTrack {
+  id: string;
+  kind: "visual" | "audio";
+  title: string;
+  muted: boolean;
+  clips: TimelineClip[];
+}
+
+export interface TimelineData {
+  tracks: TimelineTrack[];
+  fps: number;
+  width: number;
+  height: number;
+}
+
+export interface SubjectData {
+  description: string;
+  category: string;
+  main?: CanvasResource;
+  auxiliaries: CanvasResource[];
+  voice?: CanvasResource;
+}
+
+export interface StackData {
+  nodeIds: string[];
+  /** Local presentation state; the observed source schema only owns nodeIds. */
+  activeIndex: number;
+}
+
+export interface ToolData {
+  kind: "camera" | "style" | "palette" | "camera_motion";
+  fields: { name: string; values: string[] }[];
+  provenance?: { paletteId: string; version: number };
+  palette?: { name?: string; sourceImageUri?: string };
+}
+
+export interface ExternalData {
+  externalType: "director-stage";
+  /** Decimal uint64 identity from the external director stage; absent for a local draft. */
+  current?: { versionId: string };
 }
 
 export interface CanvasNodeData extends Record<string, unknown> {
@@ -41,6 +125,15 @@ export interface CanvasNodeData extends Record<string, unknown> {
   text?: string;
   assetState?: "ready" | "missing";
   settings?: GenerationSettings;
+  timeline?: TimelineData;
+  subject?: SubjectData;
+  stack?: StackData;
+  tool?: ToolData;
+  external?: ExternalData;
+  layers?: LayerDocument;
+  localStage?: LocalStageDocument;
+  taskDraft?: CanvasToolTask;
+  media?: { width?: number; height?: number; durationSeconds?: number };
 }
 
 export interface CanvasNode {
@@ -109,6 +202,11 @@ export function createNode(
     file: [260, 110],
     text: [280, 160],
     group: [640, 480],
+    timeline: [600, 280],
+    subject: [320, 320],
+    stack: [320, 270],
+    tool: [300, 180],
+    external: [340, 180],
   };
   const titles: Record<CanvasNodeKind, string> = {
     image: "图片",
@@ -117,6 +215,11 @@ export function createNode(
     file: "文件",
     text: "文本",
     group: "分组",
+    timeline: "时间线",
+    subject: "主体",
+    stack: "资源堆叠",
+    tool: "工具",
+    external: "导演预演",
   };
   const [width, height] = sizes[kind];
   return {
@@ -125,7 +228,44 @@ export function createNode(
     position: { ...position },
     width,
     height,
-    data: { title: titles[kind], prompt: "", ...data, kind },
+    data: {
+      title: titles[kind],
+      prompt: "",
+      ...(kind === "timeline"
+        ? {
+            timeline: {
+              tracks: [
+                {
+                  id: "visual",
+                  kind: "visual",
+                  title: "画面轨",
+                  muted: false,
+                  clips: [],
+                },
+              ],
+              fps: 30,
+              width: 1920,
+              height: 1080,
+            },
+          }
+        : {}),
+      ...(kind === "subject"
+        ? {
+            subject: {
+              description: "",
+              category: "character",
+              auxiliaries: [],
+            },
+          }
+        : {}),
+      ...(kind === "stack" ? { stack: { nodeIds: [], activeIndex: 0 } } : {}),
+      ...(kind === "tool" ? { tool: { kind: "camera", fields: [] } } : {}),
+      ...(kind === "external"
+        ? { external: { externalType: "director-stage" } }
+        : {}),
+      ...data,
+      kind,
+    },
     locked: false,
   };
 }
@@ -224,14 +364,28 @@ export function applyCommand(
         .filter((node) => requested.has(node.id) && !node.locked)
         .map((node) => node.id),
     );
-    // Locked descendants retain their group too, so deletion cannot move a locked node implicitly.
+    // Locked content retains live references and their ancestors; no indirect mutation via deletion.
+    const protectedIds = new Set<string>();
     for (const node of document.nodes.filter((node) => node.locked)) {
-      let parent = node.parentId;
+      protectedIds.add(node.id);
+      for (const id of node.data.stack?.nodeIds ?? []) protectedIds.add(id);
+      for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
+        const id = node.data.settings?.[key];
+        if (id) protectedIds.add(id);
+      }
+      for (const id of node.data.taskDraft?.sourceNodeIds ?? [])
+        protectedIds.add(id);
+      if (node.data.taskDraft?.selection)
+        protectedIds.add(node.data.taskDraft.selection.sourceNodeId);
+    }
+    for (const id of protectedIds) {
+      removed.delete(id);
+      let parent = document.nodes.find((node) => node.id === id)?.parentId;
       const visited = new Set<string>();
       while (parent && !visited.has(parent)) {
         visited.add(parent);
         removed.delete(parent);
-        parent = document.nodes.find((item) => item.id === parent)?.parentId;
+        parent = document.nodes.find((node) => node.id === parent)?.parentId;
       }
     }
     let added = true;
@@ -250,7 +404,54 @@ export function applyCommand(
     if (!removed.size) return document;
     return {
       ...document,
-      nodes: document.nodes.filter((node) => !removed.has(node.id)),
+      nodes: document.nodes
+        .filter((node) => !removed.has(node.id))
+        .map((node) => {
+          const settings =
+            node.data.settings &&
+            mapSettingsNodeReferences(node.data.settings, (id) =>
+              removed.has(id) ? undefined : id,
+            );
+          const taskDraft =
+            node.data.taskDraft &&
+            (node.data.taskDraft.sourceNodeIds.some((id) => removed.has(id)) ||
+              (node.data.taskDraft.selection &&
+                removed.has(node.data.taskDraft.selection.sourceNodeId)))
+              ? mapCanvasToolTaskReferences(node.data.taskDraft, (id) =>
+                  removed.has(id) ? undefined : id,
+                )
+              : node.data.taskDraft;
+          const stack = node.data.stack;
+          const nodeIds = stack?.nodeIds.filter((id) => !removed.has(id));
+          if (
+            taskDraft === node.data.taskDraft &&
+            settings === node.data.settings &&
+            (!stack || nodeIds!.length === stack.nodeIds.length)
+          )
+            return node;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              ...(settings ? { settings } : {}),
+              ...(taskDraft ? { taskDraft } : {}),
+              ...(stack && nodeIds
+                ? {
+                    stack: {
+                      nodeIds,
+                      activeIndex: Math.min(
+                        stack.activeIndex,
+                        Math.max(0, nodeIds.length - 1),
+                      ),
+                    },
+                  }
+                : {}),
+            },
+          };
+        }),
+      settings: mapSettingsNodeReferences(document.settings, (id) =>
+        removed.has(id) ? undefined : id,
+      ),
       edges: document.edges.filter(
         (edge) => !removed.has(edge.source) && !removed.has(edge.target),
       ),
@@ -308,10 +509,36 @@ export function applyCommand(
     return { ...document, edges: [...document.edges, { ...command.edge }] };
   }
   const removed = new Set(command.ids);
+  for (const edge of document.edges) {
+    const target = document.nodes.find((node) => node.id === edge.target);
+    if (
+      target?.locked &&
+      (target.data.settings?.firstFrameNodeId === edge.source ||
+        target.data.settings?.lastFrameNodeId === edge.source)
+    )
+      removed.delete(edge.id);
+  }
   const edges = document.edges.filter((edge) => !removed.has(edge.id));
-  return edges.length === document.edges.length
-    ? document
-    : { ...document, edges };
+  if (edges.length === document.edges.length) return document;
+  const disconnected = document.edges.filter((edge) => removed.has(edge.id));
+  return {
+    ...document,
+    edges,
+    nodes: document.nodes.map((node) => {
+      if (!node.data.settings) return node;
+      const settings = mapSettingsNodeReferences(node.data.settings, (id) =>
+        disconnected.some(
+          (edge) => edge.source === id && edge.target === node.id,
+        ) &&
+        !edges.some((edge) => edge.source === id && edge.target === node.id)
+          ? undefined
+          : id,
+      );
+      return settings === node.data.settings
+        ? node
+        : { ...node, data: { ...node.data, settings } };
+    }),
+  };
 }
 
 function hasSelectedAncestor(
@@ -327,4 +554,22 @@ function hasSelectedAncestor(
     parent = nodes.find((item) => item.id === parent)?.parentId;
   }
   return false;
+}
+
+/** Node references are identities, unlike retained timeline/subject source snapshots. */
+export function mapSettingsNodeReferences(
+  settings: GenerationSettings,
+  resolve: (id: string) => string | undefined,
+): GenerationSettings {
+  let next = settings;
+  for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
+    const before = settings[key];
+    if (before === undefined) continue;
+    const after = resolve(before);
+    if (after === before) continue;
+    if (next === settings) next = { ...settings };
+    if (after === undefined) delete next[key];
+    else next[key] = after;
+  }
+  return next;
 }

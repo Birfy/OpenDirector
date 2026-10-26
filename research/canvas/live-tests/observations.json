@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "observed_on": "2026-10-26",
+  "method": "Authenticated original-site UI interaction. No private API replay. Completion means a ready result was visible; it does not establish perceptual quality.",
+  "total_points_debited": 543,
+  "tests": [
+    {
+      "id": "T01",
+      "capability": "text-to-image",
+      "model": "Seedream 4.0",
+      "settings": {
+        "ratio": "1:1",
+        "resolution": "2K",
+        "count": 1
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "prompt": "一只橙色陶瓷小鸟，摆在浅灰色桌面上，旁边有一个蓝色小球，纯白背景，柔和影棚光，产品摄影，完整主体，无文字，无水印。"
+    },
+    {
+      "id": "T02",
+      "capability": "text-to-video",
+      "model": "即梦 Seedance 1.0 Fast",
+      "settings": {
+        "ratio": "16:9",
+        "resolution": "720P",
+        "count": 1,
+        "seconds": 5,
+        "mode": "首尾帧（无参考）"
+      },
+      "quoted_points": 10,
+      "status": "completed",
+      "prompt": "浅灰色桌面上一只橙色陶瓷小鸟与一个蓝色小球，镜头缓慢向前推进，柔和影棚光，纯白背景，无文字。"
+    },
+    {
+      "id": "T03",
+      "capability": "text-to-speech",
+      "model": "SeedAudio 1.0",
+      "settings": {
+        "mode": "文本朗读",
+        "voice": "动漫海绵"
+      },
+      "quoted_points": 12,
+      "status": "completed",
+      "prompt": "你好，这是画布功能测试。"
+    },
+    {
+      "id": "T04",
+      "capability": "image-cutout",
+      "model": "site default",
+      "settings": {
+        "selection": "自动选择主体"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "result": "new image node and source edge"
+    },
+    {
+      "id": "T05",
+      "capability": "image-smart-upscale",
+      "model": "智能超清",
+      "settings": {
+        "resolution": "4K",
+        "detail": "default"
+      },
+      "quoted_points": 0,
+      "status": "completed",
+      "discount": "限免1次; 原价2",
+      "result": "new image node and source edge"
+    },
+    {
+      "id": "T06",
+      "capability": "image-outpaint",
+      "model": "site default",
+      "settings": {
+        "ratio": "16:9"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "prompt": "向左右延展浅灰桌面和干净的白色摄影棚背景，保持橙色陶瓷小鸟和蓝球不变。"
+    },
+    {
+      "id": "T07",
+      "capability": "image-instruction-edit",
+      "model": "Seedream 5.0 Lite",
+      "settings": {
+        "resolution": "2K",
+        "annotations": false
+      },
+      "quoted_points": 3,
+      "status": "completed",
+      "prompt": "把蓝色小球改为红色，保持陶瓷小鸟、桌面和构图不变。"
+    },
+    {
+      "id": "T08",
+      "capability": "image-multi-angle",
+      "model": "site default",
+      "settings": {
+        "direction": "右侧"
+      },
+      "quoted_points": 1,
+      "status": "completed"
+    },
+    {
+      "id": "T09",
+      "capability": "image-relight",
+      "model": "site default",
+      "settings": {
+        "preset": "伦勃朗光",
+        "light": "左高位侧顺光",
+        "diffusion": "硬光"
+      },
+      "quoted_points": 21,
+      "status": "completed"
+    },
+    {
+      "id": "T10",
+      "capability": "image-panorama",
+      "model": "site default",
+      "settings": {
+        "resolution": "2K"
+      },
+      "quoted_points": 21,
+      "status": "completed",
+      "prompt": "明亮的极简摄影棚，中央桌面上的橙色陶瓷小鸟与蓝色小球，白色墙面，柔和漫射光。"
+    },
+    {
+      "id": "T11",
+      "capability": "image-object-remove",
+      "model": "site default",
+      "settings": {
+        "selection": "rectangle over blue ball"
+      },
+      "quoted_points": 1,
+      "status": "completed"
+    },
+    {
+      "id": "T12",
+      "capability": "image-preset-product-three-view",
+      "model": "Seedream 5.0 Pro",
+      "settings": {
+        "ratio": "16:9",
+        "resolution": "2K",
+        "count": 1
+      },
+      "quoted_points": 8,
+      "status": "completed",
+      "note": "Other models disabled by preset requirement"
+    },
+    {
+      "id": "T13",
+      "capability": "reference-image-to-video",
+      "model": "即梦 Seedance 2.0 mini",
+      "settings": {
+        "mode": "全能参考",
+        "seconds": 4,
+        "resolution": "720P",
+        "ratio": "16:9",
+        "count": 1
+      },
+      "quoted_points": 24,
+      "status": "completed",
+      "prompt": "保持参考图中的橙色陶瓷小鸟和蓝球，镜头缓慢环绕小鸟，桌面与白色背景不变。"
+    },
+    {
+      "id": "T14",
+      "capability": "text-to-music",
+      "model": "SeedMusic 1.0 Preview",
+      "settings": {
+        "seconds": 30
+      },
+      "quoted_points": 6,
+      "status": "completed",
+      "prompt": "轻快的纯音乐，木琴与柔和钢琴，适合陶瓷小鸟产品短片，无人声，无歌词，30秒。"
+    },
+    {
+      "id": "T15",
+      "capability": "video-smart-upscale",
+      "model": "site default",
+      "settings": {
+        "resolution": "2K",
+        "input_seconds": 5
+      },
+      "quoted_points": 30,
+      "status": "processing"
+    },
+    {
+      "id": "T16",
+      "capability": "video-frame-interpolation",
+      "model": "site default",
+      "settings": {
+        "fps": 30,
+        "input_seconds": 5
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "note": "No price label in UI; no observed deduction",
+      "cost_evidence": "历史记录显示 0 积分；提交前后余额未变。"
+    },
+    {
+      "id": "T17",
+      "capability": "video-extension",
+      "model": "即梦 Seedance 2.5",
+      "settings": {
+        "extra_seconds": 4,
+        "input_seconds": 5,
+        "resolution": "720P",
+        "count": 1
+      },
+      "quoted_points": 207,
+      "status": "completed",
+      "note": "Other models disabled, shortest extension 4s"
+    },
+    {
+      "id": "T18",
+      "capability": "timeline-render",
+      "model": "not AI",
+      "settings": {
+        "resolution": "720P",
+        "destination": "canvas",
+        "input_seconds": 5
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "MP4 video node with timeline provenance edge"
+    },
+    {
+      "id": "T19",
+      "capability": "video-extract-audio",
+      "model": "not AI",
+      "settings": {
+        "input_seconds": 4
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "audio node with source edge",
+      "cost_evidence": "历史记录显示 0 积分；提交前后余额未变。"
+    },
+    {
+      "id": "T20",
+      "capability": "video-local-reshoot",
+      "model": "Seedance 2.5",
+      "settings": {
+        "start": 0,
+        "end": 4,
+        "resolution": "source720P"
+      },
+      "quoted_points": 184,
+      "status": "completed",
+      "prompt": "保持橙色陶瓷小鸟不变，把蓝色小球改为绿色小球，保留原有镜头运动和白色背景。",
+      "note": "Only 2.5 available; shorter selection rejected, minimum 4 seconds."
+    },
+    {
+      "id": "T21",
+      "capability": "text-to-sound-effect",
+      "model": "SeedAudio 1.0",
+      "settings": {
+        "mode": "unified",
+        "prompt_requested_seconds": 3
+      },
+      "quoted_points": 12,
+      "status": "completed",
+      "submission_note": "First UI click left blank node/no history/no deduction; checked history before one successful retry.",
+      "prompt": "生成3秒短音效：安静摄影棚中，一颗小玻璃球轻轻落在木桌上，发出一次清脆碰撞声，然后滚动停下。没有人声，没有音乐。"
+    },
+    {
+      "id": "T22",
+      "capability": "subject-reference",
+      "model": "not AI",
+      "settings": {
+        "main": "T01 image",
+        "auxiliary_count": 0,
+        "description": "orange ceramic bird with blue ball"
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "bound subject with source edge, renamed and description saved"
+    }
+  ]
+}

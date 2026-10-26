@@ -1,11 +1,15 @@
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
+import {
+  copyGenerationSettings,
+  isGenerationSettings,
+  nodeResources,
+  parseNodeData,
+} from "./dataBoundary.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
   CanvasNode,
-  CanvasNodeData,
   CanvasNodeKind,
-  GenerationSettings,
   Point,
 } from "./model.ts";
 
@@ -45,6 +49,11 @@ const NODE_KINDS: CanvasNodeKind[] = [
   "file",
   "text",
   "group",
+  "timeline",
+  "subject",
+  "stack",
+  "tool",
+  "external",
 ];
 const DB_NAME = "museshow-canvas";
 const STORE_NAME = "documents";
@@ -62,29 +71,6 @@ const point = (value: unknown): value is Point =>
   object(value) && finite(value.x) && finite(value.y);
 const optionalString = (value: unknown) =>
   value === undefined || typeof value === "string";
-
-function settings(value: unknown): value is GenerationSettings {
-  return (
-    object(value) &&
-    typeof value.mode === "string" &&
-    ["image", "video", "audio"].includes(value.mode) &&
-    typeof value.model === "string" &&
-    typeof value.aspectRatio === "string" &&
-    finite(value.durationSeconds) &&
-    value.durationSeconds > 0 &&
-    typeof value.resolution === "string" &&
-    typeof value.prompt === "string" &&
-    (value.count === undefined ||
-      (Number.isInteger(value.count) &&
-        Number(value.count) >= 1 &&
-        Number(value.count) <= 8)) &&
-    optionalString(value.camera) &&
-    optionalString(value.palette) &&
-    optionalString(value.style) &&
-    (value.audioEnabled === undefined ||
-      typeof value.audioEnabled === "boolean")
-  );
-}
 
 /** Validates persisted JSON at the owning boundary, preserving source strings and explicit missing media. */
 export function parseDocument(input: unknown): Result<CanvasDocument> {
@@ -119,7 +105,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       "invalid-document",
       `画布缩放必须介于 ${MIN_ZOOM} 和 ${MAX_ZOOM} 之间，坐标必须是有限数字。`,
     );
-  if (!settings(value.settings))
+  if (!isGenerationSettings(value.settings))
     return failure("invalid-document", "画布生成设置无效。");
 
   const nodes: CanvasNode[] = [];
@@ -144,40 +130,16 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       );
     if (nodeIds.has(raw.id))
       return failure("invalid-document", `节点 ID 重复：${raw.id}`);
-    const data = raw.data;
-    if (
-      !object(data) ||
-      data.kind !== raw.type ||
-      typeof data.title !== "string" ||
-      typeof data.prompt !== "string" ||
-      !optionalString(data.src) ||
-      !optionalString(data.mimeType) ||
-      !optionalString(data.text) ||
-      (data.assetState !== undefined &&
-        data.assetState !== "ready" &&
-        data.assetState !== "missing") ||
-      (data.settings !== undefined && !settings(data.settings))
-    )
-      return failure("invalid-document", `节点 ${raw.id} 的内容无效。`);
-    const cleanData: CanvasNodeData = {
-      kind: raw.type as CanvasNodeKind,
-      title: data.title,
-      prompt: data.prompt,
-    };
-    for (const key of ["src", "mimeType", "text"] as const)
-      if (typeof data[key] === "string") cleanData[key] = data[key];
-    if (data.assetState) cleanData.assetState = data.assetState;
-    if (data.settings)
-      cleanData.settings = {
-        ...(data.settings as unknown as GenerationSettings),
-      };
+    const parsedData = parseNodeData(raw.type as CanvasNodeKind, raw.data);
+    if (!parsedData.ok)
+      return failure("invalid-document", `节点 ${raw.id}：${parsedData.error}`);
     nodes.push({
       id: raw.id,
       type: raw.type as CanvasNodeKind,
       position: { ...raw.position },
       width: raw.width,
       height: raw.height,
-      data: cleanData,
+      data: parsedData.value,
       ...(typeof raw.locked === "boolean" ? { locked: raw.locked } : {}),
       ...(typeof raw.zIndex === "number" ? { zIndex: raw.zIndex } : {}),
       ...(typeof raw.parentId === "string" ? { parentId: raw.parentId } : {}),
@@ -185,7 +147,34 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     nodeIds.add(raw.id);
   }
   const byId = new Map(nodes.map((node) => [node.id, node]));
+  const stackedIds = new Set<string>();
   for (const node of nodes) {
+    if (node.type === "stack" && node.data.stack) {
+      if (node.parentId)
+        return failure("invalid-document", "堆叠必须位于画布根层级。");
+      for (const id of node.data.stack.nodeIds) {
+        const member = byId.get(id);
+        if (
+          !member ||
+          member.parentId ||
+          ![
+            "image",
+            "video",
+            "audio",
+            "text",
+            "subject",
+            "timeline",
+            "external",
+          ].includes(member.type) ||
+          stackedIds.has(id)
+        )
+          return failure(
+            "invalid-document",
+            "堆叠成员必须是独立且未属于另一堆叠的可引用根节点。",
+          );
+        stackedIds.add(id);
+      }
+    }
     if (node.parentId && byId.get(node.parentId)?.type !== "group")
       return failure(
         "invalid-document",
@@ -232,6 +221,27 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     });
     edgeIds.add(raw.id);
   }
+  for (const node of nodes) {
+    for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
+      const id = node.data.settings?.[key];
+      if (
+        id !== undefined &&
+        (!nodeIds.has(id) ||
+          !edges.some((edge) => edge.source === id && edge.target === node.id))
+      )
+        return failure("invalid-document", "视频首尾帧必须引用已连接的节点。");
+    }
+    if (
+      node.data.taskDraft &&
+      (node.data.taskDraft.sourceNodeIds.some((id) => !nodeIds.has(id)) ||
+        (node.data.taskDraft.selection &&
+          !nodeIds.has(node.data.taskDraft.selection.sourceNodeId)))
+    )
+      return failure("invalid-document", "工具草稿引用了不存在的节点。");
+  }
+  for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const)
+    if (value.settings[key] !== undefined && !nodeIds.has(value.settings[key]!))
+      return failure("invalid-document", "项目设置引用了不存在的首尾帧。");
   return {
     ok: true,
     value: {
@@ -245,7 +255,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
         y: value.viewport.y,
         zoom: value.viewport.zoom,
       },
-      settings: { ...value.settings },
+      settings: copyGenerationSettings(value.settings),
     },
   };
 }
@@ -253,8 +263,17 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
 function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
   const parsed = parseDocument(document);
   if (!parsed.ok) return parsed;
-  const transient = parsed.value.nodes.find((node) =>
-    node.data.src?.startsWith("blob:"),
+  const transient = parsed.value.nodes.find(
+    (node) =>
+      node.data.src?.startsWith("blob:") ||
+      nodeResources(node.data).some((resource) =>
+        resource.src?.startsWith("blob:"),
+      ) ||
+      node.data.layers?.layers.some(
+        (layer) =>
+          layer.content.kind === "image" &&
+          layer.content.src.startsWith("blob:"),
+      ),
   );
   return transient
     ? failure(

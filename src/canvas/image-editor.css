@@ -93,6 +93,22 @@
   color: #f0dfff;
   background: #342a3e;
 }
+.cw-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cw-editor-layers {
+  padding: 7px 11px;
+  border: 1px solid #65516f;
+  border-radius: 6px;
+  color: #cdb5dc;
+  background: #30233a;
+  font-size: 11px;
+}
+.cw-editor-layers:hover {
+  background: #42304f;
+}
 .cw-editor-body {
   display: grid;
   min-height: 0;

@@ -45,6 +45,34 @@ export function CanvasIcon({ name, size = 18, ...props }: CanvasIconProps) {
         <rect x="7" y="7" width="10" height="10" rx="2" />
       </>
     ),
+    timeline: (
+      <>
+        <path d="M3 5h18M6 3v18M3 10h10v4H3ZM9 17h12v4H9Z" />
+        <path d="M16 8h5v6h-5Z" />
+      </>
+    ),
+    subject: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 22v-3a8 8 0 0 1 16 0v3M3 3h3M18 3h3M3 3v4M21 3v4" />
+      </>
+    ),
+    stack: (
+      <>
+        <rect x="3" y="7" width="15" height="14" rx="3" />
+        <path d="M7 7V4h14v13h-3M7 17l3-4 5 4" />
+      </>
+    ),
+    tool: (
+      <>
+        <path d="M14 4a5 5 0 0 0-6 6L3 16a3 3 0 0 0 5 5l6-7a5 5 0 0 0 6-6l-4 3-3-3Z" />
+      </>
+    ),
+    external: (
+      <>
+        <path d="M3 5h18v15H3ZM3 9h18M5 5l3 4M11 5l3 4M17 5l3 4M9 13l6 3-6 3Z" />
+      </>
+    ),
     plus: <path d="M12 5v14M5 12h14" />,
     minus: <path d="M5 12h14" />,
     close: <path d="m6 6 12 12M6 18 18 6" />,
