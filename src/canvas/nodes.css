@@ -225,6 +225,7 @@
   height: 100%;
   pointer-events: none;
 }
+.cw-text-display,
 .cw-text-editor {
   display: block;
   width: 100%;
@@ -244,6 +245,16 @@
 }
 .cw-text-editor::placeholder {
   color: #777983;
+}
+.cw-text-display {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  user-select: none;
+  cursor: inherit;
+}
+.cw-text-placeholder {
+  color: #74767e;
 }
 .cw-node-text {
   background: #28292d;

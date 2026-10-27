@@ -42,8 +42,8 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   draggable,
 }: NodeProps<CanvasFlowNode>) {
   const actions = useContext(CanvasActionsContext);
-  const beginEdit = actions?.beginEdit;
-  const endEdit = actions?.endEdit;
+  const beginEdit = actions?.beginResize;
+  const endEdit = actions?.endResize;
   const resizeStart = useCallback(() => beginEdit?.(id), [beginEdit, id]);
   const resizeEnd = useCallback(() => endEdit?.(id), [endEdit, id]);
   const kind = data.kind;
@@ -56,10 +56,6 @@ export const CanvasNodeView = memo(function CanvasNodeView({
     event.preventDefault();
     event.stopPropagation();
     actions?.contextMenu(id, event);
-  };
-  const openPreview = (event: MouseEvent) => {
-    event.stopPropagation();
-    if (hasAsset) actions?.preview(id);
   };
 
   return (
@@ -82,14 +78,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         <span className="cw-node-type">
           <CanvasIcon name={kind} size={15} />
         </span>
-        <span
-          className="cw-node-title"
-          title={data.title}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            actions?.rename(id);
-          }}
-        >
+        <span className="cw-node-title" title={data.title}>
           {data.title || names[kind]}
         </span>
         {locked && <CanvasIcon name="lock" size={12} />}
@@ -114,22 +103,33 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         ) ? (
         <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
-        <textarea
-          className="cw-text-editor nodrag nopan nowheel"
-          aria-label={`${data.title}内容`}
-          placeholder="输入你的想法…"
-          spellCheck={false}
-          readOnly={locked}
-          value={data.text ?? ""}
-          onFocus={() => actions?.beginEdit?.(id)}
-          onBlur={() => actions?.endEdit?.(id)}
-          onChange={(event) =>
-            actions?.update(id, { text: event.target.value })
-          }
-          onKeyDown={(event) => event.stopPropagation()}
-        />
+        actions?.isTextEditing(id) ? (
+          <textarea
+            className="cw-text-editor nodrag nopan nowheel"
+            aria-label={`${data.title}内容`}
+            placeholder="输入你的想法…"
+            spellCheck={false}
+            readOnly={locked}
+            autoFocus
+            value={data.text ?? ""}
+            onFocus={() => actions?.beginEdit?.(id)}
+            onBlur={() => actions?.finishTextEdit()}
+            onChange={(event) =>
+              actions?.update(id, { text: event.target.value })
+            }
+            onKeyDown={(event) => event.stopPropagation()}
+          />
+        ) : (
+          <div className="cw-text-display" aria-label={`${data.title}内容`}>
+            {data.text || (
+              <span className="cw-text-placeholder">
+                双击或按 Enter 输入想法…
+              </span>
+            )}
+          </div>
+        )
       ) : hasAsset ? (
-        <div className="cw-node-media" onDoubleClick={openPreview}>
+        <div className="cw-node-media">
           {kind === "image" && (
             <img
               className="cw-image-preview"
@@ -200,7 +200,10 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           {kind === "file" && (
             <button
               className="cw-file-preview nodrag nopan"
-              onClick={openPreview}
+              onClick={(event) => {
+                event.stopPropagation();
+                actions?.preview(id);
+              }}
             >
               <CanvasIcon name="file" size={38} />
               <strong>{data.title}</strong>
@@ -307,13 +310,7 @@ function DomainCard({
             ? { id, kind: "image", title: data.title, src: data.src }
             : undefined;
   return (
-    <div
-      className={`cw-domain-card cw-domain-card-${kind}`}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        actions?.edit(id);
-      }}
-    >
+    <div className={`cw-domain-card cw-domain-card-${kind}`}>
       {(kind === "subject" ||
         kind === "stack" ||
         kind === "timeline" ||

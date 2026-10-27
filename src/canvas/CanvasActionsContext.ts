@@ -6,11 +6,15 @@ export interface CanvasActions {
   update: (id: string, data: Partial<CanvasNodeData>) => void;
   rename: (id: string) => void;
   upload: (id: string) => void;
-  newConnected: (id: string, direction: "source" | "target") => void;
   preview: (id: string) => void;
+  newConnected: (id: string, direction: "source" | "target") => void;
   contextMenu: (id: string, event: MouseEvent) => void;
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
+  beginResize?: (id: string) => void;
+  endResize?: (id: string) => void;
+  isTextEditing: (id: string) => boolean;
+  finishTextEdit: () => void;
   edit: (id: string) => void;
   isLocked: (id: string) => boolean;
   getNode: (id: string) => CanvasNode | undefined;

@@ -602,6 +602,10 @@
   left: calc(50% - 100px);
   width: min(680px, calc(100vw - 450px));
 }
+.cw-composer-dock[data-interacting="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
 .cw-composer-dock .cw-composer {
   width: 100%;
   max-width: none;

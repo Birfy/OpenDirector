@@ -37,6 +37,7 @@ import {
 } from "./snapping";
 import { CanvasNodeView } from "./CanvasNodeView";
 import { CanvasActionsContext } from "./CanvasActionsContext";
+import { CanvasPointerGesture } from "./pointerGesture";
 import {
   generationActivities,
   generationPhase,
@@ -121,6 +122,7 @@ import {
   recordChange,
   beginTransaction,
   commitTransaction,
+  cancelTransaction,
   undo,
   redo,
   type CanvasHistory,
@@ -284,6 +286,17 @@ export default function CanvasWorkspace() {
   );
 }
 
+function incomingNodes(
+  document: CanvasDocument,
+  nodeId: string | null | undefined,
+) {
+  return document.nodes.filter((node) =>
+    document.edges.some(
+      (edge) => edge.target === nodeId && edge.source === node.id,
+    ),
+  );
+}
+
 function Workspace() {
   const flow = useReactFlow<FlowNode, Edge>();
   const [history, setHistory] = useState<CanvasHistory>(() =>
@@ -304,6 +317,13 @@ function Workspace() {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const selectionAtPointerDown = useRef<string[]>([]);
+  const pointerGesture = useRef(new CanvasPointerGesture());
+  const [interacting, setInteracting] = useState(false);
+  const [textEditingId, setTextEditingId] = useState<string | null>(null);
+  const [composerNodeId, setComposerNodeId] = useState<string | null>(null);
+  const [dismissedComposer, setDismissedComposer] = useState<string | null>(
+    null,
+  );
   const [panel, setPanel] = useState<Panel>(null);
   const [projectMenu, setProjectMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
@@ -319,7 +339,6 @@ function Workspace() {
   const dragging = useRef(false);
   const bypassSnapping = useRef(false);
   const connectionStarted = useRef<Point | null>(null);
-  const connectionReleasedAt = useRef(0);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const [toast, setToast] = useState("");
@@ -389,14 +408,17 @@ function Workspace() {
     selected.length === 1
       ? (doc.nodes.find((n) => n.id === selected[0]) ?? null)
       : null;
-  const selectedOwner = doc.nodes.find((node) => node.id === selected[0]);
-  const incoming = useMemo(
-    () =>
-      doc.nodes.filter((n) =>
-        doc.edges.some((e) => e.target === single?.id && e.source === n.id),
-      ),
-    [doc.nodes, doc.edges, single?.id],
+  // Keep the existing generator mounted while manipulating the canvas. Selection
+  // can change on pointerdown; it must not mount a different panel mid-gesture.
+  useEffect(() => {
+    if (!interacting) setComposerNodeId(single?.id ?? null);
+  }, [single?.id, interacting]);
+  const composerNode = doc.nodes.find((node) => node.id === composerNodeId);
+  const composerIncoming = useMemo(
+    () => incomingNodes(doc, composerNodeId),
+    [doc.nodes, doc.edges, composerNodeId],
   );
+  const selectedOwner = doc.nodes.find((node) => node.id === selected[0]);
   const command = useCallback(
     (value: CanvasCommand) => setHistory((h) => executeCommand(h, value)),
     [],
@@ -414,24 +436,50 @@ function Workspace() {
   }, []);
   const beginDrag = () => {
     dragging.current = true;
+    setInteracting(true);
     setMenu(null);
     begin();
   };
   const endDrag = useCallback(() => {
     dragging.current = false;
+    setInteracting(false);
     clearGuides();
     end();
   }, [clearGuides, end]);
+  const cancelDrag = useCallback(() => {
+    pointerGesture.current.cancel();
+    connectionStarted.current = null;
+    if (dragging.current) setHistory(cancelTransaction);
+    dragging.current = false;
+    setInteracting(false);
+    clearGuides();
+  }, [clearGuides]);
   useEffect(() => {
+    const move = (event: PointerEvent) =>
+      pointerGesture.current.move(
+        event.pointerId,
+        event.clientX,
+        event.clientY,
+      );
+    const up = (event: PointerEvent) => {
+      pointerGesture.current.end(event.pointerId, event.clientX, event.clientY);
+      setInteracting(false);
+    };
     const blur = () => {
       bypassSnapping.current = false;
-      endDrag();
+      cancelDrag();
     };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", blur);
     window.addEventListener("blur", blur);
     return () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", blur);
       window.removeEventListener("blur", blur);
     };
-  }, [endDrag]);
+  }, [cancelDrag]);
   const notify = useCallback((message: string) => setToast(message), []);
   const togglePanel = (value: Panel) => {
     referenceTarget.current = null;
@@ -479,6 +527,11 @@ function Workspace() {
       setHistory(createHistory(next));
       setMeasurements({});
       setSelected([]);
+      setComposerNodeId(null);
+      setTextEditingId(null);
+      setDismissedComposer(null);
+      setInteracting(false);
+      pointerGesture.current.cancel();
       setSelectedEdges([]);
       setPanel(null);
       setMenu(null);
@@ -755,6 +808,7 @@ function Workspace() {
       ? [menu.connected.id, node.id]
       : [node.id];
     setSelected([node.id]);
+    setDismissedComposer(null);
     referenceTarget.current = null;
     setMenu(null);
     setPanel(null);
@@ -800,10 +854,10 @@ function Workspace() {
     if (
       !point ||
       !start ||
-      Math.hypot(point.clientX - start.x, point.clientY - start.y) < 4
+      (!pointerGesture.current.moved &&
+        Math.hypot(point.clientX - start.x, point.clientY - start.y) <= 4)
     )
       return;
-    connectionReleasedAt.current = Date.now();
     if (state.isValid || !state.fromNode || !state.fromHandle) return;
     const target = document.elementFromPoint(point.clientX, point.clientY);
     const targetId = target
@@ -859,6 +913,11 @@ function Workspace() {
           return [...next];
         });
       const patches: CanvasCommand[] = [];
+      // XYFlow may still deliver a final move/resize after cancellation.
+      if (pointerGesture.current.cancelled) return;
+      // Capture the grab offset immediately, but do not author a move inside
+      // click tolerance (or let that jitter snap a node to a nearby guide).
+      if (dragging.current && !pointerGesture.current.moved) return;
       const resize = changes.find(
         (c) => c.type === "dimensions" && c.dimensions && c.setAttributes,
       );
@@ -1396,7 +1455,7 @@ function Workspace() {
       refreshRunning();
     }
   };
-  const runServiceGeneration = (node: CanvasNode) => {
+  const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const settings = getNodeGenerationSettings(node);
     const config = backendModel(settings, backendCatalog.models);
     const blocked = backendBlocker(settings, incoming, backendCatalog.models);
@@ -1450,11 +1509,14 @@ function Workspace() {
     if (ready && backendCatalog.connected) void followServiceTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id, ready, backendCatalog.connected]);
-  const prepareGeneration = () => {
-    if (!single) return;
-    const settings = getNodeGenerationSettings(single);
+  const prepareGeneration = (nodeId: string) => {
+    const current = historyRef.current.present;
+    const node = current.nodes.find((node) => node.id === nodeId);
+    if (!node || lockedNodeIds(current.nodes).has(nodeId)) return;
+    const incoming = incomingNodes(current, nodeId);
+    const settings = getNodeGenerationSettings(node);
     if (settings.modelConfigId) {
-      runServiceGeneration(single);
+      runServiceGeneration(node, incoming);
       return;
     }
     const blocked = generationBlocker(settings, incoming);
@@ -1463,12 +1525,12 @@ function Workspace() {
       return;
     }
     const jobId = crypto.randomUUID();
-    setGenerationTarget({ documentId: doc.id, nodeId: single.id, jobId });
+    setGenerationTarget({ documentId: current.id, nodeId: node.id, jobId });
     setJobs((current) => [
       {
         id: jobId,
-        nodeId: single.id,
-        title: single.data.prompt || single.data.title,
+        nodeId: node.id,
+        title: node.data.prompt || node.data.title,
         status: "draft",
         time: new Date().toLocaleTimeString("zh-CN", {
           hour: "2-digit",
@@ -1482,14 +1544,7 @@ function Workspace() {
     generationTarget?.documentId === doc.id
       ? doc.nodes.find((node) => node.id === generationTarget.nodeId)
       : undefined;
-  const generationIncoming = generationNode
-    ? doc.nodes.filter((node) =>
-        doc.edges.some(
-          (edge) =>
-            edge.source === node.id && edge.target === generationNode.id,
-        ),
-      )
-    : [];
+  const generationIncoming = incomingNodes(doc, generationNode?.id);
   const generationSettings = generationNode
     ? getNodeGenerationSettings(generationNode)
     : undefined;
@@ -1628,18 +1683,27 @@ function Workspace() {
     if (bypassSnapping.current) clearGuides();
     if (!ready || switchPending.current) return;
     const el = event.target as HTMLElement;
+    // These components own their keyboard shortcuts and cancellation lifecycle.
+    if (el.closest(".cw-composer-dock,.cw-domain-dialog")) return;
     const editingText = el.closest(
       "input,textarea,select,[contenteditable=true]",
     );
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (textEditingId) {
+        end();
+        setTextEditingId(null);
+        root.current?.focus({ preventScroll: true });
+        return;
+      }
       clearGuides();
+      cancelDrag();
       setSelectedEdges([]);
       setMenu(null);
       setPreview(null);
       setEditing(null);
-      setGenerationTarget(null);
+      closeGeneration();
       setRename(null);
       setHelp(false);
       setProjectMenu(false);
@@ -1648,11 +1712,32 @@ function Workspace() {
       if (!editingText) setSelected([]);
       return;
     }
-    if (editingText || rename || preview || editing || help || generationTarget)
+    if (
+      editingText ||
+      rename ||
+      preview ||
+      editing ||
+      help ||
+      generationTarget ||
+      modelSettings ||
+      el.closest("button,a,video,audio,[role=dialog]") ||
+      (el !== root.current && !el.closest(".react-flow"))
+    )
       return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
-    if (mod && key === "z") {
+    if (
+      !mod &&
+      event.key === "Enter" &&
+      single?.type === "text" &&
+      !lockedIds.has(single.id) &&
+      (el === root.current ||
+        el.closest(".react-flow__node")?.getAttribute("data-id") === single.id)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTextEditingId(single.id);
+    } else if (mod && key === "z") {
       event.preventDefault();
       setHistory(event.shiftKey ? redo : undo);
     } else if (mod && key === "y") {
@@ -1755,11 +1840,10 @@ function Workspace() {
     },
     upload: (id: string) => openFilePicker(id),
     preview: (id: string) => {
-      const n = doc.nodes.find((n) => n.id === id);
-      if (n) setPreview(n);
+      const node = doc.nodes.find((node) => node.id === id);
+      if (node) setPreview(node);
     },
     newConnected: (id: string, direction: "source" | "target") => {
-      if (Date.now() - connectionReleasedAt.current < 200) return;
       const n = doc.nodes.find((n) => n.id === id);
       if (!n || lockedIds.has(id)) return;
       const p = absolutePosition(n, doc.nodes);
@@ -1846,6 +1930,13 @@ function Workspace() {
     },
     beginEdit: begin,
     endEdit: end,
+    beginResize: beginDrag,
+    endResize: endDrag,
+    isTextEditing: (id: string) => textEditingId === id,
+    finishTextEdit: () => {
+      end();
+      setTextEditingId(null);
+    },
   };
   const contextItems = (children: ReactNode) => (
     <div
@@ -1909,6 +2000,50 @@ function Workspace() {
       onPointerDownCapture={(event) => {
         selectionAtPointerDown.current = selectedRef.current;
         bypassSnapping.current = event.metaKey || event.ctrlKey;
+        const target = event.target as HTMLElement;
+        const surface = Boolean(target.closest(".react-flow"));
+        pointerGesture.current.begin(
+          event.pointerId,
+          event.clientX,
+          event.clientY,
+          surface,
+          panning,
+        );
+        if (
+          surface &&
+          !target.closest(
+            "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag:not(.react-flow__handle)",
+          )
+        )
+          setInteracting(true);
+      }}
+      onClickCapture={(event) => {
+        if (pointerGesture.current.blocksClick(event.detail)) {
+          event.preventDefault();
+          event.stopPropagation();
+        } else if (
+          event.detail === 2 &&
+          !pointerGesture.current.blocksDoubleClick() &&
+          !panning &&
+          (event.target as HTMLElement).classList.contains("react-flow__pane")
+        ) {
+          // In selection mode onPaneClick receives pointerup (detail=0).
+          // Read native click count here; the pan/zoom layer can consume dblclick.
+          setMenu({
+            x: event.clientX,
+            y: event.clientY,
+            world: flow.screenToFlowPosition({
+              x: event.clientX,
+              y: event.clientY,
+            }),
+          });
+        }
+      }}
+      onDoubleClickCapture={(event) => {
+        if (pointerGesture.current.blocksDoubleClick()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
       onKeyDownCapture={onWorkspaceKey}
       onKeyUpCapture={(event) => {
@@ -1975,8 +2110,15 @@ function Workspace() {
             )
           }
           onNodeClick={(event, node) => {
-            if (panning) return;
+            if (
+              panning ||
+              (event.target as HTMLElement).closest(
+                "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
+              )
+            )
+              return;
             setMenu(null);
+            setDismissedComposer(null);
             // Read modifiers from the gesture itself, including focus changes between clicks.
             if (event.shiftKey || event.metaKey || event.ctrlKey) {
               const ids = new Set(selectionAtPointerDown.current);
@@ -1985,7 +2127,27 @@ function Workspace() {
               setSelected([...ids]);
               return;
             }
-            if (!["image", "video", "audio"].includes(node.type ?? "")) return;
+            if (
+              node.type === "text" &&
+              !lockedIds.has(node.id) &&
+              selectionAtPointerDown.current.length === 1 &&
+              selectionAtPointerDown.current[0] === node.id
+            )
+              setTextEditingId(node.id);
+          }}
+          onNodeDoubleClick={(event, node) => {
+            if (
+              panning ||
+              (event.target as HTMLElement).closest(
+                "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
+              )
+            )
+              return;
+            setSelected([node.id]);
+            if (node.type === "text" && !lockedIds.has(node.id)) {
+              setTextEditingId(node.id);
+              return;
+            }
             requestAnimationFrame(() => revealNodes([node.id]));
           }}
           onNodeDragStart={beginDrag}
@@ -1993,23 +2155,15 @@ function Workspace() {
           onSelectionDragStart={beginDrag}
           onSelectionDragStop={endDrag}
           onPaneClick={(event) => {
-            if (Date.now() - connectionReleasedAt.current < 200) return;
+            if (panning || pointerGesture.current.blocksClick(1)) return;
             root.current?.focus({ preventScroll: true });
             setMenu(null);
             setSelected([]);
+            setDismissedComposer(null);
             setSelectedEdges([]);
             setProjectMenu(false);
             setMoreMenu(false);
             setZoomMenu(false);
-            if (event.detail === 2)
-              setMenu({
-                x: event.clientX,
-                y: event.clientY,
-                world: flow.screenToFlowPosition({
-                  x: event.clientX,
-                  y: event.clientY,
-                }),
-              });
           }}
           onPaneContextMenu={(event) => {
             event.preventDefault();
@@ -2464,7 +2618,7 @@ function Workspace() {
           </span>
         </button>
       </div>
-      {selected.length > 1 && (
+      {selected.length > 1 && !interacting && !panning && (
         <div className="cw-selection-bar">
           <span>已选 {selected.length} 个节点</span>
           <select
@@ -2521,28 +2675,36 @@ function Workspace() {
           <IconButton name="trash" label="删除所选" onClick={removeSelected} />
         </div>
       )}
-      {single &&
-        ["image", "video", "audio"].includes(single.type) &&
-        !lockedIds.has(single.id) &&
+      {composerNode &&
+        ["image", "video", "audio"].includes(composerNode.type) &&
+        composerNode.id !== dismissedComposer &&
+        !lockedIds.has(composerNode.id) &&
         !editing &&
         !preview &&
         !generationTarget && (
-          <div className={`cw-composer-dock ${panel ? "has-panel" : ""}`}>
+          <div
+            className={`cw-composer-dock ${panel ? "has-panel" : ""}`}
+            data-interacting={interacting || panning}
+            aria-hidden={interacting || panning}
+            inert={interacting || panning}
+          >
             <div className="cw-selected-tools">
-              <span>{single.data.title}</span>
-              {single.data.src && (
+              <span>{composerNode.data.title}</span>
+              {composerNode.data.src && (
                 <>
-                  <button onClick={() => setPreview(single)}>
+                  <button onClick={() => setPreview(composerNode)}>
                     <CanvasIcon name="expand" size={14} />
                     全屏
                   </button>
-                  {single.type === "image" && (
+                  {composerNode.type === "image" && (
                     <>
-                      <button onClick={() => openEditor(single)}>
+                      <button onClick={() => openEditor(composerNode)}>
                         <CanvasIcon name="crop" size={14} />
                         编辑图片
                       </button>
-                      <button onClick={() => openEditor(single, "layers")}>
+                      <button
+                        onClick={() => openEditor(composerNode, "layers")}
+                      >
                         <CanvasIcon name="stack" size={14} />
                         图层
                       </button>
@@ -2551,10 +2713,10 @@ function Workspace() {
                   <button
                     onClick={() =>
                       openTools(
-                        single.data.taskDraft?.tool ??
-                          (single.type === "image"
+                        composerNode.data.taskDraft?.tool ??
+                          (composerNode.type === "image"
                             ? "smart-edit"
-                            : single.type === "video"
+                            : composerNode.type === "video"
                               ? "video-trim"
                               : "audio-trim"),
                       )
@@ -2563,36 +2725,42 @@ function Workspace() {
                     <CanvasIcon name="tool" size={14} />
                     工具
                   </button>
-                  <button onClick={() => downloadNode(single)}>
+                  <button onClick={() => downloadNode(composerNode)}>
                     <CanvasIcon name="download" size={14} />
                     下载
                   </button>
                 </>
               )}
-              <button aria-label="关闭生成面板" onClick={() => setSelected([])}>
+              <button
+                aria-label="关闭生成面板"
+                onClick={() => {
+                  setDismissedComposer(composerNode.id);
+                  root.current?.focus({ preventScroll: true });
+                }}
+              >
                 ×
               </button>
             </div>
             <NodeComposer
-              selectedNode={single}
-              incomingNodes={incoming}
+              selectedNode={composerNode}
+              incomingNodes={composerIncoming}
               onUpdate={(patch) =>
                 command({
                   type: "update-node",
-                  id: single.id,
+                  id: composerNode.id,
                   patch: { data: patch },
                 })
               }
-              onRun={prepareGeneration}
+              onRun={() => prepareGeneration(composerNode.id)}
               onCancel={() => {
                 setGenerationTarget(null);
-                cancelServiceRuns(single.id);
+                cancelServiceRuns(composerNode.id);
               }}
               onPickReference={() => {
-                referenceTarget.current = single.id;
+                referenceTarget.current = composerNode.id;
                 setPanel("assets");
               }}
-              running={generationByNode.has(single.id)}
+              running={generationByNode.has(composerNode.id)}
               backendModels={backendCatalog.models}
             />
           </div>
