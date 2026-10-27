@@ -164,6 +164,21 @@
   border: 1px solid #ffffff15;
   border-radius: 20px;
   margin: 0 8px;
+  background: none;
+  cursor: pointer;
+}
+.cw-local-badge:hover {
+  color: #e5e5e8;
+}
+.cw-sync-button {
+  display: block;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #ffffff20;
+  border-radius: 8px;
+  color: #d8dfd9;
+  background: none;
+  font-size: 11px;
 }
 .cw-export-button {
   padding: 8px 14px;

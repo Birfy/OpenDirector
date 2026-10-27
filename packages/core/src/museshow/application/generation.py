@@ -17,6 +17,7 @@ from museshow.infrastructure.canvas_references import resolve_inputs
 from museshow.domain.projects import ProjectError, identifier
 from museshow.domain.canvas import CanvasNode, CanvasState, lock_role
 from museshow.domain.generation import GenerationError, GenerationFailure
+from museshow.domain.input_rules import input_rules
 from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.app_settings import AppSettings
 from museshow.infrastructure.canvas_assets import require_current_assets
@@ -94,7 +95,9 @@ class Generation:
                 raise ProjectError("节点内容已变化，请重新加载后生成。", 409)
             if any(task["nodeId"] == node_id and task["status"] in ACTIVE for task in self.canvas._tasks(directory)):
                 raise ProjectError("该节点正在生成，请等待或取消当前任务。", 409)
-            updates = value.get("inputs") or {}
+            updates = dict(value.get("inputs") or {})
+            # Output length and canvas belong to the task, not to the node inputs.
+            output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'voice') if updates.get(key) is not None}
             if production and not create and not plan_step.get('inputBasis'):
                 if any(node[key] != updates.get(key, node[key]) for key in ('prompt', 'referenceIds', 'videoMode')) or node['modelConfigId'] != str(value['modelConfigId']):
                     raise ProjectError('节点输入已变化，计划未覆盖当前输入或重新提交生成。', 409)
@@ -152,6 +155,13 @@ class Generation:
             if config.get('protocol') == 'vllm_omni':
                 task['parameters'] = video_parameters(node, records)
             task['protocol'] = config.get('protocol')
+            if node['kind'] == 'video' and output and input_rules(config)['profile'] != 'fasth3-omni':
+                if 'durationSeconds' in output:
+                    task['parameters']['duration'] = output['durationSeconds']
+                if 'aspectRatio' in output:
+                    task['parameters']['ratio'] = output['aspectRatio']
+            if node['kind'] == 'audio' and 'voice' in output and config.get('protocol') == 'openai':
+                task['parameters']['voice'] = output['voice']
             if node['kind'] in {'image', 'video'} and config.get('protocol') != 'vllm_omni':
                 # Snapshot once, before the durable task is accepted. Recovery
                 # and idempotent submissions keep the original parameters.

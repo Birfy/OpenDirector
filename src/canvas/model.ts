@@ -40,13 +40,15 @@ export interface GenerationSettings {
   palette?: string;
   style?: string;
   audioEnabled?: boolean;
-  videoMode?: "reference" | "first-last";
+  videoMode?: "reference" | "first-last" | "continuation";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;
   imagePreset?: "none" | "product-views";
+  /** A model configured in the local API; catalog models leave it unset. */
+  modelConfigId?: string;
 }
 
 /** A retained media snapshot. nodeId records provenance, not ownership of the source. */

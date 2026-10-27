@@ -6,8 +6,9 @@
 
 - **实际代码恢复**：`research/capture/` 保存公开 JS/CSS 的原始字节、URL 和 SHA-256；`recovered/` 保存 Wakaru 解包、格式化与有限反编译的派生模块。依赖关系、未解决项和覆盖范围都有报告。
 - **可运行的学习重建**：`src/` 是重新编写的 React + TypeScript 工程，提供全屏画布、时间线、图层板和 3D 导演预演。`bannerSnapshot.ts` 依据真实模块移植校验语义，其余 UI、类型、画布与插图均为重建。
+- **本地生成服务**：`apps/api` 与 `packages/core` 是从 `main` 移植的 MuseShow 本地 API（FastAPI）。画布通过它调用你自己接入的模型：图片、视频、配音生成和 AI 助手。
 
-没有获取到原站发布前的 TypeScript/TSX、原始 source map、构建配置、完整素材或服务端。**这不是完整原版工程，也不具备真实 AI 生成能力。** 解包得到的源码不自动等于可编译的原站应用；可直接运行的是 `src/` 学习工程。
+没有获取到原站发布前的 TypeScript/TSX、原始 source map、构建配置、完整素材或服务端。**这不是完整原版工程，也没有连接即梦的生成服务。** 解包得到的源码不自动等于可编译的原站应用；可直接运行的是 `src/` 学习工程。真实生成只经由本地 API 调用“模型接入”中配置的模型。
 
 ![纯画布应用](docs/canvas-only.jpg)
 
@@ -26,8 +27,47 @@ npm run dev
 
 打开终端显示的本机地址（默认 `http://127.0.0.1:5173`）。应用直接打开画布；旧的 `/ai-tool/home` 地址也进入画布。左上角星形按钮打开本地项目列表。画布菜单中的“打开示例画布”提供可编辑的节点和参考连线。
 
+只运行前端时，画布的编辑功能都可用，生成面板保留“任务草稿/导入结果”流程。
+
+### 连同本地生成服务启动
+
+还需要 Python **3.11+**，以及在 PATH 中的 `ffmpeg` 和 `ffprobe`。
+
 ```sh
-npm test                 # 快照、画布命令/历史/持久化边界与任务测试
+npm ci
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+npm run build
+.venv/bin/python scripts/museshow.py serve            # http://127.0.0.1:8000
+# 或开发模式：API + Vite 热更新，打开 http://127.0.0.1:5173
+.venv/bin/python scripts/museshow.py dev
+```
+
+端口被占用时追加 `--port 8001`。项目文件和模型配置保存在仓库下的 `projects/` 与 `.museshow/`（已加入 `.gitignore`），画布本身仍保存在浏览器 IndexedDB；每个画布在第一次生成或打开助手时绑定一个本地 API 项目。
+
+## 接入模型
+
+点击右上角“模型接入”（或“更多 → 模型接入”），按类别添加模型。URL 填服务的 `/v1` 地址，Model ID 填服务的 `--served-model-name`。
+
+| 类别 | 接口协议 | URL 示例 | Model ID 示例 |
+|---|---|---|---|
+| 对话 Agent | OpenAI 兼容（vLLM 等） | `http://127.0.0.1:8100/v1` | `Qwen/Qwen3-30B-A3B` |
+| 图片生成 | OpenAI 兼容（vLLM-Omni） | `http://127.0.0.1:8200/v1` | `Tongyi-MAI/Z-Image-Turbo` |
+| 视频生成 | vLLM-Omni 视频接口 | `http://127.0.0.1:8000/v1` | `MiniMaxAI/MiniMax-H3` |
+| 音频生成 | OpenAI 兼容语音合成（vLLM-Omni） | `http://127.0.0.1:8220/v1` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` |
+| 图片 / 视频 / 音频 | 火山方舟 / Agent Plan | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seedream-5.0-pro` 等 |
+
+接入后，在图片、视频或音频节点的生成面板中，从“本地服务”分组选择模型并提交。参考素材取自连到该节点的上游节点，结果作为新节点连接到来源节点，进度和失败原因显示在“生成历史”中，可随时取消。参数按模型的输入规则校验：
+
+- **MiniMax-H3**：全能参考（图片与音频参考）、首帧（连接图片并选为首帧；不支持尾帧）、文生视频（不连接素材），以及**接续**：连接一段由同一 H3 服务生成的视频，新片段从它的结尾继续，画面和声音连续。接续依赖服务端缓存的潜变量（vLLM-Omni 的跨请求接续，见 [vllm-project/vllm-omni#9342](https://github.com/vllm-project/vllm-omni/pull/9342)），服务重启或缓存淘汰后需重新生成上一段。时长 4–15 秒，按 H3 的 17 帧组取整。
+- **Z-Image-Turbo**：只按文字出图，1344×768，可直接作为 H3 首帧；连接的文本节点会并入提示词。
+- **自部署语音合成**：朗读提示词中的文字。“音色”填服务支持的说话人（如 Qwen3-TTS 的 `vivian`、`serena`），留空使用模型默认音色。
+
+“与 AI 对话”在接入对话 Agent 后连接本地 API 的助手：它可以写剧本、拆分镜头，并调用已接入的图片、视频和配音模型批量制作。助手写下的文档和生成的素材会自动加入当前画布；画布关闭期间完成的结果，会在再次打开该画布或点击“同步本地服务结果”时加入。
+
+```sh
+npm test                 # 快照、画布命令/历史/持久化边界、本地服务输入规则与任务测试
+.venv/bin/python -m pytest tests   # 本地 API、生成、助手与制作计划测试
 npm run build            # TypeScript 检查 + Vite 生产构建
 npm run preview          # 查看生产构建
 npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态依赖
@@ -51,10 +91,15 @@ npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态
 ```text
 src/
   App.tsx                 画布加载入口
-  canvas/                 全屏编辑器、节点、历史、持久化、图片编辑
+  canvas/                 全屏编辑器、节点、历史、持久化、图片编辑、生成面板与助手
+  backend/                本地 API 客户端：模型接入、生成任务、助手对话与结果同步
   domain/bannerSnapshot.ts 依据 TJ 模块移植的校验逻辑
   styles/                 全局基础样式
-tests/                    领域边界与取消行为测试
+apps/api/                 本地 API（FastAPI）路由与对话流
+packages/core/            项目、画布、生成任务、助手、制作计划与模型适配器
+scripts/museshow.py       同时启动本地 API 与前端
+tools/fasth3/             FastH3 远程部署工具
+tests/                    前端 *.test.ts 与本地 API test_*.py
 research/capture/         148 份原始公开资源和采集清单
 research/prepared/        AST 提取的解包输入及原始区间
 research/canvas/          独立 octo_web 画布资源、格式化代码与证据
@@ -82,4 +127,4 @@ npm run recovery:check
 
 此分支只包含无需登录即可请求的公开 JS/CSS 及其派生结果、独立编写的学习代码和说明。不包含已登录 HTML、Cookie、浏览器配置、账号数据、API 响应或本机 REA 配置。原资源中的第三方版权/许可证标记保留；这里不把第三方资源重新授予开源许可证。请按原有权利范围使用研究材料。
 
-`rea` 是独立学习分支；本次没有合并或修改 `main`。
+`rea` 是独立学习分支；本地 API 从 `main` 移植，`main` 本身没有修改。

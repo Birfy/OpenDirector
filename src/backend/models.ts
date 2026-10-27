@@ -1,0 +1,81 @@
+import { useCallback, useEffect, useState } from "react";
+import { errorMessage, json, request } from "./api.ts";
+import type { ModelConfig, ModelKind } from "./rules.ts";
+
+export const MODEL_KINDS: readonly { id: ModelKind; label: string }[] = [
+  { id: "agent", label: "对话 Agent" },
+  { id: "image", label: "图片生成" },
+  { id: "video", label: "视频生成" },
+  { id: "audio", label: "音频生成" },
+];
+
+export interface ModelConfigInput {
+  kind: ModelKind;
+  url: string;
+  modelId: string;
+  apiKey: string;
+  connectionType: "api" | "self_hosted";
+  protocol: "openai" | "volcengine" | "vllm_omni";
+  authMode: "none" | "bearer";
+}
+
+export interface GeneralSettings {
+  removeWatermark: boolean;
+}
+
+/** The API is optional: without it the canvas keeps its local-only workflows. */
+export function useBackendModels() {
+  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const [error, setError] = useState("");
+  const [connected, setConnected] = useState(false);
+  const refresh = useCallback(async () => {
+    try {
+      const [list, general] = await Promise.all([
+        request<ModelConfig[]>("/model-configs"),
+        request<GeneralSettings>("/settings"),
+      ]);
+      setModels(list);
+      setSettings(general);
+      setConnected(true);
+      setError("");
+    } catch (failure) {
+      setConnected(false);
+      setError(errorMessage(failure));
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  const save = async (value: ModelConfigInput, id?: string) => {
+    const saved = await request<ModelConfig>(
+      `/model-configs${id ? `/${id}` : ""}`,
+      json(id ? "PATCH" : "POST", value),
+    );
+    setModels((current) =>
+      id
+        ? current.map((item) => (item.id === id ? saved : item))
+        : [...current, saved],
+    );
+  };
+  const remove = async (id: string) => {
+    await request(`/model-configs/${id}`, { method: "DELETE" });
+    setModels((current) => current.filter((item) => item.id !== id));
+  };
+  const updateSettings = async (patch: GeneralSettings) =>
+    setSettings(
+      await request<GeneralSettings>("/settings", json("PATCH", patch)),
+    );
+  return {
+    models,
+    settings,
+    error,
+    connected,
+    refresh,
+    save,
+    remove,
+    updateSettings,
+  };
+}
+
+export type BackendModels = ReturnType<typeof useBackendModels>;

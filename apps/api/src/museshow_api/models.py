@@ -253,6 +253,9 @@ class GenerationInputs(Model):
     prompt: str = Field(max_length=20000)
     referenceIds: list[UUID] = Field(default_factory=list, max_length=MAX_REFERENCES)
     title: str = Field(default="", max_length=255)
+    durationSeconds: float | None = Field(default=None, ge=1, le=60, allow_inf_nan=False)
+    aspectRatio: str | None = Field(default=None, pattern=r'^\d{1,2}:\d{1,2}$')
+    voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
 
 
 class GenerateNode(Model):

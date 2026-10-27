@@ -1,0 +1,291 @@
+import { useState, type FormEvent } from "react";
+import { EditorModal } from "./EditorModal";
+import { errorMessage } from "../backend/api.ts";
+import {
+  MODEL_KINDS,
+  type BackendModels,
+  type ModelConfigInput,
+} from "../backend/models.ts";
+import type { ModelConfig, ModelKind } from "../backend/rules.ts";
+import "./model-settings.css";
+
+type Protocol = ModelConfigInput["protocol"];
+
+const PROTOCOLS: Record<ModelKind, readonly [Protocol, string][]> = {
+  agent: [["openai", "OpenAI 兼容接口（含 vLLM）"]],
+  image: [
+    ["openai", "OpenAI 兼容接口（含 vLLM-Omni Z-Image-Turbo）"],
+    ["volcengine", "火山方舟 / Agent Plan"],
+  ],
+  video: [
+    ["vllm_omni", "vLLM-Omni 视频接口（MiniMax-H3 / FastH3）"],
+    ["volcengine", "火山方舟 / Agent Plan"],
+  ],
+  audio: [
+    ["openai", "OpenAI 兼容语音合成（含 vLLM-Omni TTS）"],
+    ["volcengine", "火山引擎语音 / Agent Plan"],
+  ],
+};
+
+const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
+  agent: ["http://127.0.0.1:8100/v1", "Qwen/Qwen3-30B-A3B"],
+  image: ["http://127.0.0.1:8200/v1", "Tongyi-MAI/Z-Image-Turbo"],
+  video: ["http://127.0.0.1:8010/v1", "MiniMaxAI/MiniMax-H3"],
+  audio: ["http://127.0.0.1:8220/v1", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"],
+};
+
+function ModelForm({
+  kind,
+  existing,
+  catalog,
+  onClose,
+}: {
+  kind: ModelKind;
+  existing?: ModelConfig;
+  catalog: BackendModels;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState<ModelConfigInput>({
+    kind,
+    url: existing?.url ?? "",
+    modelId: existing?.modelId ?? "",
+    apiKey: "",
+    connectionType: existing?.connectionType ?? "self_hosted",
+    protocol: existing?.protocol ?? PROTOCOLS[kind][0][0],
+    authMode: existing?.authMode ?? "none",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const update = (patch: Partial<ModelConfigInput>) =>
+    setValue((current) => ({ ...current, ...patch }));
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await catalog.save(value, existing?.id);
+      onClose();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="cw-model-form"
+      autoComplete="off"
+      onSubmit={(event) => void submit(event)}
+    >
+      <fieldset disabled={busy}>
+        <label className="cw-domain-field">
+          接入方式
+          <select
+            value={value.connectionType}
+            onChange={(event) => {
+              const connectionType = event.target
+                .value as ModelConfigInput["connectionType"];
+              update({
+                connectionType,
+                authMode: connectionType === "self_hosted" ? "none" : "bearer",
+                protocol:
+                  connectionType === "self_hosted"
+                    ? PROTOCOLS[kind][0][0]
+                    : (PROTOCOLS[kind].find(
+                        ([id]) => id === "volcengine",
+                      )?.[0] ?? PROTOCOLS[kind][0][0]),
+              });
+            }}
+          >
+            <option value="self_hosted">自部署服务（vLLM / vLLM-Omni）</option>
+            <option value="api">服务商 API</option>
+          </select>
+        </label>
+        <label className="cw-domain-field">
+          接口协议
+          <select
+            value={value.protocol}
+            onChange={(event) =>
+              update({ protocol: event.target.value as Protocol })
+            }
+          >
+            {PROTOCOLS[kind].map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cw-domain-field">
+          服务地址（Base URL）
+          <input
+            type="url"
+            required
+            maxLength={2048}
+            value={value.url}
+            placeholder={PLACEHOLDERS[kind][0]}
+            onChange={(event) => update({ url: event.target.value })}
+          />
+        </label>
+        <label className="cw-domain-field">
+          Model ID（服务的 served-model-name）
+          <input
+            required
+            maxLength={200}
+            value={value.modelId}
+            placeholder={PLACEHOLDERS[kind][1]}
+            onChange={(event) => update({ modelId: event.target.value })}
+          />
+        </label>
+        <label className="cw-domain-field">
+          鉴权方式
+          <select
+            value={value.authMode}
+            onChange={(event) =>
+              update({
+                authMode: event.target.value as ModelConfigInput["authMode"],
+              })
+            }
+          >
+            <option value="none">无需鉴权</option>
+            <option value="bearer">API Key / Bearer Token</option>
+          </select>
+        </label>
+        {value.authMode === "bearer" && (
+          <label className="cw-domain-field">
+            API Key
+            <input
+              type="password"
+              maxLength={8192}
+              required={!existing || existing.authMode === "none"}
+              value={value.apiKey}
+              placeholder={existing ? "留空保留原密钥" : "服务端配置的密钥"}
+              onChange={(event) => update({ apiKey: event.target.value })}
+            />
+          </label>
+        )}
+        {error && (
+          <p className="cw-domain-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="cw-model-form-actions">
+          <button type="button" onClick={onClose}>
+            取消
+          </button>
+          <button className="cw-domain-primary" type="submit">
+            {busy ? "保存中…" : "保存模型"}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  );
+}
+
+export function ModelSettingsDialog({
+  catalog,
+  onClose,
+}: {
+  catalog: BackendModels;
+  onClose: () => void;
+}) {
+  const [editing, setEditing] = useState<{
+    kind: ModelKind;
+    model?: ModelConfig;
+  } | null>(null);
+  const [error, setError] = useState("");
+  const remove = async (id: string) => {
+    setError("");
+    try {
+      await catalog.remove(id);
+    } catch (failure) {
+      setError(errorMessage(failure));
+    }
+  };
+  return (
+    <EditorModal
+      title="模型接入"
+      subtitle="由本地 API 保存和调用；密钥只保存在本机后端，不进入画布文件。"
+      onClose={onClose}
+      className="cw-model-settings"
+      error={error || (catalog.connected ? undefined : catalog.error)}
+      actions={
+        !catalog.connected && (
+          <button onClick={() => void catalog.refresh()}>重新连接</button>
+        )
+      }
+    >
+      {catalog.connected && catalog.settings && (
+        <label className="cw-domain-checkbox cw-model-watermark">
+          <input
+            type="checkbox"
+            checked={catalog.settings.removeWatermark}
+            onChange={(event) =>
+              void catalog
+                .updateSettings({ removeWatermark: event.target.checked })
+                .catch((failure) => setError(errorMessage(failure)))
+            }
+          />
+          去除服务商“AI 生成”可见水印（仅对之后提交的任务生效）
+        </label>
+      )}
+      {catalog.connected &&
+        MODEL_KINDS.map((kind) => {
+          const models = catalog.models.filter(
+            (model) => model.kind === kind.id,
+          );
+          return (
+            <section key={kind.id} className="cw-model-section">
+              <div className="cw-domain-section-heading">
+                <h3>{kind.label}</h3>
+                <button
+                  disabled={!!editing}
+                  onClick={() => setEditing({ kind: kind.id })}
+                >
+                  添加模型
+                </button>
+              </div>
+              {!models.length && <p className="cw-model-empty">暂无模型</p>}
+              <ul className="cw-model-list">
+                {models.map((model) => (
+                  <li key={model.id}>
+                    <div>
+                      <strong>{model.modelId}</strong>
+                      <small>
+                        {model.url} ·{" "}
+                        {model.connectionType === "self_hosted"
+                          ? "自部署"
+                          : "服务商 API"}{" "}
+                        · {model.inputRules.profile}
+                      </small>
+                    </div>
+                    <button
+                      disabled={!!editing}
+                      onClick={() => setEditing({ kind: kind.id, model })}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      disabled={!!editing}
+                      onClick={() => void remove(model.id)}
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {editing?.kind === kind.id && (
+                <ModelForm
+                  key={editing.model?.id ?? kind.id}
+                  kind={kind.id}
+                  existing={editing.model}
+                  catalog={catalog}
+                  onClose={() => setEditing(null)}
+                />
+              )}
+            </section>
+          );
+        })}
+    </EditorModal>
+  );
+}

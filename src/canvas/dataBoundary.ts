@@ -43,6 +43,7 @@ const SETTINGS_KEYS = [
   "audioMode",
   "voiceName",
   "imagePreset",
+  "modelConfigId",
 ] as const;
 
 export function isGenerationSettings(
@@ -69,7 +70,8 @@ export function isGenerationSettings(
       typeof value.audioEnabled === "boolean") &&
     (value.videoMode === undefined ||
       value.videoMode === "reference" ||
-      value.videoMode === "first-last") &&
+      value.videoMode === "first-last" ||
+      value.videoMode === "continuation") &&
     (value.firstFrameNodeId === undefined ||
       nonempty(value.firstFrameNodeId)) &&
     (value.lastFrameNodeId === undefined || nonempty(value.lastFrameNodeId)) &&
@@ -82,7 +84,8 @@ export function isGenerationSettings(
     optionalString(value.voiceName) &&
     (value.imagePreset === undefined ||
       value.imagePreset === "none" ||
-      value.imagePreset === "product-views")
+      value.imagePreset === "product-views") &&
+    (value.modelConfigId === undefined || nonempty(value.modelConfigId))
   );
 }
 

@@ -46,9 +46,32 @@ const DirectorStage = lazy(() =>
 import { readEditorResource } from "./editorMedia";
 import {
   appendLinkedMediaResults,
+  appendServiceResults,
   type LinkedMediaResult,
   type ResultSource,
+  type ServiceResult,
 } from "./linkedResults";
+import { AssistantPanel } from "./AssistantPanel";
+import { ModelSettingsDialog } from "./ModelSettingsDialog";
+import { errorMessage } from "../backend/api.ts";
+import {
+  cancelGeneration,
+  submitGeneration,
+  waitForResult,
+  type BackendResult,
+  type BackendTask,
+  type GenerationRequest,
+} from "../backend/generation.ts";
+import { useBackendModels } from "../backend/models.ts";
+import { backendProjectId } from "../backend/projects.ts";
+import {
+  backendBlocker,
+  backendModel,
+  backendReferences,
+  backendVideoMode,
+  serviceVoice,
+} from "../backend/rules.ts";
+import { markHandled, unsyncedResults } from "../backend/sync.ts";
 import {
   CANVAS_TOOLS,
   createCanvasToolTask,
@@ -132,9 +155,37 @@ type Job = {
   id: string;
   nodeId: string;
   title: string;
-  status: "draft" | "imported";
+  status:
+    | "draft"
+    | "imported"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "cancelled";
   time: string;
+  message?: string;
 };
+/** A generation submitted to the local API from this page. */
+type ServiceRun = {
+  controller: AbortController;
+  documentId: string;
+  nodeId: string;
+  projectId?: string;
+  taskId?: string;
+};
+const PHASES: Record<string, string> = {
+  queued: "排队中",
+  submit: "正在提交到模型服务",
+  poll: "模型服务生成中",
+  download: "正在下载结果",
+  save: "正在保存结果",
+  adopt: "正在保存结果",
+};
+const jobTime = () =>
+  new Date().toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 const nodeTypes = {
   image: CanvasNodeView,
   video: CanvasNodeView,
@@ -279,6 +330,12 @@ function Workspace() {
   );
   const [help, setHelp] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const backendCatalog = useBackendModels();
+  const [modelSettings, setModelSettings] = useState(false);
+  const serviceRuns = useRef(new Map<string, ServiceRun>());
+  const [runningNodes, setRunningNodes] = useState<string[]>([]);
+  const syncing = useRef(false);
+  const following = useRef(false);
   const [chat, setChat] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
   const clipboard = useRef<CanvasFragment | null>(null);
@@ -978,9 +1035,222 @@ function Workspace() {
     if (source) openEditor(source, mode);
     else notify("请先选择一个媒体节点。");
   };
+  const updateJob = (id: string, patch: Partial<Job>) =>
+    setJobs((current) =>
+      current.map((job) => (job.id === id ? { ...job, ...patch } : job)),
+    );
+  const refreshRunning = () =>
+    setRunningNodes(
+      [...serviceRuns.current.values()].map(
+        (run) => `${run.documentId}:${run.nodeId}`,
+      ),
+    );
+  const mediaOutput = async (
+    result: BackendResult,
+    signal?: AbortSignal,
+  ): Promise<LinkedMediaResult> => {
+    const resource = await readEditorResource(result.file, signal);
+    return {
+      kind: result.kind,
+      src: resource.src!,
+      mimeType: resource.mimeType || result.file.type,
+      title: resource.title,
+      media: {
+        ...result.media,
+        ...(resource.width ? { width: resource.width } : {}),
+        ...(resource.height ? { height: resource.height } : {}),
+        ...(resource.durationSeconds
+          ? { durationSeconds: resource.durationSeconds }
+          : {}),
+      },
+    };
+  };
+  /** Pull finished results this page did not place, e.g. the assistant's. */
+  const syncServiceResults = async (announce = false) => {
+    if (!backendCatalog.connected || syncing.current) return 0;
+    syncing.current = true;
+    const documentId = historyRef.current.present.id;
+    const projectId = backendProjectId(documentId);
+    try {
+      const running = new Set(
+        [...serviceRuns.current.values()].flatMap((run) =>
+          run.taskId ? [run.taskId] : [],
+        ),
+      );
+      const { results, active } = await unsyncedResults(projectId, running);
+      const outputs: ServiceResult[] = [];
+      for (const item of results)
+        outputs.push(
+          item.kind === "text"
+            ? { kind: "text", title: item.title, text: item.text }
+            : await mediaOutput(item.result),
+        );
+      if (historyRef.current.present.id !== documentId) return active;
+      if (outputs.length) {
+        const next = appendServiceResults(historyRef.current.present, outputs);
+        change(() => next.document);
+        setSelected(next.ids);
+        for (const item of results) markHandled(projectId, item.taskId);
+        notify(`已从本地服务同步 ${outputs.length} 个结果到画布。`);
+      } else if (announce)
+        notify(
+          active ? `还有 ${active} 个任务正在生成。` : "没有需要同步的新结果。",
+        );
+      return active;
+    } catch (error) {
+      if (announce) notify(errorMessage(error));
+      return 0;
+    } finally {
+      syncing.current = false;
+    }
+  };
+  /** The assistant's generations finish after its reply; keep syncing until they do. */
+  const followServiceTasks = async () => {
+    if (following.current) return;
+    following.current = true;
+    try {
+      for (let round = 0; round < 720; round++) {
+        if (!(await syncServiceResults())) return;
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    } finally {
+      following.current = false;
+    }
+  };
+  const runServiceTask = async (
+    request: GenerationRequest,
+    origin: ResultSource,
+    title: string,
+  ) => {
+    const id = crypto.randomUUID();
+    const run: ServiceRun = {
+      controller: new AbortController(),
+      documentId: origin.documentId,
+      nodeId: origin.nodeId,
+    };
+    const { signal } = run.controller;
+    serviceRuns.current.set(id, run);
+    refreshRunning();
+    setJobs((current) => [
+      {
+        id,
+        nodeId: origin.nodeId,
+        title,
+        status: "running",
+        time: jobTime(),
+        message: "正在上传参考并提交",
+      },
+      ...current,
+    ]);
+    try {
+      const submitted = await submitGeneration(request, signal);
+      Object.assign(run, submitted);
+      if (signal.aborted) {
+        await cancelGeneration(submitted.projectId, submitted.taskId).catch(
+          () => {},
+        );
+        throw signal.reason;
+      }
+      updateJob(id, { message: "已提交，等待模型服务" });
+      const result = await waitForResult(
+        submitted.projectId,
+        submitted.taskId,
+        signal,
+        (task: BackendTask) =>
+          updateJob(id, {
+            message: PHASES[task.phase ?? task.status] ?? "生成中",
+          }),
+      );
+      const output = await mediaOutput(result, signal);
+      const appended = appendLinkedMediaResults(
+        historyRef.current.present,
+        origin,
+        [output],
+      );
+      if (appended.error || !appended.ids.length) {
+        const message = `${appended.error ?? "结果未写入画布。"}结果仍保存在本地服务中，回到原画布后可在生成历史中同步。`;
+        updateJob(id, { status: "failed", message });
+        notify(message);
+        return;
+      }
+      change(() => appended.document);
+      setSelected(appended.ids);
+      markHandled(submitted.projectId, submitted.taskId);
+      updateJob(id, { status: "succeeded", message: "已加入画布" });
+      notify("生成完成，结果已作为新节点连接到来源节点。");
+    } catch (error) {
+      if (signal.aborted)
+        updateJob(id, { status: "cancelled", message: "已取消" });
+      else {
+        const message = errorMessage(error);
+        updateJob(id, { status: "failed", message });
+        notify(message);
+      }
+    } finally {
+      serviceRuns.current.delete(id);
+      refreshRunning();
+    }
+  };
+  const runServiceGeneration = (node: CanvasNode) => {
+    const settings = getNodeGenerationSettings(node);
+    const config = backendModel(settings, backendCatalog.models);
+    const blocked = backendBlocker(settings, incoming, backendCatalog.models);
+    if (blocked || !config) {
+      notify(blocked ?? "所选模型配置不可用。");
+      return;
+    }
+    const references = backendReferences(settings, incoming, config);
+    const document = historyRef.current.present;
+    const request: GenerationRequest = {
+      documentId: document.id,
+      documentTitle: document.title,
+      config,
+      kind: settings.mode,
+      prompt: settings.prompt,
+      title: node.data.title,
+      videoMode: backendVideoMode(settings, references),
+      durationSeconds: settings.durationSeconds,
+      aspectRatio: settings.aspectRatio,
+      voice: serviceVoice(settings),
+      references: references.map(({ node: item }) => ({
+        kind: item.data.kind as "image" | "video" | "audio" | "text",
+        title: item.data.title,
+        src: item.data.src,
+        text: item.data.text,
+      })),
+    };
+    const origin: ResultSource = {
+      documentId: document.id,
+      nodeId: node.id,
+      kind: node.type,
+      src: node.data.src,
+    };
+    const count = settings.mode === "audio" ? 1 : (settings.count ?? 1);
+    for (let index = 0; index < count; index++)
+      void runServiceTask(request, origin, settings.prompt || node.data.title);
+  };
+  const cancelServiceRuns = (nodeId: string) => {
+    for (const run of serviceRuns.current.values()) {
+      if (run.nodeId !== nodeId || run.documentId !== doc.id) continue;
+      run.controller.abort();
+      if (run.projectId && run.taskId)
+        void cancelGeneration(run.projectId, run.taskId).catch((error) =>
+          notify(errorMessage(error)),
+        );
+    }
+  };
+  useEffect(() => {
+    // Results that finished while this canvas was closed join it on opening.
+    if (ready && backendCatalog.connected) void followServiceTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, ready, backendCatalog.connected]);
   const prepareGeneration = () => {
     if (!single) return;
     const settings = getNodeGenerationSettings(single);
+    if (settings.modelConfigId) {
+      runServiceGeneration(single);
+      return;
+    }
     const blocked = generationBlocker(settings, incoming);
     if (blocked) {
       notify(blocked);
@@ -1618,7 +1888,19 @@ function Workspace() {
             active={panel === "history"}
             onClick={() => togglePanel("history")}
           />
-          <span className="cw-local-badge">本地学习版</span>
+          <button
+            className="cw-local-badge"
+            title={
+              backendCatalog.connected
+                ? "本地服务已连接，点击管理模型接入"
+                : `本地服务未连接：${backendCatalog.error}`
+            }
+            onClick={() => setModelSettings(true)}
+          >
+            {backendCatalog.connected
+              ? `模型接入 · ${backendCatalog.models.length}`
+              : "本地学习版"}
+          </button>
           <button className="cw-export-button" onClick={exportDocument}>
             导出画布
           </button>
@@ -1704,6 +1986,22 @@ function Workspace() {
             导出画布 JSON
           </button>
           <hr />
+          <button
+            onClick={() => {
+              setModelSettings(true);
+              setMoreMenu(false);
+            }}
+          >
+            模型接入
+          </button>
+          <button
+            onClick={() => {
+              void syncServiceResults(true);
+              setMoreMenu(false);
+            }}
+          >
+            同步本地服务结果
+          </button>
           <button
             onClick={() => {
               setHelp(true);
@@ -1914,7 +2212,11 @@ function Workspace() {
           onClick={() => togglePanel("assistant")}
         >
           <CanvasIcon name="star" size={18} />与 AI 对话
-          <span className="cw-tiny-tag">本地</span>
+          <span className="cw-tiny-tag">
+            {backendCatalog.models.some((model) => model.kind === "agent")
+              ? "Agent"
+              : "本地"}
+          </span>
         </button>
       </div>
       {selected.length > 1 && (
@@ -2009,12 +2311,16 @@ function Workspace() {
                 })
               }
               onRun={prepareGeneration}
-              onCancel={() => setGenerationTarget(null)}
+              onCancel={() => {
+                setGenerationTarget(null);
+                cancelServiceRuns(single.id);
+              }}
               onPickReference={() => {
                 referenceTarget.current = single.id;
                 setPanel("assets");
               }}
-              running={false}
+              running={runningNodes.includes(`${doc.id}:${single.id}`)}
+              backendModels={backendCatalog.models}
             />
           </div>
         )}
@@ -2355,7 +2661,15 @@ function Workspace() {
           {panel === "history" && (
             <>
               <p className="cw-panel-note">
-                本次打开期间创建的请求草稿及导入记录。没有向即梦服务提交任务。
+                本次打开期间提交到本地服务的生成任务、请求草稿及导入记录。
+                {backendCatalog.connected && (
+                  <button
+                    className="cw-sync-button"
+                    onClick={() => void syncServiceResults(true)}
+                  >
+                    同步本地服务结果
+                  </button>
+                )}
               </p>
               {!jobs.length ? (
                 <div className="cw-panel-empty">
@@ -2374,12 +2688,16 @@ function Workspace() {
                     }}
                   >
                     <span>{job.title}</span>
-                    <small>
+                    <small title={job.message}>
                       {job.time} ·{" "}
                       {
                         {
                           draft: "本地草稿",
                           imported: "已导入结果",
+                          running: job.message ?? "生成中",
+                          succeeded: "已加入画布",
+                          failed: `失败：${job.message ?? "未完成"}`,
+                          cancelled: "已取消",
                         }[job.status]
                       }
                     </small>
@@ -2468,13 +2786,24 @@ function Workspace() {
               importingResults={resultBusy}
             />
           )}
-          {panel === "assistant" && (
+          {panel === "assistant" && backendCatalog.connected && (
+            <AssistantPanel
+              documentId={doc.id}
+              documentTitle={doc.title}
+              catalog={backendCatalog}
+              onTurnEnd={() => void followServiceTasks()}
+              onOpenSettings={() => setModelSettings(true)}
+            />
+          )}
+          {panel === "assistant" && !backendCatalog.connected && (
             <>
               <div className="cw-assistant-intro">
                 <span>✦</span>
                 <h3>从想法开始，串联你的创作</h3>
                 <p>
-                  本地编排助手会把每一行描述转为一个图片节点，并连接为参考链。此版本未连接对话模型。
+                  本地编排助手会把每一行描述转为一个图片节点，并连接为参考链。用
+                  scripts/museshow.py 启动本地服务并接入对话模型后，可与 AI
+                  助手对话并生成素材。
                 </p>
               </div>
               <div className="cw-chat-log">
@@ -2836,6 +3165,12 @@ function Workspace() {
             onClose={closeEditor}
           />
         )}
+      {modelSettings && (
+        <ModelSettingsDialog
+          catalog={backendCatalog}
+          onClose={() => setModelSettings(false)}
+        />
+      )}
       {generationNode && generationSettings && generationDraft && (
         <EditorModal
           title={`本地任务 · ${generationNode.data.title}`}
@@ -2939,7 +3274,7 @@ function Workspace() {
             <p className="cw-panel-note">
               媒体与项目存储在当前浏览器的 IndexedDB。导出 JSON
               可备份或迁移。图像裁剪与调色在本机实际执行；AI
-              生成、云分享和云端资产尚未接入。
+              生成和助手通过本地服务调用“模型接入”中的模型，云分享和云端资产尚未接入。
             </p>
           </section>
         </div>

@@ -342,6 +342,7 @@
   color: #9295a3;
 }
 .cw-creation-mode-field select,
+.cw-creation-mode-field input,
 .cw-frame-slot select,
 .cw-duration-controls select {
   min-width: 0;

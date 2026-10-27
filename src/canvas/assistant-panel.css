@@ -1,0 +1,86 @@
+.cw-assistant {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+.cw-assistant-models {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.cw-assistant-models label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: #8b8b92;
+  font-size: 10px;
+}
+.cw-assistant-models select {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid #ffffff15;
+  border-radius: 6px;
+  color: #e5e5e8;
+  background: #202022;
+  font-size: 11px;
+}
+.cw-assistant-log {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.cw-assistant-hint {
+  margin: 8px 2px;
+  color: #77777e;
+  font-size: 11px;
+  line-height: 1.8;
+}
+.cw-assistant-message {
+  max-width: 92%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cw-assistant-message.is-user {
+  align-self: flex-end;
+  background: #2f3a32;
+  color: #e6efe7;
+}
+.cw-assistant-message.is-assistant {
+  align-self: flex-start;
+  background: #29292d;
+  color: #dcdce0;
+}
+.cw-assistant-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8b9d8f;
+  font-size: 10px;
+}
+.cw-assistant-tool.is-failed {
+  color: #e39b9b;
+}
+.cw-assistant-error {
+  margin: 0;
+  color: #e39b9b;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.cw-assistant-settings {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: #232b25;
+  background: #cbd6cd;
+}

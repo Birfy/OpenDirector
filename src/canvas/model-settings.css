@@ -1,0 +1,67 @@
+.cw-model-settings {
+  width: min(680px, 100%);
+}
+.cw-model-watermark {
+  margin: 0 0 18px;
+  color: #b89dca;
+  font-size: 11px;
+}
+.cw-model-section {
+  padding: 14px 0;
+  border-top: 1px solid #ffffff12;
+}
+.cw-model-empty {
+  margin: 0;
+  color: #826d94;
+  font-size: 11px;
+}
+.cw-model-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cw-model-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #ffffff12;
+  border-radius: 8px;
+  background: #ffffff06;
+}
+.cw-model-list li > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+.cw-model-list strong,
+.cw-model-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-model-list strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.cw-model-list small {
+  color: #9a80ae;
+  font-size: 10px;
+}
+.cw-model-form fieldset {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.cw-model-form .cw-domain-field {
+  margin: 10px 0;
+}
+.cw-model-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

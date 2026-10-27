@@ -231,3 +231,31 @@ def test_production_plan_chains_continuation_shots(project, tmp_path):
         assert tasks[1]['referenceIds'] == [result['steps'][0]['assetId']]
 
     asyncio.run(run())
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
+def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
+    store, value, session, canvas = project
+    clip = tmp_path / 'clip.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+    server = FakeOmni(clip.read_bytes())
+    configs = ModelConfigs(store.repository)
+    config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
+
+    async def run():
+        manager = Generation(store, configs, GenerationProviders(store, httpx.MockTransport(server), poll_interval=0))
+        item = canvas.create(value['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
+        task = await manager.submit(value['id'], item['id'], {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': item['revision'],
+            'inputs': {'title': '', 'prompt': '雨夜街头', 'referenceIds': [], 'videoMode': 'first_frame', 'durationSeconds': 10, 'aspectRatio': '9:16'}}, session)
+        await asyncio.gather(*(job.future for job in manager.jobs.values()))
+        done = next(item for item in canvas.snapshot(value['id'])['tasks'] if item['id'] == task['id'])
+        assert done['status'] == 'succeeded', (done['error'], done['errorDetails'])
+        assert (done['parameters']['duration'], done['parameters']['ratio']) == (10, '9:16')
+        # The node keeps only its generation inputs.
+        node = next(node for node in canvas.snapshot(value['id'])['canvas']['nodes'] if node['id'] == item['id'])
+        assert 'durationSeconds' not in node and node['prompt'] == '雨夜街头'
+        fields, _ = server.posts[0]
+        assert fields['num_frames'] == str(h3_frames(10)) and json.loads(fields['extra_params']) == {'task': 't2va', 'aspect_ratio': '9:16'}
+        await manager.close()
+
+    asyncio.run(run())

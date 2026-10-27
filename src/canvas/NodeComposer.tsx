@@ -12,6 +12,14 @@ import {
   GENERATION_RATIOS,
   observedGenerationPrice,
 } from "./generationCatalog.ts";
+import {
+  backendBlocker,
+  backendModel,
+  backendReferenceIssue,
+  modelLabel,
+  serviceVoice,
+  type ModelConfig,
+} from "../backend/rules.ts";
 import "./nodes.css";
 
 export interface NodeComposerProps {
@@ -22,6 +30,8 @@ export interface NodeComposerProps {
   onCancel: () => void;
   onPickReference: () => void;
   running?: boolean;
+  /** Models configured in the local API, usable alongside the catalog. */
+  backendModels?: readonly ModelConfig[];
 }
 
 export interface ComposerSettings extends GenerationSettings {
@@ -217,6 +227,7 @@ export function NodeComposer({
   onCancel,
   onPickReference,
   running = false,
+  backendModels = [],
 }: NodeComposerProps) {
   const [panel, setPanel] = useState<Panel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -245,22 +256,87 @@ export function NodeComposer({
   const settings = getNodeGenerationSettings(selectedNode);
   const prompt = selectedNode.data.prompt;
   const mode = settings.mode;
-  const blocker = generationBlocker(settings, incomingNodes);
+  const backend = Boolean(settings.modelConfigId);
+  const config = backendModel(settings, backendModels);
+  const serviceModels = backendModels.filter((item) => item.kind === mode);
+  const referenceIssue = (node: CanvasNode) =>
+    !backend
+      ? generationReferenceIssue(node, settings)
+      : config
+        ? backendReferenceIssue(node, settings, config)
+        : "所选模型配置不可用";
+  const blocker = backend
+    ? backendBlocker(settings, incomingNodes, backendModels)
+    : generationBlocker(settings, incomingNodes);
   const canRun = !blocker;
-  const model = generationModel(settings);
+  const model = backend ? undefined : generationModel(settings);
   const choices = generationModelsFor(settings).map((item) => item.name);
   const currentModels = choices.includes(settings.model)
     ? choices
     : [settings.model, ...choices];
   const resolutions = model?.resolutions ?? [];
-  const price = observedGenerationPrice(settings);
+  const price = backend ? null : observedGenerationPrice(settings);
   const firstLast = mode === "video" && settings.videoMode === "first-last";
-  const music = mode === "audio" && settings.audioCreationType === "music";
-  const reading = mode === "audio" && !music && settings.audioMode === "tts";
+  // Service speech models only read text aloud.
+  const music =
+    !backend && mode === "audio" && settings.audioCreationType === "music";
+  const reading =
+    mode === "audio" && !music && (backend || settings.audioMode === "tts");
   const frameCandidates = incomingNodes.filter(
     (node) => node.data.kind === "image",
   );
-  const duration = model?.duration;
+  const duration =
+    backend && mode === "video"
+      ? { min: 4, max: 15, step: 1 }
+      : model?.duration;
+  const serviceModes = config?.inputRules.videoModes ?? [];
+  const videoModes = [
+    ["reference", "全能参考"],
+    ["first-last", "首尾帧"],
+    ...(serviceModes.includes("continuation")
+      ? [["continuation", "接续"] as const]
+      : []),
+  ] as const;
+  const modeUnsupported = (
+    value: NonNullable<ComposerSettings["videoMode"]>,
+  ) =>
+    backend
+      ? !(value === "continuation"
+          ? serviceModes.includes("continuation")
+          : value === "first-last"
+            ? serviceModes.includes("first_frame")
+            : serviceModes.includes("reference") ||
+              serviceModes.includes("first_frame"))
+      : Boolean(model?.videoModes && !model.videoModes.includes(value));
+  const chooseModel = (value: string) => {
+    const service = serviceModels.find((item) => `config:${item.id}` === value);
+    if (!service) {
+      updateSettings({
+        model: value,
+        modelConfigId: undefined,
+        ...(settings.videoMode === "continuation"
+          ? { videoMode: "reference" as const }
+          : {}),
+      });
+      return;
+    }
+    updateSettings({
+      model: modelLabel(service),
+      modelConfigId: service.id,
+      ...(settings.videoMode === "continuation" &&
+      !service.inputRules.videoModes.includes("continuation")
+        ? { videoMode: "reference" as const }
+        : {}),
+      ...(mode === "video"
+        ? {
+            durationSeconds: Math.max(
+              4,
+              Math.min(15, Math.round(settings.durationSeconds)),
+            ),
+          }
+        : {}),
+    });
+  };
   const updateSettings = (patch: Partial<ComposerSettings>) =>
     onUpdate({ settings: changeGenerationSettings(settings, patch) });
   const updatePrompt = (value: string) =>
@@ -340,27 +416,19 @@ export function NodeComposer({
             role="group"
             aria-label="视频创作模式"
           >
-            {(
-              [
-                ["reference", "全能参考"],
-                ["first-last", "首尾帧"],
-              ] as const
-            ).map(([value, label]) => (
+            {videoModes.map(([value, label]) => (
               <button
                 key={value}
                 type="button"
                 aria-pressed={settings.videoMode === value}
                 className={settings.videoMode === value ? "cw-is-active" : ""}
-                disabled={
-                  running ||
-                  Boolean(
-                    model?.videoModes && !model.videoModes.includes(value),
-                  )
-                }
+                disabled={running || modeUnsupported(value)}
                 title={
-                  model?.videoModes && !model.videoModes.includes(value)
+                  modeUnsupported(value)
                     ? "当前模型不支持此模式"
-                    : label
+                    : value === "continuation"
+                      ? "接续一段由当前 H3 服务生成的视频，画面和声音连续"
+                      : label
                 }
                 onClick={() => updateSettings({ videoMode: value })}
               >
@@ -369,7 +437,24 @@ export function NodeComposer({
             ))}
           </div>
         )}
-        {mode === "audio" && (
+        {mode === "audio" && backend && (
+          <label className="cw-creation-mode-field">
+            <span>音色</span>
+            <input
+              aria-label="服务音色"
+              value={serviceVoice(settings) ?? ""}
+              placeholder="default · 模型默认音色"
+              disabled={running}
+              spellCheck={false}
+              onChange={(event) =>
+                updateSettings({
+                  voiceName: event.target.value.trim() || undefined,
+                })
+              }
+            />
+          </label>
+        )}
+        {mode === "audio" && !backend && (
           <>
             <label className="cw-creation-mode-field">
               <span>创作类型</span>
@@ -417,7 +502,13 @@ export function NodeComposer({
             )}
           </>
         )}
-        <span className="cw-service-badge">本地任务 · 生成服务未连接</span>
+        <span className="cw-service-badge">
+          {backend
+            ? config
+              ? `本地服务 · ${config.inputRules.profile}`
+              : "本地服务 · 配置不可用"
+            : "本地任务 · 生成服务未连接"}
+        </span>
       </div>
       {mode !== "audio" && (
         <div className="cw-preset-row">
@@ -607,7 +698,7 @@ export function NodeComposer({
         </div>
       )}
 
-      {reading && (
+      {reading && !backend && (
         <button
           type="button"
           className="cw-voice-trigger"
@@ -640,8 +731,8 @@ export function NodeComposer({
                 className="cw-reference-chip"
                 key={node.id}
                 onClick={() => insertReference(node)}
-                disabled={Boolean(generationReferenceIssue(node, settings))}
-                title={`${generationReferenceRole(node)}：${node.data.title}${generationReferenceIssue(node, settings) ? ` · ${generationReferenceIssue(node, settings)}` : ""}`}
+                disabled={Boolean(referenceIssue(node))}
+                title={`${generationReferenceRole(node)}：${node.data.title}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
               >
                 {node.data.kind === "image" &&
                 node.data.src &&
@@ -696,18 +787,36 @@ export function NodeComposer({
           <CanvasIcon name={mode === "audio" ? "audio" : "sparkle"} size={15} />
           <select
             aria-label="生成模型"
-            value={settings.model}
+            value={
+              backend ? `config:${settings.modelConfigId}` : settings.model
+            }
             disabled={running}
-            onChange={(event) => updateSettings({ model: event.target.value })}
+            onChange={(event) => chooseModel(event.target.value)}
           >
-            {currentModels.map((model) => (
-              <option key={model} value={model}>
-                {model}
-                {["Seedance 2.0", "Seedance 2.0 Fast"].includes(model)
-                  ? " · VIP"
-                  : ""}
+            {backend && !config && (
+              <option value={`config:${settings.modelConfigId}`}>
+                {settings.model}（配置不可用）
               </option>
-            ))}
+            )}
+            {serviceModels.length > 0 && (
+              <optgroup label="本地服务">
+                {serviceModels.map((item) => (
+                  <option key={item.id} value={`config:${item.id}`}>
+                    {modelLabel(item)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="即梦参考目录 · 未连接">
+              {(backend ? choices : currentModels).map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                  {["Seedance 2.0", "Seedance 2.0 Fast"].includes(model)
+                    ? " · VIP"
+                    : ""}
+                </option>
+              ))}
+            </optgroup>
           </select>
           <CanvasIcon name="chevronDown" size={12} />
         </div>
@@ -744,12 +853,16 @@ export function NodeComposer({
         <button
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={running ? "取消本地任务" : "创建本地任务"}
+          aria-label={
+            running ? "取消生成" : backend ? "提交生成" : "创建本地任务"
+          }
           title={
             running
-              ? "取消本地任务"
+              ? "取消生成"
               : canRun
-                ? "创建本地任务 · ⌘/Ctrl + Enter · 未连接生成服务"
+                ? backend
+                  ? "提交到本地服务 · ⌘/Ctrl + Enter"
+                  : "创建本地任务 · ⌘/Ctrl + Enter · 未连接生成服务"
                 : (blocker ?? "请补全创作参数")
           }
           disabled={!running && !canRun}
@@ -771,13 +884,21 @@ export function NodeComposer({
               {price.beforeDiscount && <del>{price.beforeDiscount}</del>}
               <small>{price.context}</small>
             </>
+          ) : backend ? (
+            <span>费用由所选模型服务计算</span>
           ) : (
             <span>当前组合价格未核实</span>
           )}
         </span>
-        <small>原站实测参考，非本地报价</small>
+        <small>{backend ? config?.url : "原站实测参考，非本地报价"}</small>
       </div>
       {model?.note && <p className="cw-generation-note">{model.note}</p>}
+      {backend && mode === "video" && settings.videoMode === "continuation" && (
+        <p className="cw-generation-note">
+          连接一段由当前 H3
+          服务生成的视频作为上一段：新片段从它的结尾继续，画面和声音连续，结果只包含新内容。服务重启后需重新生成上一段。
+        </p>
+      )}
       {settings.imagePreset === "product-views" && (
         <p className="cw-generation-note">
           产品三视图预设已记录；需要连接支持此预设的生成服务后才能得到图片。
@@ -792,8 +913,10 @@ export function NodeComposer({
         {running ? (
           <>
             <span className="cw-running-dot" />
-            正在准备本地任务，可随时取消
+            {backend ? "正在生成，可随时取消" : "正在准备本地任务，可随时取消"}
           </>
+        ) : backend ? (
+          "提交到本地服务；结果作为新节点连接到此节点"
         ) : (
           "仅保存创作请求，不生成媒体，不扣除积分"
         )}
@@ -846,7 +969,7 @@ export function NodeComposer({
               </div>
             </div>
           )}
-          {mode !== "audio" && (
+          {mode !== "audio" && !backend && (
             <div className="cw-parameter-section">
               <span className="cw-field-label">已核实清晰度</span>
               <div className="cw-segment-options">
@@ -923,7 +1046,9 @@ export function NodeComposer({
           )}
           <div className="cw-parameter-section">
             <span className="cw-field-label">
-              本地任务数量 · 多份请求不推算原站价格
+              {backend
+                ? "生成数量 · 每份单独提交"
+                : "本地任务数量 · 多份请求不推算原站价格"}
             </span>
             <div className="cw-count-options">
               {Array.from({ length: 8 }, (_, index) => index + 1).map(
@@ -941,7 +1066,7 @@ export function NodeComposer({
               )}
             </div>
           </div>
-          {mode === "video" && (
+          {mode === "video" && !backend && (
             <label className="cw-audio-toggle">
               <span>
                 <CanvasIcon name="volume" size={16} />
@@ -963,7 +1088,9 @@ export function NodeComposer({
           )}
           {mode !== "audio" && (
             <p className="cw-generation-note">
-              比例为本地创作偏好；各模型的完整能力须由真实服务确认。
+              {backend
+                ? "比例用于文生视频；首帧、参考和接续沿用素材画幅，图片尺寸由模型服务决定。"
+                : "比例为本地创作偏好；各模型的完整能力须由真实服务确认。"}
             </p>
           )}
         </div>
@@ -1031,18 +1158,16 @@ export function NodeComposer({
                 className="cw-reference-option"
                 key={node.id}
                 onClick={() => insertReference(node)}
-                disabled={Boolean(generationReferenceIssue(node, settings))}
+                disabled={Boolean(referenceIssue(node))}
                 title={
-                  generationReferenceIssue(node, settings) ??
-                  `插入 ${node.data.title} 的名称引用`
+                  referenceIssue(node) ?? `插入 ${node.data.title} 的名称引用`
                 }
               >
                 <CanvasIcon name={node.data.kind} size={17} />
                 <span>
                   {node.data.title}
                   <small className="cw-reference-role">
-                    {generationReferenceIssue(node, settings) ??
-                      generationReferenceRole(node)}
+                    {referenceIssue(node) ?? generationReferenceRole(node)}
                   </small>
                 </span>
                 <span>@</span>
