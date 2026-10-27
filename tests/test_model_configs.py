@@ -1,0 +1,129 @@
+import json
+import os
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+import pytest
+
+from museshow.domain.projects import ProjectError
+from museshow.infrastructure.local_projects import LocalProjects, empty_conversation
+from museshow.infrastructure.model_configs import ModelConfigs
+from museshow_api.main import create_app
+
+
+@pytest.fixture
+def api(tmp_path):
+    store = LocalProjects(tmp_path)
+    headers = {"X-MuseShow-Request": "1", "X-MuseShow-Session": str(uuid4())}
+    with TestClient(create_app(store), headers=headers) as client:
+        yield client, store
+
+
+def payload(kind="agent", **changes):
+    return {"kind": kind, "url": "https://models.example/v1", "modelId": "demo-model", "apiKey": "test-secret", **changes}
+
+
+def test_four_categories_survive_restart_without_exposing_secrets(api):
+    client, store = api
+    configs = []
+    for kind in ("agent", "image", "video", "audio", "agent"):
+        response = client.post("/api/model-configs", json=payload(kind))
+        assert response.status_code == 200
+        assert "test-secret" not in response.text
+        assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode"}
+        configs.append(response.json())
+    assert len({item["id"] for item in configs}) == 5
+    assert client.get("/api/model-configs").json() == configs
+    assert ModelConfigs(store.repository).list() == configs
+    assert not store.root.exists()
+    path = store.state_dir / "models.json"
+    assert json.loads(path.read_text())["models"][0]["apiKey"] == "test-secret"
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_edit_preserves_blank_key_and_stable_id_then_delete(api):
+    client, store = api
+    config = client.post("/api/model-configs", json=payload()).json()
+    path = f"/api/model-configs/{config['id']}"
+    response = client.patch(path, json=payload(modelId="edited", apiKey=""))
+    assert response.status_code == 200
+    assert response.json()["id"] == config["id"]
+    assert response.json()["modelId"] == "edited"
+    file = store.state_dir / "models.json"
+    assert json.loads(file.read_text())["models"][0]["apiKey"] == "test-secret"
+    assert client.patch(path, json=payload(apiKey="replacement-secret")).status_code == 200
+    assert json.loads(file.read_text())["models"][0]["apiKey"] == "replacement-secret"
+    before = file.read_bytes()
+    assert client.patch(path, json=payload("image")).status_code == 400
+    assert file.read_bytes() == before
+    assert client.delete(path).status_code == 204
+    assert client.get("/api/model-configs").json() == []
+    assert client.patch(path, json=payload()).status_code == 404
+
+
+def test_validation_and_save_failures_preserve_file_and_hide_request_values(api, monkeypatch):
+    from museshow.infrastructure import model_configs
+
+    client, store = api
+    config = client.post("/api/model-configs", json=payload()).json()
+    path = store.state_dir / "models.json"
+    before = path.read_bytes()
+    for changes in ({"url": "file:///private"}, {"url": "https://user:test-secret@models.example"},
+                    {"url": "https://models.example?key=test-secret"}, {"modelId": "  "},
+                    {"apiKey": ""}, {"kind": "unknown"}, {"modelId": None}):
+        response = client.post("/api/model-configs", json=payload(**changes))
+        assert response.status_code in {400, 422}
+        assert "test-secret" not in response.text
+        assert path.read_bytes() == before
+
+    def fail_write(*args):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(model_configs, "write_json", fail_write)
+    assert client.patch(f"/api/model-configs/{config['id']}", json=payload(modelId="unsaved")).status_code == 503
+    assert path.read_bytes() == before
+    assert client.delete(f"/api/model-configs/{config['id']}").status_code == 503
+    assert client.get("/api/model-configs").json()[0]["modelId"] == "demo-model"
+
+
+def test_corrupt_configuration_is_reported_without_overwriting(tmp_path):
+    store = ModelConfigs(tmp_path)
+    store.path.write_text('{"version":1,"models":[{"apiKey":"private"}]}')
+    before = store.path.read_bytes()
+    for operation in (store.list, lambda: store.save("agent", "https://example.com", "new", "new-secret")):
+        with pytest.raises(ProjectError, match="原文件未覆盖") as failure:
+            operation()
+        assert "private" not in str(failure.value)
+        assert store.path.read_bytes() == before
+
+
+def test_project_selections_and_history_survive_config_changes(api):
+    client, store = api
+    config = client.post("/api/model-configs", json=payload()).json()
+    project_id = str(uuid4())
+    client.post("/api/projects", json={"id": project_id, "name": "模型选择"})
+    # Legacy JSON omits the new field and still loads normally.
+    legacy = empty_conversation()
+    legacy.pop("modelSelections")
+    legacy["model"] = "openai"
+    legacy["messages"] = [{"id": str(uuid4()), "role": "assistant", "text": "历史回复", "assets": [],
+                           "model": "openai", "thinking": "auto", "status": "complete"}]
+    (store.root / "模型选择" / "conversation.json").write_text(json.dumps(legacy))
+    value = client.get(f"/api/data/{project_id}/conversation").json()
+    assert value["modelSelections"] == {}
+    assert "model" not in value
+    value["modelSelections"] = {"agent": config["id"], "image": None}
+    assert client.put(f"/api/data/{project_id}/conversation", json={**value, "model": "openai"}).status_code == 200
+    assert "model" not in json.loads((store.root / "模型选择" / "conversation.json").read_text())
+    assert client.patch(f"/api/model-configs/{config['id']}", json=payload(modelId="changed", apiKey="")).status_code == 200
+    assert client.delete(f"/api/model-configs/{config['id']}").status_code == 204
+    assert client.get(f"/api/data/{project_id}/conversation").json() == value
+    assert "test-secret" not in (store.root / "模型选择" / "conversation.json").read_text()
+
+
+def test_model_config_routes_keep_local_request_protection(api):
+    client, _ = api
+    assert client.get("/api/model-configs", headers={"Origin": "https://untrusted.example"}).status_code == 403
+    assert client.post("/api/model-configs", json=payload(), headers={"X-MuseShow-Request": ""}).status_code == 403

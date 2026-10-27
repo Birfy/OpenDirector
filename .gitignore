@@ -10,3 +10,12 @@ playwright-report/
 test-results/
 .recovery-stage-*/
 recovered.previous/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+/packages/*/build/
+/apps/api/build/
+.pytest_cache/
+/projects/
+/.museshow/

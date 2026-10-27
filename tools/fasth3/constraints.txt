@@ -1,0 +1,10 @@
+# Runtime combination installed and exercised on RTX PRO 6000 / CUDA 13.0.
+torch==2.13.0
+vllm==0.32.0
+flashinfer-python==0.7.0.post1
+fastvideo-kernel==0.3.4
+torchcodec==0.17.0
+diffusers==0.40.0
+transformers==5.19.0
+accelerate==1.12.0
+apache-tvm-ffi==0.1.11

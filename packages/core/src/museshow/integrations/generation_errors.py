@@ -1,0 +1,120 @@
+"""Safe provider diagnostics: allowlisted identifiers, never raw response text."""
+
+import json
+import re
+
+from museshow.domain.generation import GenerationError, GenerationFailure
+
+
+_REASONS = {
+    'input': ('生成服务拒绝了输入内容或参数。', '请检查生成要求、参数和模型支持范围。'),
+    'reference': ('生成服务拒绝了参考素材。', '请更换符合服务要求的参考素材，再决定是否重新生成。'),
+    'authentication': ('生成服务鉴权失败。', '请在设置中检查 API Key。'),
+    'permission': ('当前账户没有调用该模型的权限。', '请检查模型和服务权限。'),
+    'quota': ('模型账户余额或套餐额度不足。', '请核对账户余额和套餐额度。'),
+    'rate_limit': ('模型调用频率或配额受限。', '请核对调用频率及套餐额度后再操作。'),
+    'temporary': ('生成服务暂时不可用。', '请先核对已有任务，再处理当前步骤。'),
+    'provider': ('生成服务未能完成当前操作。', '请核对原任务；错误码和请求标识可用于向供应商排查。'),
+}
+
+
+def _identifier(value, limit, secrets):
+    if isinstance(value, int) and not isinstance(value, bool):
+        value = str(value)
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,' + str(limit - 1) + '}', value):
+        return None
+    if any(secret and secret in value for secret in secrets):
+        return None
+    return value
+
+
+def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()):
+    value = value if isinstance(value, dict) else {}
+    error = value.get('error')
+    error = error if isinstance(error, dict) else value
+    code = _identifier(error.get('code'), 160, secrets)
+    headers = headers or {}
+    request_id = None
+    for candidate in (headers.get('x-request-id'), headers.get('x-tt-logid'),
+                      value.get('request_id'), value.get('requestId'), error.get('request_id')):
+        request_id = _identifier(candidate, 200, secrets)
+        if request_id:
+            break
+    # Some Ark errors supply the request ID only in error.message. Extract the
+    # bounded identifier; the message itself is never persisted or displayed.
+    if not request_id and isinstance(error.get('message'), str):
+        match = re.search(r'\brequest\s*[_ -]?id\s*[:=]\s*([A-Za-z0-9_.:-]{1,200})(?![A-Za-z0-9_.:-])', error['message'][:8192], re.I)
+        if match:
+            request_id = _identifier(match[1].rstrip('.'), 200, secrets)
+    category = {400: 'input', 401: 'authentication', 402: 'quota', 403: 'permission',
+                404: 'input', 413: 'input', 429: 'rate_limit'}.get(http_status, 'temporary' if http_status and http_status >= 500 else 'provider')
+    name = (code or '').lower()
+    if name.startswith(('inputimagesensitivecontentdetected', 'inputvideosensitivecontentdetected', 'inputaudiosensitivecontentdetected')):
+        category = 'reference'
+    elif name.startswith(('inputtext', 'outputtextsensitive', 'outputimagesensitive', 'outputvideosensitive')) or code in {'45000000', '45000001', '45001001'}:
+        category = 'input'
+    elif name.startswith(('authentication', 'invalidapikey', 'invalid_api_key', 'unauthorized')):
+        category = 'authentication'
+    elif name.startswith(('permissiondenied', 'accessdenied', 'forbidden')):
+        category = 'permission'
+    elif name.startswith(('quotaexceeded', 'insufficientquota', 'insufficient_quota', 'insufficientbalance', 'accountoverdue')):
+        category = 'quota'
+    elif name.startswith(('ratelimit', 'rate_limit', 'throttl')):
+        category = 'rate_limit'
+    elif code == '55000000':
+        category = 'temporary'
+    message, suggestion = _REASONS[category]
+    diagnostic = error.get('message', '')
+    diagnostic = diagnostic[:8192].lower() if isinstance(diagnostic, str) else ''
+    if http_status in {400, 422} and category == 'input':
+        if 'reference_audio cannot be the only reference' in diagnostic:
+            category, message = 'reference', '音频参考不能单独使用，请搭配参考图片。'
+            suggestion = '保留当前输入，添加参考图片后再生成。'
+        elif re.search(r'(?:not support|unsupported|not supported)', diagnostic) and re.search(r'(?:reference_(?:image|video|audio)|image_url|video_url|audio_url|input_audio)', diagnostic):
+            category, message = 'reference', '供应商拒绝了参考类型或输入组合。'
+            suggestion = '请核对参考类型和生成模式，或选择其他已适配模型；当前输入和已有结果保留。'
+    if name == 'inputimagesensitivecontentdetected.privacyinformation':
+        message = '供应商判定参考图片可能包含真人，已拒绝生成。'
+    elif category == 'provider' and value.get('status') in {'cancelled', 'expired'}:
+        message = '供应商任务已取消。' if value['status'] == 'cancelled' else '供应商任务已过期。'
+    elif http_status == 404:
+        message = '供应商未找到该任务。' if stage in {'poll', 'cancel'} else '生成接口或模型不存在。'
+    if stage == 'download':
+        category, message = 'temporary', '生成结果下载失败。'
+        suggestion = '请核对原任务和结果链接，恢复下载前不要直接重新生成。'
+    return GenerationError(GenerationFailure(category=category, stage=stage, message=message,
+        suggestion=suggestion, providerCode=code, requestId=request_id, httpStatus=http_status,
+        providerStatus=value['status'] if stage == 'poll' and http_status == 200 and value.get('status') in {'failed', 'cancelled', 'expired'} else None))
+
+
+async def checked(response, *, stage, secrets=()):
+    if 200 <= response.status_code < 300:
+        return
+    # Error pages may be HTML, huge, or echo credentials and signed URLs. Read a
+    # bounded body only for parsing; do not attach it to exceptions or receipts.
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        body.extend(chunk[:max(0, 65536 - len(body))])
+        if len(body) >= 65536:
+            break
+    try:
+        value = json.loads(body)
+    except (ValueError, UnicodeError):
+        value = None
+    raise provider_failure(value, stage=stage, headers=response.headers,
+        http_status=response.status_code, secrets=secrets)
+
+
+def transport_failure(stage, *, timeout=False, status=None):
+    unknown = stage == 'submit'
+    return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'temporary', stage=stage,
+        message='生成请求的提交结果不明。' if unknown else '生成服务连接超时或中断。',
+        suggestion='请先核对供应商是否已接收请求，避免重复生成。' if unknown else '请核对已有任务，继续查询或下载前不要重新生成。'),
+        status=status or (504 if timeout else 503))
+
+
+def protocol_failure(stage, *, message='生成服务返回了无法识别或不完整的结果。'):
+    unknown = stage == 'submit'
+    return GenerationError(GenerationFailure(category='submission_unknown' if unknown else 'protocol', stage=stage,
+        message=message,
+        suggestion='请先核对请求是否已被接收，避免重复生成。' if unknown else '请核对原任务状态和接口协议。'))
