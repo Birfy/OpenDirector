@@ -132,6 +132,9 @@ export interface CanvasNodeData extends Record<string, unknown> {
   mimeType?: string;
   text?: string;
   assetState?: "ready" | "missing";
+  /** Imported/derived assets have editing controls, not an automatic generator.
+   * Omitted in older documents; keep their existing generator behavior. */
+  mediaRole?: "asset" | "generation";
   settings?: GenerationSettings;
   timeline?: TimelineData;
   subject?: SubjectData;
@@ -241,6 +244,9 @@ export function createNode(
     data: {
       title: titles[kind],
       prompt: "",
+      ...(["image", "video", "audio"].includes(kind) && !data.src
+        ? { mediaRole: "generation" as const }
+        : {}),
       ...(kind === "timeline"
         ? {
             timeline: {

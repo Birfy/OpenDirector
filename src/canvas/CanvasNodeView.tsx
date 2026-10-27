@@ -61,6 +61,12 @@ export const CanvasNodeView = memo(function CanvasNodeView({
     event.stopPropagation();
     actions?.contextMenu(id, event);
   };
+  const selectMedia = (event: MouseEvent) => {
+    event.stopPropagation();
+    // Media controls keep their native playback behavior. Their nodrag surface
+    // does not reach React Flow selection, so select it explicitly on a click.
+    if (!selected) actions?.select(id, event);
+  };
 
   return (
     <div
@@ -180,7 +186,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
               controls
               playsInline
               preload="metadata"
-              onClick={(event) => event.stopPropagation()}
+              onClick={selectMedia}
               onDurationChange={(event) =>
                 actions?.metadata(id, {
                   durationSeconds: event.currentTarget.duration,
@@ -212,7 +218,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
                 src={data.src}
                 controls
                 preload="metadata"
-                onClick={(event) => event.stopPropagation()}
+                onClick={selectMedia}
                 onDurationChange={(event) =>
                   actions?.metadata(id, {
                     durationSeconds: event.currentTarget.duration,

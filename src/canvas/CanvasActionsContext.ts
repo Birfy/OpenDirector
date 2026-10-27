@@ -3,6 +3,7 @@ import type { CanvasNode, CanvasNodeData } from "./model";
 import type { NodeGenerationActivity } from "./generationActivity";
 
 export interface CanvasActions {
+  select: (id: string, event: MouseEvent) => void;
   update: (id: string, data: Partial<CanvasNodeData>) => void;
   rename: (id: string) => void;
   upload: (id: string) => void;

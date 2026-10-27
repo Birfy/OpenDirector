@@ -6,6 +6,7 @@ import {
   resourceNodeData,
 } from "../src/canvas/projectAssets.ts";
 import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
+import { parseNodeData, sameNodeData } from "../src/canvas/dataBoundary.ts";
 
 test("cross-project copies include nested media, deduplicate sources and detach foreign node IDs", () => {
   const document = createDocument("source");
@@ -49,6 +50,7 @@ test("cross-project copies include nested media, deduplicate sources and detach 
   assert.ok(saved.ok, saved.ok ? "" : saved.error.message);
   const loaded = parseDocument(saved.value);
   assert.ok(loaded.ok);
+  assert.equal(loaded.value.nodes[0]!.data.mediaRole, "asset");
   const assets = projectAssets(loaded.value);
   assert.equal(assets.length, 2);
   assert.ok(assets.every((asset) => asset.nodeId === undefined));
@@ -61,4 +63,24 @@ test("cross-project copies include nested media, deduplicate sources and detach 
   assert.equal(destination.nodes[1]!.data.media!.durationSeconds, 3);
   assert.equal(destination.nodes[0]!.data.media!.width, 200);
   assert.deepEqual(document, before);
+});
+
+test("media purpose survives storage and undo comparisons without guessing legacy provenance", () => {
+  const node = createNode("video");
+  assert.equal(node.data.mediaRole, "generation");
+  const parsed = parseNodeData(node.type, node.data);
+  assert.ok(parsed.ok);
+  assert.equal(parsed.value.mediaRole, "generation");
+  assert.equal(
+    sameNodeData(node.data, { ...node.data, mediaRole: "asset" }),
+    false,
+  );
+  const { mediaRole: _oldRole, ...legacy } = node.data;
+  const old = parseNodeData(node.type, legacy);
+  assert.ok(old.ok);
+  assert.equal(old.value.mediaRole, undefined);
+  assert.equal(
+    parseNodeData(node.type, { ...node.data, mediaRole: "unknown" }).ok,
+    false,
+  );
 });

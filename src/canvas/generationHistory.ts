@@ -1,6 +1,12 @@
 import { isGenerationSettings } from "./dataBoundary.ts";
-import type { GenerationSettings } from "./model.ts";
-import type { ServiceResult } from "./linkedResults.ts";
+import type { CanvasDocument, GenerationSettings } from "./model.ts";
+import {
+  appendServiceResults,
+  applyGenerationResults,
+  type GenerationResultMode,
+  type ResultSource,
+  type ServiceResult,
+} from "./linkedResults.ts";
 
 export interface GenerationJob {
   id: string;
@@ -18,6 +24,9 @@ export interface GenerationJob {
   createdAt?: number;
   message?: string;
   taskId?: string;
+  /** Frozen placement owner, retained so a reopened canvas fills the same node. */
+  resultSource?: ResultSource;
+  resultMode?: GenerationResultMode;
   request?: {
     kind: "image" | "video" | "audio";
     title: string;
@@ -55,6 +64,18 @@ export function parseGenerationJob(value: unknown): GenerationJob {
     )
   )
     throw new Error("生成历史字段无效。");
+  if (
+    (raw.resultMode !== undefined &&
+      !["replace", "additional"].includes(raw.resultMode)) ||
+    (raw.resultSource !== undefined &&
+      (!raw.resultSource ||
+        typeof raw.resultSource.documentId !== "string" ||
+        raw.resultSource.nodeId !== raw.nodeId ||
+        !["image", "video", "audio"].includes(raw.resultSource.kind) ||
+        (raw.resultSource.src !== undefined &&
+          typeof raw.resultSource.src !== "string")))
+  )
+    throw new Error("生成历史的结果归属无效。");
   if (
     raw.request &&
     (!isGenerationSettings(raw.request.settings) ||
@@ -191,4 +212,56 @@ export function reconcileGenerationJobs(
       ? job
       : { ...job, status, message };
   });
+}
+
+/** Current in-memory changes win over a persisted snapshot read earlier. */
+export function mergeGenerationJobs(
+  saved: readonly GenerationJob[],
+  current: readonly GenerationJob[],
+): GenerationJob[] {
+  return [
+    ...new Map([...saved, ...current].map((job) => [job.id, job])).values(),
+  ].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** Live completion and recovery share the same ownership and replacement policy. */
+export function applyRecoveredGenerationResults(
+  document: CanvasDocument,
+  outputs: readonly { taskId: string; output: ServiceResult }[],
+  jobs: readonly GenerationJob[],
+) {
+  const byTask = new Map(
+    jobs.filter((job) => job.taskId).map((job) => [job.taskId!, job]),
+  );
+  let next = document;
+  const placements = outputs.map(({ taskId, output }) => {
+    const job = byTask.get(taskId);
+    const result: { document: CanvasDocument; ids: string[]; error?: string } =
+      job?.resultSource
+        ? output.kind === "text"
+          ? {
+              document: next,
+              ids: [],
+              error: "媒体节点收到文本结果，结果未写入画布。",
+            }
+          : applyGenerationResults(
+              next,
+              job.resultSource,
+              [output],
+              job.resultMode,
+            )
+        : appendServiceResults(next, [output]);
+    next = result.document;
+    return {
+      taskId,
+      output,
+      ids: result.ids,
+      error: result.error,
+    };
+  });
+  return {
+    document: next,
+    placements,
+    ids: placements.flatMap((entry) => entry.ids),
+  };
 }

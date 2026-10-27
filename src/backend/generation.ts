@@ -2,10 +2,10 @@ import { assetBlob, json, request } from "./api.ts";
 import { openBackendProject } from "./projects.ts";
 import type { BackendVideoMode, ModelConfig } from "./rules.ts";
 
-/** Generation through the local API: references become current project
- * assets, each submission gets its own generation node, and results are
- * read back as files. Earlier results therefore stay valid continuation
- * sources for the H3 service. */
+/** Generation through the local API. Each submission has a service execution
+ * node so batch requests can run independently. This is not a new UI node:
+ * the canvas retains each task's result owner and fills that existing node.
+ * Retained asset records remain valid continuation sources for the H3 service. */
 
 export interface BackendAsset {
   id: string;

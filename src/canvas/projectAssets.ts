@@ -34,6 +34,7 @@ export function resourceNodeData(
     title: resource.title,
     mimeType: resource.mimeType,
     assetState: "ready",
+    mediaRole: "asset",
     media: {
       width: resource.width,
       height: resource.height,

@@ -47,6 +47,8 @@ import {
   type GenerationPhase,
 } from "./generationActivity";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
+import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
+import { useSelectionPresentation } from "./useSelectionPresentation";
 import { CanvasIcon } from "./CanvasIcon";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
@@ -86,11 +88,15 @@ import { useGenerationJobs } from "./useGenerationJobs";
 import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
 import {
   reconcileGenerationJobs,
+  mergeGenerationJobs,
+  applyRecoveredGenerationResults,
   type GenerationJob as Job,
 } from "./generationHistory";
 import {
   appendLinkedMediaResults,
   appendServiceResults,
+  applyGenerationResults,
+  type GenerationResultMode,
   type LinkedMediaResult,
   type ResultSource,
   type ServiceResult,
@@ -115,7 +121,7 @@ import {
   backendVideoMode,
   serviceVoice,
 } from "../backend/rules.ts";
-import { markHandled, unsyncedResults } from "../backend/sync.ts";
+import { isHandled, markHandled, unsyncedResults } from "../backend/sync.ts";
 import {
   CANVAS_TOOLS,
   createCanvasToolTask,
@@ -152,7 +158,7 @@ import {
   redo,
   type CanvasHistory,
 } from "./history";
-import { absolutePosition, arrangeNodes, boundsOfNodes } from "./geometry";
+import { absolutePosition, arrangeNodes } from "./geometry";
 import {
   saveDocument,
   loadDocument,
@@ -396,7 +402,7 @@ function Workspace() {
     null,
   );
   const [help, setHelp] = useState(false);
-  const [jobs, setJobs] = useGenerationJobs(doc.id, setToast);
+  const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
   const [modelSettings, setModelSettings] = useState(false);
   const serviceRuns = useRef(new Map<string, ServiceRun>());
@@ -426,7 +432,13 @@ function Workspace() {
   const uploadTarget = useRef<string | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
-  const focusAfterCreate = useRef<string[] | null>(null);
+  const toolbarElement = useRef<HTMLDivElement>(null);
+  const composerElement = useRef<HTMLDivElement>(null);
+  const [presentationFocus, setPresentationFocus] = useState(0);
+  const focusSelection = (id: string) => {
+    setComposerNodeId(id);
+    setPresentationFocus((value) => value + 1);
+  };
   const saveQueue = useRef(Promise.resolve(true));
   const [zoom, setZoom] = useState(1);
   const spacePressed = useKeyPress("Space");
@@ -462,6 +474,7 @@ function Workspace() {
     setGuides([]);
   }, []);
   const beginDrag = () => {
+    selectionPresentation.userNavigation();
     dragging.current = true;
     setInteracting(true);
     setMenu(null);
@@ -714,67 +727,6 @@ function Workspace() {
       x: window.innerWidth / 2 - (panel ? 150 : 0),
       y: window.innerHeight * 0.32,
     });
-  const revealNodes = (ids: string[], centerView = false) => {
-    const current = historyRef.current.present;
-    const bounds = boundsOfNodes(
-      current.nodes.filter((node) => ids.includes(node.id)),
-      current.nodes,
-    );
-    if (!bounds) return;
-    const pane = root.current?.getBoundingClientRect();
-    if (!pane) return;
-    const composerTop = root.current
-      ?.querySelector(".cw-composer-dock")
-      ?.getBoundingClientRect().top;
-    const area = {
-      left: panel && pane.width >= 1000 ? 400 : Math.min(90, pane.width * 0.15),
-      right: pane.width - Math.min(60, pane.width * 0.08),
-      top: 90,
-      bottom: Math.max(
-        220,
-        composerTop === undefined
-          ? pane.height - 80
-          : composerTop - pane.top - 24,
-      ),
-    };
-    const view = flow.getViewport();
-    const nextZoom = Math.max(
-      MIN_ZOOM,
-      Math.min(
-        view.zoom,
-        (area.right - area.left) / bounds.width,
-        (area.bottom - area.top) / bounds.height,
-      ),
-    );
-    const fitAxis = (
-      offset: number,
-      start: number,
-      size: number,
-      min: number,
-      max: number,
-    ) =>
-      centerView || nextZoom !== view.zoom
-        ? (min + max - size * nextZoom) / 2 - start * nextZoom
-        : Math.max(
-            min - start * nextZoom,
-            Math.min(max - (start + size) * nextZoom, offset),
-          );
-    void flow.setViewport(
-      {
-        zoom: nextZoom,
-        x: fitAxis(view.x, bounds.x, bounds.width, area.left, area.right),
-        y: fitAxis(view.y, bounds.y, bounds.height, area.top, area.bottom),
-      },
-      { duration: 180 },
-    );
-  };
-  useEffect(() => {
-    const ids = focusAfterCreate.current;
-    if (!ids) return;
-    focusAfterCreate.current = null;
-    const frame = requestAnimationFrame(() => revealNodes(ids, true));
-    return () => cancelAnimationFrame(frame);
-  }, [doc.nodes.length, selected]);
   const addNode = (
     kind: CanvasNodeKind,
     position?: Point,
@@ -846,8 +798,8 @@ function Workspace() {
         },
       });
     command({ type: "batch", commands });
-    focusAfterCreate.current = connected ? [connected.id, node.id] : [node.id];
     setSelected([node.id]);
+    focusSelection(node.id);
     setDismissedComposer(null);
     referenceTarget.current = null;
     setMenu(null);
@@ -855,6 +807,11 @@ function Workspace() {
     return node;
   };
   const fit = (selection = false) => {
+    if (selection && selected.length === 1) {
+      selectionPresentation.fitSelection();
+      return;
+    }
+    selectionPresentation.userNavigation();
     const ids = selection ? selected : doc.nodes.map((n) => n.id);
     void flow.fitView({
       nodes: ids.map((id) => ({ id })),
@@ -907,11 +864,8 @@ function Workspace() {
       });
     }
     setSelected([node.id]);
-    const p = absolutePosition(node, doc.nodes);
-    void flow.setCenter(p.x + node.width / 2, p.y + node.height / 2, {
-      zoom: Math.min(flow.getZoom(), 1),
-      duration: 250,
-    });
+    setDismissedComposer(null);
+    focusSelection(node.id);
   };
   const connect = useCallback(
     (connection: Connection) => {
@@ -1047,6 +1001,45 @@ function Workspace() {
     [command, flow, objectSnapping, gridSnapping],
   );
   const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
+  const selectionControls = Boolean(
+    single && !editing && !preview && !generationTarget,
+  );
+  const hasComposer = Boolean(
+    selectionControls &&
+    composerNode &&
+    single?.id === composerNode.id &&
+    ["image", "video", "audio"].includes(composerNode.type) &&
+    composerNode.data.mediaRole !== "asset" &&
+    composerNode.id !== dismissedComposer &&
+    !lockedIds.has(composerNode.id),
+  );
+  const hasToolbar = Boolean(
+    selectionControls &&
+    single &&
+    (!["image", "video", "audio", "file"].includes(single.type) ||
+      (single.data.src && single.data.assetState !== "missing")),
+  );
+  const selectionPresentation = useSelectionPresentation({
+    root,
+    toolbar: toolbarElement,
+    composer: composerElement,
+    bounds: single
+      ? {
+          ...absolutePosition(single, doc.nodes),
+          width: single.width,
+          height: single.height,
+        }
+      : null,
+    nodeId: single?.id,
+    panel,
+    focusRequest: presentationFocus,
+    blocked:
+      interacting ||
+      panning ||
+      pointerGesture.current.moved ||
+      !selectionControls,
+    controlsKey: `${hasComposer}:${hasToolbar}`,
+  });
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -1440,44 +1433,80 @@ function Workspace() {
     syncing.current.add(documentId);
     const projectId = backendProjectId(documentId);
     try {
+      // Read persisted ownership before polling: a completed task may predate this mount.
+      const allJobs = await readJobs();
+      if (historyRef.current.present.id !== documentId) return 0;
+      const awaitingTaskIdentity = () =>
+        [...serviceRuns.current.values()].some(
+          (run) => run.documentId === documentId && !run.taskId,
+        );
+      // Acceptance can finish on the service before its response reaches this page.
+      // Wait for that response to associate the task with its original node.
+      if (awaitingTaskIdentity()) return 1;
       const running = new Set(
         [...serviceRuns.current.values()].flatMap((run) =>
-          run.taskId ? [run.taskId] : [],
+          run.documentId === documentId && run.taskId ? [run.taskId] : [],
         ),
       );
       const { results, active, tasks } = await unsyncedResults(
         projectId,
         running,
+        undefined,
+        new Set(allJobs.flatMap((job) => (job.taskId ? [job.taskId] : []))),
       );
-      const outputs: ServiceResult[] = [];
-      for (const item of results)
-        outputs.push(
-          item.kind === "text"
-            ? { kind: "text", title: item.title, text: item.text }
-            : await mediaOutput(item.result),
+      const received: { taskId: string; output: ServiceResult }[] = [];
+      const isClaimed = (taskId: string) =>
+        isHandled(projectId, taskId) ||
+        [...serviceRuns.current.values()].some(
+          (run) => run.documentId === documentId && run.taskId === taskId,
         );
+      for (const item of results) {
+        if (isClaimed(item.taskId)) continue;
+        received.push({
+          taskId: item.taskId,
+          output:
+            item.kind === "text"
+              ? { kind: "text", title: item.title, text: item.text }
+              : await mediaOutput(item.result),
+        });
+      }
+      const currentJobs = await readJobs();
       if (historyRef.current.present.id !== documentId) return active;
-      setJobs((current) => reconcileGenerationJobs(current, tasks));
-      if (outputs.length) {
-        const next = appendServiceResults(historyRef.current.present, outputs);
+      if (awaitingTaskIdentity()) return Math.max(active, 1);
+      // A live task can finish during media decoding; it alone owns that completion.
+      const pending = received.filter((item) => !isClaimed(item.taskId));
+      setJobs((current) =>
+        reconcileGenerationJobs(
+          mergeGenerationJobs(currentJobs, current),
+          tasks,
+        ),
+      );
+      if (pending.length) {
+        const next = applyRecoveredGenerationResults(
+          historyRef.current.present,
+          pending,
+          currentJobs,
+        );
         change(() => next.document);
-        setSelected(next.ids);
         revealResults(next.ids);
         setJobs((current) => {
-          const updated = [...current];
-          results.forEach((item, index) => {
+          const updated = mergeGenerationJobs(currentJobs, current);
+          pending.forEach((item, index) => {
             const existing = updated.findIndex(
               (job) => job.taskId === item.taskId,
             );
             const patch: Job = {
               id: existing >= 0 ? updated[existing]!.id : crypto.randomUUID(),
               nodeId:
-                existing >= 0 ? updated[existing]!.nodeId : next.ids[index]!,
-              title: outputs[index]!.title,
+                existing >= 0
+                  ? updated[existing]!.nodeId
+                  : next.placements[index]!.ids[0]!,
+              title: item.output.title,
               taskId: item.taskId,
               status: "succeeded",
               time: jobTime(),
-              outputs: [outputs[index]!],
+              outputs: [item.output],
+              message: next.placements[index]!.error ?? "已更新到画布",
             };
             if (existing >= 0)
               updated[existing] = { ...updated[existing]!, ...patch };
@@ -1485,8 +1514,13 @@ function Workspace() {
           });
           return updated;
         });
-        for (const item of results) markHandled(projectId, item.taskId);
-        notify(`已从本地服务同步 ${outputs.length} 个结果到画布。`);
+        for (const item of pending) markHandled(projectId, item.taskId);
+        const unplaced = next.placements.filter((item) => item.error).length;
+        notify(
+          unplaced
+            ? `${pending.length - unplaced} 个结果已更新到画布，${unplaced} 个结果因来源变化保留在生成历史。`
+            : `已从本地服务同步 ${pending.length} 个结果到画布。`,
+        );
       } else if (announce)
         notify(
           active ? `还有 ${active} 个任务正在生成。` : "没有需要同步的新结果。",
@@ -1525,6 +1559,7 @@ function Workspace() {
     request: GenerationRequest,
     origin: ResultSource,
     title: string,
+    resultMode: GenerationResultMode = "replace",
   ) => {
     const id = crypto.randomUUID();
     const run: ServiceRun = {
@@ -1540,6 +1575,8 @@ function Workspace() {
       {
         id,
         nodeId: origin.nodeId,
+        resultSource: origin,
+        resultMode,
         title,
         status: "running",
         time: jobTime(),
@@ -1591,23 +1628,30 @@ function Workspace() {
         outputs: [output],
         message: "结果已保存到历史",
       });
-      const appended = appendLinkedMediaResults(
+      const appended = applyGenerationResults(
         historyRef.current.present,
         origin,
         [output],
+        resultMode,
       );
       if (appended.error || !appended.ids.length) {
-        const message = `${appended.error ?? "结果未写入画布。"}结果仍保存在本地服务中，回到原画布后可在生成历史中同步。`;
+        const sameDocument =
+          historyRef.current.present.id === origin.documentId;
+        const message = `${appended.error ?? "结果未写入画布。"}${sameDocument ? "可在生成历史中恢复结果。" : "回到原画布后可同步本地服务结果。"}`;
         updateJob(id, { status: "succeeded", message });
+        if (sameDocument) markHandled(submitted.projectId, submitted.taskId);
         notify(message);
         return;
       }
       change(() => appended.document);
-      setSelected(appended.ids);
       revealResults(appended.ids);
       markHandled(submitted.projectId, submitted.taskId);
       updateJob(id, { status: "succeeded", message: "已加入画布" });
-      notify("生成完成，结果已作为新节点连接到来源节点。");
+      notify(
+        resultMode === "replace"
+          ? "生成完成，结果已更新到当前节点。"
+          : "批量生成完成，额外结果已加入画布。",
+      );
     } catch (error) {
       if (signal.aborted)
         updateJob(id, { status: "cancelled", message: "已取消" });
@@ -1657,7 +1701,12 @@ function Workspace() {
     };
     const count = settings.mode === "audio" ? 1 : (settings.count ?? 1);
     for (let index = 0; index < count; index++)
-      void runServiceTask(request, origin, settings.prompt || node.data.title);
+      void runServiceTask(
+        request,
+        origin,
+        settings.prompt || node.data.title,
+        index === 0 ? "replace" : "additional",
+      );
   };
   const cancelServiceRuns = (nodeId: string) => {
     for (const run of serviceRuns.current.values()) {
@@ -1679,6 +1728,12 @@ function Workspace() {
     const current = historyRef.current.present;
     const node = current.nodes.find((node) => node.id === nodeId);
     if (!node || lockedNodeIds(current.nodes).has(nodeId)) return;
+    if (
+      [...serviceRuns.current.values()].some(
+        (run) => run.documentId === current.id && run.nodeId === nodeId,
+      )
+    )
+      return;
     const incoming = incomingNodes(current, nodeId);
     const settings = getNodeGenerationSettings(node);
     if (settings.modelConfigId) {
@@ -1824,14 +1879,29 @@ function Workspace() {
         });
       }
       if (controller.signal.aborted) return;
-      if (addLinkedOutputs(origin, outputs)) {
-        setJobs((current) =>
-          current.map((job) =>
-            job.id === binding.jobId
-              ? { ...job, status: "imported", outputs }
-              : job,
-          ),
-        );
+      const placed = applyGenerationResults(
+        historyRef.current.present,
+        origin,
+        outputs,
+      );
+      setJobs((current) =>
+        current.map((job) =>
+          job.id === binding.jobId
+            ? {
+                ...job,
+                status: "imported",
+                resultSource: origin,
+                resultMode: "replace",
+                outputs,
+                message: placed.error ?? "已更新到画布",
+              }
+            : job,
+        ),
+      );
+      if (placed.error) notify(placed.error);
+      else if (placed.ids.length) {
+        change(() => placed.document);
+        revealResults(placed.ids);
         setGenerationTarget(null);
       }
     } catch (error) {
@@ -1858,7 +1928,12 @@ function Workspace() {
     if (!ready || switchPending.current) return;
     const el = event.target as HTMLElement;
     // These components own their keyboard shortcuts and cancellation lifecycle.
-    if (el.closest(".cw-composer-dock,.cw-domain-dialog")) return;
+    if (
+      el.closest(
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog",
+      )
+    )
+      return;
     if (event.key === "Escape" && el.closest(".cw-rail")) return;
     const editingText = el.closest(
       "input,textarea,select,[contenteditable=true]",
@@ -2033,6 +2108,20 @@ function Workspace() {
   });
 
   const actions = {
+    select: (id: string, event: React.MouseEvent) => {
+      if (panning || pointerGesture.current.blocksClick(event.detail)) return;
+      setMenu(null);
+      setDismissedComposer(null);
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        const ids = new Set(selectionAtPointerDown.current);
+        if (ids.has(id)) ids.delete(id);
+        else ids.add(id);
+        setSelected([...ids]);
+      } else {
+        setSelected([id]);
+        focusSelection(id);
+      }
+    },
     editTags: (id: string) => {
       if (!selected.includes(id)) setSelected([id]);
       setPanel("tags");
@@ -2198,6 +2287,7 @@ function Workspace() {
         bypassSnapping.current = event.metaKey || event.ctrlKey;
         const target = event.target as HTMLElement;
         const surface = Boolean(target.closest(".react-flow"));
+        if (surface) selectionPresentation.userNavigation();
         pointerGesture.current.begin(
           event.pointerId,
           event.clientX,
@@ -2320,6 +2410,8 @@ function Workspace() {
               setSelected([...ids]);
               return;
             }
+            setSelected([node.id]);
+            focusSelection(node.id);
             if (
               node.type === "text" &&
               !lockedIds.has(node.id) &&
@@ -2341,7 +2433,7 @@ function Workspace() {
               setTextEditingId(node.id);
               return;
             }
-            requestAnimationFrame(() => revealNodes([node.id]));
+            focusSelection(node.id);
           }}
           onNodeDragStart={beginDrag}
           onNodeDragStop={endDrag}
@@ -2369,6 +2461,9 @@ function Workspace() {
                 y: event.clientY,
               }),
             });
+          }}
+          onMoveStart={(event) => {
+            if (event) selectionPresentation.userNavigation();
           }}
           onMove={(_, view) => setZoom(view.zoom)}
           onMoveEnd={(_, viewport) => command({ type: "viewport", viewport })}
@@ -2781,7 +2876,10 @@ function Workspace() {
             <IconButton
               name="minus"
               label="缩小"
-              onClick={() => void flow.zoomOut()}
+              onClick={() => {
+                selectionPresentation.userNavigation();
+                void flow.zoomOut();
+              }}
             />
             <input
               aria-label="缩放百分比"
@@ -2791,14 +2889,20 @@ function Workspace() {
               value={Math.round(zoom * 100)}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                if (v >= 8 && v <= 800) void flow.zoomTo(v / 100);
+                if (v >= 8 && v <= 800) {
+                  selectionPresentation.userNavigation();
+                  void flow.zoomTo(v / 100);
+                }
               }}
             />
             <span>%</span>
             <IconButton
               name="plus"
               label="放大"
-              onClick={() => void flow.zoomIn()}
+              onClick={() => {
+                selectionPresentation.userNavigation();
+                void flow.zoomIn();
+              }}
             />
           </div>
           <button
@@ -2821,6 +2925,7 @@ function Workspace() {
             <button
               key={z}
               onClick={() => {
+                selectionPresentation.userNavigation();
                 void flow.zoomTo(z);
                 setZoomMenu(false);
               }}
@@ -2910,96 +3015,95 @@ function Workspace() {
           <IconButton name="trash" label="删除所选" onClick={removeSelected} />
         </div>
       )}
-      {composerNode &&
-        ["image", "video", "audio"].includes(composerNode.type) &&
-        composerNode.id !== dismissedComposer &&
-        !lockedIds.has(composerNode.id) &&
-        !editing &&
-        !preview &&
-        !generationTarget && (
-          <div
-            className={`cw-composer-dock ${panel ? "has-panel" : ""}`}
-            data-interacting={interacting || panning}
-            aria-hidden={interacting || panning}
-            inert={interacting || panning}
+      {hasToolbar && single && (
+        <div
+          ref={toolbarElement}
+          className="cw-node-toolbar-anchor"
+          style={{
+            ...selectionPresentation.placement?.toolbar,
+            maxWidth: selectionPresentation.toolbarMaxWidth,
+          }}
+          data-interacting={
+            interacting || panning || !selectionPresentation.visible
+          }
+          aria-hidden={interacting || panning || !selectionPresentation.visible}
+          inert={interacting || panning || !selectionPresentation.visible}
+        >
+          <NodeSelectionToolbar
+            node={single}
+            locked={lockedIds.has(single.id)}
+            style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
+            onTool={openTools}
+            onTools={() =>
+              openTools(
+                single.data.taskDraft?.tool ??
+                  (single.type === "video"
+                    ? "video-trim"
+                    : single.type === "audio"
+                      ? "audio-trim"
+                      : "layers"),
+              )
+            }
+            onEdit={(mode) => {
+              if (single.type === "text") setTextEditingId(single.id);
+              else openEditor(single, mode);
+            }}
+            onPreview={() => setPreview(single)}
+            onDownload={() => downloadNode(single)}
+            onAssistant={() => togglePanel("assistant")}
+            onDuplicate={() => paste(true)}
+          />
+        </div>
+      )}
+      {hasComposer && composerNode && (
+        <div
+          ref={composerElement}
+          className="cw-composer-dock"
+          style={{
+            ...selectionPresentation.placement?.composer,
+            width: selectionPresentation.composerWidth,
+            maxHeight: selectionPresentation.composerMaxHeight,
+          }}
+          data-interacting={
+            interacting || panning || !selectionPresentation.visible
+          }
+          aria-hidden={interacting || panning || !selectionPresentation.visible}
+          inert={interacting || panning || !selectionPresentation.visible}
+        >
+          <TooltipButton
+            className="cw-composer-dismiss"
+            label="关闭生成面板"
+            onClick={() => {
+              setDismissedComposer(composerNode.id);
+              root.current?.focus({ preventScroll: true });
+            }}
           >
-            <div className="cw-selected-tools">
-              <span>{composerNode.data.title}</span>
-              {composerNode.data.src && (
-                <>
-                  <button onClick={() => setPreview(composerNode)}>
-                    <CanvasIcon name="expand" size={14} />
-                    全屏
-                  </button>
-                  {composerNode.type === "image" && (
-                    <>
-                      <button onClick={() => openEditor(composerNode)}>
-                        <CanvasIcon name="crop" size={14} />
-                        编辑图片
-                      </button>
-                      <button
-                        onClick={() => openEditor(composerNode, "layers")}
-                      >
-                        <CanvasIcon name="stack" size={14} />
-                        图层
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() =>
-                      openTools(
-                        composerNode.data.taskDraft?.tool ??
-                          (composerNode.type === "image"
-                            ? "smart-edit"
-                            : composerNode.type === "video"
-                              ? "video-trim"
-                              : "audio-trim"),
-                      )
-                    }
-                  >
-                    <CanvasIcon name="tool" size={14} />
-                    工具
-                  </button>
-                  <button onClick={() => downloadNode(composerNode)}>
-                    <CanvasIcon name="download" size={14} />
-                    下载
-                  </button>
-                </>
-              )}
-              <TooltipButton
-                label="关闭生成面板"
-                onClick={() => {
-                  setDismissedComposer(composerNode.id);
-                  root.current?.focus({ preventScroll: true });
-                }}
-              >
-                ×
-              </TooltipButton>
-            </div>
-            <NodeComposer
-              selectedNode={composerNode}
-              incomingNodes={composerIncoming}
-              onUpdate={(patch) =>
-                command({
-                  type: "update-node",
-                  id: composerNode.id,
-                  patch: { data: patch },
-                })
-              }
-              onRun={() => prepareGeneration(composerNode.id)}
-              onCancel={() => {
-                setGenerationTarget(null);
-                cancelServiceRuns(composerNode.id);
-              }}
-              onPickReference={() => {
-                referenceTarget.current = composerNode.id;
-                setPanel("assets");
-              }}
-              running={generationByNode.has(composerNode.id)}
-              backendModels={backendCatalog.models}
-            />
-          </div>
-        )}
+            <CanvasIcon name="close" size={14} />
+          </TooltipButton>
+          <NodeComposer
+            selectedNode={composerNode}
+            incomingNodes={composerIncoming}
+            onUpdate={(patch) =>
+              command({
+                type: "update-node",
+                id: composerNode.id,
+                patch: { data: patch },
+              })
+            }
+            onRun={() => prepareGeneration(composerNode.id)}
+            onCancel={() => {
+              setGenerationTarget(null);
+              cancelServiceRuns(composerNode.id);
+            }}
+            onPickReference={() => {
+              referenceTarget.current = composerNode.id;
+              setPanel("assets");
+            }}
+            running={generationByNode.has(composerNode.id)}
+            backendModels={backendCatalog.models}
+          />
+        </div>
+      )}
 
       {menu &&
         contextItems(
@@ -3307,6 +3411,7 @@ function Workspace() {
                       const target = referenceTarget.current;
                       const n = addNode("image", undefined, {
                         title,
+                        mediaRole: "asset",
                         src: studyImage(i, title),
                         assetState: "ready",
                         mimeType: "image/svg+xml",
@@ -3605,6 +3710,7 @@ function Workspace() {
                     `已创建 ${nodes.length} 个可编辑节点，连线表示参考关系。`,
                   ]);
                   setChat("");
+                  selectionPresentation.userNavigation();
                   setSelected([]);
                   requestAnimationFrame(
                     () =>
@@ -3975,7 +4081,7 @@ function Workspace() {
           <div className="cw-generation-import">
             <h3>导入实际生成结果</h3>
             <p>
-              在原站完成生成并下载后，选择实际媒体文件。结果会创建为新节点，连接到本次任务来源；不会覆盖原素材。
+              在原站完成生成并下载后，选择实际媒体文件。首个结果会更新到本次任务节点，可撤销；多份结果保留为额外节点。
             </p>
             <button onClick={pickGenerationResults} disabled={resultBusy}>
               {resultBusy

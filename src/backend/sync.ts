@@ -34,6 +34,11 @@ export function markHandled(projectId: string, taskId: string) {
   save(projectId, value);
 }
 
+/** A live completion may claim a task while an overlapping recovery download awaits. */
+export function isHandled(projectId: string, taskId: string) {
+  return handled(projectId)?.has(taskId) ?? false;
+}
+
 export type SyncedResult =
   | { taskId: string; kind: "text"; title: string; text: string }
   | { taskId: string; kind: "media"; result: BackendResult };
@@ -44,6 +49,7 @@ export async function unsyncedResults(
   projectId: string,
   running: ReadonlySet<string>,
   signal?: AbortSignal,
+  ownedTasks: ReadonlySet<string> = new Set(),
 ): Promise<{
   results: SyncedResult[];
   active: number;
@@ -72,7 +78,7 @@ export async function unsyncedResults(
   if (!seen) {
     // First contact with an existing project: its history is not new work.
     seen = new Set([
-      ...done.map((task) => task.id),
+      ...done.filter((task) => !ownedTasks.has(task.id)).map((task) => task.id),
       ...documents.map((asset) => asset.id),
     ]);
     save(projectId, seen);

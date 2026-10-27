@@ -467,6 +467,9 @@ export function parseNodeData(
     (value.assetState !== undefined &&
       value.assetState !== "ready" &&
       value.assetState !== "missing") ||
+    (value.mediaRole !== undefined &&
+      value.mediaRole !== "asset" &&
+      value.mediaRole !== "generation") ||
     (value.settings !== undefined && !isGenerationSettings(value.settings))
   )
     return { ok: false, error: "节点的标题、提示词、素材或设置无效。" };
@@ -487,6 +490,7 @@ export function parseNodeData(
   for (const key of ["src", "mimeType", "text"] as const)
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
+  if (value.mediaRole) result.mediaRole = value.mediaRole;
   if (value.settings)
     result.settings = copyGenerationSettings(
       value.settings as unknown as GenerationSettings,
@@ -645,6 +649,7 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
       a.mimeType === b.mimeType &&
       a.text === b.text &&
       a.assetState === b.assetState &&
+      a.mediaRole === b.mediaRole &&
       sameArray(a.tags ?? [], b.tags ?? [], (a, b) => a === b) &&
       sameGenerationSettings(a.settings, b.settings) &&
       sameOptional(

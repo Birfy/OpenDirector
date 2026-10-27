@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
+import { ComposerPopover } from "./ComposerPopover";
 import {
   changeGenerationSettings,
   generationBlocker,
@@ -233,21 +234,12 @@ export function NodeComposer({
   const [panel, setPanel] = useState<Panel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const panelAnchor = useRef<HTMLElement | null>(null);
+  const promptSelection = useRef<{ start: number; end: number } | null>(null);
   useEffect(() => {
     setPanel(null);
+    promptSelection.current = null;
   }, [selectedNode?.id]);
-  useEffect(() => {
-    if (!panel) return;
-    const dismiss = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !rootRef.current?.contains(event.target)
-      )
-        setPanel(null);
-    };
-    document.addEventListener("pointerdown", dismiss);
-    return () => document.removeEventListener("pointerdown", dismiss);
-  }, [panel]);
 
   if (
     !selectedNode ||
@@ -342,8 +334,10 @@ export function NodeComposer({
     onUpdate({ settings: changeGenerationSettings(settings, patch) });
   const updatePrompt = (value: string) =>
     onUpdate({ prompt: value, settings: { ...settings, prompt: value } });
-  const togglePanel = (next: Panel) =>
+  const togglePanel = (next: Panel, anchor: HTMLElement) => {
+    panelAnchor.current = anchor;
     setPanel((current) => (current === next ? null : next));
+  };
   const applyPreset = (key: PresetKey, preset: Preset) => {
     const previous = presets[key].find((item) => item.name === settings[key]);
     const withoutPrevious = previous?.prompt
@@ -364,15 +358,35 @@ export function NodeComposer({
   };
   const insertReference = (node: CanvasNode) => {
     const input = textareaRef.current;
-    const start = input?.selectionStart ?? prompt.length;
-    const end = input?.selectionEnd ?? start;
+    const start = Math.min(
+      promptSelection.current?.start ?? prompt.length,
+      prompt.length,
+    );
+    const end = Math.min(promptSelection.current?.end ?? start, prompt.length);
     const mention = `@${node.data.title} `;
     updatePrompt(`${prompt.slice(0, start)}${mention}${prompt.slice(end)}`);
+    promptSelection.current = {
+      start: start + mention.length,
+      end: start + mention.length,
+    };
     setPanel(null);
     requestAnimationFrame(() => {
-      input?.focus();
+      input?.focus({ preventScroll: true });
       input?.setSelectionRange(start + mention.length, start + mention.length);
     });
+  };
+  const rememberPromptSelection = () => {
+    const input = textareaRef.current;
+    if (input)
+      promptSelection.current = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+      };
+  };
+  const popoverProps = {
+    anchor: panelAnchor.current,
+    composer: rootRef.current,
+    onClose: () => setPanel(null),
   };
 
   return (
@@ -522,7 +536,7 @@ export function NodeComposer({
                 key={key}
                 type="button"
                 className={`cw-preset-trigger${panel === key ? " cw-is-active" : ""}`}
-                onClick={() => togglePanel(key)}
+                onClick={(event) => togglePanel(key, event.currentTarget)}
                 aria-expanded={panel === key}
                 aria-label={`选择${presetLabels[key]}`}
               >
@@ -546,10 +560,10 @@ export function NodeComposer({
       )}
 
       {panel && ["camera", "palette", "style"].includes(panel) && (
-        <div
-          className="cw-popover cw-preset-popover"
-          role="dialog"
-          aria-label={`${presetLabels[panel as PresetKey]}选项`}
+        <ComposerPopover
+          {...popoverProps}
+          className="cw-preset-popover"
+          label={`${presetLabels[panel as PresetKey]}选项`}
         >
           <div className="cw-popover-heading">
             <strong>
@@ -587,7 +601,7 @@ export function NodeComposer({
               </button>
             ))}
           </div>
-        </div>
+        </ComposerPopover>
       )}
 
       {firstLast && (
@@ -704,7 +718,7 @@ export function NodeComposer({
           type="button"
           className="cw-voice-trigger"
           aria-expanded={panel === "voices"}
-          onClick={() => togglePanel("voices")}
+          onClick={(event) => togglePanel("voices", event.currentTarget)}
         >
           <CanvasIcon name="audio" size={16} />
           <span>语音库</span>
@@ -768,7 +782,12 @@ export function NodeComposer({
                     : "描述台词、音色和声音场景，可添加音频参考…"
           }
           spellCheck={false}
-          onChange={(event) => updatePrompt(event.target.value)}
+          onSelect={rememberPromptSelection}
+          onBlur={rememberPromptSelection}
+          onChange={(event) => {
+            rememberPromptSelection();
+            updatePrompt(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
@@ -788,6 +807,7 @@ export function NodeComposer({
           <CanvasIcon name={mode === "audio" ? "audio" : "sparkle"} size={15} />
           <select
             aria-label="生成模型"
+            title={model?.note}
             value={
               backend ? `config:${settings.modelConfigId}` : settings.model
             }
@@ -826,7 +846,7 @@ export function NodeComposer({
           className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
           aria-label="生成参数"
           aria-expanded={panel === "parameters"}
-          onClick={() => togglePanel("parameters")}
+          onClick={(event) => togglePanel("parameters", event.currentTarget)}
         >
           <CanvasIcon name="sliders" size={15} />
           <span>
@@ -845,7 +865,7 @@ export function NodeComposer({
             className={`cw-reference-trigger${panel === "references" ? " cw-is-active" : ""}`}
             aria-label="引用已连接节点"
             aria-expanded={panel === "references"}
-            onClick={() => togglePanel("references")}
+            onClick={(event) => togglePanel("references", event.currentTarget)}
           >
             @ <span>引用</span>
           </button>
@@ -890,7 +910,6 @@ export function NodeComposer({
             <>
               <strong>{price.credits} 积分</strong>
               {price.beforeDiscount && <del>{price.beforeDiscount}</del>}
-              <small>{price.context}</small>
             </>
           ) : backend ? (
             <span>费用由所选模型服务计算</span>
@@ -900,7 +919,6 @@ export function NodeComposer({
         </span>
         <small>{backend ? config?.url : "原站实测参考，非本地报价"}</small>
       </div>
-      {model?.note && <p className="cw-generation-note">{model.note}</p>}
       {backend && mode === "video" && settings.videoMode === "continuation" && (
         <p className="cw-generation-note">
           连接一段由当前 H3
@@ -924,17 +942,17 @@ export function NodeComposer({
             {backend ? "正在生成，可随时取消" : "正在准备本地任务，可随时取消"}
           </>
         ) : backend ? (
-          "提交到本地服务；结果作为新节点连接到此节点"
+          "提交到本地服务；生成结果更新到当前节点"
         ) : (
           "仅保存创作请求，不生成媒体，不扣除积分"
         )}
       </div>
 
       {panel === "parameters" && (
-        <div
-          className="cw-popover cw-parameters-popover"
-          role="dialog"
-          aria-label="生成参数设置"
+        <ComposerPopover
+          {...popoverProps}
+          className="cw-parameters-popover"
+          label="生成参数设置"
         >
           <div className="cw-popover-heading">
             <strong>生成参数</strong>
@@ -1112,14 +1130,14 @@ export function NodeComposer({
                 : "比例为本地创作偏好；各模型的完整能力须由真实服务确认。"}
             </p>
           )}
-        </div>
+        </ComposerPopover>
       )}
 
       {panel === "voices" && (
-        <div
-          className="cw-popover cw-voices-popover"
-          role="dialog"
-          aria-label="语音库"
+        <ComposerPopover
+          {...popoverProps}
+          className="cw-voices-popover"
+          label="语音库"
         >
           <div className="cw-popover-heading">
             <strong>语音库 · 已观察音色</strong>
@@ -1150,14 +1168,14 @@ export function NodeComposer({
           <p className="cw-generation-note">
             完整音色库与试听需要真实服务；本地只保留已观察音色名称。
           </p>
-        </div>
+        </ComposerPopover>
       )}
 
       {panel === "references" && (
-        <div
-          className="cw-popover cw-references-popover"
-          role="dialog"
-          aria-label="引用节点"
+        <ComposerPopover
+          {...popoverProps}
+          className="cw-references-popover"
+          label="引用节点"
         >
           <div className="cw-popover-heading">
             <strong>已连接的参考</strong>
@@ -1208,7 +1226,7 @@ export function NodeComposer({
             <CanvasIcon name="plus" size={16} />
             添加参考素材
           </button>
-        </div>
+        </ComposerPopover>
       )}
     </div>
   );

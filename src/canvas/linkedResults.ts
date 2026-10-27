@@ -1,10 +1,12 @@
 import {
+  applyCommand,
   createNode,
   type CanvasDocument,
   type CanvasNodeData,
   type CanvasNodeKind,
 } from "./model.ts";
 import { absolutePosition } from "./geometry.ts";
+import { indexNodes, isNodeLocked } from "./hierarchy.ts";
 export interface ResultSource {
   documentId: string;
   nodeId: string;
@@ -18,19 +20,112 @@ export interface LinkedMediaResult {
   title: string;
   media?: CanvasNodeData["media"];
 }
+export type GenerationResultMode = "replace" | "additional";
+
+type PlacementResult = {
+  document: CanvasDocument;
+  ids: string[];
+  error?: string;
+};
+
+function sourceError(document: CanvasDocument, source: ResultSource) {
+  if (document.id !== source.documentId) return "项目已切换，结果未写入画布。";
+  const target = document.nodes.find((node) => node.id === source.nodeId);
+  if (!target) return "来源节点已被删除，结果未写入画布。";
+  if (target.type !== source.kind)
+    return "来源节点类型已改变，结果未写入画布。";
+}
+
+function hasInvalidMedia(outputs: readonly LinkedMediaResult[]) {
+  return outputs.some(
+    (output) =>
+      !output.src ||
+      !output.mimeType ||
+      !["image", "video", "audio"].includes(output.kind),
+  );
+}
+
+/** Generation fills its existing node. Only explicitly requested extra results add siblings. */
+export function applyGenerationResults(
+  document: CanvasDocument,
+  source: ResultSource,
+  outputs: readonly LinkedMediaResult[],
+  mode: GenerationResultMode = "replace",
+): PlacementResult {
+  const error = sourceError(document, source);
+  if (error) return { document, ids: [], error };
+  const target = document.nodes.find((node) => node.id === source.nodeId)!;
+  if (isNodeLocked(target, indexNodes(document.nodes)))
+    return {
+      document,
+      ids: [],
+      error: "来源节点已锁定，结果仍保存在生成历史中。",
+    };
+  if (!outputs.length) return { document, ids: [] };
+  if (
+    hasInvalidMedia(outputs) ||
+    outputs.some((output) => output.kind !== target.type)
+  )
+    return { document, ids: [], error: "生成结果与节点的媒体类型不匹配。" };
+  // Additional results do not mutate their source; a parallel first result may
+  // already have filled it. Replacement must never overwrite a user's later edit.
+  if (mode === "replace" && target.data.src !== source.src)
+    return {
+      document,
+      ids: [],
+      error: "节点素材已改变，结果仍保存在生成历史中。",
+    };
+  let next = document;
+  const ids: string[] = [];
+  if (mode === "replace") {
+    const first = outputs[0]!;
+    next = applyCommand(document, {
+      type: "update-node",
+      id: target.id,
+      patch: {
+        data: {
+          src: first.src,
+          mimeType: first.mimeType,
+          assetState: "ready",
+          mediaRole: "generation",
+          ...(first.media ? { media: { ...first.media } } : {}),
+        },
+      },
+    });
+    ids.push(target.id);
+  }
+  const remaining = mode === "replace" ? outputs.slice(1) : outputs;
+  if (remaining.length) {
+    const p = absolutePosition(target, document.nodes);
+    const nodes = placeResults(next, remaining, {
+      x: p.x + target.width + 100,
+      y: p.y,
+    }).map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        mediaRole: "generation" as const,
+        prompt: target.data.prompt,
+        ...(target.data.settings
+          ? { settings: structuredClone(target.data.settings) }
+          : {}),
+      },
+    }));
+    next = { ...next, nodes: [...next.nodes, ...nodes] };
+    ids.push(...nodes.map((node) => node.id));
+  }
+  return { document: next, ids };
+}
+
 /** Local imports and pixel operations produce new nodes; their frozen origin must still exist. */
 export function appendLinkedMediaResults(
   document: CanvasDocument,
   source: ResultSource,
   outputs: readonly LinkedMediaResult[],
-): { document: CanvasDocument; ids: string[]; error?: string } {
-  if (document.id !== source.documentId)
-    return { document, ids: [], error: "项目已切换，结果未写入画布。" };
-  const target = document.nodes.find((node) => node.id === source.nodeId);
-  if (!target)
-    return { document, ids: [], error: "来源节点已被删除，结果未写入画布。" };
-  if (target.type !== source.kind)
-    return { document, ids: [], error: "来源节点类型已改变，结果未写入画布。" };
+): PlacementResult {
+  const error = sourceError(document, source);
+  if (error) return { document, ids: [], error };
+  const target = document.nodes.find((node) => node.id === source.nodeId)!;
   if (target.data.src !== source.src)
     return {
       document,
@@ -38,14 +133,7 @@ export function appendLinkedMediaResults(
       error: "来源素材已改变，请重新打开工具后处理。",
     };
   if (!outputs.length) return { document, ids: [] };
-  if (
-    outputs.some(
-      (output) =>
-        !output.src ||
-        !output.mimeType ||
-        !["image", "video", "audio"].includes(output.kind),
-    )
-  )
+  if (hasInvalidMedia(outputs))
     return { document, ids: [], error: "结果不包含有效媒体。" };
   const p = absolutePosition(target, document.nodes);
   const nodes = placeResults(document, outputs, {
@@ -125,6 +213,7 @@ function placeResults(
             title: output.title,
             mimeType: output.mimeType,
             assetState: "ready",
+            mediaRole: "asset",
             ...(output.media ? { media: { ...output.media } } : {}),
           },
     );
