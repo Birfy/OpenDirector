@@ -291,6 +291,12 @@ export function CanvasToolsPanel({
           <div className="ctp-fields">
             {fields.map((field) => {
               if (
+                active.id === "multi-size" &&
+                parameters.aspectRatio !== "custom" &&
+                ["outputWidth", "outputHeight"].includes(field.key)
+              )
+                return null;
+              if (
                 active.id === "image-hd" &&
                 parameters.kind === "normal" &&
                 ["resolution", "detailStrength"].includes(field.key)
@@ -380,14 +386,19 @@ export function CanvasToolsPanel({
               );
             })}
           </div>
-          {[
+          {([
             "cutout",
             "inpainting-remove",
             "smart-edit",
             "product-replacement",
-          ].includes(active.id) && (
+          ].includes(active.id) ||
+            (active.id === "layer-decompose" &&
+              parameters.mode === "boxes")) && (
             <div className="ctp-selection">
               <span>{task.selection ? "已提供选区数据" : "尚未提供选区"}</span>
+              {active.id === "layer-decompose" && (
+                <small>使用矩形框选要拆分的区域。</small>
+              )}
               <button
                 disabled={!onEditSelection || running}
                 onClick={() => onEditSelection?.(active.id)}

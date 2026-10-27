@@ -6,6 +6,7 @@ import {
   initialToolParameters,
   validateToolTask,
   type ToolSource,
+  type ToolParameters,
 } from "../src/canvas/toolCatalog.ts";
 const source: ToolSource = {
   nodeId: "image-1",
@@ -94,15 +95,21 @@ test("manual masks are bound to the exact source and original pixel dimensions",
 });
 test("layer decomposition distinguishes unknown format metadata from a known incompatible input", () => {
   const task = createCanvasToolTask("layer-decompose", [source.nodeId], {
+    mode: "smart",
     resolution: "auto",
     prompt: "",
   });
   assert.deepEqual(
-    validateToolTask(task, [{ ...source, mimeType: undefined }]),
+    validateToolTask(task, [{ ...source, mimeType: undefined }], {
+      available: true,
+      parametersConfirmed: true,
+    }),
     [],
   );
   assert.ok(
-    validateToolTask(task, [{ ...source, mimeType: "image/webp" }]).length,
+    validateToolTask(task, [{ ...source, mimeType: "image/webp" }]).some(
+      (error) => error.includes("PNG / JPEG"),
+    ),
   );
   assert.ok(
     validateToolTask(task, [{ ...source, width: 256, height: 256 }]).some(
@@ -142,5 +149,198 @@ test("dynamic options and unknown task protocols cannot be guessed into a valid 
     validateToolTask(createCanvasToolTask("multi-size", [source.nodeId], {}), [
       source,
     ]).some((error) => error.includes("尚未接入")),
+  );
+});
+
+test("observed marketing presets derive exact pixels while custom dimensions remain explicit", () => {
+  const confirmed = { available: true, parametersConfirmed: true };
+  for (const [aspectRatio, outputWidth, outputHeight] of [
+    ["1:1", 1200, 1200],
+    ["3:4", 1200, 1600],
+    ["9:16", 1080, 1920],
+    ["16:9", 1920, 1080],
+    ["4:3", 1600, 1200],
+    ["21:9", 2520, 1080],
+    ["2:3", 1200, 1800],
+    ["3:2", 1800, 1200],
+  ] as const) {
+    const task = createCanvasToolTask("multi-size", [source.nodeId], {
+      aspectRatio,
+      outputWidth: 42,
+      outputHeight: 17,
+    });
+    assert.equal(task.parameters.outputWidth, outputWidth);
+    assert.equal(task.parameters.outputHeight, outputHeight);
+    assert.deepEqual(validateToolTask(task, [source], confirmed), []);
+    assert.ok(
+      validateToolTask(
+        { ...task, parameters: { ...task.parameters, outputHeight: 17 } },
+        [source],
+        confirmed,
+      ).some((error) => error.includes("实测尺寸")),
+    );
+    assert.ok(
+      validateToolTask(task, [source]).some((error) =>
+        error.includes("尚未接入"),
+      ),
+    );
+  }
+  const custom = createCanvasToolTask("multi-size", [source.nodeId], {
+    aspectRatio: "custom",
+    outputWidth: 1000,
+    outputHeight: 800,
+  });
+  assert.deepEqual(validateToolTask(custom, [source], confirmed), []);
+  const incompleteCustom: ToolParameters[] = [
+    { aspectRatio: "custom" },
+    { aspectRatio: "custom", outputWidth: 0, outputHeight: 800 },
+    { aspectRatio: "custom", outputWidth: 1000, outputHeight: 1.5 },
+  ];
+  for (const parameters of incompleteCustom)
+    assert.ok(
+      validateToolTask(
+        createCanvasToolTask("multi-size", [source.nodeId], parameters),
+        [source],
+        confirmed,
+      ).some((error) => error.includes("自定义尺寸")),
+    );
+});
+
+test("layer split modes require their own input without treating observed UI as a connected protocol", () => {
+  const confirmed = { available: true, parametersConfirmed: true };
+  const make = (mode: string, prompt = "") =>
+    createCanvasToolTask("layer-decompose", [source.nodeId], {
+      mode,
+      prompt,
+      resolution: "auto",
+    });
+  assert.deepEqual(validateToolTask(make("smart"), [source], confirmed), []);
+  assert.ok(
+    validateToolTask(make("description", "  "), [source], confirmed).some(
+      (error) => error.includes("拆分描述"),
+    ),
+  );
+  assert.deepEqual(
+    validateToolTask(
+      make("description", "背景与主体分别成层"),
+      [source],
+      confirmed,
+    ),
+    [],
+  );
+  assert.ok(
+    validateToolTask(make("boxes"), [source], confirmed).some((error) =>
+      error.includes("矩形选区"),
+    ),
+  );
+  const boxed = {
+    ...make("boxes"),
+    selection: {
+      sourceNodeId: source.nodeId,
+      width: 1024,
+      height: 1024,
+      boxes: [{ x: 10, y: 20, width: 200, height: 300 }],
+    },
+  };
+  assert.deepEqual(validateToolTask(boxed, [source], confirmed), []);
+  assert.ok(
+    validateToolTask(
+      {
+        ...boxed,
+        selection: {
+          ...boxed.selection,
+          boxes: [{ x: 1000, y: 0, width: 200, height: 100 }],
+        },
+      },
+      [source],
+      confirmed,
+    ).some((error) => error.includes("拆分区域")),
+  );
+  assert.ok(
+    validateToolTask(boxed, [source]).some((error) =>
+      error.includes("尚未接入"),
+    ),
+  );
+});
+
+test("video edit uses actual 4–30 second source metadata and rejects invented resolution/background options", () => {
+  const confirmed = { available: true, parametersConfirmed: true };
+  const video: ToolSource = {
+    nodeId: "video-1",
+    kind: "video",
+    title: "Scene",
+    src: "data:video/mp4;base64,a",
+    durationSeconds: 4,
+  };
+  const edit = createCanvasToolTask("video-edit", [video.nodeId], {
+    prompt: "更换背景",
+    annotationTool: "rectangle",
+  });
+  for (const durationSeconds of [4, 30])
+    assert.deepEqual(
+      validateToolTask(edit, [{ ...video, durationSeconds }], confirmed),
+      [],
+    );
+  for (const durationSeconds of [3.99, 30.01])
+    assert.ok(
+      validateToolTask(edit, [{ ...video, durationSeconds }], confirmed).some(
+        (error) => error.includes("4–30"),
+      ),
+    );
+  assert.ok(
+    validateToolTask(
+      edit,
+      [{ ...video, durationSeconds: undefined }],
+      confirmed,
+    ).some((error) => error.includes("无法确认视频时长")),
+  );
+  for (const background of ["black", "green", "transparent"])
+    assert.deepEqual(
+      validateToolTask(
+        createCanvasToolTask("video-matting", [video.nodeId], { background }),
+        [video],
+        confirmed,
+      ),
+      [],
+    );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-matting", [video.nodeId], {
+        background: "white",
+      }),
+      [video],
+      confirmed,
+    ).some((error) => error.includes("可用选项")),
+  );
+  for (const resolution of ["480P", "720P"])
+    assert.deepEqual(
+      validateToolTask(
+        createCanvasToolTask("video-depth-capture", [video.nodeId], {
+          resolution,
+        }),
+        [video],
+        confirmed,
+      ),
+      [],
+    );
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-depth-capture", [video.nodeId], {
+        resolution: "1080P",
+      }),
+      [video],
+      confirmed,
+    ).some((error) => error.includes("可用选项")),
+  );
+  const noExtra = CANVAS_TOOLS.find(
+    (tool) => tool.id === "video-subtitle-erasure",
+  )!;
+  assert.deepEqual(initialToolParameters(noExtra), {});
+  assert.equal(noExtra.execution, "remote");
+  assert.ok(
+    validateToolTask(
+      createCanvasToolTask("video-subtitle-erasure", [video.nodeId], {}),
+      [video],
+    ).some((error) => error.includes("尚未接入")),
   );
 });

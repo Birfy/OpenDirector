@@ -1,6 +1,6 @@
 /** Authored local task contract. These descriptors are not a private API client.
  * Evidence: research/canvas/features/README.md and its attributed source lines.
- * Dynamic model, price, distance, brightness and resolution options require capabilities.
+ * Unverified dynamic model, price, distance, brightness and resolution options require capabilities.
  */
 export type CanvasToolId =
   | "layers"
@@ -17,6 +17,7 @@ export type CanvasToolId =
   | "product-replacement"
   | "multi-size"
   | "dynamic-poster"
+  | "ecommerce-main"
   | "image-presets"
   | "grid-split"
   | "composition"
@@ -61,6 +62,7 @@ export interface CanvasToolDefinition {
   sources: readonly ("image" | "video" | "audio")[];
   minSources: number;
   maxSources: number;
+  /** Task protocol coverage. Observed UI choices can be present while the protocol remains entry-only. */
   parameterCoverage: "verified" | "partial" | "entry-only";
   fields: readonly ToolField[];
   evidence: string;
@@ -73,6 +75,7 @@ export interface ToolSource {
   mimeType?: string;
   width?: number;
   height?: number;
+  durationSeconds?: number;
 }
 export interface ToolSelection {
   sourceNodeId: string;
@@ -145,6 +148,17 @@ const runtime =
   "research/canvas/features/readable/async-canvas-feature-runtime.9b86f42393.js";
 const main = "research/canvas/readable/js/545ec3537fff-main.303f6eac20.js";
 const director = "research/canvas/features/readable/2232.9df5e1610c.js";
+const live = "docs/AI-LIVE-TESTS.md";
+const multiSizePresets = [
+  { ratio: "1:1", width: 1200, height: 1200 },
+  { ratio: "3:4", width: 1200, height: 1600 },
+  { ratio: "9:16", width: 1080, height: 1920 },
+  { ratio: "16:9", width: 1920, height: 1080 },
+  { ratio: "4:3", width: 1600, height: 1200 },
+  { ratio: "21:9", width: 2520, height: 1080 },
+  { ratio: "2:3", width: 1200, height: 1800 },
+  { ratio: "3:2", width: 1800, height: 1200 },
+] as const;
 function tool(
   id: CanvasToolId,
   title: string,
@@ -280,10 +294,26 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "layer-decompose",
     "图层分解",
-    "由真实模型将图像解析为多个可编辑图层。",
-    [prompt, choice("resolution", "清晰度", ["auto"])],
-    `${runtime}:5166`,
-    { parameterCoverage: "verified" },
+    "原站实测提供智能拆分、框选拆分和按描述拆分。框选需原图矩形选区；实际拆分及报价由真实服务提供。",
+    [
+      {
+        key: "mode",
+        label: "拆分模式",
+        type: "select",
+        required: true,
+        default: "smart",
+        options: [
+          { value: "smart", label: "智能拆分" },
+          { value: "boxes", label: "框选拆分" },
+          { value: "description", label: "按描述拆分" },
+        ],
+        hint: "本地草稿记录模式；框选数据和新模式的服务协议尚未接入。",
+      },
+      { ...prompt, hint: "按描述拆分时必须填写；智能拆分无需描述。" },
+      choice("resolution", "清晰度", ["auto"]),
+    ],
+    `${runtime}:5166; ${live}`,
+    { parameterCoverage: "entry-only" },
   ),
   tool(
     "panorama",
@@ -295,26 +325,76 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "product-replacement",
     "商品替换",
-    "选取原场景的商品区域，并提供新的商品图。",
+    "使用场景图和商品图替换主体，支持选区与提示词；原站已实测自动主体识别和 2K 结果。",
     [prompt, choice("resolution", "清晰度", ["2K", "4K"])],
-    `${runtime}:4932`,
+    `${runtime}:4932; ${live}`,
     { minSources: 2, maxSources: 2 },
   ),
   tool(
     "multi-size",
-    "营销多尺寸",
-    "按照能力目录输出不同营销尺寸。",
-    [],
-    `${main}:16913`,
+    "智能多尺寸",
+    "按原站实测画幅和像素尺寸创建草稿；自定义范围与实际服务协议尚未接入。",
+    [
+      {
+        key: "aspectRatio",
+        label: "输出尺寸",
+        type: "select",
+        required: true,
+        default: "1:1",
+        options: [
+          ...multiSizePresets.map((size) => ({
+            value: size.ratio,
+            label: `${size.ratio} · ${size.width}×${size.height}`,
+          })),
+          { value: "custom", label: "自定义" },
+        ],
+      },
+      {
+        key: "outputWidth",
+        label: "自定义宽度",
+        type: "number",
+        min: 1,
+        step: 1,
+        hint: "仅自定义画幅使用，单位像素；服务上限未确认。",
+      },
+      {
+        key: "outputHeight",
+        label: "自定义高度",
+        type: "number",
+        min: 1,
+        step: 1,
+        hint: "仅自定义画幅使用，单位像素；服务上限未确认。",
+      },
+    ],
+    `${main}:16913; ${live}`,
     { parameterCoverage: "entry-only" },
   ),
   tool(
     "dynamic-poster",
     "动态海报",
-    "将图片制作成动态海报，具体规格由服务提供。",
-    [],
-    `${main}:17129`,
+    "基于原图比例创建动态海报请求；本轮原站入口仅提供 Seedance 2.5，实际生成需连接服务。",
+    [
+      prompt,
+      choice("model", "模型", ["Seedance 2.5"]),
+      choice("resolution", "清晰度", ["480P", "720P", "1080P"]),
+    ],
+    `${main}:17129; ${live}`,
     { parameterCoverage: "entry-only" },
+  ),
+  tool(
+    "ecommerce-main",
+    "电商主图",
+    "整理电商主图请求；支持最多 6 张参考图，实际生成需连接服务。",
+    [
+      choice("view", "视角", ["默认", "正视", "侧视", "俯视"]),
+      choice("resolution", "清晰度", ["1.5K", "2K"]),
+      {
+        ...choice("aspectRatio", "画幅", ["1:1"]),
+        hint: "本轮只核对 1:1；其他画幅待服务确认。",
+      },
+    ],
+    live,
+    { maxSources: 6, parameterCoverage: "entry-only" },
   ),
   tool(
     "image-presets",
@@ -345,13 +425,8 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   ),
   ...(
     [
-      ["video-edit", "视频编辑", 16450],
       ["video-extend", "视频延长", 16473],
       ["video-partial-reshoot", "局部重拍", 17512],
-      ["video-depth-capture", "深度提取", 16558],
-      ["video-subtitle-erasure", "去字幕", 16703],
-      ["video-matting", "视频抠像", 16737],
-      ["video-translation", "视频翻译", 16596],
     ] as const
   ).map(([id, title, line]) =>
     tool(
@@ -366,6 +441,74 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         parameterCoverage: "entry-only",
       },
     ),
+  ),
+  tool(
+    "video-edit",
+    "视频编辑",
+    "原站实测支持 4–30 秒素材、提示词及矩形/画笔/箭头/文字/橡皮擦/标记；本轮未见模型选择。这里只记录意图，视频标注数据尚未接入。",
+    [
+      { ...prompt, required: true },
+      {
+        key: "annotationTool",
+        label: "原站标注工具",
+        type: "select",
+        options: [
+          { value: "rectangle", label: "矩形" },
+          { value: "brush", label: "画笔" },
+          { value: "arrow", label: "箭头" },
+          { value: "text", label: "文字" },
+          { value: "eraser", label: "橡皮擦" },
+          { value: "marker", label: "标记" },
+        ],
+        hint: "仅保存拟用工具，不会生成视频标注数据。",
+      },
+    ],
+    `${main}:16450; ${live}`,
+    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
+  ),
+  tool(
+    "video-depth-capture",
+    "深度动作捕捉",
+    "原站实测提供 480P / 720P；实际输出和当前报价由真实服务确定。",
+    [choice("resolution", "清晰度", ["480P", "720P"])],
+    `${main}:16558; ${live}`,
+    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
+  ),
+  tool(
+    "video-subtitle-erasure",
+    "字幕擦除",
+    "本轮原站实测没有额外设置；实际视频处理依赖真实服务。",
+    [],
+    `${main}:16703; ${live}`,
+    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
+  ),
+  tool(
+    "video-matting",
+    "视频抠像",
+    "原站实测可选黑色、绿色或透明背景；输出格式与处理协议由真实服务确定。",
+    [
+      {
+        key: "background",
+        label: "输出背景",
+        type: "select",
+        required: true,
+        options: [
+          { value: "black", label: "黑色" },
+          { value: "green", label: "绿色" },
+          { value: "transparent", label: "透明" },
+        ],
+      },
+    ],
+    `${main}:16737; ${live}`,
+    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
+  ),
+  tool(
+    "video-translation",
+    "视频翻译",
+    "静态代码存在候选入口，本轮原站未见；当前可用性和参数未知。",
+    [],
+    `${main}:16596; ${live}`,
+    { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
     "video-upscale",
@@ -390,17 +533,26 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       ["video-frame-capture", "视频取帧", 16509],
     ] as const
   ).map(([id, title, line]) =>
-    tool(id, title, "打开对应的本地媒体编辑器。", [], `${main}:${line}`, {
-      category: "video",
-      sources: ["video"],
-      execution: "local-editor",
-      parameterCoverage: "entry-only",
-    }),
+    tool(
+      id,
+      title,
+      id === "video-crop"
+        ? "按原视频像素裁剪画幅，保留可捕获音轨，本地重编码 WebM。"
+        : "打开对应的本地媒体编辑器。",
+      [],
+      `${main}:${line}`,
+      {
+        category: "video",
+        sources: ["video"],
+        execution: "local-editor",
+        parameterCoverage: "entry-only",
+      },
+    ),
   ),
   tool(
     "extract-audio",
     "提取音频",
-    "将视频音轨另存为音频素材。",
+    "将视频音轨另存为音频素材；对应本轮原站「声音分离 → 分离音频」。",
     [],
     `${main}:16624`,
     {
@@ -413,9 +565,9 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   tool(
     "audio-separation",
     "音频分离",
-    "分离人声与音效；需要真实分离服务。",
+    "仅保留静态候选入口。本轮未见人声/伴奏分离；视频「声音分离」实测仅为提取音频，不能据此确认此能力。",
     [],
-    `${main}:16827`,
+    `${main}:16827; ${live}`,
     {
       category: "audio",
       sources: ["video", "audio"],
@@ -494,6 +646,17 @@ export function createCanvasToolTask(
   selection?: ToolSelection,
 ): CanvasToolTask {
   let parameters = { ...values };
+  if (tool === "multi-size") {
+    const preset = multiSizePresets.find(
+      (size) => size.ratio === values.aspectRatio,
+    );
+    if (preset)
+      parameters = {
+        ...parameters,
+        outputWidth: preset.width,
+        outputHeight: preset.height,
+      };
+  }
   if (tool === "outpaint")
     parameters = {
       ...parameters,
@@ -572,6 +735,12 @@ export function validateToolTask(
       ["detailStrength", "resolution"].includes(field.key)
     )
       continue;
+    if (
+      task.tool === "multi-size" &&
+      task.parameters.aspectRatio !== "custom" &&
+      ["outputWidth", "outputHeight"].includes(field.key)
+    )
+      continue;
     const value = task.parameters[field.key];
     if (value === undefined || value === "") {
       if (field.required) errors.push(`请设置${field.label}。`);
@@ -600,6 +769,39 @@ export function validateToolTask(
       errors.push(`${field.label}必须为小写十六进制颜色。`);
   }
   const p = task.parameters;
+  if (task.tool === "multi-size") {
+    const preset = multiSizePresets.find(
+      (size) => size.ratio === p.aspectRatio,
+    );
+    if (
+      preset &&
+      (p.outputWidth !== preset.width || p.outputHeight !== preset.height)
+    )
+      errors.push("预设画幅的输出尺寸必须与实测尺寸一致。");
+    if (
+      p.aspectRatio === "custom" &&
+      ![p.outputWidth, p.outputHeight].every(
+        (value) =>
+          typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+      )
+    )
+      errors.push("自定义尺寸需要填写正整数宽度和高度；服务支持范围仍待确认。");
+  }
+  if (task.tool === "video-edit") {
+    const duration = selected[0]?.durationSeconds;
+    if (duration === undefined || !Number.isFinite(duration))
+      errors.push("无法确认视频时长，请先读取来源素材的真实时长。");
+    else if (duration < 4 || duration > 30)
+      errors.push("视频编辑仅支持 4–30 秒素材。");
+    if (typeof p.prompt !== "string" || !p.prompt.trim())
+      errors.push("请填写视频编辑提示词。");
+  }
+  if (
+    task.tool === "layer-decompose" &&
+    p.mode === "description" &&
+    (typeof p.prompt !== "string" || !p.prompt.trim())
+  )
+    errors.push("按描述拆分需要填写拆分描述。");
   if (
     task.tool === "outpaint" &&
     [p.top, p.bottom, p.left, p.right].every((value) => value === 0)
@@ -653,10 +855,17 @@ export function validateToolTask(
       task.selection.height !== selected[0].height)
   )
     errors.push("蒙版尺寸必须与原图尺寸一致。");
-  if (task.tool === "product-replacement") {
+  if (
+    task.tool === "product-replacement" ||
+    (task.tool === "layer-decompose" && p.mode === "boxes")
+  ) {
     const source = selected[0];
     if (!task.selection?.boxes?.length)
-      errors.push("请选择原场景中的商品区域。");
+      errors.push(
+        task.tool === "product-replacement"
+          ? "请选择原场景中的商品区域。"
+          : "框选拆分需要提供原图中的矩形选区。",
+      );
     else if (
       task.selection.boxes.some(
         (box) =>
@@ -669,7 +878,11 @@ export function validateToolTask(
           (source?.height !== undefined && box.y + box.height > source.height),
       )
     )
-      errors.push("商品区域超出原图或尺寸不正确。");
+      errors.push(
+        task.tool === "product-replacement"
+          ? "商品区域超出原图或尺寸不正确。"
+          : "拆分区域超出原图或尺寸不正确。",
+      );
   }
   if (
     definition.parameterCoverage === "entry-only" &&

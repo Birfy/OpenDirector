@@ -98,7 +98,12 @@ import {
   resourceFromNode,
   type CanvasFragment,
 } from "./operations";
-import { downloadFile, downloadFilename, exampleDocument, studyImage } from "./assets";
+import {
+  downloadFile,
+  downloadFilename,
+  exampleDocument,
+  studyImage,
+} from "./assets";
 import "@xyflow/react/dist/style.css";
 import "./workspace.css";
 
@@ -173,7 +178,8 @@ type EditorMode =
   | "mask"
   | "trim"
   | "frame"
-  | "extract-audio";
+  | "extract-audio"
+  | "crop";
 const lastKey = "museshow-last-canvas";
 
 function IconButton({
@@ -648,7 +654,9 @@ function Workspace({ onExit }: { onExit: () => void }) {
         );
       else if (node.type === "text")
         downloadFile(
-          new Blob([node.data.text ?? ""], { type: "text/plain;charset=utf-8" }),
+          new Blob([node.data.text ?? ""], {
+            type: "text/plain;charset=utf-8",
+          }),
           downloadFilename(node.data.title, "text/plain"),
         );
       else notify("这个节点还没有可下载的素材。");
@@ -785,6 +793,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           mimeType: node.data.mimeType,
           width: node.data.media?.width,
           height: node.data.media?.height,
+          durationSeconds: node.data.media?.durationSeconds,
         })),
     [doc.nodes, selected],
   );
@@ -2253,6 +2262,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
                 annotation: () => editSelected("annotation"),
                 "grid-split": () => editSelected("grid"),
                 "video-trim": () => editSelected("trim", "video"),
+                "video-crop": () => editSelected("crop", "video"),
                 "audio-trim": () => editSelected("trim", "audio"),
                 "video-frame-capture": () => editSelected("frame", "video"),
                 "extract-audio": () => editSelected("extract-audio", "video"),
@@ -2675,10 +2685,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
         )}
       {editing &&
         ["video", "audio"].includes(editing.type) &&
-        ["trim", "frame", "extract-audio"].includes(editorMode) && (
+        ["trim", "frame", "extract-audio", "crop"].includes(editorMode) && (
           <LocalMediaEditor
             node={editing}
-            mode={editorMode as "trim" | "frame" | "extract-audio"}
+            mode={editorMode as "trim" | "frame" | "extract-audio" | "crop"}
             onApply={(output) => editorOutputs([output])}
             onClose={closeEditor}
           />

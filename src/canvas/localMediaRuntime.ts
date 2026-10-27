@@ -1,3 +1,5 @@
+import { validateVideoCrop, type VideoCrop } from "./videoCrop.ts";
+
 const cancelled = () => new DOMException("媒体处理已取消。", "AbortError");
 const checkAbort = (signal: AbortSignal) => {
   if (signal.aborted) throw cancelled();
@@ -81,6 +83,7 @@ export async function recordLocalVideoRange(
   end: number,
   signal: AbortSignal,
   onPosition: (seconds: number) => void,
+  options: { crop?: VideoCrop } = {},
 ): Promise<Blob> {
   const capture = (
     video as HTMLVideoElement & { captureStream?: () => MediaStream }
@@ -96,8 +99,28 @@ export async function recordLocalVideoRange(
     end <= start
   )
     throw new Error("视频裁剪范围无效。");
-  let stream: MediaStream | undefined, recorder: MediaRecorder | undefined;
+  const crop = options.crop
+    ? validateVideoCrop(options.crop, video.videoWidth, video.videoHeight)
+    : undefined;
+  let stream: MediaStream | undefined,
+    sourceStream: MediaStream | undefined,
+    recorder: MediaRecorder | undefined;
+  let canvas: HTMLCanvasElement | undefined;
+  let drawFrame = () => {};
   let frame = 0;
+  let decodedFrame: number | undefined;
+  const cancelFrames = () => {
+    cancelAnimationFrame(frame);
+    if (decodedFrame !== undefined)
+      video.cancelVideoFrameCallback(decodedFrame);
+    decodedFrame = undefined;
+  };
+  const stopTracks = () => {
+    new Set([
+      ...(stream?.getTracks() ?? []),
+      ...(sourceStream?.getTracks() ?? []),
+    ]).forEach((track) => track.stop());
+  };
   let releaseListeners = () => {};
   const previousRate = video.playbackRate;
   const pauseOnAbort = () => video.pause();
@@ -110,7 +133,32 @@ export async function recordLocalVideoRange(
     checkAbort(signal);
     await video.play();
     checkAbort(signal);
-    stream = capture.call(video);
+    sourceStream = capture.call(video);
+    if (crop) {
+      canvas = document.createElement("canvas");
+      canvas.width = crop.width;
+      canvas.height = crop.height;
+      const context = canvas.getContext("2d");
+      if (!context || typeof canvas.captureStream !== "function")
+        throw new Error(
+          "当前浏览器不支持视频画幅裁剪所需的 Canvas captureStream。",
+        );
+      drawFrame = () =>
+        context.drawImage(
+          video,
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+          0,
+          0,
+          crop.width,
+          crop.height,
+        );
+      drawFrame();
+      stream = canvas.captureStream(30);
+      for (const track of sourceStream.getAudioTracks()) stream.addTrack(track);
+    } else stream = sourceStream;
     const mimeType = [
       "video/webm;codecs=vp9,opus",
       "video/webm;codecs=vp8,opus",
@@ -118,8 +166,7 @@ export async function recordLocalVideoRange(
     ].find((type) => MediaRecorder.isTypeSupported(type));
     if (!mimeType) throw new Error("当前浏览器没有可用的 WebM 编码器。");
     recorder = new MediaRecorder(stream, { mimeType });
-    const ownedRecorder = recorder,
-      ownedStream = stream;
+    const ownedRecorder = recorder;
     return await new Promise<Blob>((resolve, reject) => {
       const chunks: BlobPart[] = [];
       let stopping = false,
@@ -139,7 +186,7 @@ export async function recordLocalVideoRange(
         if (error) failure = error;
         if (stopping) return;
         stopping = true;
-        cancelAnimationFrame(frame);
+        cancelFrames();
         if (ownedRecorder.state !== "inactive") {
           try {
             ownedRecorder.stop();
@@ -150,7 +197,7 @@ export async function recordLocalVideoRange(
           }
         } else finish();
         video.pause();
-        ownedStream.getTracks().forEach((track) => track.stop());
+        stopTracks();
       };
       const cancel = () => stop(cancelled());
       const ended = () => stop();
@@ -171,10 +218,22 @@ export async function recordLocalVideoRange(
         }
         onPosition(video.currentTime);
         if (video.currentTime >= end || video.ended) stop();
+        else {
+          try {
+            drawFrame();
+          } catch {
+            stop(new Error("视频画幅绘制失败，未生成裁剪结果。"));
+          }
+        }
       };
       const tick = () => {
         progress();
-        if (!stopping && !settled) frame = requestAnimationFrame(tick);
+        if (!stopping && !settled) scheduleFrame();
+      };
+      const scheduleFrame = () => {
+        if (crop && typeof video.requestVideoFrameCallback === "function")
+          decodedFrame = video.requestVideoFrameCallback(tick);
+        else frame = requestAnimationFrame(tick);
       };
       // A stalled local decoder must not leave an indefinitely running recording.
       const deadline = setTimeout(
@@ -201,11 +260,11 @@ export async function recordLocalVideoRange(
       video.addEventListener("timeupdate", progress);
       checkAbort(signal);
       ownedRecorder.start(100);
-      frame = requestAnimationFrame(tick);
+      scheduleFrame();
     });
   } finally {
     releaseListeners();
-    cancelAnimationFrame(frame);
+    cancelFrames();
     signal.removeEventListener("abort", pauseOnAbort);
     if (recorder) {
       recorder.ondataavailable = recorder.onerror = recorder.onstop = null;
@@ -217,7 +276,11 @@ export async function recordLocalVideoRange(
         }
       }
     }
-    stream?.getTracks().forEach((track) => track.stop());
+    stopTracks();
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
     video.pause();
     video.playbackRate = previousRate;
   }

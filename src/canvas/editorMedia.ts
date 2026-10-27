@@ -64,11 +64,14 @@ export async function withMediaDuration(
   if (resource.kind === "file") return resource;
   if (resource.kind === "image" && resource.width && resource.height)
     return resource;
-  if (resource.kind === "audio" && resource.durationSeconds !== undefined)
-    return resource;
+  const hasDuration =
+    typeof resource.durationSeconds === "number" &&
+    Number.isFinite(resource.durationSeconds) &&
+    resource.durationSeconds > 0;
+  if (resource.kind === "audio" && hasDuration) return resource;
   if (
     resource.kind === "video" &&
-    resource.durationSeconds !== undefined &&
+    hasDuration &&
     resource.width &&
     resource.height
   )
@@ -81,6 +84,8 @@ export async function withMediaDuration(
         ? new Image()
         : document.createElement(resource.kind === "video" ? "video" : "audio");
     let finished = false;
+    let metadataLoaded = false,
+      probingEnd = false;
     const finish = (error?: Error) => {
       if (finished) return;
       finished = true;
@@ -104,6 +109,8 @@ export async function withMediaDuration(
       element.onerror = null;
       if (element instanceof HTMLMediaElement) {
         element.onloadedmetadata = null;
+        element.ondurationchange = null;
+        element.onseeked = null;
         element.pause();
         element.removeAttribute("src");
         element.load();
@@ -137,7 +144,32 @@ export async function withMediaDuration(
     signal?.addEventListener("abort", cancel, { once: true });
     if (element instanceof HTMLMediaElement) {
       element.preload = "metadata";
-      element.onloadedmetadata = () => finish();
+      element.muted = true;
+      const durationChanged = () => {
+        if (!metadataLoaded || finished) return;
+        if (Number.isFinite(element.duration) && element.duration > 0) {
+          finish();
+          return;
+        }
+        // MediaRecorder WebM often lacks a container duration. Seeking past the
+        // end lets the browser demux the local file and report its real duration.
+        // The seek target/currentTime is never treated as a duration estimate.
+        if (element.duration === Infinity && !probingEnd) {
+          probingEnd = true;
+          element.preload = "auto";
+          try {
+            element.currentTime = Number.MAX_SAFE_INTEGER;
+          } catch {
+            finish(new Error("无法定位媒体尾部以读取实际时长。"));
+          }
+        }
+      };
+      element.ondurationchange = durationChanged;
+      element.onseeked = durationChanged;
+      element.onloadedmetadata = () => {
+        metadataLoaded = true;
+        durationChanged();
+      };
     } else element.onload = () => finish();
     element.onerror = () =>
       finish(new Error(`无法读取「${resource.title}」的媒体元数据。`));
