@@ -11,6 +11,7 @@ import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
+import { GeneratingOverlay } from "./GeneratingOverlay";
 import "./nodes.css";
 import {
   CanvasActionsContext,
@@ -48,6 +49,9 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
   const locked = Boolean(actions?.isLocked(id));
+  const activity = ["image", "video", "audio"].includes(kind)
+    ? actions?.generationActivity(id)
+    : undefined;
   const menu = (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -60,8 +64,9 @@ export const CanvasNodeView = memo(function CanvasNodeView({
 
   return (
     <div
-      className={`cw-node cw-node-${kind}${selected ? " cw-node-selected" : ""}${locked ? " cw-node-locked" : ""}`}
+      className={`cw-node cw-node-${kind}${selected ? " cw-node-selected" : ""}${locked ? " cw-node-locked" : ""}${activity ? " cw-node-generating" : ""}${actions?.isArriving(id) ? " cw-node-result-arrival" : ""}`}
       onContextMenu={menu}
+      aria-busy={Boolean(activity)}
     >
       <NodeResizer
         isVisible={selected && draggable}
@@ -221,6 +226,10 @@ export const CanvasNodeView = memo(function CanvasNodeView({
               : `点击上传${names[kind]}`}
           </span>
         </button>
+      )}
+
+      {activity && (
+        <GeneratingOverlay activity={activity} hasAsset={hasAsset} />
       )}
 
       {kind !== "group" && (

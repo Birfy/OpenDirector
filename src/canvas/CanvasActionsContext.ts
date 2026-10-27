@@ -1,5 +1,6 @@
 import { createContext, type MouseEvent } from "react";
 import type { CanvasNode, CanvasNodeData } from "./model";
+import type { NodeGenerationActivity } from "./generationActivity";
 
 export interface CanvasActions {
   update: (id: string, data: Partial<CanvasNodeData>) => void;
@@ -13,6 +14,8 @@ export interface CanvasActions {
   edit: (id: string) => void;
   isLocked: (id: string) => boolean;
   getNode: (id: string) => CanvasNode | undefined;
+  generationActivity: (id: string) => NodeGenerationActivity | undefined;
+  isArriving: (id: string) => boolean;
   cycleStack: (id: string, delta: number) => void;
   metadata: (
     id: string,

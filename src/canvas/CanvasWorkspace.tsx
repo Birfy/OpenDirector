@@ -25,6 +25,13 @@ import {
 } from "@xyflow/react";
 import { CanvasNodeView } from "./CanvasNodeView";
 import { CanvasActionsContext } from "./CanvasActionsContext";
+import {
+  generationActivities,
+  generationPhase,
+  GENERATION_LABELS,
+  type ActiveGeneration,
+  type GenerationPhase,
+} from "./generationActivity";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { CanvasIcon } from "./CanvasIcon";
 import { ImageEditor } from "./ImageEditor";
@@ -166,20 +173,10 @@ type Job = {
   message?: string;
 };
 /** A generation submitted to the local API from this page. */
-type ServiceRun = {
+type ServiceRun = ActiveGeneration & {
   controller: AbortController;
-  documentId: string;
-  nodeId: string;
   projectId?: string;
   taskId?: string;
-};
-const PHASES: Record<string, string> = {
-  queued: "排队中",
-  submit: "正在提交到模型服务",
-  poll: "模型服务生成中",
-  download: "正在下载结果",
-  save: "正在保存结果",
-  adopt: "正在保存结果",
 };
 const jobTime = () =>
   new Date().toLocaleTimeString("zh-CN", {
@@ -333,7 +330,21 @@ function Workspace() {
   const backendCatalog = useBackendModels();
   const [modelSettings, setModelSettings] = useState(false);
   const serviceRuns = useRef(new Map<string, ServiceRun>());
-  const [runningNodes, setRunningNodes] = useState<string[]>([]);
+  const [activeGenerations, setActiveGenerations] = useState<
+    ActiveGeneration[]
+  >([]);
+  const generationByNode = useMemo(
+    () => generationActivities(activeGenerations, doc.id),
+    [activeGenerations, doc.id],
+  );
+  const [arrivingNodes, setArrivingNodes] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  useEffect(() => {
+    if (!arrivingNodes.size) return;
+    const timer = window.setTimeout(() => setArrivingNodes(new Set()), 1200);
+    return () => window.clearTimeout(timer);
+  }, [arrivingNodes]);
   const syncing = useRef(false);
   const following = useRef(false);
   const [chat, setChat] = useState("");
@@ -415,6 +426,7 @@ function Workspace() {
       referenceTarget.current = null;
       uploadTarget.current = null;
       setJobs([]);
+      setArrivingNodes(new Set());
       setHistory(createHistory(next));
       setMeasurements({});
       setSelected([]);
@@ -1040,11 +1052,17 @@ function Workspace() {
       current.map((job) => (job.id === id ? { ...job, ...patch } : job)),
     );
   const refreshRunning = () =>
-    setRunningNodes(
-      [...serviceRuns.current.values()].map(
-        (run) => `${run.documentId}:${run.nodeId}`,
-      ),
+    setActiveGenerations(
+      [...serviceRuns.current.values()]
+        .filter((run) => !run.controller.signal.aborted)
+        .map(({ documentId, nodeId, phase }) => ({
+          documentId,
+          nodeId,
+          phase,
+        })),
     );
+  const revealResults = (ids: readonly string[]) =>
+    setArrivingNodes((current) => new Set([...current, ...ids]));
   const mediaOutput = async (
     result: BackendResult,
     signal?: AbortSignal,
@@ -1090,6 +1108,7 @@ function Workspace() {
         const next = appendServiceResults(historyRef.current.present, outputs);
         change(() => next.document);
         setSelected(next.ids);
+        revealResults(next.ids);
         for (const item of results) markHandled(projectId, item.taskId);
         notify(`已从本地服务同步 ${outputs.length} 个结果到画布。`);
       } else if (announce)
@@ -1127,6 +1146,7 @@ function Workspace() {
       controller: new AbortController(),
       documentId: origin.documentId,
       nodeId: origin.nodeId,
+      phase: "preparing",
     };
     const { signal } = run.controller;
     serviceRuns.current.set(id, run);
@@ -1138,10 +1158,16 @@ function Workspace() {
         title,
         status: "running",
         time: jobTime(),
-        message: "正在上传参考并提交",
+        message: GENERATION_LABELS[run.phase],
       },
       ...current,
     ]);
+    const setPhase = (phase: GenerationPhase) => {
+      if (signal.aborted) return;
+      run.phase = phase;
+      refreshRunning();
+      updateJob(id, { message: GENERATION_LABELS[phase] });
+    };
     try {
       const submitted = await submitGeneration(request, signal);
       Object.assign(run, submitted);
@@ -1151,16 +1177,18 @@ function Workspace() {
         );
         throw signal.reason;
       }
-      updateJob(id, { message: "已提交，等待模型服务" });
+      setPhase("submitting");
       const result = await waitForResult(
         submitted.projectId,
         submitted.taskId,
         signal,
-        (task: BackendTask) =>
-          updateJob(id, {
-            message: PHASES[task.phase ?? task.status] ?? "生成中",
-          }),
+        (task: BackendTask) => {
+          const phase = generationPhase(task);
+          if (phase) setPhase(phase);
+          else if (task.status === "succeeded") setPhase("finishing");
+        },
       );
+      setPhase("finishing");
       const output = await mediaOutput(result, signal);
       const appended = appendLinkedMediaResults(
         historyRef.current.present,
@@ -1175,6 +1203,7 @@ function Workspace() {
       }
       change(() => appended.document);
       setSelected(appended.ids);
+      revealResults(appended.ids);
       markHandled(submitted.projectId, submitted.taskId);
       updateJob(id, { status: "succeeded", message: "已加入画布" });
       notify("生成完成，结果已作为新节点连接到来源节点。");
@@ -1238,6 +1267,7 @@ function Workspace() {
           notify(errorMessage(error)),
         );
     }
+    refreshRunning();
   };
   useEffect(() => {
     // Results that finished while this canvas was closed join it on opening.
@@ -1589,6 +1619,8 @@ function Workspace() {
     },
     isLocked: (id: string) => lockedIds.has(id),
     getNode: (id: string) => doc.nodes.find((node) => node.id === id),
+    generationActivity: (id: string) => generationByNode.get(id),
+    isArriving: (id: string) => arrivingNodes.has(id),
     cycleStack: (id: string, delta: number) => {
       const node = doc.nodes.find((node) => node.id === id),
         stack = node?.data.stack;
@@ -2319,7 +2351,7 @@ function Workspace() {
                 referenceTarget.current = single.id;
                 setPanel("assets");
               }}
-              running={runningNodes.includes(`${doc.id}:${single.id}`)}
+              running={generationByNode.has(single.id)}
               backendModels={backendCatalog.models}
             />
           </div>

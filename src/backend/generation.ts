@@ -280,6 +280,7 @@ export async function waitForResult(
     const task = snapshot.tasks.find((item) => item.id === taskId);
     if (!task) throw new Error("生成任务不存在，可能已被项目外的操作移除。");
     if (task.status === "succeeded" && task.assetId) {
+      onProgress?.(task);
       const asset = snapshot.assets.find((item) => item.id === task.assetId);
       const result = asset && (await downloadAsset(projectId, asset, signal));
       if (!result) throw new Error("生成结果不是图片、视频或音频文件。");
