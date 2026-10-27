@@ -56,6 +56,7 @@ export function appendLinkedMediaResults(
     id: crypto.randomUUID(),
     source: target.id,
     target: node.id,
+    intent: "post_edit_result" as const,
   }));
   return {
     document: {

@@ -9,6 +9,7 @@ export interface CanvasActions {
   preview: (id: string) => void;
   newConnected: (id: string, direction: "source" | "target") => void;
   contextMenu: (id: string, event: MouseEvent) => void;
+  editTags?: (id: string) => void;
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
   beginResize?: (id: string) => void;

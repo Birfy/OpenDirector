@@ -3,6 +3,7 @@ import {
   downloadAsset,
   projectSnapshot,
   type BackendResult,
+  type BackendTask,
 } from "./generation.ts";
 
 /** Finished tasks whose results have not reached the canvas yet, such as
@@ -43,13 +44,19 @@ export async function unsyncedResults(
   projectId: string,
   running: ReadonlySet<string>,
   signal?: AbortSignal,
-): Promise<{ results: SyncedResult[]; active: number }> {
+): Promise<{
+  results: SyncedResult[];
+  active: number;
+  tasks: Pick<BackendTask, "id" | "status" | "error">[];
+}> {
   let snapshot;
   try {
     snapshot = await projectSnapshot(projectId, signal);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404)
-      return { results: [], active: 0 };
+    if (error instanceof ApiError && error.status === 404) {
+      save(projectId, new Set());
+      return { results: [], active: 0, tasks: [] };
+    }
     throw error;
   }
   const done = snapshot.tasks.filter(
@@ -95,6 +102,11 @@ export async function unsyncedResults(
   }
   return {
     results,
+    tasks: snapshot.tasks.map(({ id, status, error }) => ({
+      id,
+      status,
+      error,
+    })),
     active: active.filter((task) => !running.has(task.id)).length,
   };
 }

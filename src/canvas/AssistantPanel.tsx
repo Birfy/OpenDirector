@@ -10,6 +10,12 @@ import {
 } from "../backend/chat.ts";
 import type { BackendModels } from "../backend/models.ts";
 import { openBackendProject } from "../backend/projects.ts";
+import {
+  uploadReferences,
+  type ReferenceInput,
+} from "../backend/generation.ts";
+import { assistantReferences } from "./assistantReferences";
+import type { CanvasNode } from "./model";
 import { modelLabel, type ModelKind } from "../backend/rules.ts";
 import "./assistant-panel.css";
 
@@ -38,12 +44,14 @@ export function AssistantPanel({
   documentId,
   documentTitle,
   catalog,
+  selectedNodes,
   onTurnEnd,
   onOpenSettings,
 }: {
   documentId: string;
   documentTitle: string;
   catalog: BackendModels;
+  selectedNodes: CanvasNode[];
   onTurnEnd: () => void;
   onOpenSettings: () => void;
 }) {
@@ -51,6 +59,9 @@ export function AssistantPanel({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [tools, setTools] = useState<ToolEvent[]>([]);
   const [draft, setDraft] = useState("");
+  const [references, setReferences] = useState<ReferenceInput[]>(() =>
+    assistantReferences(selectedNodes),
+  );
   const [selections, setSelections] = useState<Selections>(savedSelections);
   const [turn, setTurn] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -64,6 +75,7 @@ export function AssistantPanel({
     setProjectId(null);
     setMessages([]);
     setTools([]);
+    setReferences(assistantReferences(selectedNodes));
     openBackendProject(documentId, titleRef.current)
       .then(async (id) => {
         const value = await conversation(id);
@@ -100,7 +112,11 @@ export function AssistantPanel({
 
   const send = async () => {
     const text = draft.trim();
-    if (!projectId || !agent || !text || turn) return;
+    if (!projectId || !agent || (!text && !references.length) || turn) return;
+    if (references.length > 64 || text.length > 20000) {
+      setError("每次最多 64 份参考素材、20000 字正文，请移除部分内容后发送。");
+      return;
+    }
     const id = crypto.randomUUID();
     const abort = new AbortController();
     controller.current = abort;
@@ -113,13 +129,19 @@ export function AssistantPanel({
       { id: `pending-${id}`, role: "user", text, status: "complete" },
     ]);
     try {
+      const assets = await uploadReferences(
+        projectId,
+        references,
+        abort.signal,
+      );
+      abort.signal.throwIfAborted();
       for await (const event of streamChat(
         projectId,
         {
           id,
           modelId: agent.id,
           text,
-          assets: [],
+          assets,
           thinking: "auto",
           modelSelections: Object.fromEntries(
             (["image", "video", "audio"] as const).map((kind) => [
@@ -155,11 +177,17 @@ export function AssistantPanel({
           });
       }
     } catch (failure) {
-      if (!abort.signal.aborted) setError(errorMessage(failure));
+      if (!abort.signal.aborted) {
+        setError(errorMessage(failure));
+        setDraft(text);
+        setMessages((current) =>
+          current.filter((message) => message.id !== `pending-${id}`),
+        );
+      }
     } finally {
       if (controller.current === abort) controller.current = null;
       setTurn(null);
-      onTurnEnd();
+      if (!abort.signal.aborted) onTurnEnd();
     }
   };
 
@@ -245,6 +273,37 @@ export function AssistantPanel({
           void send();
         }}
       >
+        <div className="cw-chat-references">
+          <button
+            type="button"
+            disabled={Boolean(turn) || !selectedNodes.length}
+            onClick={() => {
+              setReferences(assistantReferences(selectedNodes));
+              setError("");
+            }}
+          >
+            引用当前选择（{selectedNodes.length}）
+          </button>
+          {references.map((reference, index) => (
+            <div key={`${reference.kind}-${index}`}>
+              <CanvasIcon name={reference.kind} size={14} />
+              <span>{reference.title}</span>
+              <button
+                type="button"
+                aria-label={`移除引用${reference.title}`}
+                disabled={Boolean(turn)}
+                onClick={() =>
+                  setReferences((items) => items.filter((_, i) => i !== index))
+                }
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {!!references.length && (
+            <small>发送时将以上素材交给已配置的助手模型。</small>
+          )}
+        </div>
         <textarea
           placeholder="和助手讨论剧本、分镜，或让它直接生成素材…"
           aria-label="发送给助手"
@@ -271,7 +330,10 @@ export function AssistantPanel({
             停止回复 <CanvasIcon name="stop" size={16} />
           </button>
         ) : (
-          <button type="submit" disabled={!draft.trim() || !projectId}>
+          <button
+            type="submit"
+            disabled={(!draft.trim() && !references.length) || !projectId}
+          >
             发送 · ⌘/Ctrl + Enter <CanvasIcon name="arrow" size={16} />
           </button>
         )}

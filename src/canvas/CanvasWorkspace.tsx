@@ -35,6 +35,7 @@ import {
   type SnapGuide,
   type Alignment,
 } from "./snapping";
+import { CanvasContextMenu } from "./CanvasContextMenu";
 import { CanvasNodeView } from "./CanvasNodeView";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasPointerGesture } from "./pointerGesture";
@@ -51,6 +52,15 @@ import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
 import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
+import { CanvasTagsPanel } from "./CanvasTagsPanel";
+import { CANVAS_TAGS, setNodeTag, type CanvasTagId } from "./nodeTags";
+import { connectedCreationKinds } from "./connectionPolicy";
+import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
+import { ProjectManagerPanel } from "./ProjectManagerPanel";
+import {
+  duplicateCanvasDocument,
+  persistCurrentDocument,
+} from "./projectManagement";
 import { CanvasSearchPanel } from "./CanvasSearchPanel";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
@@ -67,6 +77,13 @@ const DirectorStage = lazy(() =>
   })),
 );
 import { readEditorResource } from "./editorMedia";
+import { readImportBatch } from "./importBatch";
+import { useGenerationJobs } from "./useGenerationJobs";
+import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
+import {
+  reconcileGenerationJobs,
+  type GenerationJob as Job,
+} from "./generationHistory";
 import {
   appendLinkedMediaResults,
   appendServiceResults,
@@ -135,18 +152,20 @@ import { absolutePosition, arrangeNodes, boundsOfNodes } from "./geometry";
 import {
   saveDocument,
   loadDocument,
-  listDocuments,
+  trashDocument,
+  restoreDocument,
   parseDocument,
   serializeDocument,
-  type DocumentSummary,
 } from "./storage";
 import {
   copySelection,
+  cutSelection,
   orderNodesForCanvas,
   pasteFragment,
   groupSelection,
   ungroupSelection,
   stackSelection,
+  unstackSelection,
   updateStack,
   resourceFromNode,
   type CanvasFragment,
@@ -164,6 +183,7 @@ type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 type Panel =
   | "assets"
   | "search"
+  | "tags"
   | "history"
   | "assistant"
   | "projects"
@@ -176,20 +196,6 @@ type Menu = {
   nodeId?: string;
   parentId?: string;
   connected?: { id: string; direction: "source" | "target" };
-};
-type Job = {
-  id: string;
-  nodeId: string;
-  title: string;
-  status:
-    | "draft"
-    | "imported"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "cancelled";
-  time: string;
-  message?: string;
 };
 /** A generation submitted to the local API from this page. */
 type ServiceRun = ActiveGeneration & {
@@ -307,7 +313,10 @@ function incomingNodes(
 ) {
   return document.nodes.filter((node) =>
     document.edges.some(
-      (edge) => edge.target === nodeId && edge.source === node.id,
+      (edge) =>
+        edge.intent !== "post_edit_result" &&
+        edge.target === nodeId &&
+        edge.source === node.id,
     ),
   );
 }
@@ -357,7 +366,7 @@ function Workspace() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const [toast, setToast] = useState("");
-  const [projects, setProjects] = useState<DocumentSummary[]>([]);
+  const [activeTag, setActiveTag] = useState<CanvasTagId | null>(null);
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("default");
@@ -383,7 +392,7 @@ function Workspace() {
     null,
   );
   const [help, setHelp] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
   const [modelSettings, setModelSettings] = useState(false);
   const serviceRuns = useRef(new Map<string, ServiceRun>());
@@ -402,8 +411,8 @@ function Workspace() {
     const timer = window.setTimeout(() => setArrivingNodes(new Set()), 1200);
     return () => window.clearTimeout(timer);
   }, [arrivingNodes]);
-  const syncing = useRef(false);
-  const following = useRef(false);
+  const syncing = useRef(new Set<string>());
+  const following = useRef(new Set<string>());
   const [chat, setChat] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
   const clipboard = useRef<CanvasFragment | null>(null);
@@ -536,7 +545,6 @@ function Workspace() {
       editorOrigin.current = null;
       referenceTarget.current = null;
       uploadTarget.current = null;
-      setJobs([]);
       setArrivingNodes(new Set());
       setHistory(createHistory(next));
       setMeasurements({});
@@ -576,17 +584,25 @@ function Workspace() {
       read: () => CanvasDocument | Promise<CanvasDocument>,
       fit = false,
     ) => {
-      if (switchPending.current) return;
+      if (switchPending.current) return false;
       switchPending.current = true;
       setSwitching(true);
       // The workspace is inert until saving and loading finish, so later edits cannot be lost.
       importAbort.current?.abort();
       try {
         const next = await read();
-        if (!(await persist(historyRef.current.present))) return;
+        if (
+          !(await persistCurrentDocument(
+            () => historyRef.current.present,
+            persist,
+          ))
+        )
+          return false;
         installDocument(next, fit);
+        return true;
       } catch (error) {
         notify(error instanceof Error ? error.message : "无法打开画布。");
+        return false;
       } finally {
         switchPending.current = false;
         setSwitching(false);
@@ -648,8 +664,11 @@ function Workspace() {
         : Object.fromEntries(entries);
     });
     setSelected((ids) => {
-      const existing = ids.filter((id) => nodeIds.has(id));
-      return existing.length === ids.length ? ids : existing;
+      const existing = visibleSelectionIds(doc.nodes, ids);
+      return existing.length === ids.length &&
+        existing.every((id, index) => id === ids[index])
+        ? ids
+        : existing;
     });
     setSelectedEdges((ids) => {
       const existing = ids.filter((id) => edgeIds.has(id));
@@ -677,12 +696,6 @@ function Workspace() {
     const timeout = setTimeout(() => setToast(""), 3800);
     return () => clearTimeout(timeout);
   }, [toast]);
-  useEffect(() => {
-    if (panel === "projects")
-      void listDocuments().then((result) =>
-        result.ok ? setProjects(result.value) : notify(result.error.message),
-      );
-  }, [panel, doc.id, notify]);
   useEffect(() => {
     const flush = () => {
       if (document.visibilityState === "hidden" && ready)
@@ -763,6 +776,19 @@ function Workspace() {
     position?: Point,
     extra: Partial<CanvasNodeData> = {},
   ) => {
+    const connected = position ? menu?.connected : undefined;
+    if (
+      connected &&
+      !connectedCreationKinds(
+        historyRef.current.present,
+        connected.id,
+        connected.direction,
+        [kind],
+      ).length
+    ) {
+      notify("该类型不能与当前节点建立参考关系。");
+      return;
+    }
     const where = position ?? center();
     const count = doc.nodes.filter((n) => n.type === kind).length + 1;
     const node = createNode(kind, where, {
@@ -783,10 +809,10 @@ function Workspace() {
       x: where.x - node.width / 2,
       y: where.y - node.height / 2,
     };
-    if (menu?.connected) {
+    if (connected) {
       // The dropped endpoint becomes the new node's input/output port.
       node.position = {
-        x: where.x - (menu.connected.direction === "target" ? node.width : 0),
+        x: where.x - (connected.direction === "target" ? node.width : 0),
         y: where.y - node.height / 2,
       };
     }
@@ -804,23 +830,19 @@ function Workspace() {
       }
     }
     const commands: CanvasCommand[] = [{ type: "add-nodes", nodes: [node] }];
-    if (menu?.connected)
+    if (connected)
       commands.push({
         type: "add-edge",
         edge: {
           id: crypto.randomUUID(),
-          source:
-            menu.connected.direction === "source" ? menu.connected.id : node.id,
-          target:
-            menu.connected.direction === "source" ? node.id : menu.connected.id,
+          source: connected.direction === "source" ? connected.id : node.id,
+          target: connected.direction === "source" ? node.id : connected.id,
           sourceHandle: "out",
           targetHandle: "in",
         },
       });
     command({ type: "batch", commands });
-    focusAfterCreate.current = menu?.connected
-      ? [menu.connected.id, node.id]
-      : [node.id];
+    focusAfterCreate.current = connected ? [connected.id, node.id] : [node.id];
     setSelected([node.id]);
     setDismissedComposer(null);
     referenceTarget.current = null;
@@ -837,7 +859,25 @@ function Workspace() {
       duration: 250,
     });
   };
-  const selectAndFocus = (node: CanvasNode) => {
+  const selectAndFocus = (requested: CanvasNode) => {
+    const owner = doc.nodes.find(
+      (n) => n.type === "stack" && n.data.stack?.nodeIds.includes(requested.id),
+    );
+    const node = owner ?? requested;
+    if (owner) {
+      command({
+        type: "update-node",
+        id: owner.id,
+        patch: {
+          data: {
+            stack: {
+              ...owner.data.stack!,
+              activeIndex: owner.data.stack!.nodeIds.indexOf(requested.id),
+            },
+          },
+        },
+      });
+    }
     setSelected([node.id]);
     const p = absolutePosition(node, doc.nodes);
     void flow.setCenter(p.x + node.width / 2, p.y + node.height / 2, {
@@ -1012,6 +1052,11 @@ function Workspace() {
     [doc.edges, selectedEdges, selected, showEdges, generationByNode],
   );
 
+  const projected = useMemo(
+    () => projectCanvasStacks(flowNodes, flowEdges),
+    [flowNodes, flowEdges],
+  );
+
   const removeSelected = () => {
     command({
       type: "batch",
@@ -1031,6 +1076,25 @@ function Workspace() {
     );
     pasteCount.current = 0;
     notify(`已复制 ${clipboard.current.nodes.length} 个节点`);
+  };
+  const cut = () => {
+    const movable = selectedRef.current.filter((id) => !lockedIds.has(id));
+    if (!movable.length) {
+      notify("请先选择可编辑的节点。");
+      return;
+    }
+    const result = cutSelection(historyRef.current.present, movable);
+    if (!result.fragment) {
+      notify("节点或其成员受锁定引用保护，未剪切。");
+      return;
+    }
+    const fragment = result.fragment;
+    change(() => result.document);
+    clipboard.current = fragment;
+    pasteCount.current = 0;
+    setSelected([]);
+    setMenu(null);
+    notify(`已剪切 ${fragment.nodes.length} 个节点，可粘贴或撤销。`);
   };
   const paste = (duplicate = false) => {
     const fragment = duplicate
@@ -1109,8 +1173,12 @@ function Workspace() {
       const nodes: CanvasNode[] = [];
       const commands: CanvasCommand[] = [];
       const origin = point ?? center();
-      for (const [i, file] of files.entries()) {
-        const resource = await readEditorResource(file, controller.signal);
+      const { successes, failures } = await readImportBatch(
+        files,
+        readEditorResource,
+        controller.signal,
+      );
+      for (const { index: i, value: resource } of successes) {
         const kind = resource.kind;
         const data = resourceNodeData(resource);
         if (target && i === 0) {
@@ -1160,11 +1228,13 @@ function Workspace() {
               target: refTarget,
             },
           });
-      command({ type: "batch", commands });
+      if (commands.length) command({ type: "batch", commands });
       setSelected(
         target ? [target] : refTarget ? [refTarget] : nodes.map((n) => n.id),
       );
-      notify(`已导入 ${files.length} 个素材，保存在本机。`);
+      notify(
+        `已导入 ${successes.length} 个素材${failures.length ? `；${failures.length} 个失败：${failures.map((item) => `${item.name}（${item.message}）`).join("；")}` : "，保存在本机。"}`,
+      );
     } catch (error) {
       if (!controller.signal.aborted)
         notify(error instanceof Error ? error.message : "素材导入失败");
@@ -1334,9 +1404,14 @@ function Workspace() {
   };
   /** Pull finished results this page did not place, e.g. the assistant's. */
   const syncServiceResults = async (announce = false) => {
-    if (!backendCatalog.connected || syncing.current) return 0;
-    syncing.current = true;
-    const documentId = historyRef.current.present.id;
+    const documentId = doc.id;
+    if (
+      !backendCatalog.connected ||
+      historyRef.current.present.id !== documentId
+    )
+      return 0;
+    if (syncing.current.has(documentId)) return 1;
+    syncing.current.add(documentId);
     const projectId = backendProjectId(documentId);
     try {
       const running = new Set(
@@ -1344,7 +1419,10 @@ function Workspace() {
           run.taskId ? [run.taskId] : [],
         ),
       );
-      const { results, active } = await unsyncedResults(projectId, running);
+      const { results, active, tasks } = await unsyncedResults(
+        projectId,
+        running,
+      );
       const outputs: ServiceResult[] = [];
       for (const item of results)
         outputs.push(
@@ -1353,11 +1431,34 @@ function Workspace() {
             : await mediaOutput(item.result),
         );
       if (historyRef.current.present.id !== documentId) return active;
+      setJobs((current) => reconcileGenerationJobs(current, tasks));
       if (outputs.length) {
         const next = appendServiceResults(historyRef.current.present, outputs);
         change(() => next.document);
         setSelected(next.ids);
         revealResults(next.ids);
+        setJobs((current) => {
+          const updated = [...current];
+          results.forEach((item, index) => {
+            const existing = updated.findIndex(
+              (job) => job.taskId === item.taskId,
+            );
+            const patch: Job = {
+              id: existing >= 0 ? updated[existing]!.id : crypto.randomUUID(),
+              nodeId:
+                existing >= 0 ? updated[existing]!.nodeId : next.ids[index]!,
+              title: outputs[index]!.title,
+              taskId: item.taskId,
+              status: "succeeded",
+              time: jobTime(),
+              outputs: [outputs[index]!],
+            };
+            if (existing >= 0)
+              updated[existing] = { ...updated[existing]!, ...patch };
+            else updated.unshift(patch);
+          });
+          return updated;
+        });
         for (const item of results) markHandled(projectId, item.taskId);
         notify(`已从本地服务同步 ${outputs.length} 个结果到画布。`);
       } else if (announce)
@@ -1369,20 +1470,29 @@ function Workspace() {
       if (announce) notify(errorMessage(error));
       return 0;
     } finally {
-      syncing.current = false;
+      syncing.current.delete(documentId);
     }
   };
   /** The assistant's generations finish after its reply; keep syncing until they do. */
   const followServiceTasks = async () => {
-    if (following.current) return;
-    following.current = true;
+    const documentId = doc.id;
+    if (
+      historyRef.current.present.id !== documentId ||
+      following.current.has(documentId)
+    )
+      return;
+    following.current.add(documentId);
     try {
       for (let round = 0; round < 720; round++) {
-        if (!(await syncServiceResults())) return;
+        if (
+          historyRef.current.present.id !== documentId ||
+          !(await syncServiceResults())
+        )
+          return;
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     } finally {
-      following.current = false;
+      following.current.delete(documentId);
     }
   };
   const runServiceTask = async (
@@ -1408,6 +1518,16 @@ function Workspace() {
         status: "running",
         time: jobTime(),
         message: GENERATION_LABELS[run.phase],
+        request: {
+          kind: request.kind,
+          title: request.title,
+          prompt: request.prompt,
+          settings: getNodeGenerationSettings(
+            historyRef.current.present.nodes.find(
+              (node) => node.id === origin.nodeId,
+            )!,
+          ),
+        },
       },
       ...current,
     ]);
@@ -1420,6 +1540,7 @@ function Workspace() {
     try {
       const submitted = await submitGeneration(request, signal);
       Object.assign(run, submitted);
+      updateJob(id, { taskId: submitted.taskId });
       if (signal.aborted) {
         await cancelGeneration(submitted.projectId, submitted.taskId).catch(
           () => {},
@@ -1439,6 +1560,11 @@ function Workspace() {
       );
       setPhase("finishing");
       const output = await mediaOutput(result, signal);
+      updateJob(id, {
+        status: "succeeded",
+        outputs: [output],
+        message: "结果已保存到历史",
+      });
       const appended = appendLinkedMediaResults(
         historyRef.current.present,
         origin,
@@ -1446,7 +1572,7 @@ function Workspace() {
       );
       if (appended.error || !appended.ids.length) {
         const message = `${appended.error ?? "结果未写入画布。"}结果仍保存在本地服务中，回到原画布后可在生成历史中同步。`;
-        updateJob(id, { status: "failed", message });
+        updateJob(id, { status: "succeeded", message });
         notify(message);
         return;
       }
@@ -1546,6 +1672,12 @@ function Workspace() {
         nodeId: node.id,
         title: node.data.prompt || node.data.title,
         status: "draft",
+        request: {
+          kind: settings.mode,
+          title: node.data.title,
+          prompt: node.data.prompt,
+          settings: structuredClone(settings),
+        },
         time: new Date().toLocaleTimeString("zh-CN", {
           hour: "2-digit",
           minute: "2-digit",
@@ -1669,7 +1801,9 @@ function Workspace() {
       if (addLinkedOutputs(origin, outputs)) {
         setJobs((current) =>
           current.map((job) =>
-            job.id === binding.jobId ? { ...job, status: "imported" } : job,
+            job.id === binding.jobId
+              ? { ...job, status: "imported", outputs }
+              : job,
           ),
         );
         setGenerationTarget(null);
@@ -1760,10 +1894,34 @@ function Workspace() {
       setHistory(redo);
     } else if (mod && key === "a") {
       event.preventDefault();
-      setSelected(doc.nodes.map((n) => n.id));
+      setSelected(
+        doc.nodes
+          .filter((n) => !projected.ownerByNodeId.has(n.id))
+          .map((n) => n.id),
+      );
     } else if (mod && key === "c") {
       event.preventDefault();
       copy();
+    } else if (mod && key === "x") {
+      event.preventDefault();
+      cut();
+    } else if (
+      mod &&
+      (event.code === "BracketLeft" || event.code === "BracketRight")
+    ) {
+      event.preventDefault();
+      command({
+        type: "reorder-nodes",
+        ids: selectedRef.current,
+        direction:
+          event.code === "BracketLeft"
+            ? event.shiftKey
+              ? "back"
+              : "backward"
+            : event.shiftKey
+              ? "front"
+              : "forward",
+      });
     } else if (mod && key === "v" && clipboard.current) {
       event.preventDefault();
       paste();
@@ -1849,6 +2007,10 @@ function Workspace() {
   });
 
   const actions = {
+    editTags: (id: string) => {
+      if (!selected.includes(id)) setSelected([id]);
+      setPanel("tags");
+    },
     update: (id: string, data: Partial<CanvasNodeData>) =>
       command({ type: "update-node", id, patch: { data } }),
     rename: (id: string) => {
@@ -1957,19 +2119,9 @@ function Workspace() {
     },
   };
   const contextItems = (children: ReactNode) => (
-    <div
-      className="cw-context-menu"
-      role="menu"
-      style={{
-        left: Math.max(8, Math.min(menu!.x, window.innerWidth - 232)),
-        top: Math.max(
-          64,
-          Math.min(menu!.y, window.innerHeight - (menu?.nodeId ? 490 : 330)),
-        ),
-      }}
-    >
+    <CanvasContextMenu x={menu!.x} y={menu!.y}>
       {children}
-    </div>
+    </CanvasContextMenu>
   );
   const menuButton = (
     text: string,
@@ -2092,8 +2244,8 @@ function Workspace() {
     >
       <CanvasActionsContext.Provider value={actions}>
         <ReactFlow<FlowNode, Edge>
-          nodes={flowNodes}
-          edges={flowEdges}
+          nodes={projected.nodes}
+          edges={projected.edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
@@ -2503,6 +2655,12 @@ function Workspace() {
             onClick: () => togglePanel("assets"),
           },
           {
+            name: "tag",
+            label: "节点标签",
+            active: panel === "tags",
+            onClick: () => togglePanel("tags"),
+          },
+          {
             name: "upload",
             label: "上传",
             preserveCollapsedOnFocusRestore: true,
@@ -2700,6 +2858,10 @@ function Workspace() {
             <CanvasIcon name="group" size={16} />
             编组
           </button>
+          <button onClick={() => setPanel("tags")}>
+            <CanvasIcon name="tag" size={16} />
+            标签
+          </button>
           <button onClick={stack}>
             <CanvasIcon name="stack" size={16} />
             堆叠
@@ -2819,6 +2981,7 @@ function Workspace() {
             <>
               {menuButton("重命名", "text", () => actions.rename(menu.nodeId!))}
               {menuButton("复制", "copy", copy, "⌘ C")}
+              {menuButton("剪切", "copy", cut, "⌘ X")}
               {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
               {menuButton("复制副本", "copy", () => paste(true), "⌘ D")}
               <hr />
@@ -2856,12 +3019,50 @@ function Workspace() {
                   });
                 },
               )}
+              {menuButton("设置标签", "tag", () => setPanel("tags"))}
+              {single?.type === "stack" &&
+                menuButton("解散堆叠", "stack", () =>
+                  change((d) => unstackSelection(d, selected)),
+                )}
               {menuButton("移到顶层", "arrow", () =>
                 command({
                   type: "reorder-nodes",
                   ids: selected,
                   direction: "front",
                 }),
+              )}
+              {menuButton(
+                "上移一层",
+                "arrow",
+                () =>
+                  command({
+                    type: "reorder-nodes",
+                    ids: selected,
+                    direction: "forward",
+                  }),
+                "⌘ ]",
+              )}
+              {menuButton(
+                "下移一层",
+                "arrow",
+                () =>
+                  command({
+                    type: "reorder-nodes",
+                    ids: selected,
+                    direction: "backward",
+                  }),
+                "⌘ [",
+              )}
+              {menuButton(
+                "移到底层",
+                "arrow",
+                () =>
+                  command({
+                    type: "reorder-nodes",
+                    ids: selected,
+                    direction: "back",
+                  }),
+                "⌘ ⇧ [",
               )}
               {single &&
                 ["image", "video", "audio", "file"].includes(single.type) &&
@@ -2902,8 +3103,11 @@ function Workspace() {
                 {menu.connected ? "创建参考关联节点" : "添加节点"}
               </div>
               {(menu.connected
-                ? kinds.filter((kind) =>
-                    ["text", "image", "video", "audio"].includes(kind),
+                ? connectedCreationKinds(
+                    doc,
+                    menu.connected.id,
+                    menu.connected.direction,
+                    kinds,
                   )
                 : kinds
               ).map((kind) => (
@@ -2931,6 +3135,7 @@ function Workspace() {
             {
               assets: "资产库",
               search: "搜索节点",
+              tags: "节点标签",
               history: "生成历史",
               assistant: "AI 对话",
               projects: "本地项目",
@@ -2944,6 +3149,7 @@ function Workspace() {
                 {
                   assets: "资产库",
                   search: "搜索节点",
+                  tags: "节点标签",
                   history: "生成历史",
                   assistant: "与 AI 对话",
                   projects: "本地项目",
@@ -2960,6 +3166,29 @@ function Workspace() {
               }}
             />
           </div>
+          {panel === "tags" && (
+            <CanvasTagsPanel
+              nodes={doc.nodes}
+              selectedIds={selected}
+              activeTag={activeTag}
+              onActiveTagChange={setActiveTag}
+              onChange={(tag, enabled) =>
+                change((d) => setNodeTag(d, selected, tag, enabled))
+              }
+              onClear={() =>
+                change((d) =>
+                  CANVAS_TAGS.reduce(
+                    (next, tag) => setNodeTag(next, selected, tag.id, false),
+                    d,
+                  ),
+                )
+              }
+              onLocate={(id) => {
+                const node = doc.nodes.find((n) => n.id === id);
+                if (node) selectAndFocus(node);
+              }}
+            />
+          )}
           {panel === "search" && (
             <CanvasSearchPanel nodes={doc.nodes} onSelect={selectAndFocus} />
           )}
@@ -3058,6 +3287,7 @@ function Workspace() {
                         mimeType: "image/svg+xml",
                       });
                       if (
+                        n &&
                         target &&
                         doc.nodes.some((item) => item.id === target)
                       ) {
@@ -3065,7 +3295,7 @@ function Workspace() {
                           type: "add-edge",
                           edge: {
                             id: crypto.randomUUID(),
-                            source: n.id,
+                            source: n!.id,
                             target,
                           },
                         });
@@ -3085,96 +3315,115 @@ function Workspace() {
             </>
           )}
           {panel === "projects" && (
-            <>
-              <button
-                className="cw-wide-button"
-                onClick={() => {
-                  void switchDocument(createDocument);
-                }}
-              >
-                <CanvasIcon name="plus" />
-                新建空白画布
-              </button>
-              <div className="cw-node-list">
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      if (p.id === doc.id) {
-                        setPanel(null);
-                        return;
-                      }
-                      void switchDocument(async () => {
-                        const r = await loadDocument(p.id);
-                        if (!r.ok || !r.value)
-                          throw new Error(
-                            r.ok ? "项目不存在" : r.error.message,
-                          );
-                        return r.value;
-                      });
-                    }}
-                  >
-                    <CanvasIcon name="folder" />
-                    <span>
-                      {p.title}
-                      <small>
-                        {p.nodeCount} 个节点 ·{" "}
-                        {new Date(p.updatedAt).toLocaleString("zh-CN")}
-                      </small>
-                    </span>
-                    {p.id === doc.id && <CanvasIcon name="check" size={15} />}
-                  </button>
-                ))}
-              </div>
-            </>
+            <ProjectManagerPanel
+              currentId={doc.id}
+              onCreate={() => {
+                void switchDocument(createDocument);
+              }}
+              onOpen={async (id) => {
+                if (id === doc.id) {
+                  setPanel(null);
+                  return;
+                }
+                await switchDocument(async () => {
+                  const result = await loadDocument(id);
+                  if (!result.ok || !result.value)
+                    throw new Error(
+                      result.ok ? "项目不存在" : result.error.message,
+                    );
+                  return result.value;
+                });
+              }}
+              onDuplicate={async (id) => {
+                if (!(await persist(historyRef.current.present)))
+                  throw new Error("当前画布未保存，复制未执行。");
+                const loaded = await loadDocument(id);
+                if (!loaded.ok || !loaded.value)
+                  throw new Error(
+                    loaded.ok ? "项目不存在" : loaded.error.message,
+                  );
+                const copy = duplicateCanvasDocument(loaded.value);
+                const saved = await saveDocument(copy);
+                if (!saved.ok) throw new Error(saved.error.message);
+                notify("已创建独立副本，原项目保持不变。");
+              }}
+              onTrash={async (id) => {
+                if (
+                  id === historyRef.current.present.id &&
+                  !(await switchDocument(createDocument))
+                )
+                  throw new Error("当前画布未能保存，未移入回收站。");
+                const result = await trashDocument(id);
+                if (!result.ok) throw new Error(result.error.message);
+                notify("项目已移入本机回收站，可随时恢复。");
+              }}
+              onRestore={async (id) => {
+                const result = await restoreDocument(id);
+                if (!result.ok) throw new Error(result.error.message);
+                notify("项目已恢复。");
+              }}
+            />
           )}
           {panel === "history" && (
-            <>
-              <p className="cw-panel-note">
-                本次打开期间提交到本地服务的生成任务、请求草稿及导入记录。
-                {backendCatalog.connected && (
-                  <button
-                    className="cw-sync-button"
-                    onClick={() => void syncServiceResults(true)}
-                  >
-                    同步本地服务结果
-                  </button>
-                )}
-              </p>
-              {!jobs.length ? (
-                <div className="cw-panel-empty">
-                  <CanvasIcon name="history" size={32} />
-                  <p>还没有任务草稿</p>
-                  <small>选中媒体节点，填写参数后创建本地任务。</small>
-                </div>
-              ) : (
-                jobs.map((job) => (
-                  <button
-                    className="cw-job"
-                    key={job.id}
-                    onClick={() => {
-                      const n = doc.nodes.find((n) => n.id === job.nodeId);
-                      if (n) selectAndFocus(n);
-                    }}
-                  >
-                    <span>{job.title}</span>
-                    <small title={job.message}>
-                      {job.time} ·{" "}
-                      {
-                        {
-                          draft: "本地草稿",
-                          imported: "已导入结果",
-                          running: job.message ?? "生成中",
-                          succeeded: "已加入画布",
-                          failed: `失败：${job.message ?? "未完成"}`,
-                          cancelled: "已取消",
-                        }[job.status]
-                      }
-                    </small>
-                  </button>
-                ))
-              )}
-            </>
+            <GenerationHistoryPanel
+              key={doc.id}
+              jobs={jobs}
+              onSync={
+                backendCatalog.connected
+                  ? () => void syncServiceResults(true)
+                  : undefined
+              }
+              onLocate={(id) => {
+                const node = doc.nodes.find((n) => n.id === id);
+                if (node) selectAndFocus(node);
+                else
+                  notify(
+                    "来源节点已删除，可以从历史重新放置结果或恢复请求节点。",
+                  );
+              }}
+              onRestore={(entries, requests = false) => {
+                if (requests) {
+                  const origin = center();
+                  const nodes = entries.flatMap((job, index) =>
+                    job.request
+                      ? [
+                          createNode(
+                            job.request.kind,
+                            { x: origin.x + index * 360, y: origin.y },
+                            {
+                              title: job.request.title,
+                              prompt: job.request.prompt,
+                              settings: {
+                                ...job.request.settings,
+                                firstFrameNodeId: undefined,
+                                lastFrameNodeId: undefined,
+                              },
+                            },
+                          ),
+                        ]
+                      : [],
+                  );
+                  if (nodes.length) {
+                    command({ type: "add-nodes", nodes });
+                    setSelected(nodes.map((node) => node.id));
+                    notify("请求节点已恢复；请重新选择需要的参考素材。");
+                  }
+                } else {
+                  const outputs = entries.flatMap((job) => job.outputs ?? []);
+                  if (!outputs.length) return;
+                  const next = appendServiceResults(
+                    historyRef.current.present,
+                    outputs,
+                  );
+                  change(() => next.document);
+                  setSelected(next.ids);
+                  revealResults(next.ids);
+                  notify(
+                    `已从历史重新放置 ${next.ids.length} 个结果，可撤销。`,
+                  );
+                }
+              }}
+            />
           )}
           {panel === "tools" && (
             <CanvasToolsPanel
@@ -3200,10 +3449,11 @@ function Workspace() {
                 "audio-trim": () => editSelected("trim", "audio"),
                 "video-frame-capture": () => editSelected("frame", "video"),
                 "extract-audio": () => editSelected("extract-audio", "video"),
-                "director-stage": () =>
-                  openEditor(
-                    single?.type === "external" ? single : addNode("external"),
-                  ),
+                "director-stage": () => {
+                  const node =
+                    single?.type === "external" ? single : addNode("external");
+                  if (node) openEditor(node);
+                },
               }}
               onDraftChange={(task) => {
                 const owner = doc.nodes.find((node) => node.id === selected[0]);
@@ -3258,9 +3508,13 @@ function Workspace() {
           )}
           {panel === "assistant" && backendCatalog.connected && (
             <AssistantPanel
+              key={doc.id}
               documentId={doc.id}
               documentTitle={doc.title}
               catalog={backendCatalog}
+              selectedNodes={doc.nodes.filter((node) =>
+                selected.includes(node.id),
+              )}
               onTurnEnd={() => void followServiceTasks()}
               onOpenSettings={() => setModelSettings(true)}
             />

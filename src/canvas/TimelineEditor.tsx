@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type CSSProperties,
+} from "react";
 import type {
   CanvasNode,
   CanvasResource,
@@ -20,6 +27,12 @@ import {
   splitTimelineClip,
   trimTimelineClip,
   importTimeline,
+  removeTimelineAsset,
+  snapTimelineTime,
+  timelineRulerStep,
+  timelineLibraryResources,
+  type TimelineLibraryKind,
+  type TimelineLibrarySource,
 } from "./timeline";
 import { readEditorResource, withMediaDuration } from "./editorMedia";
 import { EditorModal } from "./EditorModal";
@@ -27,6 +40,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import "./timeline-editor.css";
 import { downloadFile, downloadFilename } from "./assets";
 import { mediaBlobDataUrl } from "./localMediaRuntime";
+import { exportTimelineFcpxml, exportTimelinePackage } from "./timelineExport";
 import type { LinkedMediaResult } from "./linkedResults";
 
 export interface TimelineEditorProps {
@@ -101,6 +115,70 @@ export function TimelineEditor({
     positionRef = useRef(position),
     clipDrag = useRef<ClipDrag | null>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(40);
+  const [scrollLeft, setScrollLeft] = useState(0),
+    [viewportWidth, setViewportWidth] = useState(900);
+  const [snapping, setSnapping] = useState(true);
+  const [libraryShown, setLibraryShown] = useState(true),
+    [libraryWidth, setLibraryWidth] = useState(210),
+    [trackHeight, setTrackHeight] = useState(260);
+  const [packageProgress, setPackageProgress] = useState<number | null>(null);
+  const panelDrag = useRef<{
+    pointerId: number;
+    axis: "library" | "tracks";
+    origin: number;
+    size: number;
+    element: HTMLElement;
+  } | null>(null);
+  const resizePanel = (event: PointerEvent<HTMLElement>) => {
+    const drag = panelDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const delta =
+      (drag.axis === "library" ? event.clientX : event.clientY) - drag.origin;
+    if (drag.axis === "library")
+      setLibraryWidth(Math.max(150, Math.min(420, drag.size + delta)));
+    else setTrackHeight(Math.max(140, Math.min(650, drag.size - delta)));
+  };
+  const finishPanel = (event: PointerEvent<HTMLElement>, cancel = false) => {
+    const drag = panelDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    panelDrag.current = null;
+    if (cancel) {
+      if (drag.axis === "library") setLibraryWidth(drag.size);
+      else setTrackHeight(drag.size);
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const cancelPanel = () => {
+    const drag = panelDrag.current;
+    if (!drag) return;
+    panelDrag.current = null;
+    if (drag.axis === "library") setLibraryWidth(drag.size);
+    else setTrackHeight(drag.size);
+    if (drag.element.hasPointerCapture(drag.pointerId))
+      drag.element.releasePointerCapture(drag.pointerId);
+  };
+  useEffect(() => {
+    window.addEventListener("blur", cancelPanel);
+    return () => window.removeEventListener("blur", cancelPanel);
+  }, []);
+  const beginPanel = (
+    event: PointerEvent<HTMLElement>,
+    axis: "library" | "tracks",
+  ) => {
+    if (event.button !== 0 || panelDrag.current || busy) return;
+    event.preventDefault();
+    panelDrag.current = {
+      pointerId: event.pointerId,
+      axis,
+      origin: axis === "library" ? event.clientX : event.clientY,
+      size: axis === "library" ? libraryWidth : trackHeight,
+      element: event.currentTarget,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
   const [dragPreview, setDragPreview] = useState<TimelineData | null>(null);
   const [dragMessage, setDragMessage] = useState("");
   const callbacks = useRef(
@@ -112,28 +190,11 @@ export function TimelineEditor({
   timelineRef.current = timeline;
   positionRef.current = position;
   playingRef.current = playing;
-  const [libraryKind, setLibraryKind] = useState("all"),
-    [librarySource, setLibrarySource] = useState("all");
+  const [libraryKind, setLibraryKind] = useState<TimelineLibraryKind>("all"),
+    [librarySource, setLibrarySource] = useState<TimelineLibrarySource>("all");
   const libraryResources = useMemo(
     () =>
-      [
-        ...new Map(
-          [
-            ...resources,
-            ...timeline.tracks.flatMap((track) =>
-              track.clips.map((clip) => clip.resource),
-            ),
-          ].map((resource) => [resource.id, resource]),
-        ).values(),
-      ].filter(
-        (resource) =>
-          ["image", "video", "audio"].includes(resource.kind) &&
-          (libraryKind === "all" || resource.kind === libraryKind) &&
-          (librarySource === "all" ||
-            (librarySource === "canvas"
-              ? !!resource.nodeId
-              : !resource.nodeId)),
-      ),
+      timelineLibraryResources(timeline, resources, librarySource, libraryKind),
     [resources, timeline, libraryKind, librarySource],
   );
   const segments = useMemo(
@@ -141,6 +202,57 @@ export function TimelineEditor({
     [timeline, dragPreview],
   );
   const duration = timelineDuration(timeline);
+  const trackWidth = Math.max(
+    viewportWidth,
+    191 + (duration + 2) * pixelsPerSecond,
+  );
+  const visibleDuration = (trackWidth - 191) / pixelsPerSecond;
+  const rulerStep = timelineRulerStep(pixelsPerSecond, timeline.fps);
+  const rulerStart = Math.max(
+    0,
+    Math.floor((scrollLeft - 147) / pixelsPerSecond / rulerStep) * rulerStep,
+  );
+  const rulerTicks = Array.from(
+    { length: Math.ceil(viewportWidth / pixelsPerSecond / rulerStep) + 4 },
+    (_, i) => rulerStart + i * rulerStep,
+  ).filter((time) => time <= visibleDuration);
+  const zoomTo = (next: number, anchor?: number) => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const value = Math.max(0.01, Math.min(800, next));
+    const x = anchor ?? Math.max(0, (element.clientWidth - 191) / 2);
+    const time = Math.max(0, (element.scrollLeft + x) / pixelsPerSecond);
+    setPixelsPerSecond(value);
+    requestAnimationFrame(() => {
+      if (scrollRef.current === element)
+        element.scrollLeft = Math.max(0, time * value - x);
+    });
+  };
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() =>
+      setViewportWidth(element.clientWidth),
+    );
+    observer.observe(element);
+    setViewportWidth(element.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const wheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      if (busy || clipDrag.current) return;
+      zoomTo(
+        pixelsPerSecond * Math.exp(-event.deltaY * 0.01),
+        event.clientX - element.getBoundingClientRect().left - 169,
+      );
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, [pixelsPerSecond, busy]);
   const selected = segments.find((segment) => segment.clip.id === selectedId);
   const currentVisual = segments.find(
     (segment) =>
@@ -286,6 +398,12 @@ export function TimelineEditor({
       setDragMessage("拖到目标轨道后松开；按 Esc 取消拖动。");
       return;
     }
+    const viewport = scrollRef.current;
+    if (viewport) {
+      const bounds = viewport.getBoundingClientRect();
+      if (event.clientX > bounds.right - 28) viewport.scrollLeft += 20;
+      else if (event.clientX < bounds.left + 28) viewport.scrollLeft -= 20;
+    }
     const rect = lane.getBoundingClientRect();
     const time = ((event.clientX - rect.left) / rect.width) * drag.duration;
     const source = timelineSegments(drag.origin).find(
@@ -296,7 +414,15 @@ export function TimelineEditor({
         drag.origin,
         drag.clipId,
         lane.dataset.trackId!,
-        source.track.kind === "audio" ? time - drag.offset : time,
+        source.track.kind === "audio"
+          ? snapTimelineTime(drag.origin, time - drag.offset, {
+              enabled: snapping,
+              pixelsPerSecond,
+              playhead: positionRef.current,
+              clipId: drag.clipId,
+              duration: clipDuration(source.clip),
+            })
+          : time,
       );
       setDragPreview(drag.next);
       drag.error = "";
@@ -354,21 +480,41 @@ export function TimelineEditor({
   };
   const importFiles = async (files: FileList) => {
     const controller = beginLoad();
+    const imported: CanvasResource[] = [],
+      failures: string[] = [];
     try {
       for (const file of [...files]) {
-        const resource = await readEditorResource(file, controller.signal);
+        try {
+          imported.push(await readEditorResource(file, controller.signal));
+        } catch (error) {
+          if (!ownsLoad(controller)) return;
+          failures.push(
+            `${file.name}：${error instanceof Error ? error.message : "读取失败"}`,
+          );
+        }
         if (!ownsLoad(controller)) return;
-        change((current) =>
-          addTimelineClip(
-            current,
-            resource,
-            resource.kind === "audio" ? audioTrack || undefined : undefined,
-          ),
-        );
       }
-    } catch (error) {
-      if (ownsLoad(controller))
-        setError(error instanceof Error ? error.message : "读取素材失败。");
+      change((current) => {
+        let next = current;
+        for (const resource of imported) {
+          try {
+            next = addTimelineClip(
+              next,
+              resource,
+              resource.kind === "audio" ? audioTrack || undefined : undefined,
+            );
+          } catch (error) {
+            failures.push(
+              `${resource.title}：${error instanceof Error ? error.message : "无法添加片段"}`,
+            );
+          }
+        }
+        return next;
+      });
+      if (failures.length)
+        setError(
+          `部分素材未导入（${failures.length}）：${failures.join("；")}`,
+        );
     } finally {
       if (ownsLoad(controller)) setBusy(false);
     }
@@ -376,6 +522,44 @@ export function TimelineEditor({
   const seek = (time: number) => {
     setPlaying(false);
     setPosition(Math.max(0, Math.min(duration, time)));
+  };
+  const exportXml = () => {
+    try {
+      const text = exportTimelineFcpxml(timelineRef.current, node.data.title);
+      downloadFile(
+        new Blob([text], { type: "application/xml" }),
+        `${node.data.title || "timeline"}.fcpxml`,
+      );
+      setError("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "XML 导出失败。");
+    }
+  };
+  const exportPackage = async () => {
+    const controller = beginLoad(),
+      snapshot = copyTimeline(timelineRef.current);
+    setPlaying(false);
+    setPackageProgress(0);
+    try {
+      const blob = await exportTimelinePackage(
+        snapshot,
+        node.data.title,
+        controller.signal,
+        (value) => {
+          if (ownsLoad(controller)) setPackageProgress(value);
+        },
+      );
+      if (ownsLoad(controller))
+        downloadFile(blob, `${node.data.title || "timeline"}.fcpxml.zip`);
+    } catch (error) {
+      if (ownsLoad(controller))
+        setError(error instanceof Error ? error.message : "素材打包失败。");
+    } finally {
+      if (active.current && loading.current === controller) {
+        setBusy(false);
+        setPackageProgress(null);
+      }
+    }
   };
   const exportJson = () => {
     try {
@@ -533,6 +717,15 @@ export function TimelineEditor({
             <CanvasIcon name="download" size={16} />
             导出可编辑 JSON
           </button>
+          <button disabled={busy || !duration} onClick={exportXml}>
+            导出 FCPXML
+          </button>
+          <button
+            disabled={busy || !duration}
+            onClick={() => void exportPackage()}
+          >
+            XML + 素材 ZIP
+          </button>
           <button
             disabled={busy || !duration}
             onClick={() => void renderVideo()}
@@ -542,6 +735,13 @@ export function TimelineEditor({
         </>
       }
     >
+      {packageProgress !== null && (
+        <div className="cw-render-status" role="status">
+          <progress value={packageProgress} max={1} />
+          <span>素材打包 {Math.round(packageProgress * 100)}%</span>
+          <button onClick={() => loading.current?.abort()}>取消打包</button>
+        </div>
+      )}
       {renderProgress !== null && (
         <div className="cw-render-status" role="status">
           <progress value={renderProgress} max={1} />
@@ -578,6 +778,12 @@ export function TimelineEditor({
         className="cw-editor-work"
         disabled={busy}
         onKeyDown={(event) => {
+          if (event.key === "Escape" && panelDrag.current) {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelPanel();
+            return;
+          }
           if (
             busy ||
             (event.target as HTMLElement).closest(
@@ -600,84 +806,148 @@ export function TimelineEditor({
           }
         }}
       >
-        <div className="cw-timeline-top">
-          <aside className="cw-timeline-library">
-            <div className="cw-domain-section-heading">
-              <h3>素材库</h3>
-              <button
-                disabled={busy}
-                onClick={() => fileInput.current?.click()}
-              >
-                <CanvasIcon name="upload" size={14} />
-                导入
-              </button>
-            </div>
-            <p className="cw-domain-note">
-              图片、视频与音频。视频和音频会先读取实际时长。
-            </p>
-            <div className="cw-domain-row">
-              <select
-                aria-label="素材类型筛选"
-                value={libraryKind}
-                onChange={(event) => setLibraryKind(event.target.value)}
-              >
-                <option value="all">全部类型</option>
-                <option value="image">图片</option>
-                <option value="video">视频</option>
-                <option value="audio">音频</option>
-              </select>
-              <select
-                aria-label="素材来源筛选"
-                value={librarySource}
-                onChange={(event) => setLibrarySource(event.target.value)}
-              >
-                <option value="all">全部来源</option>
-                <option value="canvas">画布素材</option>
-                <option value="imported">已导入</option>
-              </select>
-            </div>
-            <div className="cw-domain-resource-list">
-              {libraryResources.map((resource) => (
+        <div
+          className={`cw-timeline-top${libraryShown ? "" : " is-library-hidden"}`}
+          style={
+            {
+              "--cw-library-width": `${libraryWidth}px`,
+              "--cw-track-height": `${trackHeight}px`,
+            } as CSSProperties
+          }
+        >
+          {libraryShown && (
+            <aside className="cw-timeline-library">
+              <div className="cw-domain-section-heading">
+                <h3>素材库</h3>
                 <button
-                  key={resource.id}
                   disabled={busy}
-                  onClick={() => {
-                    void addResource(resource);
-                  }}
+                  onClick={() => fileInput.current?.click()}
                 >
-                  <CanvasIcon name={resource.kind} size={16} />
-                  <span>{resource.title}</span>
-                  <CanvasIcon name="plus" size={14} />
+                  <CanvasIcon name="upload" size={14} />
+                  导入
                 </button>
-              ))}
-              {!libraryResources.length && (
-                <p>可从本地导入，也可引用画布上的媒体节点。</p>
-              )}
-            </div>
-            <label className="cw-domain-field">
-              音频加入轨道
-              <select
-                value={audioTrack}
-                onChange={(event) => setAudioTrack(event.target.value)}
-              >
-                <option value="">首条音轨 / 自动新建</option>
-                {timeline.tracks
-                  .filter((track) => track.kind === "audio")
-                  .map((track) => (
-                    <option key={track.id} value={track.id}>
-                      {track.title}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <button onClick={() => change(addAudioTrack)}>
-              <CanvasIcon name="plus" size={14} />
-              添加音轨
-            </button>
-            <p className="cw-domain-status" role="status">
-              {busy ? "正在读取素材…" : ""}
-            </p>
-          </aside>
+              </div>
+              <p className="cw-domain-note">
+                图片、视频与音频。视频和音频会先读取实际时长。
+              </p>
+              <div className="cw-domain-row">
+                <select
+                  aria-label="素材类型筛选"
+                  value={libraryKind}
+                  onChange={(event) =>
+                    setLibraryKind(event.target.value as TimelineLibraryKind)
+                  }
+                >
+                  <option value="all">全部类型</option>
+                  <option value="image">图片</option>
+                  <option value="video">视频</option>
+                  <option value="audio">音频</option>
+                </select>
+                <select
+                  aria-label="素材来源筛选"
+                  value={librarySource}
+                  onChange={(event) =>
+                    setLibrarySource(
+                      event.target.value as TimelineLibrarySource,
+                    )
+                  }
+                >
+                  <option value="all">全部来源</option>
+                  <option value="canvas">画布素材</option>
+                  <option value="imported">已导入</option>
+                </select>
+              </div>
+              <div className="cw-domain-resource-list">
+                {libraryResources.map((resource, index) => (
+                  <div
+                    className="cw-timeline-library-item"
+                    key={`${resource.id}-${index}`}
+                  >
+                    <button
+                      disabled={busy}
+                      onClick={() => {
+                        void addResource(resource);
+                      }}
+                    >
+                      <CanvasIcon name={resource.kind} size={16} />
+                      <span>{resource.title}</span>
+                      <CanvasIcon name="plus" size={14} />
+                    </button>
+                    {librarySource === "imported" && (
+                      <button
+                        aria-label={`从素材库移除 ${resource.title}`}
+                        title="仅移出素材库，保留已有片段"
+                        onClick={() =>
+                          change((current) =>
+                            removeTimelineAsset(current, resource.id),
+                          )
+                        }
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {!libraryResources.length && (
+                  <p>可从本地导入，也可引用画布上的媒体节点。</p>
+                )}
+              </div>
+              <label className="cw-domain-field">
+                音频加入轨道
+                <select
+                  value={audioTrack}
+                  onChange={(event) => setAudioTrack(event.target.value)}
+                >
+                  <option value="">首条音轨 / 自动新建</option>
+                  {timeline.tracks
+                    .filter((track) => track.kind === "audio")
+                    .map((track) => (
+                      <option key={track.id} value={track.id}>
+                        {track.title}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <button onClick={() => change(addAudioTrack)}>
+                <CanvasIcon name="plus" size={14} />
+                添加音轨
+              </button>
+              <p className="cw-domain-status" role="status">
+                {busy ? "正在读取素材…" : ""}
+              </p>
+            </aside>
+          )}
+          {libraryShown && (
+            <div
+              className="cw-timeline-library-resizer"
+              role="separator"
+              aria-label="调整素材库宽度"
+              aria-orientation="vertical"
+              aria-valuenow={libraryWidth}
+              aria-valuemin={150}
+              aria-valuemax={420}
+              tabIndex={0}
+              onPointerDown={(event) => beginPanel(event, "library")}
+              onPointerMove={resizePanel}
+              onPointerUp={(event) => finishPanel(event)}
+              onPointerCancel={(event) => finishPanel(event, true)}
+              onLostPointerCapture={(event) => finishPanel(event, true)}
+              onKeyDown={(event) => {
+                if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+                  event.preventDefault();
+                  setLibraryWidth((width) =>
+                    Math.max(
+                      150,
+                      Math.min(
+                        420,
+                        width + (event.key === "ArrowRight" ? 20 : -20),
+                      ),
+                    ),
+                  );
+                }
+              }}
+            />
+          )}
           <div className="cw-timeline-monitor">
             <div
               className="cw-timeline-screen"
@@ -982,6 +1252,12 @@ export function TimelineEditor({
         </div>
         <div className="cw-domain-row cw-timeline-edit-toolbar">
           <button
+            aria-pressed={libraryShown}
+            onClick={() => setLibraryShown((shown) => !shown)}
+          >
+            {libraryShown ? "隐藏素材库" : "显示素材库"}
+          </button>
+          <button
             disabled={!history.current.past.length || busy}
             onClick={() => historyStep("undo")}
           >
@@ -1031,149 +1307,253 @@ export function TimelineEditor({
           >
             剪掉播放头右侧
           </button>
+          <label className="cw-timeline-snap">
+            <input
+              type="checkbox"
+              checked={snapping}
+              onChange={(event) => setSnapping(event.target.checked)}
+            />
+            自动吸附
+          </label>
+          <label className="cw-timeline-zoom">
+            时间轴缩放
+            <input
+              aria-label="时间轴缩放"
+              type="range"
+              min={Math.log2(0.01)}
+              max={Math.log2(800)}
+              step={0.1}
+              value={Math.log2(pixelsPerSecond)}
+              onChange={(event) => zoomTo(2 ** Number(event.target.value))}
+            />
+            <output>
+              {pixelsPerSecond < 1
+                ? pixelsPerSecond.toFixed(2)
+                : Math.round(pixelsPerSecond)}{" "}
+              px/s
+            </output>
+          </label>
+          <button
+            onClick={() =>
+              zoomTo((viewportWidth - 191) / Math.max(1, duration + 2))
+            }
+          >
+            适应全部
+          </button>
         </div>
         <div className="cw-timeline-drag-status" role="status">
           {dragMessage}
         </div>
         <div
-          className="cw-timeline-tracks"
-          ref={tracksRef}
+          className="cw-timeline-height-resizer"
+          role="separator"
+          aria-label="调整轨道区高度"
+          aria-orientation="horizontal"
+          aria-valuenow={trackHeight}
+          aria-valuemin={140}
+          aria-valuemax={650}
           tabIndex={0}
-          aria-label="时间线轨道"
-          onPointerMove={moveDrag}
-          onPointerUp={endDrag}
-          onPointerCancel={cancelDrag}
-          onLostPointerCapture={cancelDrag}
-          onKeyDownCapture={(event) => {
-            if (event.key === "Escape" && clipDrag.current) {
+          onPointerDown={(event) => beginPanel(event, "tracks")}
+          onPointerMove={resizePanel}
+          onPointerUp={(event) => finishPanel(event)}
+          onPointerCancel={(event) => finishPanel(event, true)}
+          onLostPointerCapture={(event) => finishPanel(event, true)}
+          onKeyDown={(event) => {
+            if (["ArrowUp", "ArrowDown"].includes(event.key)) {
               event.preventDefault();
-              event.stopPropagation();
-              cancelDrag();
-              setError("");
+              setTrackHeight((height) =>
+                Math.max(
+                  140,
+                  Math.min(650, height + (event.key === "ArrowUp" ? 20 : -20)),
+                ),
+              );
             }
           }}
+        />
+        <div
+          className="cw-timeline-scroll"
+          ref={scrollRef}
+          style={{ height: trackHeight }}
+          onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
         >
-          <div className="cw-timeline-ruler">
-            <span>轨道 / 秒</span>
-            <div>
-              {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
-                <span key={fraction} style={{ left: `${fraction * 100}%` }}>
-                  {(duration * fraction).toFixed(1)}
-                </span>
-              ))}
-            </div>
-          </div>
-          {timeline.tracks.map((track) => (
-            <div className="cw-timeline-track" key={track.id}>
-              <div className="cw-timeline-track-label">
-                <span>{track.title}</span>
-                <button
-                  onClick={() =>
-                    change((current) => ({
-                      ...current,
-                      tracks: current.tracks.map((item) =>
-                        item.id === track.id
-                          ? { ...item, muted: !item.muted }
-                          : item,
-                      ),
-                    }))
-                  }
-                  aria-label={`${track.muted ? "取消静音" : "静音"}${track.title}`}
-                >
-                  {track.muted ? "静音" : "有声"}
-                </button>
-                {track.kind === "audio" && (
-                  <button
-                    aria-label={`删除${track.title}`}
-                    onClick={() => {
-                      setPlaying(false);
-                      if (audioTrack === track.id) setAudioTrack("");
-                      change((current) => ({
-                        ...current,
-                        tracks: current.tracks.filter(
-                          (item) => item.id !== track.id,
-                        ),
-                      }));
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
+          <div
+            className="cw-timeline-tracks"
+            style={{ width: trackWidth }}
+            ref={tracksRef}
+            tabIndex={0}
+            aria-label="时间线轨道"
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={cancelDrag}
+            onLostPointerCapture={cancelDrag}
+            onKeyDownCapture={(event) => {
+              if (event.key === "Escape" && clipDrag.current) {
+                event.preventDefault();
+                event.stopPropagation();
+                cancelDrag();
+                setError("");
+              }
+            }}
+          >
+            <div className="cw-timeline-ruler">
+              <span>轨道 / 秒</span>
               <div
-                className="cw-timeline-track-lane"
-                data-track-id={track.id}
                 onClick={(event) => {
-                  if (event.target === event.currentTarget) {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    seek(((event.clientX - rect.left) / rect.width) * duration);
-                  }
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  seek(
+                    snapTimelineTime(
+                      timeline,
+                      ((event.clientX - rect.left) / rect.width) *
+                        visibleDuration,
+                      {
+                        enabled: snapping,
+                        pixelsPerSecond,
+                        playhead: position,
+                      },
+                    ),
+                  );
                 }}
               >
-                <div
-                  className="cw-timeline-playhead"
-                  style={{
-                    left: `${duration ? (position / duration) * 100 : 0}%`,
-                  }}
-                />
-                {segments
-                  .filter((segment) => segment.track.id === track.id)
-                  .map((segment) => (
-                    <button
-                      key={segment.clip.id}
-                      className={`cw-timeline-clip ${selectedId === segment.clip.id ? "selected" : ""} ${track.kind}${dragPreview && clipDrag.current?.clipId === segment.clip.id ? " dragging" : ""}`}
-                      style={{
-                        left: `${duration ? (segment.start / duration) * 100 : 0}%`,
-                        width: `${duration ? (clipDuration(segment.clip) / duration) * 100 : 100}%`,
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (event.detail === 0) {
-                          setSelectedId(segment.clip.id);
-                          seek(segment.start);
-                        }
-                      }}
-                      onPointerDown={(event) => {
-                        if (busy || event.button !== 0 || clipDrag.current)
-                          return;
-                        event.preventDefault();
-                        tracksRef.current?.focus({ preventScroll: true });
-                        const rect =
-                          event.currentTarget.parentElement!.getBoundingClientRect();
-                        clipDrag.current = {
-                          pointerId: event.pointerId,
-                          clipId: segment.clip.id,
-                          origin: timelineRef.current,
-                          x: event.clientX,
-                          y: event.clientY,
-                          offset:
-                            ((event.clientX - rect.left) / rect.width) *
-                              duration -
-                            segment.start,
-                          duration,
-                          moved: false,
-                          next: null,
-                          error: "",
-                        };
-                        setSelectedId(segment.clip.id);
-                        setPlaying(false);
-                        tracksRef.current?.setPointerCapture(event.pointerId);
-                      }}
-                    >
-                      <CanvasIcon name={segment.clip.resource.kind} size={14} />
-                      <span>{segment.clip.resource.title}</span>
-                      <small>{clipDuration(segment.clip).toFixed(1)}s</small>
-                    </button>
-                  ))}
+                {rulerTicks.map((time) => (
+                  <span
+                    key={time}
+                    style={{ left: `${(time / visibleDuration) * 100}%` }}
+                  >
+                    {timeLabel(time)}
+                  </span>
+                ))}
               </div>
             </div>
-          ))}
+            {timeline.tracks.map((track) => (
+              <div className="cw-timeline-track" key={track.id}>
+                <div className="cw-timeline-track-label">
+                  <span>{track.title}</span>
+                  <button
+                    onClick={() =>
+                      change((current) => ({
+                        ...current,
+                        tracks: current.tracks.map((item) =>
+                          item.id === track.id
+                            ? { ...item, muted: !item.muted }
+                            : item,
+                        ),
+                      }))
+                    }
+                    aria-label={`${track.muted ? "取消静音" : "静音"}${track.title}`}
+                  >
+                    {track.muted ? "静音" : "有声"}
+                  </button>
+                  {track.kind === "audio" && (
+                    <button
+                      aria-label={`删除${track.title}`}
+                      onClick={() => {
+                        setPlaying(false);
+                        if (audioTrack === track.id) setAudioTrack("");
+                        change((current) => ({
+                          ...current,
+                          tracks: current.tracks.filter(
+                            (item) => item.id !== track.id,
+                          ),
+                        }));
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <div
+                  className="cw-timeline-track-lane"
+                  data-track-id={track.id}
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      seek(
+                        snapTimelineTime(
+                          timeline,
+                          ((event.clientX - rect.left) / rect.width) *
+                            visibleDuration,
+                          {
+                            enabled: snapping,
+                            pixelsPerSecond,
+                            playhead: position,
+                          },
+                        ),
+                      );
+                    }
+                  }}
+                >
+                  <div
+                    className="cw-timeline-playhead"
+                    style={{
+                      left: `${(position / visibleDuration) * 100}%`,
+                    }}
+                  />
+                  {segments
+                    .filter((segment) => segment.track.id === track.id)
+                    .map((segment) => (
+                      <button
+                        key={segment.clip.id}
+                        className={`cw-timeline-clip ${selectedId === segment.clip.id ? "selected" : ""} ${track.kind}${dragPreview && clipDrag.current?.clipId === segment.clip.id ? " dragging" : ""}`}
+                        style={{
+                          left: `${(segment.start / visibleDuration) * 100}%`,
+                          width: `${(clipDuration(segment.clip) / visibleDuration) * 100}%`,
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (event.detail === 0) {
+                            setSelectedId(segment.clip.id);
+                            seek(segment.start);
+                          }
+                        }}
+                        onPointerDown={(event) => {
+                          if (busy || event.button !== 0 || clipDrag.current)
+                            return;
+                          event.preventDefault();
+                          tracksRef.current?.focus({ preventScroll: true });
+                          const rect =
+                            event.currentTarget.parentElement!.getBoundingClientRect();
+                          clipDrag.current = {
+                            pointerId: event.pointerId,
+                            clipId: segment.clip.id,
+                            origin: timelineRef.current,
+                            x: event.clientX,
+                            y: event.clientY,
+                            offset:
+                              ((event.clientX - rect.left) / rect.width) *
+                                visibleDuration -
+                              segment.start,
+                            duration: visibleDuration,
+                            moved: false,
+                            next: null,
+                            error: "",
+                          };
+                          setSelectedId(segment.clip.id);
+                          setPlaying(false);
+                          tracksRef.current?.setPointerCapture(event.pointerId);
+                        }}
+                      >
+                        <CanvasIcon
+                          name={segment.clip.resource.kind}
+                          size={14}
+                        />
+                        <span>{segment.clip.resource.title}</span>
+                        <small>{clipDuration(segment.clip).toFixed(1)}s</small>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <p className="cw-domain-note cw-timeline-footnote">
           拖动画面片段调整顺序；拖动音频调整起点或移至其他音轨。按 Esc
           取消，⌘/Ctrl + Z 撤销。 MP4
           在浏览器内合成，保留顺序、裁剪、倍速、音量和多轨混音；画面等比适配并补黑边。
-          倍速会同时改变音调。JSON 可继续编辑，文件只保存在本机。
+          倍速会同时改变音调。⌘/Ctrl +
+          滚轮以指针位置缩放时间轴；自动吸附对齐片段边缘与播放头。 FCPXML
+          为标准剪辑交换格式，ZIP 含原媒体；解压后保持 media
+          目录相对位置。并非原生剪映工程，也不承诺所有剪辑软件版本兼容。JSON
+          可在本工程继续编辑。
         </p>
         <input
           className="cw-domain-file-input"

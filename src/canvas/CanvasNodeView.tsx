@@ -13,6 +13,8 @@ import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
+import { nodePorts } from "./connectionPolicy";
+import { CANVAS_TAGS, isTaggable } from "./nodeTags";
 import "./nodes.css";
 import {
   CanvasActionsContext,
@@ -48,6 +50,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   const resizeStart = useCallback(() => beginEdit?.(id), [beginEdit, id]);
   const resizeEnd = useCallback(() => endEdit?.(id), [endEdit, id]);
   const kind = data.kind;
+  const ports = nodePorts(kind);
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
   const locked = Boolean(actions?.isLocked(id));
   const activity = ["image", "video", "audio"].includes(kind)
@@ -83,6 +86,22 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           {data.title || names[kind]}
         </span>
         {locked && <CanvasIcon name="lock" size={12} />}
+        {!!data.tags?.length && (
+          <span
+            className="cw-tag-dots"
+            aria-label={`标签：${CANVAS_TAGS.filter((tag) =>
+              data.tags?.includes(tag.id),
+            )
+              .map((tag) => tag.label)
+              .join("、")}`}
+          >
+            {CANVAS_TAGS.filter((tag) => data.tags?.includes(tag.id)).map(
+              (tag) => (
+                <i key={tag.id} style={{ background: tag.color }} />
+              ),
+            )}
+          </span>
+        )}
         <div className="cw-node-heading-actions nodrag nopan">
           <TooltipButton
             aria-label={`重命名${data.title}`}
@@ -91,8 +110,17 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           >
             <CanvasIcon name="pencil" size={13} />
           </TooltipButton>
+          {isTaggable(kind) && (
+            <TooltipButton
+              aria-label="节点标签"
+              label="节点标签"
+              onClick={() => actions?.editTags?.(id)}
+            >
+              <CanvasIcon name="tag" size={13} />
+            </TooltipButton>
+          )}
           <TooltipButton aria-label="节点选项" label="节点选项" onClick={menu}>
-            <CanvasIcon name="tag" size={13} />
+            <CanvasIcon name="more" size={13} />
           </TooltipButton>
         </div>
       </div>
@@ -245,36 +273,44 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         <GeneratingOverlay activity={activity} hasAsset={hasAsset} />
       )}
 
-      {kind !== "group" && (
+      {(ports.source || ports.target || kind === "stack") && (
         <>
-          <Handle
-            id="in"
-            type="target"
-            position={Position.Left}
-            isConnectable={isConnectable}
-            className="cw-port cw-port-left"
-            title="连接参考素材，或点击创建上游节点"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (isConnectable) actions?.newConnected(id, "target");
-            }}
-          >
-            <span>+</span>
-          </Handle>
-          <Handle
-            id="out"
-            type="source"
-            position={Position.Right}
-            isConnectable={isConnectable}
-            className="cw-port cw-port-right"
-            title="连接到新节点，或点击创建下游节点"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (isConnectable) actions?.newConnected(id, "source");
-            }}
-          >
-            <span>+</span>
-          </Handle>
+          {(ports.target || kind === "stack") && (
+            <Handle
+              id="in"
+              type="target"
+              position={Position.Left}
+              isConnectable={isConnectable && ports.target}
+              className={`cw-port cw-port-left ${kind === "stack" ? "cw-proxy-port" : ""}`}
+              title="连接参考素材，或点击创建上游节点"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (isConnectable && ports.target)
+                  actions?.newConnected(id, "target");
+              }}
+            >
+              <span>+</span>
+            </Handle>
+          )}
+          {(ports.source || kind === "stack" || kind === "timeline") && (
+            <Handle
+              id="out"
+              type="source"
+              position={Position.Right}
+              isConnectable={
+                isConnectable && ports.source && kind !== "external"
+              }
+              className={`cw-port cw-port-right ${!ports.source || kind === "external" ? "cw-proxy-port" : ""}`}
+              title="连接到新节点，或点击创建下游节点"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (isConnectable && ports.source && kind !== "external")
+                  actions?.newConnected(id, "source");
+              }}
+            >
+              <span>+</span>
+            </Handle>
+          )}
         </>
       )}
     </div>

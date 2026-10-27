@@ -153,6 +153,51 @@
   object-fit: contain;
   box-shadow: 0 8px 22px #00000055;
 }
+.cw-crop-stage {
+  position: relative;
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow: hidden;
+}
+.cw-editor-preview .cw-crop-stage canvas {
+  width: 100%;
+  height: auto;
+  max-height: none;
+}
+.cw-free-crop {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid white;
+  box-shadow: 0 0 0 900px #0008;
+  cursor: move;
+  touch-action: none;
+}
+.cw-free-crop::before,
+.cw-free-crop::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid #ffffff55;
+}
+.cw-free-crop::before {
+  inset: 0 33%;
+  border-top: 0;
+  border-bottom: 0;
+}
+.cw-free-crop::after {
+  inset: 33% 0;
+  border-left: 0;
+  border-right: 0;
+}
+.cw-crop-resize {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  cursor: nwse-resize;
+}
 .cw-editor-preview .cw-editor-hidden {
   display: none;
 }

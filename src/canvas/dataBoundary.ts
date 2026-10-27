@@ -1,5 +1,6 @@
 import { parseCanvasToolTaskValue, sameCanvasToolTask } from "./toolCatalog.ts";
 import { parseLocalStageValue, sameLocalStage } from "./stageDocument.ts";
+import { isCanvasTagId } from "./nodeTags.ts";
 import type {
   CanvasNodeData,
   CanvasNodeKind,
@@ -147,6 +148,14 @@ export function timelineError(value: unknown): string | null {
     !value.tracks.length
   )
     return "时间线尺寸、帧率或轨道无效。";
+  if (
+    value.importedAssets !== undefined &&
+    (!Array.isArray(value.importedAssets) ||
+      !value.importedAssets.every(
+        (asset) => isResource(asset) && asset.kind !== "file",
+      ))
+  )
+    return "时间线素材库仅支持有效图片、视频或音频。";
   const trackIds = new Set<string>(),
     clipIds = new Set<string>();
   let visualCount = 0;
@@ -226,11 +235,24 @@ export function timelineError(value: unknown): string | null {
   return visualCount === 1 ? null : "时间线必须恰有一条视觉轨。";
 }
 
+/** Legacy documents only kept clip snapshots. Migrate once when copying at the boundary. */
+export function timelineImportedAssets(
+  value: TimelineData,
+): readonly CanvasResource[] {
+  if (value.importedAssets !== undefined) return value.importedAssets;
+  const assets = new Map<string, CanvasResource>();
+  for (const track of value.tracks)
+    for (const { resource } of track.clips)
+      assets.set(`${resource.kind}:${resource.src ?? resource.id}`, resource);
+  return [...assets.values()];
+}
+
 export function copyTimeline(value: TimelineData): TimelineData {
   return {
     fps: value.fps,
     width: value.width,
     height: value.height,
+    importedAssets: timelineImportedAssets(value).map(copyResource),
     tracks: value.tracks.map((track) => ({
       id: track.id,
       kind: track.kind,
@@ -453,6 +475,15 @@ export function parseNodeData(
     title: value.title,
     prompt: value.prompt,
   };
+  if (value.tags !== undefined) {
+    if (
+      !Array.isArray(value.tags) ||
+      !value.tags.every(isCanvasTagId) ||
+      new Set(value.tags).size !== value.tags.length
+    )
+      return { ok: false, error: "节点标签必须是五色标签中的不重复 ID。" };
+    result.tags = [...value.tags];
+  }
   for (const key of ["src", "mimeType", "text"] as const)
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
@@ -550,6 +581,7 @@ export function parseNodeData(
 
 export function nodeResources(data: CanvasNodeData): CanvasResource[] {
   return [
+    ...(data.timeline ? timelineImportedAssets(data.timeline) : []),
     ...(data.timeline?.tracks.flatMap((track) =>
       track.clips.map((clip) => clip.resource),
     ) ?? []),
@@ -613,6 +645,7 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
       a.mimeType === b.mimeType &&
       a.text === b.text &&
       a.assetState === b.assetState &&
+      sameArray(a.tags ?? [], b.tags ?? [], (a, b) => a === b) &&
       sameGenerationSettings(a.settings, b.settings) &&
       sameOptional(
         a.timeline,
@@ -621,6 +654,11 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
           a.fps === b.fps &&
           a.width === b.width &&
           a.height === b.height &&
+          sameArray(
+            timelineImportedAssets(a),
+            timelineImportedAssets(b),
+            sameResource,
+          ) &&
           sameArray(
             a.tracks,
             b.tracks,

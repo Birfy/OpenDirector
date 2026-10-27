@@ -957,6 +957,10 @@ export function NodeComposer({
                     <button
                       type="button"
                       key={ratio}
+                      disabled={
+                        settings.imagePreset === "product-views" &&
+                        ratio !== "16:9"
+                      }
                       className={
                         settings.aspectRatio === ratio ? "cw-is-active" : ""
                       }
@@ -985,6 +989,10 @@ export function NodeComposer({
                   <button
                     type="button"
                     key={resolution}
+                    disabled={
+                      settings.imagePreset === "product-views" &&
+                      resolution !== "2K"
+                    }
                     className={
                       settings.resolution === resolution ? "cw-is-active" : ""
                     }
@@ -1064,6 +1072,9 @@ export function NodeComposer({
                   <button
                     type="button"
                     key={count}
+                    disabled={
+                      settings.imagePreset === "product-views" && count !== 1
+                    }
                     className={settings.count === count ? "cw-is-active" : ""}
                     onClick={() => updateSettings({ count })}
                     aria-pressed={settings.count === count}

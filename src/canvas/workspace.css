@@ -1437,3 +1437,85 @@
   color: #eee;
   border-radius: 6px;
 }
+.cw-history-entry {
+  display: grid;
+  gap: 8px;
+  padding: 14px 0;
+  border-bottom: 1px solid #ffffff10;
+  font-size: 12px;
+}
+.cw-history-entry > label {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+.cw-history-entry small {
+  color: #9999a1;
+  overflow-wrap: anywhere;
+}
+.cw-history-thumbnails {
+  display: flex;
+  gap: 6px;
+  overflow: auto;
+}
+.cw-history-thumbnails img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.cw-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cw-history-actions button {
+  background: #ffffff0a;
+  border-radius: 5px;
+  padding: 7px;
+  font-size: 11px;
+}
+
+.cw-project-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0;
+}
+.cw-project-tabs button,
+.cw-project-row button {
+  border: 1px solid #35353e;
+  background: #25252d;
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.cw-project-tabs button[aria-pressed="true"] {
+  border-color: #9a89ff;
+  color: #bcb0ff;
+}
+.cw-project-row {
+  padding: 10px 0;
+  border-bottom: 1px solid #33333d;
+}
+.cw-project-row .cw-project-open {
+  display: block;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  border: 0;
+}
+.cw-project-open small {
+  display: block;
+  color: #a7a6b0;
+  margin-top: 5px;
+}
+.cw-project-row > div {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.cw-project-manager button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

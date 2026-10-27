@@ -1,4 +1,9 @@
-import { copyResource, copyTimeline, timelineError } from "./dataBoundary.ts";
+import {
+  copyResource,
+  copyTimeline,
+  timelineError,
+  timelineImportedAssets,
+} from "./dataBoundary.ts";
 import type {
   CanvasResource,
   TimelineClip,
@@ -43,6 +48,67 @@ function checked(value: TimelineData): TimelineData {
   return value;
 }
 
+export type TimelineLibrarySource = "all" | "canvas" | "imported";
+export type TimelineLibraryKind = "all" | "image" | "video" | "audio";
+
+/** Select by library ownership before deduplicating: a canvas source may also be imported. */
+export function timelineLibraryResources(
+  timeline: TimelineData,
+  canvasResources: readonly CanvasResource[],
+  source: TimelineLibrarySource = "all",
+  kind: TimelineLibraryKind = "all",
+): CanvasResource[] {
+  const owned =
+    source === "canvas"
+      ? canvasResources
+      : source === "imported"
+        ? timelineImportedAssets(timeline)
+        : [...canvasResources, ...timelineImportedAssets(timeline)];
+  return [
+    ...new Map(
+      owned.map((resource) => [
+        `${resource.kind}:${resource.src ?? resource.id}`,
+        resource,
+      ]),
+    ).values(),
+  ].filter(
+    (resource) =>
+      ["image", "video", "audio"].includes(resource.kind) &&
+      (kind === "all" || resource.kind === kind),
+  );
+}
+
+export function retainTimelineAsset(
+  timeline: TimelineData,
+  resource: CanvasResource,
+): TimelineData {
+  if (!["image", "video", "audio"].includes(resource.kind))
+    throw new Error("时间线素材库只接受图片、视频或音频。");
+  const assets = timelineImportedAssets(timeline);
+  const same = (item: CanvasResource) =>
+    item.kind === resource.kind &&
+    (resource.src ? item.src === resource.src : item.id === resource.id);
+  return checked({
+    ...timeline,
+    importedAssets: assets.some(same)
+      ? [...assets]
+      : [...assets, copyResource(resource)],
+  });
+}
+
+/** Removing a library entry never removes clips that already own a source snapshot. */
+export function removeTimelineAsset(
+  timeline: TimelineData,
+  id: string,
+): TimelineData {
+  return {
+    ...timeline,
+    importedAssets: timelineImportedAssets(timeline).filter(
+      (asset) => asset.id !== id,
+    ),
+  };
+}
+
 export function addTimelineClip(
   timeline: TimelineData,
   resource: CanvasResource,
@@ -51,7 +117,7 @@ export function addTimelineClip(
   const kind = resource.kind === "audio" ? "audio" : "visual";
   if (!["image", "video", "audio"].includes(resource.kind))
     throw new Error("时间线只接受图片、视频或音频。");
-  let next = timeline;
+  let next = retainTimelineAsset(timeline, resource);
   let track = trackId
     ? next.tracks.find((track) => track.id === trackId)
     : next.tracks.find((track) => track.kind === kind);
@@ -120,11 +186,77 @@ export function removeTimelineClip(
 ): TimelineData {
   return {
     ...timeline,
+    importedAssets: [...timelineImportedAssets(timeline)],
     tracks: timeline.tracks.map((track) => ({
       ...track,
       clips: track.clips.filter((clip) => clip.id !== clipId),
     })),
   };
+}
+
+/** Magnetic snapping is separate from frame alignment and can be disabled by the editor. */
+export function snapTimelineTime(
+  timeline: TimelineData,
+  time: number,
+  options: {
+    enabled: boolean;
+    pixelsPerSecond: number;
+    playhead: number;
+    clipId?: string;
+    duration?: number;
+  },
+): number {
+  if (!Number.isFinite(time)) throw new Error("时间位置必须是有限数字。");
+  const rounded = Math.max(0, Math.round(time * timeline.fps) / timeline.fps);
+  if (!options.enabled) return rounded;
+  const threshold = 8 / Math.max(0.01, options.pixelsPerSecond);
+  const anchors = [
+    0,
+    options.playhead,
+    ...timelineSegments(timeline)
+      .filter((item) => item.clip.id !== options.clipId)
+      .flatMap((item) => [item.start, item.end]),
+  ];
+  let best = rounded,
+    distance = threshold;
+  for (const anchor of anchors) {
+    for (const candidate of [anchor, anchor - (options.duration ?? 0)]) {
+      if (candidate < 0) continue;
+      const difference = Math.abs(candidate - time);
+      if (difference <= distance) {
+        best = candidate;
+        distance = difference;
+      }
+    }
+  }
+  return Math.max(0, Math.round(best * timeline.fps) / timeline.fps);
+}
+
+export function timelineRulerStep(
+  pixelsPerSecond: number,
+  fps: number,
+): number {
+  const minimum = 70 / Math.max(0.01, pixelsPerSecond);
+  return (
+    [
+      1 / fps,
+      5 / fps,
+      10 / fps,
+      0.5,
+      1,
+      2,
+      5,
+      10,
+      15,
+      30,
+      60,
+      120,
+      300,
+      600,
+      1800,
+      3600,
+    ].find((step) => step >= minimum) ?? Math.ceil(minimum / 3600) * 3600
+  );
 }
 
 /** Ordering changes visual placement; audio ordering keeps explicit placement untouched. */

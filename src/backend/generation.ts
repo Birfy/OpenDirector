@@ -112,19 +112,25 @@ async function fingerprint(blob: Blob) {
   );
 }
 
-async function placeOnCanvas(projectId: string, kind: string, assetId: string) {
-  await request(
-    `/projects/${projectId}/canvas/nodes`,
-    json("POST", { id: crypto.randomUUID(), kind, assetId }),
-  );
+async function placeOnCanvas(
+  projectId: string,
+  kind: string,
+  assetId: string,
+  signal: AbortSignal,
+) {
+  await request(`/projects/${projectId}/canvas/nodes`, {
+    ...json("POST", { id: crypto.randomUUID(), kind, assetId }),
+    signal,
+  });
 }
 
 /** Reuse an identical current asset (such as an earlier H3 result), else upload one. */
-async function uploadReferences(
+export async function uploadReferences(
   projectId: string,
   references: readonly ReferenceInput[],
   signal: AbortSignal,
 ) {
+  if (!references.length) return [];
   const current = await request<BackendAsset[]>(
     `/projects/${projectId}/assets?current_only=true`,
     { signal },
@@ -135,17 +141,25 @@ async function uploadReferences(
     if (reference.kind === "text") {
       const asset = await request<BackendAsset>(
         `/projects/${projectId}/assets/text`,
-        json("POST", {
-          id: crypto.randomUUID(),
-          name: fileName(reference.title, "md"),
-          text: reference.text ?? "",
-        }),
+        {
+          ...json("POST", {
+            id: crypto.randomUUID(),
+            name: fileName(reference.title, "md"),
+            text: reference.text ?? "",
+          }),
+          signal,
+        },
       );
-      await placeOnCanvas(projectId, "text", asset.id);
+      await placeOnCanvas(projectId, "text", asset.id, signal);
       ids.push(asset.id);
       continue;
     }
-    const blob = await (await fetch(reference.src!, { signal })).blob();
+    const response = await fetch(reference.src!, { signal });
+    if (!response.ok)
+      throw new Error(
+        `无法读取参考素材：${reference.title}（${response.status}）`,
+      );
+    const blob = await response.blob();
     const print = await fingerprint(blob);
     const existing = current.find(
       (asset) =>
@@ -175,7 +189,7 @@ async function uploadReferences(
         body: blob,
       },
     );
-    await placeOnCanvas(projectId, reference.kind, asset.id);
+    await placeOnCanvas(projectId, reference.kind, asset.id, signal);
     current.push(asset);
     ids.push(asset.id);
   }

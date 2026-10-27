@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import type { CanvasNode } from "./model";
 import { LayerBoard } from "./LayerBoard";
 import type { LayerDocument } from "./layerDocument";
@@ -12,13 +19,15 @@ export interface ImageEditorProps {
   initialLayers?: LayerDocument;
 }
 
-type Aspect = "original" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+type Aspect = "free" | "original" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
 interface EditOptions {
   rotation: number;
   flipX: boolean;
   flipY: boolean;
   aspect: Aspect;
   zoom: number;
+  freeWidth: number;
+  freeHeight: number;
   x: number;
   y: number;
   brightness: number;
@@ -40,6 +49,8 @@ const INITIAL_OPTIONS: EditOptions = {
   flipY: false,
   aspect: "original",
   zoom: 100,
+  freeWidth: 100,
+  freeHeight: 100,
   x: 50,
   y: 50,
   brightness: 100,
@@ -51,6 +62,18 @@ function calculateCrop(image: HTMLImageElement, options: EditOptions): Crop {
   const turned = options.rotation % 180 !== 0;
   const imageWidth = turned ? image.naturalHeight : image.naturalWidth;
   const imageHeight = turned ? image.naturalWidth : image.naturalHeight;
+  if (options.aspect === "free") {
+    const width = Math.max(1, (imageWidth * options.freeWidth) / 100);
+    const height = Math.max(1, (imageHeight * options.freeHeight) / 100);
+    return {
+      x: ((imageWidth - width) * options.x) / 100,
+      y: ((imageHeight - height) * options.y) / 100,
+      width,
+      height,
+      imageWidth,
+      imageHeight,
+    };
+  }
   const [ratioWidth, ratioHeight] =
     options.aspect === "original"
       ? [imageWidth, imageHeight]
@@ -172,6 +195,63 @@ function CropEditor({
     [image, options],
   );
   const error = loadError || renderError;
+  const cropDrag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    options: EditOptions;
+    crop: Crop;
+    bounds: DOMRect;
+    resize: boolean;
+  } | null>(null);
+  const startCrop = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !crop || !canvasRef.current) return;
+    event.preventDefault();
+    cropDrag.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      options: { ...options },
+      crop,
+      bounds: canvasRef.current.getBoundingClientRect(),
+      resize: Boolean((event.target as HTMLElement).closest(".cw-crop-resize")),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveCrop = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = cropDrag.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    const { crop: c } = drag;
+    const dx = ((event.clientX - drag.x) / drag.bounds.width) * c.imageWidth;
+    const dy = ((event.clientY - drag.y) / drag.bounds.height) * c.imageHeight;
+    const width = drag.resize
+      ? Math.max(1, Math.min(c.imageWidth - c.x, c.width + dx))
+      : c.width;
+    const height = drag.resize
+      ? Math.max(1, Math.min(c.imageHeight - c.y, c.height + dy))
+      : c.height;
+    const x = drag.resize
+      ? c.x
+      : Math.max(0, Math.min(c.imageWidth - width, c.x + dx));
+    const y = drag.resize
+      ? c.y
+      : Math.max(0, Math.min(c.imageHeight - height, c.y + dy));
+    setOptions({
+      ...drag.options,
+      freeWidth: (width / c.imageWidth) * 100,
+      freeHeight: (height / c.imageHeight) * 100,
+      x: c.imageWidth === width ? 0 : (x / (c.imageWidth - width)) * 100,
+      y: c.imageHeight === height ? 0 : (y / (c.imageHeight - height)) * 100,
+    });
+  };
+  const endCrop = (event: PointerEvent<HTMLDivElement>, cancel = false) => {
+    const drag = cropDrag.current;
+    if (!drag || drag.id !== event.pointerId) return;
+    if (cancel) setOptions(drag.options);
+    cropDrag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -223,7 +303,14 @@ function CropEditor({
     const frame = requestAnimationFrame(() => {
       if (!canvasRef.current) return;
       try {
-        renderImage(canvasRef.current, image, options, true);
+        renderImage(
+          canvasRef.current,
+          image,
+          options.aspect === "free"
+            ? { ...options, aspect: "original", zoom: 100 }
+            : options,
+          true,
+        );
         setRenderError("");
       } catch (error) {
         setRenderError(failureMessage(error));
@@ -306,7 +393,15 @@ function CropEditor({
   };
 
   const slider = (
-    key: "zoom" | "x" | "y" | "brightness" | "contrast" | "saturation",
+    key:
+      | "zoom"
+      | "freeWidth"
+      | "freeHeight"
+      | "x"
+      | "y"
+      | "brightness"
+      | "contrast"
+      | "saturation",
     label: string,
     min: number,
     max: number,
@@ -315,7 +410,9 @@ function CropEditor({
     <label className="cw-editor-slider" htmlFor={`${id}-${key}`}>
       <span>
         {label}
-        <output htmlFor={`${id}-${key}`}>{options[key]}%</output>
+        <output htmlFor={`${id}-${key}`}>
+          {Math.round(options[key] * 10) / 10}%
+        </output>
       </span>
       <input
         id={`${id}-${key}`}
@@ -408,11 +505,41 @@ function CropEditor({
                   <p>没有可编辑的预览</p>
                 </div>
               )}
-              <canvas
-                ref={canvasRef}
-                className={!image ? "cw-editor-hidden" : ""}
-                aria-label="裁剪和色彩调整后的图片预览"
-              />
+              <div
+                className="cw-crop-stage"
+                style={
+                  crop
+                    ? {
+                        width: `min(100%, ${510 * (options.aspect === "free" ? crop.imageWidth / crop.imageHeight : crop.width / crop.height)}px)`,
+                      }
+                    : undefined
+                }
+              >
+                <canvas
+                  ref={canvasRef}
+                  className={!image ? "cw-editor-hidden" : ""}
+                  aria-label="裁剪和色彩调整后的图片预览"
+                />
+                {options.aspect === "free" && crop && (
+                  <div
+                    className="cw-free-crop"
+                    aria-label="自由裁剪区域，拖动移动，右下角调整宽高"
+                    style={{
+                      left: `${(crop.x / crop.imageWidth) * 100}%`,
+                      top: `${(crop.y / crop.imageHeight) * 100}%`,
+                      width: `${(crop.width / crop.imageWidth) * 100}%`,
+                      height: `${(crop.height / crop.imageHeight) * 100}%`,
+                    }}
+                    onPointerDown={startCrop}
+                    onPointerMove={moveCrop}
+                    onPointerUp={(e) => endCrop(e)}
+                    onPointerCancel={(e) => endCrop(e, true)}
+                    onLostPointerCapture={(e) => endCrop(e, true)}
+                  >
+                    <span className="cw-crop-resize" aria-hidden="true" />
+                  </div>
+                )}
+              </div>
             </div>
             <div className="cw-editor-preview-meta">
               <span>
@@ -453,6 +580,7 @@ function CropEditor({
                   }
                 >
                   <option value="original">原始比例</option>
+                  <option value="free">自由裁剪</option>
                   {(["1:1", "4:3", "3:4", "16:9", "9:16"] as const).map(
                     (aspect) => (
                       <option key={aspect} value={aspect}>
@@ -491,7 +619,14 @@ function CropEditor({
                   <span aria-hidden="true">↕</span>垂直翻转
                 </button>
               </div>
-              {slider("zoom", "裁剪缩放", 100, 400)}
+              {options.aspect === "free" ? (
+                <>
+                  {slider("freeWidth", "裁剪宽度", 1, 100)}
+                  {slider("freeHeight", "裁剪高度", 1, 100)}
+                </>
+              ) : (
+                slider("zoom", "裁剪缩放", 100, 400)
+              )}
               {slider(
                 "x",
                 "水平位置",

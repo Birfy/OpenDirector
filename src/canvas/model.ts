@@ -3,6 +3,8 @@ import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
 import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
+import type { CanvasTagId } from "./nodeTags.ts";
+import { referenceIssue } from "./connectionPolicy.ts";
 /** Authored local canvas model, compatible with React Flow's node/edge shape. */
 export type CanvasNodeKind =
   | "image"
@@ -87,6 +89,8 @@ export interface TimelineTrack {
 
 export interface TimelineData {
   tracks: TimelineTrack[];
+  /** Retained independently of clip use; omitted only by older documents. */
+  importedAssets?: CanvasResource[];
   fps: number;
   width: number;
   height: number;
@@ -124,6 +128,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   title: string;
   prompt: string;
   src?: string;
+  tags?: CanvasTagId[];
   mimeType?: string;
   text?: string;
   assetState?: "ready" | "missing";
@@ -158,6 +163,8 @@ export interface CanvasEdge {
   target: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
+  /** Missing on legacy documents means generation_input; result provenance is not a reference. */
+  intent?: "generation_input" | "post_edit_result";
 }
 
 export interface CanvasDocument {
@@ -305,28 +312,9 @@ export function canAddReference(
   document: Pick<CanvasDocument, "nodes" | "edges">,
   source: string | null | undefined,
   target: string | null | undefined,
+  intent: CanvasEdge["intent"] = "generation_input",
 ): boolean {
-  if (!source || !target || source === target) return false;
-  const ids = new Set(document.nodes.map((node) => node.id));
-  if (!ids.has(source) || !ids.has(target)) return false;
-  const outgoing = new Map<string, string[]>();
-  for (const edge of document.edges) {
-    if (edge.source === source && edge.target === target) return false;
-    const targets = outgoing.get(edge.source) ?? [];
-    targets.push(edge.target);
-    outgoing.set(edge.source, targets);
-  }
-  // Adding source → target is cyclic exactly when target already reaches source.
-  const pending = [target],
-    visited = new Set<string>();
-  while (pending.length) {
-    const id = pending.pop()!;
-    if (id === source) return false;
-    if (visited.has(id)) continue;
-    visited.add(id);
-    pending.push(...(outgoing.get(id) ?? []));
-  }
-  return true;
+  return referenceIssue(document, source, target, intent) === null;
 }
 
 /** Applies a document command; UI-only selection and dragging flags stay outside this model. */
@@ -413,7 +401,12 @@ export function applyCommand(
       let base = node.data;
       if (type !== node.type) {
         // Only title/prompt survive a kind change; type-specific editors own their payloads.
-        base = { kind: type, title: node.data.title, prompt: node.data.prompt };
+        base = {
+          kind: type,
+          title: node.data.title,
+          prompt: node.data.prompt,
+          ...(node.data.tags ? { tags: [...node.data.tags] } : {}),
+        };
       } else if (
         command.patch.data &&
         "src" in command.patch.data &&
@@ -603,7 +596,14 @@ export function applyCommand(
     const ids = new Set(document.nodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))
       throw new Error("连线两端必须是当前画布中的节点。");
-    if (!canAddReference(document, command.edge.source, command.edge.target))
+    if (
+      !canAddReference(
+        document,
+        command.edge.source,
+        command.edge.target,
+        command.edge.intent,
+      )
+    )
       return document;
     return { ...document, edges: [...document.edges, { ...command.edge }] };
   }
@@ -613,6 +613,7 @@ export function applyCommand(
     if (
       target &&
       locked(target) &&
+      edge.intent !== "post_edit_result" &&
       (target.data.settings?.firstFrameNodeId === edge.source ||
         target.data.settings?.lastFrameNodeId === edge.source)
     )
@@ -620,7 +621,9 @@ export function applyCommand(
   }
   const edges = document.edges.filter((edge) => !removed.has(edge.id));
   if (edges.length === document.edges.length) return document;
-  const disconnected = document.edges.filter((edge) => removed.has(edge.id));
+  const disconnected = document.edges.filter(
+    (edge) => removed.has(edge.id) && edge.intent !== "post_edit_result",
+  );
   return {
     ...document,
     edges,
@@ -630,7 +633,12 @@ export function applyCommand(
         disconnected.some(
           (edge) => edge.source === id && edge.target === node.id,
         ) &&
-        !edges.some((edge) => edge.source === id && edge.target === node.id)
+        !edges.some(
+          (edge) =>
+            edge.intent !== "post_edit_result" &&
+            edge.source === id &&
+            edge.target === node.id,
+        )
           ? undefined
           : id,
       );

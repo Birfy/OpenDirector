@@ -3,6 +3,7 @@ import type { CanvasNode, StackData } from "./model";
 import { STACK_MEMBER_KINDS, resourceFromNode } from "./operations";
 import { EditorModal, ResourcePreview } from "./EditorModal";
 import { CanvasIcon } from "./CanvasIcon";
+import { indexNodes, isNodeLocked } from "./hierarchy";
 
 export interface StackEditorProps {
   node: CanvasNode;
@@ -43,6 +44,7 @@ export function StackEditor({
       ),
   );
   const current = byId.get(stack.nodeIds[stack.activeIndex] ?? "");
+  const hierarchy = indexNodes(nodes);
   const resource = current
     ? (resourceFromNode(current) ?? current.data.subject?.main)
     : undefined;
@@ -60,9 +62,9 @@ export function StackEditor({
   return (
     <EditorModal
       title={`资源堆叠 · ${node.data.title}`}
-      subtitle="有序引用画布根节点，切换当前展示的资源；不复制或重设源节点的父级"
+      subtitle="折叠整理画布节点，保留原节点与连线；移出至不足两个成员时自动解散堆叠"
       onClose={onClose}
-      disabled={node.locked || stack.nodeIds.length < 2}
+      disabled={node.locked}
       error={error}
       onApply={() => {
         if (stack.nodeIds.some((id) => !byId.has(id) || taken.has(id)))
@@ -145,7 +147,7 @@ export function StackEditor({
             </button>
           )}
           <p className="cw-domain-note">
-            可引用图片、视频、音频、文本、主体、时间线和导演阶段。每个节点最多属于一个堆叠。当前展示索引是本地工程的界面状态。
+            可整理图片、视频、音频、文本、主体、时间线和导演台。每个节点最多属于一个堆叠；原节点身份、素材和连线保留。
           </p>
         </div>
         <div>
@@ -182,6 +184,9 @@ export function StackEditor({
                 </button>
                 <button
                   aria-label={`移除资源 ${index + 1}`}
+                  disabled={Boolean(
+                    byId.get(id) && isNodeLocked(byId.get(id)!, hierarchy),
+                  )}
                   onClick={() => {
                     const nodeIds = stack.nodeIds.filter((item) => item !== id);
                     setStack({
@@ -205,7 +210,9 @@ export function StackEditor({
             {candidates.map((item) => (
               <button
                 key={item.id}
-                disabled={stack.nodeIds.length >= 50}
+                disabled={
+                  stack.nodeIds.length >= 50 || isNodeLocked(item, hierarchy)
+                }
                 onClick={() =>
                   setStack({ ...stack, nodeIds: [...stack.nodeIds, item.id] })
                 }
@@ -217,6 +224,16 @@ export function StackEditor({
             ))}
             {!candidates.length && <p>没有其他可引用的独立节点。</p>}
           </div>
+          <button
+            className="cw-wide-button"
+            disabled={node.locked}
+            onClick={() => {
+              onApply({ nodeIds: [], activeIndex: 0 });
+              onClose();
+            }}
+          >
+            解散堆叠，保留全部节点
+          </button>
         </div>
       </div>
     </EditorModal>

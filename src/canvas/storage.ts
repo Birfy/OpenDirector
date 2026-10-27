@@ -31,12 +31,14 @@ export interface DocumentSummary {
   title: string;
   updatedAt: number;
   nodeCount: number;
+  trashedAt?: number;
 }
 export interface StorageOptions {
   indexedDB?: IDBFactory;
   databaseName?: string;
 }
 interface StoredDocument {
+  trashedAt?: number;
   id: string;
   document: CanvasDocument;
   updatedAt: number;
@@ -202,6 +204,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       typeof raw.target !== "string" ||
       !nodeIds.has(raw.source) ||
       !nodeIds.has(raw.target) ||
+      (raw.intent !== undefined &&
+        raw.intent !== "generation_input" &&
+        raw.intent !== "post_edit_result") ||
       (raw.sourceHandle !== null && !optionalString(raw.sourceHandle)) ||
       (raw.targetHandle !== null && !optionalString(raw.targetHandle))
     )
@@ -212,6 +217,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       id: raw.id,
       source: raw.source,
       target: raw.target,
+      ...(raw.intent !== undefined
+        ? { intent: raw.intent as CanvasEdge["intent"] }
+        : {}),
       ...(raw.sourceHandle !== undefined
         ? { sourceHandle: raw.sourceHandle as string | null }
         : {}),
@@ -227,7 +235,12 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       if (
         id !== undefined &&
         (!nodeIds.has(id) ||
-          !edges.some((edge) => edge.source === id && edge.target === node.id))
+          !edges.some(
+            (edge) =>
+              edge.intent !== "post_edit_result" &&
+              edge.source === id &&
+              edge.target === node.id,
+          ))
       )
         return failure("invalid-document", "视频首尾帧必须引用已连接的节点。");
     }
@@ -303,9 +316,17 @@ export async function saveDocument(
     document: parsed.value,
     updatedAt,
   };
-  const written = await requestStore(
-    "readwrite",
-    (store) => store.put(stored),
+  const written = await updateStoredDocument(
+    stored.id,
+    (existing) => ({
+      ok: true,
+      value: {
+        ...stored,
+        ...(object(existing) && finite(existing.trashedAt)
+          ? { trashedAt: existing.trashedAt }
+          : {}),
+      },
+    }),
     options,
   );
   return written.ok
@@ -335,6 +356,7 @@ export async function loadDocument(
   if (read.value === undefined) return { ok: true, value: null };
   if (!object(read.value))
     return failure("invalid-document", "本地画布记录无效。");
+  if (finite(read.value.trashedAt)) return { ok: true, value: null };
   const parsed = parseDocument(read.value.document);
   if (parsed.ok && parsed.value.id !== id)
     return failure("invalid-document", "本地画布 ID 与存储键不一致。");
@@ -342,7 +364,7 @@ export async function loadDocument(
 }
 
 export async function listDocuments(
-  options: StorageOptions = {},
+  options: StorageOptions & { trashed?: boolean } = {},
 ): Promise<Result<DocumentSummary[]>> {
   const read = await requestStore<unknown[]>(
     "readonly",
@@ -361,7 +383,10 @@ export async function listDocuments(
       !Array.isArray(item.document.nodes)
     )
       return failure("invalid-document", "本地画布列表含有无效记录。");
+    const trashedAt = finite(item.trashedAt) ? item.trashedAt : undefined;
+    if (Boolean(trashedAt !== undefined) !== Boolean(options.trashed)) continue;
     summaries.push({
+      ...(trashedAt !== undefined ? { trashedAt } : {}),
       id: item.id,
       title: item.document.title,
       updatedAt: item.updatedAt,
@@ -372,6 +397,93 @@ export async function listDocuments(
     ok: true,
     value: summaries.sort((a, b) => b.updatedAt - a.updatedAt),
   };
+}
+
+/** Trash is record metadata; the complete document stays available for restoration. */
+export async function trashDocument(
+  id: string,
+  options: StorageOptions = {},
+): Promise<Result<void>> {
+  return setDocumentTrashed(id, true, options);
+}
+export async function restoreDocument(
+  id: string,
+  options: StorageOptions = {},
+): Promise<Result<void>> {
+  return setDocumentTrashed(id, false, options);
+}
+async function setDocumentTrashed(
+  id: string,
+  trashed: boolean,
+  options: StorageOptions,
+): Promise<Result<void>> {
+  return updateStoredDocument(
+    id,
+    (value) => {
+      if (!object(value) || !finite(value.updatedAt))
+        return failure("invalid-document", "本地项目不存在。");
+      const parsed = parseDocument(value.document);
+      if (!parsed.ok) return parsed;
+      if (parsed.value.id !== id)
+        return failure("invalid-document", "本地画布 ID 与存储键不一致。");
+      return {
+        ok: true,
+        value: {
+          id,
+          document: parsed.value,
+          updatedAt: value.updatedAt,
+          ...(trashed ? { trashedAt: Date.now() } : {}),
+        },
+      };
+    },
+    options,
+  );
+}
+
+/** Read/modify/write share one transaction, so autosave cannot resurrect a trashed project. */
+async function updateStoredDocument(
+  id: string,
+  transform: (existing: unknown) => Result<StoredDocument>,
+  options: StorageOptions,
+): Promise<Result<void>> {
+  const opened = await openDatabase(options);
+  if (!opened.ok) return opened;
+  const db = opened.value;
+  try {
+    return await new Promise<Result<void>>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const read = store.get(id);
+      let problem: CanvasStorageError | undefined;
+      read.onsuccess = () => {
+        try {
+          const next = transform(read.result);
+          if (!next.ok) {
+            problem = next.error;
+            tx.abort();
+            return;
+          }
+          store.put(next.value);
+        } catch (error) {
+          problem = { code: "storage", message: errorMessage(error) };
+          tx.abort();
+        }
+      };
+      tx.oncomplete = () => resolve({ ok: true, value: undefined });
+      tx.onabort = tx.onerror = () =>
+        resolve({
+          ok: false,
+          error: problem ?? {
+            code: "storage",
+            message: `项目保存失败：${errorMessage(tx.error ?? read.error)}`,
+          },
+        });
+    });
+  } catch (error) {
+    return failure("storage", errorMessage(error));
+  } finally {
+    db.close();
+  }
 }
 
 export async function deleteDocument(

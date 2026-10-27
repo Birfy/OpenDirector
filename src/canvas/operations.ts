@@ -2,7 +2,7 @@ import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import { mapSettingsNodeReferences } from "./model.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
-import { createNode } from "./model.ts";
+import { applyCommand, createNode } from "./model.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
@@ -199,6 +199,22 @@ export function copySelection(
   };
 }
 
+/** Cut the same complete hierarchy/stack that paste owns, or leave everything unchanged. */
+export function cutSelection(
+  document: CanvasDocument,
+  ids: readonly string[],
+): { document: CanvasDocument; fragment?: CanvasFragment } {
+  const fragment = copySelection(document, ids);
+  if (!fragment.nodes.length) return { document };
+  const included = new Set(fragment.nodes.map((node) => node.id));
+  const next = applyCommand(document, {
+    type: "remove-nodes",
+    ids: [...included],
+  });
+  if (next.nodes.some((node) => included.has(node.id))) return { document };
+  return { document: next, fragment };
+}
+
 /**
  * Duplicates a self-contained fragment. Offsets apply only to root nodes, so
  * nested children move once. Returned ids include every newly inserted node.
@@ -303,6 +319,12 @@ function remapDataReferences(
       ? {
           timeline: {
             ...data.timeline,
+            ...(data.timeline.importedAssets
+              ? {
+                  importedAssets:
+                    data.timeline.importedAssets.map(remapResource),
+                }
+              : {}),
             tracks: data.timeline.tracks.map((track) => ({
               ...track,
               clips: track.clips.map((clip) => ({
@@ -414,9 +436,27 @@ export function updateStack(
     })
   )
     throw new Error("堆叠引用无效，或成员已属于其他堆叠。");
+  const oldIds = target.data.stack?.nodeIds ?? [];
+  const index = indexNodes(document.nodes);
+  if (
+    stack.nodeIds.some(
+      (id) => !oldIds.includes(id) && isNodeLocked(index.get(id)!, index),
+    )
+  )
+    throw new Error("锁定节点不能加入堆叠。");
+  if (stack.nodeIds.length < 2) return unstackSelection(document, [id]);
+  const removed = oldIds.filter((id) => !stack.nodeIds.includes(id));
+  if (
+    removed.some((id) => {
+      const node = index.get(id);
+      return node && isNodeLocked(node, index);
+    })
+  )
+    throw new Error("请先解锁要移出的节点。");
+  const released = releaseStackMembers(document.nodes, target, removed);
   return {
     ...document,
-    nodes: document.nodes.map((node) =>
+    nodes: released.map((node) =>
       node.id === id
         ? {
             ...node,
@@ -431,6 +471,64 @@ export function updateStack(
         : node,
     ),
   };
+}
+
+/** Removing the wrapper leaves node identities/references intact and lays content out at the stack. */
+export function unstackSelection(
+  document: CanvasDocument,
+  ids: readonly string[],
+): CanvasDocument {
+  const byId = indexNodes(document.nodes);
+  const stacks = document.nodes.filter(
+    (node) =>
+      ids.includes(node.id) &&
+      node.type === "stack" &&
+      !isNodeLocked(node, byId),
+  );
+  if (!stacks.length) return document;
+  const removed = new Set(stacks.map((node) => node.id));
+  let nodes = document.nodes;
+  for (const stack of stacks)
+    nodes = releaseStackMembers(nodes, stack, stack.data.stack?.nodeIds ?? []);
+  return {
+    ...document,
+    nodes: nodes.filter((node) => !removed.has(node.id)),
+    edges: document.edges.filter(
+      (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+    ),
+  };
+}
+
+function releaseStackMembers(
+  nodes: CanvasNode[],
+  stack: CanvasNode,
+  ids: readonly string[],
+): CanvasNode[] {
+  if (!ids.length) return nodes;
+  const byId = indexNodes(nodes),
+    members = ids
+      .map((id) => byId.get(id))
+      .filter((node): node is CanvasNode => Boolean(node));
+  const columns = Math.max(1, Math.ceil(Math.sqrt(members.length)));
+  const cellWidth =
+    Math.max(...members.map((node) => node.width), stack.width) + 64;
+  const cellHeight =
+    Math.max(...members.map((node) => node.height), stack.height) + 64;
+  const center = absolutePosition(stack, nodes);
+  const positions = new Map(
+    members.map((node, index) => [
+      node.id,
+      {
+        x: center.x + (index % columns) * cellWidth,
+        y: center.y + Math.floor(index / columns) * cellHeight,
+      },
+    ]),
+  );
+  return nodes.map((node) =>
+    positions.has(node.id) && !isNodeLocked(node, byId)
+      ? { ...node, position: positions.get(node.id)! }
+      : node,
+  );
 }
 
 /** Captures a media snapshot so timeline/subject edits do not lose assets when the source node is removed. */

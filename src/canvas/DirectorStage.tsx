@@ -6,14 +6,32 @@ import {
   createLocalStage,
   parseLocalStageValue,
   sampleStage,
+  editStageObjectAt,
+  editStageCameraAt,
+  captureStageFrame,
+  stageFrameTimes,
+  removeStageFrame,
+  stageOutputSize,
+  defaultStageCamera,
+  STAGE_RATIOS,
 } from "./stageDocument";
 import type {
   LocalStageDocument,
   StageCamera,
+  StageSample,
+  StageSampleObject,
+  StageMotionClip,
+  StageShot,
   StageObject,
   StageTransform,
   Vector3Value,
 } from "./stageDocument";
+import {
+  commitStageHistory,
+  createStageHistory,
+  navigateStageHistory,
+  type StageHistory,
+} from "./stageHistory";
 import { EditorModal } from "./EditorModal";
 import "./director-stage.css";
 import { STAGE_MOTIONS, sampleJointPose } from "./stageMotion";
@@ -117,9 +135,9 @@ function buildObject(value: StageObject): THREE.Group {
   applyTransform(group, value);
   return group;
 }
-function poseJoints(group: THREE.Object3D, value: StageObject, time: number) {
+function poseJoints(group: THREE.Object3D, value: StageSampleObject) {
   if (value.kind !== "person") return;
-  const pose = sampleJointPose(value.motion, time);
+  const pose = sampleJointPose(value.motion, value.motionTime);
   const hips = group.getObjectByName("hips");
   if (hips) hips.position.y = 0.9 + pose.hipsY;
   for (const side of ["left", "right"] as const) {
@@ -162,11 +180,7 @@ function setCamera(runtime: StageRuntime, value: StageCamera) {
   runtime.controls.target.set(value.target.x, value.target.y, value.target.z);
   runtime.controls.update();
 }
-function displayPose(
-  runtime: StageRuntime,
-  pose: Pick<LocalStageDocument, "camera" | "objects">,
-  time = 0,
-) {
+function displayPose(runtime: StageRuntime, pose: StageSample) {
   setCamera(runtime, pose.camera);
   for (const child of runtime.root.children) {
     const data = pose.objects.find(
@@ -174,7 +188,7 @@ function displayPose(
     );
     if (data) {
       applyTransform(child, data);
-      poseJoints(child, data, time);
+      poseJoints(child, data);
     }
   }
 }
@@ -237,18 +251,21 @@ export function DirectorStage({
   onClose,
   onRender,
 }: DirectorStageProps) {
-  const [stage, setStage] = useState(() =>
-    node.data.localStage
-      ? parseLocalStageValue(node.data.localStage)
-      : createLocalStage(),
+  const [historyState, setHistoryState] = useState(() =>
+    createStageHistory(
+      node.data.localStage
+        ? parseLocalStageValue(node.data.localStage)
+        : createLocalStage(),
+    ),
   );
+  const stage = historyState.present;
+  const history = useRef(historyState);
   const [selected, setSelected] = useState<string | null>(
       () => stage.objects[0]?.id ?? null,
     ),
     [error, setError] = useState(""),
     [playing, setPlaying] = useState(false),
     [time, setTime] = useState(0),
-    [preview, setPreview] = useState(false),
     [ready, setReady] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
@@ -259,38 +276,161 @@ export function DirectorStage({
     stageRef = useRef(stage),
     timeRef = useRef(time),
     playingRef = useRef(playing),
-    previewRef = useRef(preview),
     importInput = useRef<HTMLInputElement>(null),
     active = useRef(true);
   stageRef.current = stage;
   timeRef.current = time;
   playingRef.current = playing;
-  previewRef.current = preview;
-  const object = stage.objects.find((item) => item.id === selected);
+  const sampled = sampleStage(stage, time);
+  const object = sampled.objects.find((item) => item.id === selected);
+  const cameraValue = sampled.camera;
+  const outputSize = stageOutputSize(stage.aspectRatio);
+  const frameTimes = stageFrameTimes(stage);
+  const installHistory = (next: StageHistory) => {
+    if (next === history.current) return;
+    history.current = next;
+    stageRef.current = next.present;
+    setHistoryState(next);
+    setTime((current) => Math.min(current, next.present.duration));
+    setPlaying(false);
+    setRendered(null);
+    setInserted(false);
+    setError("");
+  };
   const edit = (
     operation: (value: LocalStageDocument) => LocalStageDocument,
   ) => {
     try {
-      const next = parseLocalStageValue(operation(stageRef.current));
-      stageRef.current = next;
-      setStage(next);
-      setTime((current) => Math.min(current, next.duration));
-      setPlaying(false);
-      setPreview(false);
-      setError("");
+      installHistory(
+        commitStageHistory(history.current, operation(stageRef.current)),
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "舞台修改失败。");
     }
   };
+  const navigate = (direction: "undo" | "redo") => {
+    if (renderProgress !== null) return;
+    installHistory(navigateStageHistory(history.current, direction));
+  };
   const editObject = (patch: Partial<StageObject>) => {
     if (selected)
-      edit((current) => ({
-        ...current,
-        objects: current.objects.map((item) =>
-          item.id === selected ? { ...item, ...patch } : item,
-        ),
-      }));
+      edit((current) =>
+        editStageObjectAt(current, selected, timeRef.current, patch),
+      );
   };
+  const editCamera = (patch: Partial<StageCamera>) =>
+    edit((current) =>
+      editStageCameraAt(
+        current,
+        sampleStage(current, timeRef.current).cameraId,
+        timeRef.current,
+        patch,
+      ),
+    );
+  const updateClip = (id: string, patch: Partial<StageMotionClip>) => {
+    if (object)
+      editObject({
+        motionClips: object.motionClips.map((clip) =>
+          clip.id === id ? { ...clip, ...patch } : clip,
+        ),
+      });
+  };
+  const addMotionClip = () => {
+    if (!object) return;
+    const start = timeRef.current;
+    const next =
+      object.motionClips.find((clip) => clip.start > start)?.start ??
+      stage.duration;
+    editObject({
+      motionClips: [
+        ...object.motionClips,
+        {
+          id: crypto.randomUUID(),
+          start,
+          duration: Math.min(2, next - start),
+          motion: { preset: "walk", speed: 1, amount: 1 },
+        },
+      ],
+    });
+  };
+  const updateShot = (id: string, patch: Partial<StageShot>) =>
+    edit((current) => ({
+      ...current,
+      shots: current.shots.map((shot) =>
+        shot.id === id ? { ...shot, ...patch } : shot,
+      ),
+    }));
+  const addShot = () =>
+    edit((current) => {
+      const start = timeRef.current;
+      const next =
+        current.shots.find((shot) => shot.start > start)?.start ??
+        current.duration;
+      return {
+        ...current,
+        cameraSource: "storyboard",
+        shots: [
+          ...current.shots,
+          {
+            id: crypto.randomUUID(),
+            cameraId: current.activeCameraId,
+            start,
+            duration: Math.min(2, next - start),
+          },
+        ],
+      };
+    });
+  const addCamera = () =>
+    edit((current) => {
+      const id = crypto.randomUUID();
+      return {
+        ...current,
+        activeCameraId: id,
+        cameraSource: "camera",
+        cameras: [
+          ...current.cameras,
+          {
+            id,
+            name: `摄像机 ${current.cameras.length + 1}`,
+            pose: sampleStage(current, timeRef.current).camera,
+            keyframes: [],
+          },
+        ],
+      };
+    });
+  const removeCamera = () =>
+    edit((current) => {
+      if (current.cameras.length === 1) throw new Error("至少保留一个摄像机。");
+      const id = current.activeCameraId;
+      if (current.shots.some((shot) => shot.cameraId === id))
+        throw new Error("此机位仍被分镜引用，请先更换或删除对应分镜。");
+      const cameras = current.cameras.filter((camera) => camera.id !== id);
+      return { ...current, cameras, activeCameraId: cameras[0]!.id };
+    });
+  const gestureEdit = useRef(edit);
+  gestureEdit.current = edit;
+  const shortcut = useRef(navigate);
+  shortcut.current = navigate;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof HTMLElement) ||
+        !target.closest(".cw-stage-dialog") ||
+        target.matches(
+          "input:not([type=range]),textarea,select,[contenteditable=true]",
+        )
+      )
+        return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.stopPropagation();
+        shortcut.current(event.shiftKey ? "redo" : "undo");
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   useEffect(() => {
     active.current = true;
@@ -343,41 +483,36 @@ export function DirectorStage({
     scene.add(fill);
     const current = { renderer, scene, camera, controls, root, grid };
     runtime.current = current;
-    setCamera(current, stageRef.current.camera);
+    setCamera(current, sampleStage(stageRef.current, timeRef.current).camera);
     const resize = () => {
-      const width = container.clientWidth,
-        height = container.clientHeight;
-      if (!width || !height) return;
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
+      const width = container.clientWidth;
+      if (!width) return;
+      const size = stageOutputSize(stageRef.current.aspectRatio);
+      renderer.setSize(width, (width * size.height) / size.width, false);
+      camera.aspect = size.width / size.height;
       camera.updateProjectionMatrix();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     resize();
+    let gestureCameraId: string | null = null;
     const orbitStart = () => {
       setPlaying(false);
       playingRef.current = false;
-      if (previewRef.current) {
-        const sampled = sampleStage(stageRef.current, timeRef.current);
-        const next = { ...stageRef.current, ...sampled };
-        stageRef.current = next;
-        setStage(next);
-        setPreview(false);
-        previewRef.current = false;
-      }
+      gestureCameraId = sampleStage(stageRef.current, timeRef.current).cameraId;
     };
     const orbitEnd = () => {
-      const next = {
-        ...stageRef.current,
-        camera: {
-          position: vector(camera.position),
-          target: vector(controls.target),
-          fov: camera.fov,
-        },
+      if (!gestureCameraId) return;
+      const id = gestureCameraId;
+      gestureCameraId = null;
+      const pose = {
+        position: vector(camera.position),
+        target: vector(controls.target),
+        fov: camera.fov,
       };
-      stageRef.current = next;
-      setStage(next);
+      gestureEdit.current((current) =>
+        editStageCameraAt(current, id, timeRef.current, pose),
+      );
     };
     controls.addEventListener("start", orbitStart);
     controls.addEventListener("end", orbitEnd);
@@ -469,8 +604,7 @@ export function DirectorStage({
     if (!current) return;
     current.scene.background = new THREE.Color(stage.background);
     current.grid.visible = stage.grid;
-    if (!previewRef.current) setCamera(current, stage.camera);
-  }, [stage.camera, stage.background, stage.grid, ready]);
+  }, [stage.background, stage.grid, ready]);
   useEffect(() => {
     const current = runtime.current;
     if (!current) return;
@@ -487,12 +621,20 @@ export function DirectorStage({
   }, [selected, stage.objects, ready]);
   useEffect(() => {
     if (!runtime.current) return;
-    displayPose(
-      runtime.current,
-      preview ? sampleStage(stage, time) : stage,
-      preview ? time : 0,
+    runtime.current.controls.enabled = renderProgress === null;
+  }, [renderProgress, ready]);
+  useEffect(() => {
+    if (!runtime.current) return;
+    const size = stageOutputSize(stage.aspectRatio);
+    runtime.current.camera.aspect = size.width / size.height;
+    const width = mount.current?.clientWidth ?? size.width;
+    runtime.current.renderer.setSize(
+      width,
+      (width * size.height) / size.width,
+      false,
     );
-  }, [stage, time, preview, ready]);
+    displayPose(runtime.current, sampleStage(stage, time));
+  }, [stage, time, ready]);
   useEffect(() => {
     if (!playing) return;
     const initial = timeRef.current,
@@ -533,6 +675,8 @@ export function DirectorStage({
           position: { x: current.objects.length * 1.3, y: 0, z: 0 },
           rotation: { x: 0, y: 0, z: 0 },
           scale: { x: 1, y: 1, z: 1 },
+          keyframes: [],
+          motionClips: [],
         },
       ],
     }));
@@ -543,55 +687,25 @@ export function DirectorStage({
     edit((current) => ({
       ...current,
       objects: current.objects.filter((item) => item.id !== selected),
-      keyframes: current.keyframes.map((frame) => ({
-        ...frame,
-        objects: frame.objects.filter((item) => item.id !== selected),
-      })),
     }));
     setSelected(null);
   };
-  const captureKeyframe = () => {
-    const pose = previewRef.current
-        ? sampleStage(stageRef.current, timeRef.current)
-        : stageRef.current,
-      at = Number(timeRef.current.toFixed(3));
-    edit((current) => ({
-      ...current,
-      ...pose,
-      keyframes: [
-        ...current.keyframes.filter((frame) => frame.time !== at),
-        {
-          id: crypto.randomUUID(),
-          time: at,
-          camera: structuredClone(pose.camera),
-          objects: pose.objects.map((item) => ({
-            id: item.id,
-            transform: {
-              position: { ...item.position },
-              rotation: { ...item.rotation },
-              scale: { ...item.scale },
-            },
-          })),
-        },
-      ].sort((a, b) => a.time - b.time),
-    }));
-  };
+  const captureKeyframe = () =>
+    edit((current) => captureStageFrame(current, timeRef.current));
   const screenshot = () => {
     const current = runtime.current;
     if (!current) throw new Error("舞台渲染器尚未就绪。");
+    displayPose(current, sampleStage(stageRef.current, timeRef.current));
     current.renderer.render(current.scene, current.camera);
     return current.renderer.domElement.toDataURL("image/png");
   };
   const download = (content: string, name: string, mime: string) => {
-    const url = content.startsWith("data:")
-      ? content
-      : URL.createObjectURL(new Blob([content], { type: mime }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = name;
-    anchor.click();
-    if (!url.startsWith("data:"))
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadFile(
+      content.startsWith("data:")
+        ? content
+        : new Blob([content], { type: mime }),
+      name,
+    );
   };
   const snapshot = () => {
     try {
@@ -651,10 +765,16 @@ export function DirectorStage({
     let renderer: THREE.WebGLRenderer | undefined;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(1280, 720);
+      const size = stageOutputSize(snapshot.aspectRatio);
+      renderer.setSize(size.width, size.height);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.shadowMap.enabled = true;
-      const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.05, 1000);
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        size.width / size.height,
+        0.05,
+        1000,
+      );
       const blob = await encodeMp4({
         canvas: renderer.domElement,
         duration: snapshot.duration,
@@ -681,7 +801,7 @@ export function DirectorStage({
             );
             if (object) {
               applyTransform(child, object);
-              poseJoints(child, object, at);
+              poseJoints(child, object);
             }
           }
           renderer!.render(scene, camera);
@@ -759,6 +879,18 @@ export function DirectorStage({
       actions={
         <>
           <button
+            disabled={!history.current.past.length || renderProgress !== null}
+            onClick={() => navigate("undo")}
+          >
+            撤销
+          </button>
+          <button
+            disabled={!history.current.future.length || renderProgress !== null}
+            onClick={() => navigate("redo")}
+          >
+            重做
+          </button>
+          <button
             disabled={renderProgress !== null}
             onClick={() => importInput.current?.click()}
           >
@@ -787,373 +919,586 @@ export function DirectorStage({
         </>
       }
     >
-      {renderProgress !== null && (
-        <div className="cw-render-status" role="status">
-          <progress value={renderProgress} max={1} />
-          <span>正在合成预演 {Math.round(renderProgress * 100)}%</span>
-          <button onClick={() => exporting.current?.abort()}>取消合成</button>
-        </div>
-      )}
-      {rendered && (
-        <div className="cw-render-status" role="status">
-          <span>预演 MP4 已完成 · 1280×720 · 30 fps</span>
-          <button
-            disabled={renderProgress !== null}
-            onClick={() =>
-              downloadFile(
-                rendered,
-                downloadFilename(node.data.title + "-预演", "video/mp4"),
-              )
-            }
-          >
-            下载预演 MP4
-          </button>
-          <button
-            disabled={renderProgress !== null || node.locked || inserted}
-            onClick={() => void insertRender()}
-          >
-            {inserted ? "已加入画布" : "将预演视频加入画布"}
-          </button>
-        </div>
-      )}
-      <fieldset className="cw-editor-work" disabled={renderProgress !== null}>
-        <div className="cw-stage-layout">
-          <aside className="cw-stage-objects">
-            <h3>场景主体</h3>
-            <div className="cw-stage-add">
-              {(["person", "box", "sphere"] as const).map((kind) => (
-                <button key={kind} onClick={() => addObject(kind)}>
-                  + {titles[kind]}
-                </button>
-              ))}
-            </div>
-            <div className="cw-stage-object-list">
-              {stage.objects.map((item) => (
-                <button
-                  key={item.id}
-                  aria-pressed={selected === item.id}
-                  onClick={() => setSelected(item.id)}
-                >
-                  <span style={{ background: item.color }} />
-                  {item.name}
-                </button>
-              ))}
-            </div>
-            <label className="cw-domain-field">
-              背景颜色
-              <input
-                type="color"
-                value={stage.background}
-                onChange={(event) =>
-                  edit((current) => ({
-                    ...current,
-                    background: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="cw-domain-checkbox">
-              <input
-                type="checkbox"
-                checked={stage.grid}
-                onChange={(event) =>
-                  edit((current) => ({
-                    ...current,
-                    grid: event.target.checked,
-                  }))
-                }
-              />
-              显示地面网格
-            </label>
-            <p className="cw-domain-note">
-              左键环绕 · 右键平移 · 滚轮缩放
-              <br />
-              点击主体选择，再调整右侧变换。
-            </p>
-          </aside>
-          <section className="cw-stage-center">
-            <div
-              className="cw-stage-viewport"
-              ref={mount}
-              role="img"
-              aria-label="可交互的三维导演舞台"
-            />
-            <div className="cw-stage-transport">
-              <button
-                disabled={!ready}
-                onClick={() => {
-                  setPreview(true);
-                  if (time >= stage.duration) setTime(0);
-                  setPlaying((current) => !current);
-                }}
-              >
-                {playing ? "暂停" : "播放动作与关键帧"}
-              </button>
-              <output>
-                {time.toFixed(2)} / {stage.duration.toFixed(2)} 秒
-              </output>
-              <label>
-                总时长
+      <div>
+        {renderProgress !== null && (
+          <div className="cw-render-status" role="status">
+            <progress value={renderProgress} max={1} />
+            <span>正在合成预演 {Math.round(renderProgress * 100)}%</span>
+            <button onClick={() => exporting.current?.abort()}>取消合成</button>
+          </div>
+        )}
+        {rendered && (
+          <div className="cw-render-status" role="status">
+            <span>
+              预演 MP4 已完成 · {outputSize.width}×{outputSize.height} · 30 fps
+            </span>
+            <button
+              disabled={renderProgress !== null}
+              onClick={() =>
+                downloadFile(
+                  rendered,
+                  downloadFilename(node.data.title + "-预演", "video/mp4"),
+                )
+              }
+            >
+              下载预演 MP4
+            </button>
+            <button
+              disabled={renderProgress !== null || node.locked || inserted}
+              onClick={() => void insertRender()}
+            >
+              {inserted ? "已加入画布" : "将预演视频加入画布"}
+            </button>
+          </div>
+        )}
+        <fieldset className="cw-editor-work" disabled={renderProgress !== null}>
+          <div className="cw-stage-layout">
+            <aside className="cw-stage-objects">
+              <h3>场景主体</h3>
+              <div className="cw-stage-add">
+                {(["person", "box", "sphere"] as const).map((kind) => (
+                  <button key={kind} onClick={() => addObject(kind)}>
+                    + {titles[kind]}
+                  </button>
+                ))}
+              </div>
+              <div className="cw-stage-object-list">
+                {stage.objects.map((item) => (
+                  <button
+                    key={item.id}
+                    aria-pressed={selected === item.id}
+                    onClick={() => setSelected(item.id)}
+                  >
+                    <span style={{ background: item.color }} />
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+              <label className="cw-domain-field">
+                背景颜色
                 <input
-                  aria-label="舞台总时长"
-                  type="number"
-                  min={0.1}
-                  step={0.5}
-                  value={stage.duration}
+                  type="color"
+                  value={stage.background}
                   onChange={(event) =>
                     edit((current) => ({
                       ...current,
-                      duration: Number(event.target.value),
+                      background: event.target.value,
                     }))
                   }
                 />
               </label>
-              <button onClick={captureKeyframe} disabled={!ready}>
-                在此记录关键帧
-              </button>
-            </div>
-            <input
-              aria-label="舞台播放位置"
-              type="range"
-              min={0}
-              max={stage.duration}
-              step={0.01}
-              value={Math.min(time, stage.duration)}
-              onChange={(event) => {
-                setPlaying(false);
-                setTime(Number(event.target.value));
-                setPreview(true);
-              }}
-            />
-            <div className="cw-stage-keyframes">
-              {stage.keyframes.map((frame) => (
-                <div key={frame.id}>
-                  <button
-                    onClick={() => {
-                      setPlaying(false);
-                      setTime(frame.time);
-                      setPreview(true);
-                    }}
-                  >
-                    {frame.time.toFixed(2)}s
-                  </button>
-                  <button
-                    aria-label={`删除 ${frame.time} 秒关键帧`}
-                    onClick={() =>
+              <label className="cw-domain-checkbox">
+                <input
+                  type="checkbox"
+                  checked={stage.grid}
+                  onChange={(event) =>
+                    edit((current) => ({
+                      ...current,
+                      grid: event.target.checked,
+                    }))
+                  }
+                />
+                显示地面网格
+              </label>
+              <p className="cw-domain-note">
+                左键环绕 · 右键平移 · 滚轮缩放
+                <br />
+                点击主体选择，再调整右侧变换。
+              </p>
+            </aside>
+            <section className="cw-stage-center">
+              <div
+                className="cw-stage-viewport"
+                style={{
+                  aspectRatio: `${outputSize.width} / ${outputSize.height}`,
+                  width: `min(100%, calc(min(55vh, 480px) * ${outputSize.width / outputSize.height}))`,
+                }}
+                ref={mount}
+                role="img"
+                aria-label="可交互的三维导演舞台"
+              />
+              <div className="cw-stage-transport">
+                <button
+                  disabled={!ready}
+                  onClick={() => {
+                    if (time >= stage.duration) setTime(0);
+                    setPlaying((current) => !current);
+                  }}
+                >
+                  {playing ? "暂停" : "播放动作与关键帧"}
+                </button>
+                <output>
+                  {time.toFixed(2)} / {stage.duration.toFixed(2)} 秒
+                </output>
+                <label>
+                  总时长
+                  <input
+                    aria-label="舞台总时长"
+                    type="number"
+                    min={0.1}
+                    step={0.5}
+                    value={stage.duration}
+                    onChange={(event) =>
                       edit((current) => ({
                         ...current,
-                        keyframes: current.keyframes.filter(
-                          (item) => item.id !== frame.id,
-                        ),
+                        duration: Number(event.target.value),
                       }))
                     }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {!stage.keyframes.length && (
-                <p>在起点和终点分别调整镜头或主体，然后记录关键帧即可预演。</p>
-              )}
-            </div>
-          </section>
-          <aside className="cw-stage-inspector">
-            <h3>{object ? "主体变换" : "摄像机"}</h3>
-            {object && (
-              <>
-                <label className="cw-domain-field">
-                  名称
-                  <input
-                    value={object.name}
-                    onChange={(event) =>
-                      editObject({ name: event.target.value })
-                    }
                   />
                 </label>
-                <label className="cw-domain-field">
-                  材质颜色
-                  <input
-                    type="color"
-                    value={object.color}
-                    onChange={(event) =>
-                      editObject({ color: event.target.value })
-                    }
-                  />
-                </label>
-                {object.kind === "person" && (
-                  <>
-                    <label className="cw-domain-field">
-                      角色动作
+                <button onClick={captureKeyframe} disabled={!ready}>
+                  在此记录关键帧
+                </button>
+              </div>
+              <input
+                aria-label="舞台播放位置"
+                type="range"
+                min={0}
+                max={stage.duration}
+                step={0.01}
+                value={Math.min(time, stage.duration)}
+                onChange={(event) => {
+                  setPlaying(false);
+                  setTime(Number(event.target.value));
+                }}
+              />
+              <div className="cw-stage-keyframes">
+                {frameTimes.map((frame) => (
+                  <div key={frame}>
+                    <button
+                      onClick={() => {
+                        setPlaying(false);
+                        setTime(frame);
+                      }}
+                    >
+                      {frame.toFixed(2)}s
+                    </button>
+                    <button
+                      aria-label={`删除 ${frame} 秒关键帧`}
+                      onClick={() =>
+                        edit((current) => removeStageFrame(current, frame))
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {!frameTimes.length && (
+                  <p>
+                    在起点和终点分别调整镜头或主体，然后记录关键帧即可预演。
+                  </p>
+                )}
+              </div>
+              <section className="cw-stage-storyboard">
+                <h3>分镜轨道</h3>
+                <button onClick={addShot}>在播放头添加当前机位</button>
+                <p className="cw-domain-note">
+                  镜头区间不能重叠；空白区间使用当前机位。切换“分镜硬切”可预览并导出同一镜头序列。
+                </p>
+                {stage.shots.map((shot, index) => (
+                  <div className="cw-stage-shot" key={shot.id}>
+                    <label>
+                      镜头 {index + 1}
                       <select
-                        value={object.motion?.preset ?? "idle"}
+                        aria-label={`镜头 ${index + 1} 机位`}
+                        value={shot.cameraId}
                         onChange={(event) =>
-                          editObject({
-                            motion: {
-                              preset: event.target
-                                .value as keyof typeof STAGE_MOTIONS,
-                              speed: object.motion?.speed ?? 1,
-                              amount: object.motion?.amount ?? 1,
-                            },
-                          })
+                          updateShot(shot.id, { cameraId: event.target.value })
                         }
                       >
-                        {Object.entries(STAGE_MOTIONS).map(([key, title]) => (
-                          <option key={key} value={key}>
-                            {title}
+                        {stage.cameras.map((camera) => (
+                          <option key={camera.id} value={camera.id}>
+                            {camera.name}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <label className="cw-domain-field">
-                      动作速度
+                    <label>
+                      开始（秒）
                       <input
+                        aria-label={`镜头 ${index + 1} 开始`}
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={shot.start}
+                        onChange={(event) =>
+                          updateShot(shot.id, {
+                            start: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      时长（秒）
+                      <input
+                        aria-label={`镜头 ${index + 1} 时长`}
                         type="number"
                         min={0.1}
                         step={0.1}
-                        value={object.motion?.speed ?? 1}
+                        value={shot.duration}
                         onChange={(event) =>
-                          editObject({
-                            motion: {
-                              preset: object.motion?.preset ?? "idle",
-                              amount: object.motion?.amount ?? 1,
-                              speed: Number(event.target.value),
-                            },
+                          updateShot(shot.id, {
+                            duration: Number(event.target.value),
                           })
                         }
                       />
                     </label>
-                    <label className="cw-domain-field">
-                      动作幅度
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={object.motion?.amount ?? 1}
-                        onChange={(event) =>
-                          editObject({
-                            motion: {
-                              preset: object.motion?.preset ?? "idle",
-                              speed: object.motion?.speed ?? 1,
-                              amount: Number(event.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <p className="cw-domain-note">
-                      本地关节人偶，可叠加主体位移和镜头关键帧。
-                    </p>
-                  </>
-                )}
-                <VectorFields
-                  label="位置"
-                  value={object.position}
-                  onChange={(position) => editObject({ position })}
-                />
-                <VectorFields
-                  label="旋转"
-                  value={object.rotation}
-                  rotation
-                  onChange={(rotation) => editObject({ rotation })}
-                />
-                <VectorFields
-                  label="缩放"
-                  value={object.scale}
-                  min={0.01}
-                  onChange={(scale) => editObject({ scale })}
-                />
-                <button onClick={removeObject}>删除此主体</button>
-              </>
-            )}
-            <h3>摄像机</h3>
-            <VectorFields
-              label="机位"
-              value={stage.camera.position}
-              onChange={(position) =>
-                edit((current) => ({
-                  ...current,
-                  camera: { ...current.camera, position },
-                }))
-              }
-            />
-            <VectorFields
-              label="目标"
-              value={stage.camera.target}
-              onChange={(target) =>
-                edit((current) => ({
-                  ...current,
-                  camera: { ...current.camera, target },
-                }))
-              }
-            />
-            <label className="cw-domain-field">
-              焦距（35mm 胶片，16:9）
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={Number(focalLength(stage.camera.fov).toFixed(1))}
-                onChange={(event) => {
-                  const focal = Number(event.target.value);
-                  if (focal > 0)
+                    <button
+                      onClick={() => {
+                        setPlaying(false);
+                        setTime(shot.start);
+                        edit((current) => ({
+                          ...current,
+                          cameraSource: "storyboard",
+                        }));
+                      }}
+                    >
+                      定位
+                    </button>
+                    <button
+                      onClick={() =>
+                        edit((current) => ({
+                          ...current,
+                          shots: current.shots.filter(
+                            (item) => item.id !== shot.id,
+                          ),
+                        }))
+                      }
+                    >
+                      删除镜头 {index + 1}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            </section>
+            <aside className="cw-stage-inspector">
+              <h3>{object ? "主体变换" : "摄像机"}</h3>
+              {object && (
+                <>
+                  <label className="cw-domain-field">
+                    名称
+                    <input
+                      value={object.name}
+                      onChange={(event) =>
+                        editObject({ name: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="cw-domain-field">
+                    材质颜色
+                    <input
+                      type="color"
+                      value={object.color}
+                      onChange={(event) =>
+                        editObject({ color: event.target.value })
+                      }
+                    />
+                  </label>
+                  {object.kind === "person" && (
+                    <section className="cw-stage-clips">
+                      <h3>角色动作片段</h3>
+                      <button onClick={addMotionClip}>在播放头添加动作</button>
+                      <p className="cw-domain-note">
+                        每个角色的片段不能重叠；空白区间保持站立，动作从片段起点计时。
+                      </p>
+                      {object.motionClips.map((clip, index) => (
+                        <div className="cw-stage-clip" key={clip.id}>
+                          <label>
+                            动作 {index + 1}
+                            <select
+                              aria-label={`动作 ${index + 1}`}
+                              value={clip.motion.preset}
+                              onChange={(event) =>
+                                updateClip(clip.id, {
+                                  motion: {
+                                    ...clip.motion,
+                                    preset: event.target
+                                      .value as keyof typeof STAGE_MOTIONS,
+                                  },
+                                })
+                              }
+                            >
+                              {Object.entries(STAGE_MOTIONS).map(
+                                ([id, label]) => (
+                                  <option key={id} value={id}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                          <label>
+                            开始（秒）
+                            <input
+                              aria-label={`动作 ${index + 1} 开始`}
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              value={clip.start}
+                              onChange={(event) =>
+                                updateClip(clip.id, {
+                                  start: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            时长（秒）
+                            <input
+                              aria-label={`动作 ${index + 1} 时长`}
+                              type="number"
+                              min={0.1}
+                              step={0.1}
+                              value={clip.duration}
+                              onChange={(event) =>
+                                updateClip(clip.id, {
+                                  duration: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            速度
+                            <input
+                              aria-label={`动作 ${index + 1} 速度`}
+                              type="number"
+                              min={0.1}
+                              step={0.1}
+                              value={clip.motion.speed}
+                              onChange={(event) =>
+                                updateClip(clip.id, {
+                                  motion: {
+                                    ...clip.motion,
+                                    speed: Number(event.target.value),
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            幅度
+                            <input
+                              aria-label={`动作 ${index + 1} 幅度`}
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={clip.motion.amount}
+                              onChange={(event) =>
+                                updateClip(clip.id, {
+                                  motion: {
+                                    ...clip.motion,
+                                    amount: Number(event.target.value),
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                          <button
+                            onClick={() => {
+                              setPlaying(false);
+                              setTime(clip.start);
+                            }}
+                          >
+                            定位
+                          </button>
+                          <button
+                            onClick={() =>
+                              editObject({
+                                motionClips: object.motionClips.filter(
+                                  (item) => item.id !== clip.id,
+                                ),
+                              })
+                            }
+                          >
+                            删除动作 {index + 1}
+                          </button>
+                        </div>
+                      ))}
+                    </section>
+                  )}
+                  <VectorFields
+                    label="位置"
+                    value={object.position}
+                    onChange={(position) => editObject({ position })}
+                  />
+                  <VectorFields
+                    label="旋转"
+                    value={object.rotation}
+                    rotation
+                    onChange={(rotation) => editObject({ rotation })}
+                  />
+                  <VectorFields
+                    label="缩放"
+                    value={object.scale}
+                    min={0.01}
+                    onChange={(scale) => editObject({ scale })}
+                  />
+                  <button onClick={removeObject}>删除此主体</button>
+                </>
+              )}
+              <h3>
+                摄像机 ·{" "}
+                {
+                  stage.cameras.find((camera) => camera.id === sampled.cameraId)
+                    ?.name
+                }
+              </h3>
+              <label className="cw-domain-field">
+                编辑机位
+                <select
+                  aria-label="编辑机位"
+                  value={sampled.cameraId}
+                  onChange={(event) =>
                     edit((current) => ({
                       ...current,
-                      camera: { ...current.camera, fov: fovFromFocal(focal) },
-                    }));
+                      activeCameraId: event.target.value,
+                      cameraSource: "camera",
+                    }))
+                  }
+                >
+                  {stage.cameras.map((camera) => (
+                    <option value={camera.id} key={camera.id}>
+                      {camera.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="cw-domain-field">
+                机位名称
+                <input
+                  aria-label="机位名称"
+                  value={
+                    stage.cameras.find(
+                      (camera) => camera.id === sampled.cameraId,
+                    )?.name ?? ""
+                  }
+                  onChange={(event) =>
+                    edit((current) => ({
+                      ...current,
+                      cameras: current.cameras.map((camera) =>
+                        camera.id === sampled.cameraId
+                          ? { ...camera, name: event.target.value }
+                          : camera,
+                      ),
+                    }))
+                  }
+                />
+              </label>
+              <div className="cw-stage-camera-actions">
+                <button onClick={addCamera}>复制为新机位</button>
+                <button
+                  disabled={
+                    stage.cameras.length === 1 ||
+                    stage.cameraSource === "storyboard"
+                  }
+                  onClick={removeCamera}
+                >
+                  删除当前机位
+                </button>
+              </div>
+              <label className="cw-domain-field">
+                输出画幅
+                <select
+                  aria-label="导演输出画幅"
+                  value={stage.aspectRatio}
+                  onChange={(event) =>
+                    edit((current) => ({
+                      ...current,
+                      aspectRatio: event.target
+                        .value as LocalStageDocument["aspectRatio"],
+                    }))
+                  }
+                >
+                  {STAGE_RATIOS.map((ratio) => (
+                    <option key={ratio} value={ratio}>
+                      {ratio}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="cw-domain-field">
+                预览与导出来源
+                <select
+                  aria-label="导演镜头来源"
+                  value={stage.cameraSource}
+                  onChange={(event) =>
+                    edit((current) => ({
+                      ...current,
+                      cameraSource: event.target
+                        .value as LocalStageDocument["cameraSource"],
+                    }))
+                  }
+                >
+                  <option value="camera">当前机位全程</option>
+                  <option value="storyboard">分镜硬切</option>
+                </select>
+              </label>
+              <VectorFields
+                label="机位"
+                value={cameraValue.position}
+                onChange={(position) => editCamera({ position })}
+              />
+              <VectorFields
+                label="目标"
+                value={cameraValue.target}
+                onChange={(target) => editCamera({ target })}
+              />
+              <label className="cw-domain-field">
+                焦距（35mm 胶片，16:9 等效）
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={Number(focalLength(cameraValue.fov).toFixed(1))}
+                  onChange={(event) => {
+                    const focal = Number(event.target.value);
+                    if (focal > 0) editCamera({ fov: fovFromFocal(focal) });
+                  }}
+                />
+              </label>
+              <label className="cw-domain-field">
+                垂直视角 {cameraValue.fov.toFixed(1)}°
+                <input
+                  type="range"
+                  min={10}
+                  max={120}
+                  step={0.1}
+                  value={cameraValue.fov}
+                  onChange={(event) =>
+                    editCamera({ fov: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <button
+                onClick={() => {
+                  setSelected(null);
+                  editCamera(defaultStageCamera());
                 }}
-              />
-            </label>
-            <label className="cw-domain-field">
-              垂直视角 {stage.camera.fov.toFixed(1)}°
-              <input
-                type="range"
-                min={10}
-                max={120}
-                step={0.1}
-                value={stage.camera.fov}
-                onChange={(event) =>
-                  edit((current) => ({
-                    ...current,
-                    camera: {
-                      ...current.camera,
-                      fov: Number(event.target.value),
-                    },
-                  }))
-                }
-              />
-            </label>
-            <button
-              onClick={() => {
-                setSelected(null);
-                edit((current) => ({
-                  ...current,
-                  camera: createLocalStage().camera,
-                }));
-              }}
-            >
-              重置镜头
-            </button>
-          </aside>
-        </div>
-        <p className="cw-domain-note">
-          镜头与主体关键帧使用本地线性插值，截图来自实际 WebGL
-          渲染，支持本地关节动作和 720p MP4 导出。外部 FBX/GLB
-          蒙皮角色与云端导演版本尚未接入。
-        </p>
-        <input
-          className="cw-domain-file-input"
-          ref={importInput}
-          type="file"
-          accept="application/json,.json"
-          aria-label="导入导演舞台"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void importStage(file);
-            event.target.value = "";
-          }}
-        />
-      </fieldset>
+              >
+                重置镜头
+              </button>
+            </aside>
+          </div>
+          <p className="cw-domain-note">
+            修改机位或主体会写入当前时间的关键帧；预览、截图与 MP4
+            共用画幅和采样。支持分镜硬切、分段关节动作和 30 fps MP4 导出。外部
+            FBX/GLB 蒙皮角色与云端导演版本尚未接入。
+          </p>
+          <input
+            className="cw-domain-file-input"
+            ref={importInput}
+            type="file"
+            accept="application/json,.json"
+            aria-label="导入导演舞台"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void importStage(file);
+              event.target.value = "";
+            }}
+          />
+        </fieldset>
+      </div>
     </EditorModal>
   );
 }

@@ -197,6 +197,12 @@ export function changeGenerationSettings(
       next.videoMode = model.videoModes[0];
     if (next.model !== "Seedream 5.0 Pro") next.imagePreset = "none";
   }
+  if (next.mode === "image" && next.imagePreset === "product-views") {
+    next.model = "Seedream 5.0 Pro";
+    next.aspectRatio = "16:9";
+    next.resolution = "2K";
+    next.count = 1;
+  }
   return next;
 }
 
@@ -262,9 +268,13 @@ export function generationBlocker(
     return "仅确认了模型菜单入口；参数范围待核实，暂不能提交本地任务。";
   if (
     settings.imagePreset === "product-views" &&
-    settings.model !== "Seedream 5.0 Pro"
+    (settings.mode !== "image" ||
+      settings.model !== "Seedream 5.0 Pro" ||
+      settings.aspectRatio !== "16:9" ||
+      settings.resolution !== "2K" ||
+      (settings.count ?? 1) !== 1)
   )
-    return "产品三视图仅支持 Seedream 5.0 Pro。";
+    return "产品三视图仅支持 Seedream 5.0 Pro、16:9、2K、1 张。";
   if (
     model.resolutions.length &&
     !model.resolutions.includes(settings.resolution)
