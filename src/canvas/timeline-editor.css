@@ -13,11 +13,16 @@
 .cw-timeline-library {
   min-width: 0;
   padding: 19px 16px;
-  border-right: 1px solid #3b2947;
   background: #1d1424;
 }
 .cw-timeline-library .cw-domain-resource-list {
   max-height: 240px;
+}
+.cw-timeline-library .cw-domain-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 11px;
 }
 .cw-timeline-library .cw-domain-resource-list button {
   padding: 8px;
@@ -159,6 +164,9 @@
   position: absolute;
   transform: translateX(-50%);
 }
+.cw-timeline-ruler > div > span[data-origin] {
+  transform: none;
+}
 .cw-timeline-track {
   display: grid;
   grid-template-columns: 135px 1fr;
@@ -179,7 +187,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.cw-timeline-track-label > button {
+.cw-timeline-dialog .cw-timeline-track-label > button {
   padding: 4px;
   border: 0;
   color: #9271aa;
@@ -191,13 +199,13 @@
   min-height: 58px;
   border: 1px solid #35223f;
   border-radius: 4px;
+  /* --cw-ruler-step is the ruler's tick spacing, so grid lines sit under ticks. */
   background: repeating-linear-gradient(
-    90deg,
-    #18101e 0px,
-    #18101e calc(10% - 1px),
-    #302038 calc(10% - 1px),
-    #302038 10%
-  );
+      90deg,
+      transparent 0 calc(var(--cw-ruler-step, 80px) - 1px),
+      #302038 calc(var(--cw-ruler-step, 80px) - 1px) var(--cw-ruler-step, 80px)
+    )
+    #18101e;
 }
 .cw-timeline-drag-status {
   height: 24px;
@@ -411,24 +419,34 @@
 }
 .cw-timeline-library-resizer,
 .cw-timeline-height-resizer {
+  --cw-resizer-line: #3b2947;
   touch-action: none;
-  background: #382342;
   outline-offset: -2px;
 }
 .cw-timeline-library-resizer {
   cursor: col-resize;
+  background: linear-gradient(
+    90deg,
+    transparent 3px,
+    var(--cw-resizer-line) 3px 4px,
+    transparent 4px
+  );
 }
 .cw-timeline-height-resizer {
   height: 8px;
   cursor: row-resize;
-  border-top: 1px solid #4e355c;
-  border-bottom: 1px solid #4e355c;
+  background: linear-gradient(
+    180deg,
+    transparent 3px,
+    var(--cw-resizer-line) 3px 5px,
+    transparent 5px
+  );
 }
 .cw-timeline-library-resizer:hover,
 .cw-timeline-height-resizer:hover,
 .cw-timeline-library-resizer:focus-visible,
 .cw-timeline-height-resizer:focus-visible {
-  background: #9c6bc3;
+  --cw-resizer-line: #9c6bc3;
 }
 .cw-timeline-edit-toolbar {
   flex-wrap: wrap;
@@ -491,9 +509,32 @@
   }
 }
 @media (min-width: 781px) {
-  .cw-timeline-top {
-    height: max(200px, calc(590px - var(--cw-track-height, 260px)));
+  /* A fixed dialog height lets the top area and the tracks share it. */
+  .cw-timeline-dialog {
+    height: calc(100dvh - 48px);
+  }
+  .cw-timeline-dialog .cw-domain-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .cw-timeline-dialog .cw-editor-work {
+    display: flex;
+    flex: 1 1 auto;
     min-height: 0;
+    flex-direction: column;
+  }
+  .cw-timeline-dialog .cw-editor-work > * {
+    flex-shrink: 0;
+  }
+  /* Short viewports shrink both areas before the body has to scroll. */
+  .cw-timeline-dialog .cw-timeline-top {
+    flex: 1 1 calc(590px - var(--cw-track-height, 260px));
+    height: auto;
+    min-height: 180px;
+  }
+  .cw-timeline-dialog .cw-timeline-scroll {
+    flex-shrink: 1;
   }
   .cw-timeline-library,
   .cw-timeline-inspector {

@@ -1378,7 +1378,12 @@ export function TimelineEditor({
         >
           <div
             className="cw-timeline-tracks"
-            style={{ width: trackWidth }}
+            style={
+              {
+                width: trackWidth,
+                "--cw-ruler-step": `${rulerStep * pixelsPerSecond}px`,
+              } as CSSProperties
+            }
             ref={tracksRef}
             tabIndex={0}
             aria-label="时间线轨道"
@@ -1417,6 +1422,7 @@ export function TimelineEditor({
                 {rulerTicks.map((time) => (
                   <span
                     key={time}
+                    data-origin={time === 0 || undefined}
                     style={{ left: `${(time / visibleDuration) * 100}%` }}
                   >
                     {timeLabel(time)}

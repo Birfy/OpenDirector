@@ -28,6 +28,27 @@
 .cw-domain-dialog select {
   font: inherit;
 }
+/* Controls outside a .cw-domain-field still follow the dialog theme. */
+.cw-domain-dialog
+  :where(
+    input:not(
+      [type="range"],
+      [type="checkbox"],
+      [type="radio"],
+      [type="color"],
+      [type="file"]
+    ),
+    select,
+    textarea
+  ) {
+  border: 1px solid #4c365a;
+  border-radius: 5px;
+  color: #ddc9eb;
+  background: #261b2e;
+}
+.cw-domain-dialog :where(input[type="range"], input[type="checkbox"]) {
+  accent-color: #c5a1e3;
+}
 .cw-domain-dialog button {
   display: inline-flex;
   align-items: center;

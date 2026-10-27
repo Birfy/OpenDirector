@@ -118,6 +118,7 @@ export function AssistantPanel({
       return;
     }
     const id = crypto.randomUUID();
+    const sent = references;
     const abort = new AbortController();
     controller.current = abort;
     setTurn(id);
@@ -129,12 +130,10 @@ export function AssistantPanel({
       { id: `pending-${id}`, role: "user", text, status: "complete" },
     ]);
     try {
-      const assets = await uploadReferences(
-        projectId,
-        references,
-        abort.signal,
-      );
+      const assets = await uploadReferences(projectId, sent, abort.signal);
       abort.signal.throwIfAborted();
+      // Attachments belong to this message; later turns start without them.
+      setReferences([]);
       for await (const event of streamChat(
         projectId,
         {
@@ -180,6 +179,7 @@ export function AssistantPanel({
       if (!abort.signal.aborted) {
         setError(errorMessage(failure));
         setDraft(text);
+        setReferences(sent);
         setMessages((current) =>
           current.filter((message) => message.id !== `pending-${id}`),
         );
@@ -187,7 +187,8 @@ export function AssistantPanel({
     } finally {
       if (controller.current === abort) controller.current = null;
       setTurn(null);
-      if (!abort.signal.aborted) onTurnEnd();
+      // Tasks the agent submitted keep running after the panel closes.
+      onTurnEnd();
     }
   };
 

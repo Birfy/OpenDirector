@@ -31,6 +31,16 @@ export type ReferenceIssue =
   | "target_type_unsupported"
   | "capacity_exceeded";
 
+export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
+  endpoint_missing: "节点已不存在",
+  self_connection: "节点不能引用自身",
+  duplicate_relation: "已经连接过",
+  creates_cycle: "会形成循环引用",
+  source_type_unsupported: "目标节点不接收这类素材",
+  target_type_unsupported: "该节点不接收参考",
+  capacity_exceeded: "参考数量已达上限",
+};
+
 /** The blank-space creation menu uses the same policy as a completed connection. */
 export function connectedCreationKinds(
   document: Pick<CanvasDocument, "nodes" | "edges">,

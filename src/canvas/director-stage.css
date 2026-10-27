@@ -9,8 +9,7 @@
 }
 .cw-stage-objects,
 .cw-stage-inspector {
-  max-height: 660px;
-  overflow: auto;
+  min-width: 0;
 }
 .cw-stage-layout h3 {
   font-size: 13px;
@@ -50,7 +49,6 @@
 }
 .cw-stage-viewport {
   width: 100%;
-  margin-inline: auto;
   aspect-ratio: 16/9;
   overflow: hidden;
   box-shadow: inset 0 0 0 1px #3b3d50;
@@ -242,8 +240,14 @@
   min-width: 0;
   padding: 6px;
 }
+.cw-stage-clip input[type="range"] {
+  padding: 0;
+  border: 0;
+  background: none;
+}
 .cw-stage-clip button,
 .cw-stage-shot button {
+  align-self: end;
   font-size: 11px;
   padding: 6px;
 }

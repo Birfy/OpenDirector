@@ -844,7 +844,8 @@
   border-radius: 6px;
   color: #b3b3b9;
 }
-.cw-search-categories > button[aria-selected="true"] {
+.cw-search-categories > button[aria-selected="true"],
+.cw-search-categories > button[aria-pressed="true"] {
   color: #fff;
   background: #ffffff14;
 }
@@ -1015,7 +1016,7 @@
   min-height: 95px;
   font-size: 12px !important;
 }
-.cw-chat-form button {
+.cw-chat-form > button {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1483,23 +1484,25 @@
 }
 .cw-project-tabs button,
 .cw-project-row button {
-  border: 1px solid #35353e;
-  background: #25252d;
+  border: 1px solid #ffffff14;
+  background: #ffffff0c;
   color: inherit;
   border-radius: 8px;
   padding: 8px 10px;
   cursor: pointer;
 }
 .cw-project-tabs button[aria-pressed="true"] {
-  border-color: #9a89ff;
-  color: #bcb0ff;
+  border-color: #ffffff30;
+  color: #fff;
+  background: #ffffff14;
 }
 .cw-project-row {
   padding: 10px 0;
-  border-bottom: 1px solid #33333d;
+  border-bottom: 1px solid #ffffff10;
 }
 .cw-project-row .cw-project-open {
   display: block;
+  padding-inline: 0;
   text-align: left;
   width: 100%;
   background: transparent;
@@ -1513,7 +1516,7 @@
 .cw-project-row > div {
   display: flex;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 0;
 }
 .cw-project-manager button:disabled {
   opacity: 0.5;

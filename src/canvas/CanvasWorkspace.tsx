@@ -54,7 +54,11 @@ import { ImageEditor } from "./ImageEditor";
 import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
 import { CanvasTagsPanel } from "./CanvasTagsPanel";
 import { CANVAS_TAGS, setNodeTag, type CanvasTagId } from "./nodeTags";
-import { connectedCreationKinds } from "./connectionPolicy";
+import {
+  connectedCreationKinds,
+  referenceIssue,
+  REFERENCE_ISSUE_TEXT,
+} from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
 import { ProjectManagerPanel } from "./ProjectManagerPanel";
 import {
@@ -859,6 +863,30 @@ function Workspace() {
       duration: 250,
     });
   };
+  /** Reference pickers connect what the policy allows and name what it refused. */
+  const referenceEdges = (
+    sources: readonly string[],
+    target: string,
+    added: readonly CanvasNode[] = [],
+  ) => {
+    const present = historyRef.current.present;
+    const working = {
+      nodes: [...present.nodes, ...added],
+      edges: [...present.edges],
+    };
+    const issues = new Set<string>();
+    for (const source of sources) {
+      const issue = referenceIssue(working, source, target);
+      if (issue) issues.add(REFERENCE_ISSUE_TEXT[issue]);
+      else working.edges.push({ id: crypto.randomUUID(), source, target });
+    }
+    return {
+      commands: working.edges
+        .slice(present.edges.length)
+        .map((edge): CanvasCommand => ({ type: "add-edge", edge })),
+      issue: issues.size ? `未连接为参考：${[...issues].join("、")}。` : "",
+    };
+  };
   const selectAndFocus = (requested: CanvasNode) => {
     const owner = doc.nodes.find(
       (n) => n.type === "stack" && n.data.stack?.nodeIds.includes(requested.id),
@@ -1218,22 +1246,20 @@ function Workspace() {
       )
         refTarget = null;
       if (nodes.length) commands.unshift({ type: "add-nodes", nodes });
-      if (refTarget)
-        for (const node of nodes)
-          commands.push({
-            type: "add-edge",
-            edge: {
-              id: crypto.randomUUID(),
-              source: node.id,
-              target: refTarget,
-            },
-          });
+      const linked = refTarget
+        ? referenceEdges(
+            nodes.map((node) => node.id),
+            refTarget,
+            nodes,
+          )
+        : { commands: [], issue: "" };
+      commands.push(...linked.commands);
       if (commands.length) command({ type: "batch", commands });
       setSelected(
         target ? [target] : refTarget ? [refTarget] : nodes.map((n) => n.id),
       );
       notify(
-        `已导入 ${successes.length} 个素材${failures.length ? `；${failures.length} 个失败：${failures.map((item) => `${item.name}（${item.message}）`).join("；")}` : "，保存在本机。"}`,
+        `已导入 ${successes.length} 个素材${failures.length ? `；${failures.length} 个失败：${failures.map((item) => `${item.name}（${item.message}）`).join("；")}` : "，保存在本机。"}${linked.issue}`,
       );
     } catch (error) {
       if (!controller.signal.aborted)
@@ -3221,14 +3247,15 @@ function Workspace() {
                             (item) => item.id === referenceTarget.current,
                           )
                         ) {
-                          command({
-                            type: "add-edge",
-                            edge: {
-                              id: crypto.randomUUID(),
-                              source: n.id,
-                              target: referenceTarget.current,
-                            },
-                          });
+                          const linked = referenceEdges(
+                            [n.id],
+                            referenceTarget.current,
+                          );
+                          if (linked.issue) {
+                            notify(linked.issue);
+                            return;
+                          }
+                          command({ type: "batch", commands: linked.commands });
                           referenceTarget.current = null;
                           setPanel(null);
                         } else selectAndFocus(n);
@@ -3254,23 +3281,21 @@ function Workspace() {
                     { x: where.x - 160, y: where.y - 140 },
                     resourceNodeData(resource),
                   );
-                  const commands: CanvasCommand[] = [
-                    { type: "add-nodes", nodes: [node] },
-                  ];
-                  if (target && doc.nodes.some((item) => item.id === target))
-                    commands.push({
-                      type: "add-edge",
-                      edge: {
-                        id: crypto.randomUUID(),
-                        source: node.id,
-                        target,
-                      },
-                    });
-                  command({ type: "batch", commands });
+                  const linked =
+                    target && doc.nodes.some((item) => item.id === target)
+                      ? referenceEdges([node.id], target, [node])
+                      : { commands: [], issue: "" };
+                  command({
+                    type: "batch",
+                    commands: [
+                      { type: "add-nodes", nodes: [node] },
+                      ...linked.commands,
+                    ],
+                  });
                   setSelected([node.id]);
                   referenceTarget.current = null;
                   setPanel(null);
-                  notify("素材已复制到当前画布，可独立编辑。");
+                  notify(`素材已复制到当前画布，可独立编辑。${linked.issue}`);
                 }}
               />
               <h3>原创示例素材</h3>
@@ -3291,14 +3316,13 @@ function Workspace() {
                         target &&
                         doc.nodes.some((item) => item.id === target)
                       ) {
-                        command({
-                          type: "add-edge",
-                          edge: {
-                            id: crypto.randomUUID(),
-                            source: n!.id,
-                            target,
-                          },
-                        });
+                        const linked = referenceEdges([n.id], target, [n]);
+                        if (linked.issue) notify(linked.issue);
+                        else
+                          command({
+                            type: "batch",
+                            commands: linked.commands,
+                          });
                         setSelected([target]);
                         referenceTarget.current = null;
                       }
@@ -3416,6 +3440,10 @@ function Workspace() {
                     outputs,
                   );
                   change(() => next.document);
+                  // A re-placed service result must not be synced again.
+                  for (const job of entries)
+                    if (job.taskId && job.outputs?.length)
+                      markHandled(backendProjectId(doc.id), job.taskId);
                   setSelected(next.ids);
                   revealResults(next.ids);
                   notify(

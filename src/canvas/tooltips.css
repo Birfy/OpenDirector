@@ -12,12 +12,8 @@
   background: #303033;
   box-shadow: 0 6px 24px #0005;
   color: #f0f0f2;
-  font:
-    13px/1.5 Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "PingFang SC",
-    sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   pointer-events: none;
 }
