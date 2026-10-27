@@ -383,14 +383,20 @@ export function DirectorStage({
     controls.addEventListener("end", orbitEnd);
     const raycaster = new THREE.Raycaster(),
       pointer = new THREE.Vector2();
-    let start: { x: number; y: number } | null = null;
+    let start: { x: number; y: number; pointerId: number } | null = null;
     const pointerDown = (event: PointerEvent) => {
-      start = { x: event.clientX, y: event.clientY };
+      start =
+        event.isPrimary && event.button === 0
+          ? { x: event.clientX, y: event.clientY, pointerId: event.pointerId }
+          : null;
     };
     const pointerUp = (event: PointerEvent) => {
+      const down = start;
+      start = null;
       if (
-        !start ||
-        Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4
+        !down ||
+        down.pointerId !== event.pointerId ||
+        Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4
       )
         return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -407,6 +413,11 @@ export function DirectorStage({
         found = found.parent ?? undefined;
       if (found) setSelected(found.userData.objectId as string);
     };
+    const pointerCancel = () => {
+      start = null;
+    };
+    renderer.domElement.addEventListener("pointercancel", pointerCancel);
+    window.addEventListener("blur", pointerCancel);
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointerup", pointerUp);
     const contextLost = (event: Event) => {
@@ -431,6 +442,8 @@ export function DirectorStage({
       controls.removeEventListener("start", orbitStart);
       controls.removeEventListener("end", orbitEnd);
       controls.dispose();
+      renderer.domElement.removeEventListener("pointercancel", pointerCancel);
+      window.removeEventListener("blur", pointerCancel);
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("webglcontextlost", contextLost);
@@ -1125,7 +1138,8 @@ export function DirectorStage({
         </div>
         <p className="cw-domain-note">
           镜头与主体关键帧使用本地线性插值，截图来自实际 WebGL
-          渲染，支持本地关节动作和 720p MP4 导出。外部 FBX/GLB 蒙皮角色与云端导演版本尚未接入。
+          渲染，支持本地关节动作和 720p MP4 导出。外部 FBX/GLB
+          蒙皮角色与云端导演版本尚未接入。
         </p>
         <input
           className="cw-domain-file-input"

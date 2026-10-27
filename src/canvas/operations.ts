@@ -1,3 +1,4 @@
+import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import { mapSettingsNodeReferences } from "./model.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
@@ -17,31 +18,6 @@ export interface CanvasFragment {
   edges: CanvasEdge[];
 }
 
-function indexNodes(nodes: readonly CanvasNode[]): Map<string, CanvasNode> {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  if (byId.size !== nodes.length) throw new Error("节点 ID 重复。");
-  return byId;
-}
-
-/** Nearest parent first. Invalid hierarchies fail before any document changes. */
-function ancestors(
-  node: CanvasNode,
-  byId: ReadonlyMap<string, CanvasNode>,
-): CanvasNode[] {
-  const result: CanvasNode[] = [];
-  const visited = new Set([node.id]);
-  let parentId = node.parentId;
-  while (parentId) {
-    if (visited.has(parentId)) throw new Error("画布分组存在循环引用。");
-    visited.add(parentId);
-    const parent = byId.get(parentId);
-    if (!parent) throw new Error(`找不到父节点：${parentId}`);
-    result.push(parent);
-    parentId = parent.parentId;
-  }
-  return result;
-}
-
 /** Project hierarchy order independently of painting order stored in zIndex. */
 export function orderNodesForCanvas(
   nodes: readonly CanvasNode[],
@@ -51,13 +27,6 @@ export function orderNodesForCanvas(
     nodes.map((node) => [node.id, ancestors(node, byId).length]),
   );
   return [...nodes].sort((a, b) => depth.get(a.id)! - depth.get(b.id)!);
-}
-
-function canReparent(
-  node: CanvasNode,
-  byId: ReadonlyMap<string, CanvasNode>,
-): boolean {
-  return !node.locked && !ancestors(node, byId).some((parent) => parent.locked);
 }
 
 /**
@@ -77,7 +46,7 @@ export function groupSelection(
   const eligible = document.nodes.filter(
     (node) =>
       selected.has(node.id) &&
-      canReparent(node, byId) &&
+      !isNodeLocked(node, byId) &&
       node.type !== "stack" &&
       !stackedIds.has(node.id),
   );
@@ -150,7 +119,7 @@ export function ungroupSelection(
         (node) =>
           selected.has(node.id) &&
           node.type === "group" &&
-          canReparent(node, byId),
+          !isNodeLocked(node, byId),
       )
       .map((node) => node.id),
   );
@@ -415,7 +384,12 @@ export function updateStack(
   stack: StackData,
 ): CanvasDocument {
   const target = document.nodes.find((node) => node.id === id);
-  if (!target || target.type !== "stack" || target.locked) return document;
+  if (
+    !target ||
+    target.type !== "stack" ||
+    isNodeLocked(target, indexNodes(document.nodes))
+  )
+    return document;
   const existing = new Set(
     document.nodes
       .filter((node) => node.id !== id)

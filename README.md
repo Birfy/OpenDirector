@@ -1,30 +1,30 @@
-# MuseShow · 即梦前端学习工程
+# OpenDesign · 本地创作画布
 
-目标页面：[即梦首页](https://jimeng.jianying.com/ai-tool/home) 与独立 [画布编辑器](https://jimeng.jianying.com/ai-tool/ai-canvas)。资源采集日期：2026-10-26。
+运行应用只保留画布，打开根地址即可恢复最近的本地项目。研究材料来自 [即梦首页](https://jimeng.jianying.com/ai-tool/home) 与 [画布编辑器](https://jimeng.jianying.com/ai-tool/ai-canvas)，资源采集日期：2026-10-26。
 
 这个分支把浏览器发布的前端资源整理成可以阅读、追溯和继续开发的工程，包含两条学习路径：
 
 - **实际代码恢复**：`research/capture/` 保存公开 JS/CSS 的原始字节、URL 和 SHA-256；`recovered/` 保存 Wakaru 解包、格式化与有限反编译的派生模块。依赖关系、未解决项和覆盖范围都有报告。
-- **可运行的学习重建**：`src/` 是重新编写的 React + TypeScript 工程，复现首页的组件分区，并加入独立全屏画布、时间线、图层板和 3D 导演预演。`bannerSnapshot.ts` 依据真实模块移植校验语义，其余 UI、类型、画布、插图与首页演示任务适配器均明确标为重建。
+- **可运行的学习重建**：`src/` 是重新编写的 React + TypeScript 工程，提供全屏画布、时间线、图层板和 3D 导演预演。`bannerSnapshot.ts` 依据真实模块移植校验语义，其余 UI、类型、画布与插图均为重建。
 
 没有获取到原站发布前的 TypeScript/TSX、原始 source map、构建配置、完整素材或服务端。**这不是完整原版工程，也不具备真实 AI 生成能力。** 解包得到的源码不自动等于可编译的原站应用；可直接运行的是 `src/` 学习工程。
 
-![全屏画布学习工程](docs/canvas-preview.jpg)
+![纯画布应用](docs/canvas-only.jpg)
 
-首页预览见 [preview.png](docs/preview.png)。画布实现与覆盖范围见 [画布导读](docs/CANVAS.md)。本轮通过已登录原站完成的 AI 测试、参数、花费与未覆盖项见 [实测记录](docs/AI-LIVE-TESTS.md)。
+画布实现与覆盖范围见 [画布导读](docs/CANVAS.md)。本轮通过已登录原站完成的 AI 测试、参数、花费与未覆盖项见 [实测记录](docs/AI-LIVE-TESTS.md)。
 
 ## 启动
 
 需要 Node.js **24.22.1 或更新版本**，版本见 `.nvmrc`。依赖已锁定。
 
 ```sh
-git clone --branch rea --single-branch https://github.com/wuzhf9/MuseShow.git
-cd MuseShow
+git clone --branch rea --single-branch https://github.com/ThinkFlowLab/OpenDesign.git
+cd OpenDesign
 npm ci
 npm run dev
 ```
 
-打开终端显示的本机地址（默认 `http://127.0.0.1:5173`）。点击“画布”，或直接打开 `/ai-tool/ai-canvas`。画布菜单中的“打开示例画布”提供可编辑的节点和参考连线。
+打开终端显示的本机地址（默认 `http://127.0.0.1:5173`）。应用直接打开画布；旧的 `/ai-tool/home` 地址也进入画布。左上角星形按钮打开本地项目列表。画布菜单中的“打开示例画布”提供可编辑的节点和参考连线。
 
 ```sh
 npm test                 # 快照、画布命令/历史/持久化边界与任务测试
@@ -35,9 +35,7 @@ npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态
 
 ## 可以研究什么
 
-- 首页：侧栏导航、生成/画布切换、创作类型、画幅、提示词、技能填入、灵感分类与卡片预览。
-- 状态管理：提交 → 运行 → 完成/中止、取消控制器、资产列表和任务重用。
-- 本地素材：首页参考文件属于当前会话；画布素材与项目保存在 IndexedDB，刷新可恢复，支持跨项目搜索和复制媒体，均不上传。
+- 本地素材：画布素材与项目保存在 IndexedDB，刷新可恢复，支持跨项目搜索和复制媒体，均不上传。
 - 画布：无限平移、8%–800% 缩放、小地图、参考连线、文本/图片/视频/音频/文件/分组、框选、拖拽、缩放节点、编组、复制粘贴、锁定、层级、撤销重做。
 - 图片编辑：真实像素裁剪、旋转、翻转、调色、图层合成、文字/形状、局部擦除、标注、蒙版、网格拆图与 PNG 输出。
 - 媒体编辑：视频取帧、时长与画幅裁剪、保留音轨的 WebM 重编码、音轨提取和 WAV 输出；录制结果可再次编辑，见 [画幅裁剪](docs/VIDEO-CROP.md)。
@@ -46,19 +44,16 @@ npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态
 - 项目与生成器：本地项目切换、JSON 导入导出、搜索、媒体播放、模型/模式/比例/数量/镜头风格参数、引用素材、任务草稿与真实结果导入。
 - 源码对照：SSR 推荐卡片快照校验、首页入口与异步资源分组、原始生成器的提交/中止边界。
 
-首页的演示任务仍明确显示“本地模拟”，使用原创 SVG。画布默认生成按钮已改为准备任务：导出请求、打开原站、导入真实媒体结果，并保留来源连线。学习工程没有连接即梦生成服务；原站 AI 实测与本地功能验收分别记录。原站资源只作为分析输入，应用不加载或执行 `recovered/` 与 `research/` 下的脚本。
+首页 UI 和模拟生成任务已移除，历史采集与恢复材料仍保留用于研究。画布默认生成按钮已改为准备任务：导出请求、打开原站、导入真实媒体结果，并保留来源连线。学习工程没有连接即梦生成服务；原站 AI 实测与本地功能验收分别记录。原站资源只作为分析输入，应用不加载或执行 `recovered/` 与 `research/` 下的脚本。
 
 ## 目录
 
 ```text
 src/
-  App.tsx                 页面状态与任务生命周期
-  components/             首页侧栏、输入区、卡片、结果列表
+  App.tsx                 画布加载入口
   canvas/                 全屏编辑器、节点、历史、持久化、图片编辑
-  data/presets.ts          独立编写的提示词和样例内容
   domain/bannerSnapshot.ts 依据 TJ 模块移植的校验逻辑
-  domain/generation.ts     独立编写的本地任务适配器
-  styles/                 响应式界面样式
+  styles/                 全局基础样式
 tests/                    领域边界与取消行为测试
 research/capture/         148 份原始公开资源和采集清单
 research/prepared/        AST 提取的解包输入及原始区间
@@ -87,4 +82,4 @@ npm run recovery:check
 
 此分支只包含无需登录即可请求的公开 JS/CSS 及其派生结果、独立编写的学习代码和说明。不包含已登录 HTML、Cookie、浏览器配置、账号数据、API 响应或本机 REA 配置。原资源中的第三方版权/许可证标记保留；这里不把第三方资源重新授予开源许可证。请按原有权利范围使用研究材料。
 
-`rea` 是独立学习分支；本次没有合并或修改 `main` 的 MuseShow 应用。
+`rea` 是独立学习分支；本次没有合并或修改 `main`。

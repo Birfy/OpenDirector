@@ -44,9 +44,10 @@ export interface LayerBoardProps {
   onBack?: () => void;
 }
 type Tool = "move" | "erase" | "restore";
-type Gesture =
+type Gesture = { pointerId: number } & (
   | { kind: "move" | "resize" | "rotate"; layer: ImageLayer; start: LayerPoint }
-  | { kind: "mask"; layer: ImageLayer; stroke: MaskStroke };
+  | { kind: "mask"; layer: ImageLayer; stroke: MaskStroke }
+);
 const failure = (error: unknown) =>
   error instanceof Error ? error.message : "操作未完成，请重试。";
 const readFile = (file: File) =>
@@ -250,6 +251,17 @@ export function LayerBoard({
           current && recordLayers(current, current.present, previous),
       );
   };
+  const cancelGesture = () => {
+    const current = gesture.current;
+    if (!current) return;
+    gesture.current = null;
+    const previous = transaction.current;
+    transaction.current = null;
+    if (previous) setHistory((h) => h && { ...h, present: previous });
+    setDraft(undefined);
+    if (surfaceRef.current?.hasPointerCapture(current.pointerId))
+      surfaceRef.current.releasePointerCapture(current.pointerId);
+  };
   const patch = (
     id: string,
     changes: Partial<ImageLayer>,
@@ -360,8 +372,10 @@ export function LayerBoard({
     duplicate,
     undo: () => {},
     redo: () => {},
+    cancelGesture,
   });
   actionRef.current = {
+    cancelGesture,
     remove,
     duplicate,
     undo: () => {
@@ -385,7 +399,21 @@ export function LayerBoard({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        callbacks.current.onClose();
+        if (gesture.current) actionRef.current.cancelGesture();
+        else callbacks.current.onClose();
+        return;
+      }
+      if (gesture.current) {
+        // Do not let keyboard edits split the history transaction under an active pointer.
+        if (
+          event.key !== "Shift" &&
+          event.key !== "Alt" &&
+          event.key !== "Control" &&
+          event.key !== "Meta"
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
         return;
       }
       if (event.key === "Tab") {
@@ -452,8 +480,11 @@ export function LayerBoard({
         if (key === "d") actionRef.current.duplicate();
       }
     };
+    const blur = () => actionRef.current.cancelGesture();
+    window.addEventListener("blur", blur);
     window.document.addEventListener("keydown", keydown, true);
     return () => {
+      window.removeEventListener("blur", blur);
       window.document.removeEventListener("keydown", keydown, true);
       window.document.body.style.overflow = previousOverflow;
       if (previousFocus?.isConnected) previousFocus.focus();
@@ -468,7 +499,14 @@ export function LayerBoard({
     };
   };
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!document || busy || event.button !== 0) return;
+    if (
+      !document ||
+      busy ||
+      event.button !== 0 ||
+      !event.isPrimary ||
+      gesture.current
+    )
+      return;
     const at = point(event);
     const handle = (event.target as Element).getAttribute("data-handle");
     if (tool !== "move") {
@@ -481,7 +519,12 @@ export function LayerBoard({
         size: brush,
         points: [worldToLayer(active, at)],
       };
-      gesture.current = { kind: "mask", layer: active, stroke };
+      gesture.current = {
+        kind: "mask",
+        layer: active,
+        stroke,
+        pointerId: event.pointerId,
+      };
       setDraft({ layerId: active.id, stroke });
     } else {
       const target = handle ? active : hitLayer(document, at);
@@ -492,6 +535,7 @@ export function LayerBoard({
       select(target.id);
       begin();
       gesture.current = {
+        pointerId: event.pointerId,
         kind:
           handle === "resize"
             ? "resize"
@@ -508,7 +552,7 @@ export function LayerBoard({
   };
   const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const current = gesture.current;
-    if (!current || !document) return;
+    if (!current || !document || current.pointerId !== event.pointerId) return;
     const at = point(event),
       layer = current.layer;
     if (current.kind === "mask") {
@@ -573,18 +617,17 @@ export function LayerBoard({
     cancel = false,
   ) => {
     const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (cancel) {
+      cancelGesture();
+      return;
+    }
     gesture.current = null;
-    if (!current) return;
     if (current.kind === "mask") {
-      if (!cancel)
-        patch(current.layer.id, {
-          mask: [...current.layer.mask, current.stroke],
-        });
+      patch(current.layer.id, {
+        mask: [...current.layer.mask, current.stroke],
+      });
       setDraft(undefined);
-    } else if (cancel && transaction.current) {
-      const previous = transaction.current;
-      transaction.current = null;
-      setHistory((h) => h && { ...h, present: previous });
     } else end();
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -977,7 +1020,11 @@ export function LayerBoard({
                       >
                         <span className="lb-layer-thumb">
                           {layer.content.kind === "image" ? (
-                            <img src={layer.content.src} alt="" draggable={false} />
+                            <img
+                              src={layer.content.src}
+                              alt=""
+                              draggable={false}
+                            />
                           ) : layer.content.kind === "text" ? (
                             "T"
                           ) : (

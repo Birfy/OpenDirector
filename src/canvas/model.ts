@@ -1,3 +1,4 @@
+import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
 import type { LocalStageDocument } from "./stageDocument.ts";
@@ -325,9 +326,11 @@ export function applyCommand(
       ? { ...document, nodes: [...document.nodes, ...command.nodes] }
       : document;
   }
+  const byId = indexNodes(document.nodes);
+  const locked = (node: CanvasNode) => isNodeLocked(node, byId);
   if (command.type === "resize-node") {
     const source = document.nodes.find((node) => node.id === command.id);
-    if (!source || source.locked) return document;
+    if (!source || locked(source)) return document;
     const position = command.position ?? source.position;
     if (
       ![position.x, position.y, command.width, command.height].every(
@@ -371,13 +374,35 @@ export function applyCommand(
     let changed = false;
     const nodes = document.nodes.map((node) => {
       if (node.id !== command.id) return node;
-      // Unlocking remains available. Other mutations of a locked node are ignored.
+      // A child cannot override a parent lock. Only the explicit lock owner can unlock itself.
+      if (ancestors(node, byId).some((parent) => parent.locked)) return node;
       if (node.locked && command.patch.locked !== false) return node;
       changed = true;
-      const data = command.patch.data
-        ? { ...node.data, ...command.patch.data }
-        : node.data;
       const type = command.patch.type ?? node.type;
+      let base = node.data;
+      if (type !== node.type) {
+        // Only title/prompt survive a kind change; type-specific editors own their payloads.
+        base = { kind: type, title: node.data.title, prompt: node.data.prompt };
+      } else if (
+        command.patch.data &&
+        "src" in command.patch.data &&
+        command.patch.data.src !== node.data.src
+      ) {
+        // Layers, masks and dimensions belong to the previous pixels. A producer may
+        // supply a new layer document or metadata in this same atomic patch.
+        base = { ...node.data };
+        for (const key of [
+          "layers",
+          "taskDraft",
+          "media",
+          "mimeType",
+          "assetState",
+        ] as const)
+          delete base[key];
+      }
+      const data = command.patch.data
+        ? { ...base, ...command.patch.data }
+        : base;
       return { ...node, ...command.patch, type, data: { ...data, kind: type } };
     });
     return changed ? { ...document, nodes } : document;
@@ -391,8 +416,8 @@ export function applyCommand(
     const nodes = document.nodes.map((node) => {
       if (
         !selected.has(node.id) ||
-        node.locked ||
-        hasSelectedAncestor(node, document.nodes, selected)
+        locked(node) ||
+        ancestors(node, byId).some((parent) => selected.has(parent.id))
       )
         return node;
       changed = true;
@@ -410,12 +435,12 @@ export function applyCommand(
     const requested = new Set(command.ids);
     const removed = new Set(
       document.nodes
-        .filter((node) => requested.has(node.id) && !node.locked)
+        .filter((node) => requested.has(node.id) && !locked(node))
         .map((node) => node.id),
     );
     // Locked content retains live references and their ancestors; no indirect mutation via deletion.
     const protectedIds = new Set<string>();
-    for (const node of document.nodes.filter((node) => node.locked)) {
+    for (const node of document.nodes.filter(locked)) {
       protectedIds.add(node.id);
       for (const id of node.data.stack?.nodeIds ?? []) protectedIds.add(id);
       for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
@@ -511,7 +536,8 @@ export function applyCommand(
     const nodes = [...document.nodes].sort(
       (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
     );
-    const movable = (node: CanvasNode) => selected.has(node.id) && !node.locked;
+    const movable = (node: CanvasNode) =>
+      selected.has(node.id) && !locked(node);
     if (!nodes.some(movable)) return document;
     let ordered = [...nodes];
     if (command.direction === "front")
@@ -561,7 +587,8 @@ export function applyCommand(
   for (const edge of document.edges) {
     const target = document.nodes.find((node) => node.id === edge.target);
     if (
-      target?.locked &&
+      target &&
+      locked(target) &&
       (target.data.settings?.firstFrameNodeId === edge.source ||
         target.data.settings?.lastFrameNodeId === edge.source)
     )
@@ -588,21 +615,6 @@ export function applyCommand(
         : { ...node, data: { ...node.data, settings } };
     }),
   };
-}
-
-function hasSelectedAncestor(
-  node: CanvasNode,
-  nodes: CanvasNode[],
-  selected: Set<string>,
-): boolean {
-  let parent = node.parentId;
-  const visited = new Set<string>();
-  while (parent && !visited.has(parent)) {
-    if (selected.has(parent)) return true;
-    visited.add(parent);
-    parent = nodes.find((item) => item.id === parent)?.parentId;
-  }
-  return false;
 }
 
 /** Node references are identities, unlike retained timeline/subject source snapshots. */

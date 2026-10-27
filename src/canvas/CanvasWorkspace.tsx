@@ -1,3 +1,4 @@
+import { lockedNodeIds } from "./hierarchy";
 import {
   lazy,
   Suspense,
@@ -213,15 +214,15 @@ function IconButton({
   );
 }
 
-export default function CanvasWorkspace({ onExit }: { onExit: () => void }) {
+export default function CanvasWorkspace() {
   return (
     <ReactFlowProvider>
-      <Workspace onExit={onExit} />
+      <Workspace />
     </ReactFlowProvider>
   );
 }
 
-function Workspace({ onExit }: { onExit: () => void }) {
+function Workspace() {
   const flow = useReactFlow<FlowNode, Edge>();
   const [history, setHistory] = useState<CanvasHistory>(() =>
     createHistory(createDocument()),
@@ -230,6 +231,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
   historyRef.current = history;
   const doc = history.present;
   const [ready, setReady] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const switchPending = useRef(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
   // React Flow's measured geometry is UI state, independent of authored dimensions.
@@ -362,7 +365,15 @@ function Workspace({ onExit }: { onExit: () => void }) {
       setPanel(null);
       setMenu(null);
       setProjectMenu(false);
-      window.history.replaceState({}, "", `/ai-tool/ai-canvas/${next.id}`);
+      setRename(null);
+      setMoreMenu(false);
+      setZoomMenu(false);
+      setHand(false);
+      window.history.replaceState(
+        {},
+        "",
+        `/ai-tool/ai-canvas/${encodeURIComponent(next.id)}`,
+      );
       requestAnimationFrame(() => {
         void flow.setViewport(next.viewport);
         if (fit)
@@ -375,10 +386,40 @@ function Workspace({ onExit }: { onExit: () => void }) {
     [flow],
   );
 
+  const switchDocument = useCallback(
+    async (
+      read: () => CanvasDocument | Promise<CanvasDocument>,
+      fit = false,
+    ) => {
+      if (switchPending.current) return;
+      switchPending.current = true;
+      setSwitching(true);
+      // The workspace is inert until saving and loading finish, so later edits cannot be lost.
+      importAbort.current?.abort();
+      try {
+        const next = await read();
+        if (!(await persist(historyRef.current.present))) return;
+        installDocument(next, fit);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "无法打开画布。");
+      } finally {
+        switchPending.current = false;
+        setSwitching(false);
+      }
+    },
+    [installDocument, persist, notify],
+  );
+
   useEffect(() => {
     let alive = true;
     const init = async () => {
-      const urlId = window.location.pathname.split("/ai-canvas/")[1];
+      const rawId = window.location.pathname.split("/ai-canvas/")[1];
+      let urlId: string | undefined;
+      try {
+        urlId = rawId ? decodeURIComponent(rawId) : undefined;
+      } catch {
+        notify("项目地址格式无效，将打开最近的画布。");
+      }
       let id: string | undefined = urlId;
       if (!id)
         try {
@@ -623,18 +664,19 @@ function Workspace({ onExit }: { onExit: () => void }) {
     },
     [command],
   );
+  const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
         ...n,
         measured: measurements[n.id],
         selected: selected.includes(n.id),
-        draggable: !n.locked && !panning,
+        draggable: !lockedIds.has(n.id) && !panning,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
       })),
-    [doc.nodes, selected, panning, measurements],
+    [doc.nodes, selected, panning, measurements, lockedIds],
   );
   const flowEdges: Edge[] = useMemo(
     () =>
@@ -729,6 +771,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
     setProjectMenu(false);
   };
   const openFilePicker = (id: string | null = null) => {
+    if (id && lockedIds.has(id)) {
+      notify("请先解锁节点或所属分组。");
+      return;
+    }
     uploadTarget.current = id;
     fileInput.current?.click();
   };
@@ -837,6 +883,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
     [doc.nodes, selected],
   );
   const openEditor = (node: CanvasNode, mode: EditorMode = "default") => {
+    if (lockedIds.has(node.id)) {
+      notify("请先解锁节点或所属分组。");
+      return;
+    }
     if (node.type === "text") {
       setPreview(node);
       return;
@@ -866,7 +916,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       !target ||
       target.type !== origin.kind ||
       target.data.src !== origin.src ||
-      target.locked
+      lockedNodeIds(current.nodes).has(target.id)
     ) {
       notify("编辑来源已改变、删除或锁定，本次修改未应用。");
       return;
@@ -1099,6 +1149,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (!ready || switchPending.current) return;
       const el = event.target as HTMLElement;
       const editingText = el.closest(
         "input,textarea,select,[contenteditable=true]",
@@ -1192,6 +1243,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       }
     };
     const onPaste = (event: ClipboardEvent) => {
+      if (!ready || switchPending.current) return;
       if (
         editing ||
         generationTarget ||
@@ -1224,7 +1276,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
       command({ type: "update-node", id, patch: { data } }),
     rename: (id: string) => {
       const n = doc.nodes.find((n) => n.id === id);
-      if (n) setRename({ id, value: n.data.title });
+      if (lockedIds.has(id)) notify("请先解锁节点或所属分组。");
+      else if (n) setRename({ id, value: n.data.title });
     },
     upload: (id: string) => openFilePicker(id),
     preview: (id: string) => {
@@ -1264,6 +1317,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       const node = doc.nodes.find((node) => node.id === id);
       if (node) openEditor(node);
     },
+    isLocked: (id: string) => lockedIds.has(id),
     getNode: (id: string) => doc.nodes.find((node) => node.id === id),
     cycleStack: (id: string, delta: number) => {
       const node = doc.nodes.find((node) => node.id === id),
@@ -1349,8 +1403,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
     </button>
   );
 
-  return (
+  const workspace = (
     <div
+      inert={!ready || switching}
+      aria-busy={!ready || switching}
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
@@ -1531,13 +1587,9 @@ function Workspace({ onExit }: { onExit: () => void }) {
         <div className="cw-project-heading">
           <button
             className="cw-brand"
-            title="返回首页"
-            aria-label="返回首页"
-            onClick={() => {
-              void persist(doc).then((saved) => {
-                if (saved) onExit();
-              });
-            }}
+            title="本地项目"
+            aria-label="本地项目"
+            onClick={() => togglePanel("projects")}
           >
             ✦
           </button>
@@ -1591,9 +1643,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           </button>
           <button
             onClick={() => {
-              void persist(doc).then((saved) => {
-                if (saved) installDocument(createDocument());
-              });
+              void switchDocument(createDocument);
             }}
           >
             新建空白画布 <kbd>＋</kbd>
@@ -1612,9 +1662,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           <hr />
           <button
             onClick={() => {
-              void persist(doc).then((saved) => {
-                if (saved) installDocument(exampleDocument(), true);
-              });
+              void switchDocument(exampleDocument, true);
             }}
           >
             打开示例画布
@@ -1666,9 +1714,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           </button>
           <button
             onClick={() => {
-              void persist(doc).then((saved) => {
-                if (saved) installDocument(exampleDocument(), true);
-              });
+              void switchDocument(exampleDocument, true);
               setMoreMenu(false);
             }}
           >
@@ -1749,9 +1795,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
             </button>
             <button
               onClick={() => {
-                void persist(doc).then((saved) => {
-                  if (saved) installDocument(exampleDocument(), true);
-                });
+                void switchDocument(exampleDocument, true);
               }}
             >
               体验示例画布 <span>↗</span>
@@ -1886,7 +1930,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
           </button>
           <button
             onClick={() =>
-              change((d) => ({ ...d, nodes: arrangeNodes(d.nodes, selected) }))
+              change((d) => ({
+                ...d,
+                nodes: arrangeNodes(d.nodes, selected),
+              }))
             }
           >
             自动排列
@@ -1901,7 +1948,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       )}
       {single &&
         ["image", "video", "audio"].includes(single.type) &&
-        !single.locked &&
+        !lockedIds.has(single.id) &&
         !editing &&
         !preview &&
         !generationTarget && (
@@ -1991,17 +2038,29 @@ function Workspace({ onExit }: { onExit: () => void }) {
                 })),
               )}
               <hr />
-              {menuButton(single?.locked ? "解锁" : "锁定", "lock", () =>
-                command({
-                  type: "batch",
-                  commands: selected.map((id) => ({
-                    type: "update-node",
-                    id,
-                    patch: {
-                      locked: !doc.nodes.find((n) => n.id === id)?.locked,
-                    },
-                  })),
-                }),
+              {menuButton(
+                single && lockedIds.has(single.id) && !single.locked
+                  ? "所属分组已锁定"
+                  : single?.locked
+                    ? "解锁"
+                    : "锁定",
+                "lock",
+                () => {
+                  if (single && lockedIds.has(single.id) && !single.locked) {
+                    notify("请先选择并解锁所属分组。");
+                    return;
+                  }
+                  command({
+                    type: "batch",
+                    commands: selected.map((id) => ({
+                      type: "update-node",
+                      id,
+                      patch: {
+                        locked: !doc.nodes.find((n) => n.id === id)?.locked,
+                      },
+                    })),
+                  });
+                },
               )}
               {menuButton("移到顶层", "arrow", () =>
                 command({
@@ -2010,6 +2069,14 @@ function Workspace({ onExit }: { onExit: () => void }) {
                   direction: "front",
                 }),
               )}
+              {single &&
+                ["image", "video", "audio", "file"].includes(single.type) &&
+                !lockedIds.has(single.id) &&
+                menuButton(
+                  single.data.src ? "替换素材" : "上传素材",
+                  "upload",
+                  () => openFilePicker(single.id),
+                )}
               {single?.data.src &&
                 menuButton("下载素材", "download", () => downloadNode(single))}
               {single?.type === "image" &&
@@ -2246,9 +2313,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
               <button
                 className="cw-wide-button"
                 onClick={() => {
-                  void persist(doc).then((saved) => {
-                    if (saved) installDocument(createDocument());
-                  });
+                  void switchDocument(createDocument);
                 }}
               >
                 <CanvasIcon name="plus" />
@@ -2259,11 +2324,17 @@ function Workspace({ onExit }: { onExit: () => void }) {
                   <button
                     key={p.id}
                     onClick={() => {
-                      void persist(doc).then(async (saved) => {
-                        if (!saved) return;
+                      if (p.id === doc.id) {
+                        setPanel(null);
+                        return;
+                      }
+                      void switchDocument(async () => {
                         const r = await loadDocument(p.id);
-                        if (r.ok && r.value) installDocument(r.value);
-                        else notify(r.ok ? "项目不存在" : r.error.message);
+                        if (!r.ok || !r.value)
+                          throw new Error(
+                            r.ok ? "项目不存在" : r.error.message,
+                          );
+                        return r.value;
                       });
                     }}
                   >
@@ -2348,7 +2419,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
               }}
               onDraftChange={(task) => {
                 const owner = doc.nodes.find((node) => node.id === selected[0]);
-                if (owner && !owner.locked)
+                if (owner && !lockedIds.has(owner.id))
                   command({
                     type: "update-node",
                     id: owner.id,
@@ -2377,7 +2448,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
                   notify("请选择结果对应的来源素材。");
                   return;
                 }
-                if (!owner.locked)
+                if (!lockedIds.has(owner.id))
                   command({
                     type: "update-node",
                     id: owner.id,
@@ -2511,16 +2582,11 @@ function Workspace({ onExit }: { onExit: () => void }) {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f)
-            void f.text().then(async (text) => {
-              const r = parseDocument(text);
-              if (!r.ok) {
-                notify(r.error.message);
-                return;
-              }
-              if (!(await persist(historyRef.current.present))) return;
-              installDocument({ ...r.value, id: crypto.randomUUID() }, true);
-              notify("已导入画布，并创建独立本地副本。");
-            });
+            void switchDocument(async () => {
+              const r = parseDocument(await f.text());
+              if (!r.ok) throw new Error(r.error.message);
+              return { ...r.value, id: crypto.randomUUID() };
+            }, true);
           e.target.value = "";
         }}
       />
@@ -2638,7 +2704,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
               current.id !== origin.documentId ||
               !target ||
               target.type !== origin.kind ||
-              target.locked
+              lockedNodeIds(current.nodes).has(target.id)
             ) {
               notify("编辑来源已改变，堆叠未应用。");
               return;
@@ -2879,5 +2945,15 @@ function Workspace({ onExit }: { onExit: () => void }) {
         </div>
       )}
     </div>
+  );
+  return (
+    <>
+      {workspace}
+      {(!ready || switching) && (
+        <div className="canvas-loading-screen" role="status">
+          {switching ? "正在切换画布…" : "正在打开画布…"}
+        </div>
+      )}
+    </>
   );
 }

@@ -11,6 +11,7 @@ export interface CanvasActions {
   beginEdit?: (id: string) => void;
   endEdit?: (id: string) => void;
   edit: (id: string) => void;
+  isLocked: (id: string) => boolean;
   getNode: (id: string) => CanvasNode | undefined;
   cycleStack: (id: string, delta: number) => void;
   metadata: (

@@ -176,7 +176,7 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
         ? "audio"
         : "image";
   const previous = node.data.settings as ComposerSettings | undefined;
-  // A replacement upload can change the node kind while retaining common settings.
+  // Older saved projects may retain settings from a previous media kind.
   // Model, resolution and duration belong to their original media mode.
   const sameMode = previous?.mode === mode ? previous : undefined;
   const defaults = generationDefaults(mode);

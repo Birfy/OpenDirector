@@ -1,3 +1,6 @@
+import { createCanvasToolTask } from "../src/canvas/toolCatalog.ts";
+import { createLayerDocument } from "../src/canvas/layerDocument.ts";
+import { parseDocument } from "../src/canvas/storage.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -265,4 +268,139 @@ test("reference commands reject self references and duplicate relationships from
     }),
     doc,
   );
+});
+
+test("locking a group protects nested nodes and their live references until the group is unlocked", () => {
+  const group = { ...createNode("group"), locked: true };
+  const inner = { ...createNode("group"), parentId: group.id };
+  const image = { ...createNode("image"), parentId: inner.id };
+  const source = createNode("image");
+  const document = {
+    ...createDocument(),
+    nodes: [
+      group,
+      inner,
+      {
+        ...image,
+        data: {
+          ...image.data,
+          settings: {
+            ...createDocument().settings,
+            firstFrameNodeId: source.id,
+          },
+        },
+      },
+      source,
+    ],
+    edges: [{ id: "frame", source: source.id, target: image.id }],
+  };
+  const commands: import("../src/canvas/model.ts").CanvasCommand[] = [
+    { type: "move-nodes", ids: [image.id], delta: { x: 20, y: 30 } },
+    {
+      type: "update-node",
+      id: image.id,
+      patch: { data: { title: "changed" } },
+    },
+    {
+      type: "update-node",
+      id: image.id,
+      patch: { locked: false, position: { x: 20, y: 30 } },
+    },
+    { type: "resize-node", id: image.id, width: 500, height: 500 },
+    { type: "remove-nodes", ids: [image.id, inner.id, source.id] },
+    { type: "reorder-nodes", ids: [image.id], direction: "front" },
+    { type: "remove-edges", ids: ["frame"] },
+  ];
+  for (const command of commands)
+    assert.equal(applyCommand(document, command), document, command.type);
+  const unlocked = applyCommand(document, {
+    type: "update-node",
+    id: group.id,
+    patch: { locked: false },
+  });
+  assert.equal(unlocked.nodes[2]!.locked, false);
+  const moved = applyCommand(unlocked, commands[0]!);
+  assert.deepEqual(moved.nodes[2]!.position, {
+    x: image.position.x + 20,
+    y: image.position.y + 30,
+  });
+  assert.equal(moved.nodes[0]!.locked, false);
+});
+
+test("replacing media drops old pixel edits and metadata but allows atomic layer output", () => {
+  const oldSrc = "data:image/svg+xml,old",
+    newSrc = "data:image/svg+xml,new";
+  const layers = createLayerDocument(oldSrc, 100, 100);
+  const image = createNode(
+    "image",
+    { x: 40, y: 30 },
+    {
+      src: oldSrc,
+      layers,
+      mimeType: "image/svg+xml",
+      assetState: "ready",
+      media: { width: 100, height: 100 },
+      settings: createDocument().settings,
+      prompt: "keep prompt",
+    },
+  );
+  image.data.taskDraft = createCanvasToolTask(
+    "cutout",
+    [image.id],
+    { selectionMode: "manual" },
+    {
+      sourceNodeId: image.id,
+      width: 100,
+      height: 100,
+      maskDataUrl: "data:image/png;base64,mask",
+    },
+  );
+  const before = { ...createDocument(), nodes: [image] };
+  const renamed = applyCommand(before, {
+    type: "update-node",
+    id: image.id,
+    patch: { data: { title: "renamed" } },
+  });
+  assert.equal(renamed.nodes[0]!.data.layers, layers);
+  const replaced = applyCommand(before, {
+    type: "update-node",
+    id: image.id,
+    patch: {
+      data: { src: newSrc, mimeType: "image/svg+xml", assetState: "ready" },
+    },
+  });
+  assert.equal(replaced.nodes[0]!.data.layers, undefined);
+  assert.equal(replaced.nodes[0]!.data.taskDraft, undefined);
+  assert.equal(replaced.nodes[0]!.data.media, undefined);
+  assert.equal(replaced.nodes[0]!.data.settings, image.data.settings);
+  assert.equal(replaced.nodes[0]!.data.prompt, "keep prompt");
+  assert.equal(parseDocument(replaced).ok, true);
+  const newLayers = createLayerDocument(newSrc, 200, 100);
+  const edited = applyCommand(before, {
+    type: "update-node",
+    id: image.id,
+    patch: {
+      data: {
+        src: newSrc,
+        layers: newLayers,
+        media: { width: 200, height: 100 },
+      },
+    },
+  });
+  assert.equal(edited.nodes[0]!.data.layers, newLayers);
+  assert.deepEqual(edited.nodes[0]!.data.media, { width: 200, height: 100 });
+  const audio = applyCommand(before, {
+    type: "update-node",
+    id: image.id,
+    patch: {
+      type: "audio",
+      data: { src: "data:audio/wav,new", mimeType: "audio/wav" },
+    },
+  });
+  assert.equal(audio.nodes[0]!.data.layers, undefined);
+  assert.equal(audio.nodes[0]!.data.settings, undefined);
+  assert.equal(audio.nodes[0]!.data.media, undefined);
+  assert.equal(audio.nodes[0]!.data.kind, "audio");
+  assert.deepEqual(audio.nodes[0]!.position, image.position);
+  assert.equal(parseDocument(audio).ok, true);
 });

@@ -59,19 +59,6 @@ code {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.9em;
 }
-.icon-button {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  padding: 0;
-  place-items: center;
-  border-radius: 5px;
-  color: #9d8daa;
-}
-.icon-button:hover {
-  color: #dac6e8;
-  background: #2f2436;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -92,4 +79,14 @@ code {
 ::-webkit-scrollbar-thumb {
   border-radius: 5px;
   background: #43344c;
+}
+
+.canvas-loading-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0d0d0d;
+  color: #aaa;
+  font-size: 13px;
 }

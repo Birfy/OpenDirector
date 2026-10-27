@@ -1,3 +1,4 @@
+import { indexNodes, ancestors } from "./hierarchy.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
 import type { CanvasNode, Point, Rect, Viewport } from "./model.ts";
 
@@ -6,31 +7,20 @@ export function absolutePosition(
   node: CanvasNode,
   nodes: readonly CanvasNode[],
 ): Point {
-  return positionInDocument(
-    node,
-    new Map(nodes.map((item) => [item.id, item])),
-  );
+  return positionInDocument(node, indexNodes(nodes));
 }
 
 function positionInDocument(
   node: CanvasNode,
   byId: ReadonlyMap<string, CanvasNode>,
 ): Point {
-  let position = { ...node.position };
-  let parentId = node.parentId;
-  const visited = new Set([node.id]);
-  while (parentId) {
-    if (visited.has(parentId)) throw new Error("画布分组存在循环引用。");
-    visited.add(parentId);
-    const parent = byId.get(parentId);
-    if (!parent) throw new Error(`找不到父节点：${parentId}`);
-    position = {
+  return ancestors(node, byId).reduce(
+    (position, parent) => ({
       x: position.x + parent.position.x,
       y: position.y + parent.position.y,
-    };
-    parentId = parent.parentId;
-  }
-  return position;
+    }),
+    { ...node.position },
+  );
 }
 
 /** Returns null for an empty selection. Coordinates include parent-group offsets. */
@@ -39,7 +29,7 @@ export function boundsOfNodes(
   allNodes: readonly CanvasNode[] = nodes,
 ): Rect | null {
   if (!nodes.length) return null;
-  const byId = new Map(allNodes.map((node) => [node.id, node]));
+  const byId = indexNodes(allNodes);
   let left = Infinity,
     top = Infinity,
     right = -Infinity,

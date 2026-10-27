@@ -46,6 +46,19 @@ export function LocalImageTools({
     [draft, setDraft] = useState<Shape | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null),
     current = useRef<Shape | null>(null);
+  const pointerId = useRef<number | null>(null);
+  const cancelStroke = () => {
+    const id = pointerId.current;
+    pointerId.current = null;
+    current.current = null;
+    setDraft(null);
+    if (id !== null && canvas.current?.hasPointerCapture(id))
+      canvas.current.releasePointerCapture(id);
+  };
+  useEffect(() => {
+    window.addEventListener("blur", cancelStroke);
+    return () => window.removeEventListener("blur", cancelStroke);
+  }, []);
   useEffect(() => {
     let live = true;
     if (!node.data.src) {
@@ -440,9 +453,26 @@ export function LocalImageTools({
         <canvas
           ref={canvas}
           aria-label="本地图像工具预览"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && current.current) {
+              event.preventDefault();
+              event.stopPropagation();
+              cancelStroke();
+            }
+          }}
           onPointerDown={(event) => {
-            if (!image || mode === "grid" || event.button !== 0) return;
+            if (
+              !image ||
+              mode === "grid" ||
+              event.button !== 0 ||
+              !event.isPrimary ||
+              pointerId.current !== null
+            )
+              return;
             event.preventDefault();
+            pointerId.current = event.pointerId;
+            event.currentTarget.focus();
             event.currentTarget.setPointerCapture(event.pointerId);
             const shape: Shape = {
               kind: tool,
@@ -456,7 +486,8 @@ export function LocalImageTools({
           }}
           onPointerMove={(event) => {
             const shape = current.current;
-            if (!shape || !image) return;
+            if (!shape || !image || pointerId.current !== event.pointerId)
+              return;
             const at = position(event);
             const next = {
               ...shape,
@@ -468,15 +499,16 @@ export function LocalImageTools({
             setDraft(next);
           }}
           onPointerUp={(event) => {
-            if (!current.current) return;
+            if (!current.current || pointerId.current !== event.pointerId)
+              return;
             commit([...shapes, current.current]);
-            current.current = null;
-            setDraft(null);
-            event.currentTarget.releasePointerCapture(event.pointerId);
+            cancelStroke();
           }}
-          onPointerCancel={() => {
-            current.current = null;
-            setDraft(null);
+          onPointerCancel={(event) => {
+            if (pointerId.current === event.pointerId) cancelStroke();
+          }}
+          onLostPointerCapture={(event) => {
+            if (pointerId.current === event.pointerId) cancelStroke();
           }}
         />
       </div>

@@ -47,7 +47,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   const resizeEnd = useCallback(() => endEdit?.(id), [endEdit, id]);
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
-  const locked = Boolean(actions?.getNode(id)?.locked);
+  const locked = Boolean(actions?.isLocked(id));
   const menu = (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();

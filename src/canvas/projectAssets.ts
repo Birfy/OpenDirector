@@ -34,8 +34,6 @@ export function resourceNodeData(
     title: resource.title,
     mimeType: resource.mimeType,
     assetState: "ready",
-    layers: undefined,
-    taskDraft: undefined,
     media: {
       width: resource.width,
       height: resource.height,
