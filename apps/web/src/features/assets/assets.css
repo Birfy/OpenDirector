@@ -1,0 +1,14 @@
+.asset-hint { margin: 8px 0 0; font-size: 12px; line-height: 1.8; color: var(--text-muted); }
+.asset-error { color: var(--warning-text); background: var(--warning-background); border-radius: 8px; padding: 10px 12px; margin: 12px 0; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-asset-dialog { width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: auto; padding: 22px; color: var(--text-primary); background: var(--surface-background); border: 1px solid var(--panel-border); border-radius: 14px; box-shadow: 0 12px 48px var(--shadow-color); }
+.project-asset-dialog::backdrop { background: var(--preview-backdrop); }
+.project-asset-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.project-asset-dialog h2 { margin: 0; font-size: 17px; }
+.project-asset-dialog > p { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.project-asset-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.asset-deletion-list { margin: 12px 0; padding: 12px 12px 12px 30px; border-radius: 8px; background: var(--subtle-background); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.asset-deletion-list li + li { margin-top: 8px; }
+.asset-deletion-actions { flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .project-asset-dialog { padding: 16px; }
+}

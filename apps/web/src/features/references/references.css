@@ -1,0 +1,55 @@
+.reference-editor-wrap { position: relative; min-width: 0; }
+.reference-editor, .reference-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; }
+.reference-editor { width: 100%; min-height: 105px; max-height: 260px; padding: 12px; overflow-y: auto; outline: none; cursor: text; font-size: 12px; }
+.reference-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--text-muted); pointer-events: none; position: absolute; }
+.reference-editor[aria-disabled="true"] { opacity: .65; cursor: default; }
+.reference-token { display: inline-flex; align-items: center; gap: 5px; max-width: min(240px, 100%); margin: 1px 2px; padding: 1px 6px 1px 3px; border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text-primary); background: var(--subtle-background); font: inherit; font-size: 12px; line-height: 24px; vertical-align: middle; cursor: pointer; user-select: all; }
+.reference-token > span:not(.reference-thumbnail) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-token > img, .reference-token .reference-thumbnail { width: 24px; height: 24px; flex-shrink: 0; border-radius: 3px; object-fit: cover; }
+.reference-token small { font-size: 10px; white-space: nowrap; color: var(--warning-text); }
+.reference-token.is-unavailable { border-style: dashed; color: var(--warning-text); }
+.reference-token:focus-visible { outline: 2px solid var(--focus-color); }
+.reference-thumbnail { display: inline-flex; justify-content: center; align-items: center; width: 42px; height: 42px; flex-shrink: 0; overflow: hidden; border-radius: 7px; background: var(--subtle-background); color: var(--text-muted); }
+.reference-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.reference-thumbnail .icon { width: 20px; height: 20px; }
+.reference-text { font-size: 12px; }
+.reference-preview img, .reference-preview video { display: block; max-width: 100%; max-height: 65vh; margin: auto; object-fit: contain; }
+.reference-preview audio { width: 100%; }
+.reference-preview pre { max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
+.reference-picker { position: fixed; z-index: 60; display: flex; flex-direction: column; padding: 10px; border: 1px solid var(--panel-border); border-radius: 14px; background: var(--surface-background); color: var(--text-primary); box-shadow: 0 8px 30px var(--shadow-color); white-space: normal; }
+.reference-picker header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 3px 10px; }
+.reference-picker header strong { font-size: 13px; font-weight: 500; }
+.reference-picker header small { font-size: 10px; color: var(--text-muted); }
+.reference-picker [role="tablist"] { display: flex; flex-shrink: 0; gap: 4px; padding: 3px; border-radius: 9px; background: var(--subtle-background); }
+.reference-picker [role="tab"] { flex: 1; padding: 6px 2px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 12px; }
+.reference-picker [role="tab"][aria-selected="true"] { background: var(--surface-background); color: var(--accent-color); box-shadow: 0 1px 3px var(--shadow-color); }
+.reference-picker button:disabled { opacity: .4; cursor: not-allowed; }
+.reference-picker-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-top: 6px; }
+.reference-picker-list > p { padding: 12px 5px; font-size: 12px; color: var(--text-muted); }
+.reference-picker [role="option"] { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 9px; background: transparent; color: inherit; text-align: left; }
+.reference-picker [role="option"][aria-selected="true"] { background: var(--message-background); }
+.reference-picker [role="option"][aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.reference-picker [role="option"] > span:not(.reference-thumbnail) { flex: 1; min-width: 0; }
+.reference-picker [role="option"] strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 12px; }
+.reference-picker [role="option"] small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+.reference-warning { margin: 5px 12px; font-size: 11px; color: var(--warning-text); line-height: 1.8; }
+.generation-input { border: 1px solid var(--panel-border); border-radius: 10px; background: var(--workspace-background); min-width: 0; }
+.generation-input:focus-within { border-color: var(--focus-color); }
+.generation-input .reference-text { padding: 12px; max-height: 240px; overflow-y: auto; }
+.generation-input-footer { display: flex; align-items: center; gap: 4px; padding: 0 8px 6px; }
+.generation-input-footer small { margin-left: auto; color: var(--text-muted); font-size: 10px; }
+.generation-input-footer > .icon-button { font-size: 11px; }
+.upload-button { background: var(--subtle-background); border-radius: 50%; color: var(--text-secondary); }
+.upload-button:hover { background: var(--hover-background); }
+.reference-composer { position: relative; border: 1px solid var(--panel-border); border-radius: 18px; padding: 12px 10px 9px; background: var(--surface-background); transition: border-color .15s, box-shadow .15s; }
+.reference-composer:focus-within { border-color: var(--input-border); box-shadow: 0 0 0 3px var(--focus-shadow); }
+.generation-input.is-composer .reference-editor { min-height: 130px; max-height: 240px; padding: 0 2px 8px; }
+.generation-input.is-composer .generation-input-footer { min-height: 34px; padding: 0; }
+.generation-input.is-composer .generation-input-footer > .icon-button { flex-shrink: 0; }
+.chat-composer .reference-editor { min-height: 86px; max-height: 180px; padding: 0 2px 8px; }
+@media (max-width: 460px) { .reference-picker header { align-items: flex-start; flex-direction: column; gap: 4px; } }
+
+.reference-upload-choices { display: grid; gap: 8px; }
+.reference-upload-choices > button { display: flex; align-items: center; gap: 10px; text-align: left; }
+.reference-upload-choices > button > span { min-width: 0; overflow-wrap: anywhere; }
+.reference-upload-choices small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; }

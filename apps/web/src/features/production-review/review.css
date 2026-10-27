@@ -1,0 +1,13 @@
+.review-preview { display: grid; place-items: center; min-height: 90px; padding: 12px; border-radius: 10px; background: var(--subtle-background); overflow: hidden; }
+.review-preview img, .review-preview video { display: block; max-width: 100%; max-height: 34dvh; object-fit: contain; }
+.review-preview audio { width: 100%; }
+.review-text { max-height: 34dvh; width: 100%; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; }
+.version-history { display: grid; gap: 12px; min-width: 0; }
+.version-entry { border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden; }
+.version-entry-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; padding: 12px; border: 0; text-align: left; background: var(--subtle-background); color: var(--text-primary); }
+.version-entry-heading strong { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.version-entry-heading span, .version-entry-heading time { font-size: 11px; color: var(--text-muted); }
+.version-entry-heading small { border-radius: 5px; padding: 3px 5px; color: var(--accent-color); background: var(--accent-background); }
+.version-entry-heading time { flex-basis: 100%; }
+.version-entry-body { display: grid; gap: 12px; padding: 12px; }
+.version-entry-body > button { justify-self: start; }

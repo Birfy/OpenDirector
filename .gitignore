@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+/packages/*/build/
+/apps/api/build/
+.pytest_cache/
+/projects/
+/.museshow/

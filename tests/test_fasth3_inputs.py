@@ -1,0 +1,152 @@
+import json
+from pathlib import Path
+import shutil
+import subprocess
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+
+from museshow.domain.projects import ProjectError
+from museshow.integrations.fasth3 import native_prompt, video_parameters, finalize_video_edit
+
+
+def source(kind, name, **extra):
+    return {'id': str(uuid4()), 'name': name, 'kind': kind, 'type': kind + '/mp4', **extra}
+
+
+def test_native_tags_bind_exact_chip_positions_and_share_ordinals_on_repeat():
+    video = source('video', '原视频.mp4', hasAudio=True)
+    first, second = source('image', '角色A.png'), source('image', '角色B.png')
+    sound = source('audio', '参考音频.wav')
+    refs = [(video, 'video'), (first, 'image'), (sound, 'audio'), (second, 'image')]
+    def ref(asset):
+        return {'type': 'reference', 'assetId': asset['id'], 'name': asset['name']}
+    content = [{'type': 'text', 'text': '将'}, ref(video), {'type': 'text', 'text': '的人物换成'},
+               ref(second), ref(first), {'type': 'text', 'text': '；音色参考'}, ref(sound), ref(second)]
+    task = {'promptContent': content, 'prompt': 'not authoritative'}
+    before = json.dumps(content, ensure_ascii=False)
+    assert native_prompt(task, refs) == '将<Video 1>的人物换成<Picture 2><Picture 1>；音色参考<Audio 2><Picture 2>'
+    assert json.dumps(content, ensure_ascii=False) == before
+
+
+@pytest.mark.parametrize('text,duration,seconds,frames,preserve', [
+    ('替换视频人物，保持镜头不变', 15000, '15', 362, True),
+    ('替换视频人物', 3000, '4', 107, True),
+    ('替换视频人物，输出 5 秒', 15000, '5', 124, False),
+    ('Replace the person; generate a 6-second clip', 15000, '6', 158, False),
+    ('参考这个视频制作全新短片', 15000, '5', 124, None),
+])
+def test_video_edit_duration_is_not_silently_five_seconds(text, duration, seconds, frames, preserve):
+    video = source('video', '原片.mp4', durationMs=duration, width=480, height=832)
+    node = {'referenceIds': [video['id']], 'prompt': text}
+    params = video_parameters(node, {video['id']: video})
+    assert params['seconds'] == seconds and params['num_frames'] == frames
+    assert params['size'] == '480x832'
+    if preserve is None:
+        assert 'videoEdit' not in params
+    else:
+        assert params['videoEdit']['preserveDuration'] is preserve
+        assert params['videoEdit']['sourceAssetId'] == video['id']
+
+
+def test_explicit_audio_edit_is_not_overwritten_and_invalid_duration_is_rejected():
+    video = source('video', '原片.mp4', durationMs=15000)
+    node = {'referenceIds': [video['id']], 'prompt': '替换人物并更换背景音乐'}
+    assert video_parameters(node, {video['id']: video})['videoEdit']['preserveAudio'] is False
+    with pytest.raises(ProjectError, match='4—15 秒'):
+        video_parameters({**node, 'prompt': '替换人物，输出 20 秒'}, {video['id']: video})
+
+
+@pytest.mark.parametrize('has_audio', [True, False])
+def test_real_finalization_preserves_source_soundtrack_or_silence_and_duration(tmp_path, has_audio):
+    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+        pytest.skip('FFmpeg required')
+    original, generated = tmp_path/'source.mp4', tmp_path/'generated.mp4'
+    def make(path, duration, frequency):
+        cmd = ['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24']
+        if frequency:
+            cmd += ['-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000']
+        cmd += ['-t', str(duration), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)]
+        subprocess.run(cmd, check=True, capture_output=True)
+    make(original, 1, 440 if has_audio else None)
+    make(generated, 2, 880)
+    meta = source('video', 'source.mp4', fingerprint='fixture', hasAudio=has_audio)
+    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
+    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test',
+            'inputSnapshot': {'references': {meta['id']: 'fixture'}},
+            'parameters': {'videoEdit': {'sourceAssetId': meta['id'], 'sourceDurationMs': 1000,
+                                        'preserveAudio': True, 'preserveDuration': True}}}
+    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
+    output = tmp_path/'output.mp4'
+    output.write_bytes(data)
+    def probe(path):
+        return json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(path)]))
+    info = probe(output)
+    assert suffix == 'mp4' and .99 <= float(info['format']['duration']) <= 1.1
+    assert any(s['codec_type'] == 'audio' for s in info['streams']) is has_audio
+    if has_audio:
+        def packets(path):
+            value = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a',
+                '-show_packets', '-show_data_hash', 'sha256', '-show_entries', 'packet=data_hash', '-of', 'json', str(path)]))
+            return [p['data_hash'] for p in value['packets']]
+        assert packets(output) == packets(original)
+        assert packets(output) != packets(generated)
+    changed = {**task, 'inputSnapshot': {'references': {meta['id']: 'changed'}}}
+    with pytest.raises(ProjectError, match='原视频已变化'):
+        finalize_video_edit(store, changed, 'mp4', generated.read_bytes())
+
+
+def test_preserved_soundtrack_does_not_extend_an_explicit_shorter_output(tmp_path, monkeypatch):
+    original = source('video', 'source.mp4', fingerprint='fixture')
+    store = SimpleNamespace(asset=lambda *args: (b'original', original))
+    commands = []
+    monkeypatch.setattr(shutil, 'which', lambda _: 'ffmpeg')
+    def run(command, **kwargs):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b'final')
+    monkeypatch.setattr(subprocess, 'run', run)
+    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'owner',
+            'parameters': {'duration': 5, 'videoEdit': {'sourceAssetId': original['id'],
+                'sourceDurationMs': 15000, 'preserveDuration': False, 'preserveAudio': True}}}
+    assert finalize_video_edit(store, task, 'mp4', b'generated') == ('mp4', b'final')
+    command = commands[0]
+    assert command[command.index('-t') + 1] == '5.0'
+
+
+def test_native_prompt_and_full_duration_reach_actual_video_multipart():
+    import asyncio
+    from email.parser import BytesParser
+    from email.policy import default
+    import httpx
+    from museshow.integrations.providers import GenerationProviders
+    video = source('video', 'original.mp4', fingerprint='fixture', durationMs=15000, hasAudio=True)
+    picture = source('image', 'person.png', fingerprint='fixture')
+    picture['type'] = 'image/png'
+    assets = {video['id']: (b'video-bytes', video), picture['id']: (b'\x89PNG\r\n\x1a\nfixture', picture)}
+    store = SimpleNamespace(asset=lambda owner, key: assets[key])
+    content = [{'type': 'text', 'text': '替换'}, {'type': 'reference', 'assetId': video['id'], 'name': video['name']},
+               {'type': 'text', 'text': '的人物为'}, {'type': 'reference', 'assetId': picture['id'], 'name': picture['name']}]
+    task = {'kind': 'video', 'projectId': 'owner', 'prompt': '替换原视频人物', 'promptContent': content,
+            'referenceIds': list(assets), 'videoMode': 'reference'}
+    task['parameters'] = video_parameters(task, {key: pair[1] for key, pair in assets.items()})
+    config = {'kind': 'video', 'protocol': 'vllm_omni', 'url': 'http://localhost:18091/v1',
+              'modelId': 'FastH3-Omni', 'apiKey': '', 'authMode': 'none'}
+    def handle(request):
+        if request.method == 'POST':
+            message = BytesParser(policy=default).parsebytes(('Content-Type: ' + request.headers['content-type'] + '\r\n\r\n').encode() + request.content)
+            fields = {part.get_param('name', header='content-disposition'): part.get_payload(decode=True)
+                      for part in message.iter_parts() if part.get_filename() is None}
+            assert fields['prompt'].decode() == '替换<Video 1>的人物为<Picture 1>'
+            assert fields['seconds'] == b'15'
+            assert json.loads(fields['extra_params'])['duration'] == 15
+            assert request.content.count(b'name="input_references"') == 2
+            assert b'video-bytes' in request.content
+            return httpx.Response(200, json={'id': 'verified-wire'})
+        if request.url.path.endswith('/content'):
+            return httpx.Response(200, content=b'generated')
+        return httpx.Response(200, json={'status': 'completed'})
+    async def submitted(value):
+        assert value == 'verified-wire'
+    provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+    assert asyncio.run(provider.generate(config, task, submitted)) == ('mp4', b'generated')

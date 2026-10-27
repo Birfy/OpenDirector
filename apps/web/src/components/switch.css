@@ -1,0 +1,6 @@
+.toggle-switch { flex-shrink: 0; width: 40px; height: 22px; padding: 3px; border: 0; border-radius: 11px; background: var(--hover-background); }
+.toggle-switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-background); box-shadow: 0 1px 3px var(--shadow-color); transition: transform 120ms ease; }
+.toggle-switch[aria-checked="true"] { background: var(--focus-color); }
+.toggle-switch[aria-checked="true"] span { transform: translateX(18px); }
+.toggle-switch:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
+.toggle-switch:disabled { cursor: default; opacity: .55; }
