@@ -47,6 +47,8 @@ import {
 } from "./generationActivity";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { CanvasIcon } from "./CanvasIcon";
+import { CanvasToolRail } from "./CanvasToolRail";
+import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
 import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
 import { resourceNodeData } from "./projectAssets";
@@ -257,32 +259,43 @@ function IconButton({
   onClick,
   active,
   disabled,
+  shortcut,
+  tooltipSide = "top",
+  tooltipDelay = 200,
 }: {
   name: string;
   label: string;
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
+  shortcut?: string;
+  tooltipSide?: "top" | "bottom" | "left" | "right";
+  tooltipDelay?: number;
 }) {
   return (
-    <button
+    <TooltipButton
       className={`cw-icon-button ${active ? "is-active" : ""}`}
       aria-label={label}
-      title={label}
+      label={label}
+      shortcut={shortcut}
+      tooltipSide={tooltipSide}
+      tooltipDelay={tooltipDelay}
       aria-pressed={active}
       onClick={onClick}
       disabled={disabled}
     >
       <CanvasIcon name={name} />
-    </button>
+    </TooltipButton>
   );
 }
 
 export default function CanvasWorkspace() {
   return (
-    <ReactFlowProvider>
-      <Workspace />
-    </ReactFlowProvider>
+    <TooltipProvider>
+      <ReactFlowProvider>
+        <Workspace />
+      </ReactFlowProvider>
+    </TooltipProvider>
   );
 }
 
@@ -1685,6 +1698,7 @@ function Workspace() {
     const el = event.target as HTMLElement;
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (el.closest(".cw-composer-dock,.cw-domain-dialog")) return;
+    if (event.key === "Escape" && el.closest(".cw-rail")) return;
     const editingText = el.closest(
       "input,textarea,select,[contenteditable=true]",
     );
@@ -1762,6 +1776,9 @@ function Workspace() {
     } else if (mod && key === "s") {
       event.preventDefault();
       void persist(doc);
+    } else if (mod && key === "o") {
+      event.preventDefault();
+      openFilePicker();
     } else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
       removeSelected();
@@ -2226,14 +2243,15 @@ function Workspace() {
 
       <header className="cw-topbar">
         <div className="cw-project-heading">
-          <button
+          <TooltipButton
             className="cw-brand"
-            title="本地项目"
+            label="本地项目"
+            tooltipSide="bottom"
             aria-label="本地项目"
             onClick={() => togglePanel("projects")}
           >
             ✦
-          </button>
+          </TooltipButton>
           <button
             className="cw-project-title"
             onClick={() => setProjectMenu(!projectMenu)}
@@ -2250,12 +2268,14 @@ function Workspace() {
           <IconButton
             name="search"
             label="搜索节点"
+            tooltipSide="bottom"
             active={panel === "search"}
             onClick={() => togglePanel("search")}
           />
           <IconButton
             name="history"
             label="生成历史"
+            tooltipSide="bottom"
             active={panel === "history"}
             onClick={() => togglePanel("history")}
           />
@@ -2278,6 +2298,7 @@ function Workspace() {
           <IconButton
             name="more"
             label="更多操作"
+            tooltipSide="bottom"
             active={moreMenu}
             onClick={() => setMoreMenu(!moreMenu)}
           />
@@ -2420,65 +2441,81 @@ function Workspace() {
         </div>
       )}
 
-      <nav className="cw-rail" aria-label="画布创作工具">
-        <IconButton
-          name="text"
-          label="添加文本 (T)"
-          onClick={() => addNode("text")}
-        />
-        <IconButton
-          name="image"
-          label="添加图片"
-          onClick={() => addNode("image")}
-        />
-        <IconButton
-          name="video"
-          label="添加视频"
-          onClick={() => addNode("video")}
-        />
-        <IconButton
-          name="audio"
-          label="添加音频"
-          onClick={() => addNode("audio")}
-        />
-        <IconButton
-          name="timeline"
-          label="添加时间线"
-          onClick={() => addNode("timeline")}
-        />
-        <IconButton
-          name="subject"
-          label="添加主体"
-          onClick={() => addNode("subject")}
-        />
-        <IconButton
-          name="external"
-          label="添加导演台"
-          onClick={() => addNode("external")}
-        />
-        <span className="cw-divider" />
-        <IconButton
-          name="tool"
-          label="媒体工具箱"
-          active={panel === "tools"}
-          onClick={() =>
-            panel === "tools"
-              ? setPanel(null)
-              : openTools(single?.data.taskDraft?.tool ?? "layers")
-          }
-        />
-        <IconButton
-          name="folder"
-          label="资产库"
-          active={panel === "assets"}
-          onClick={() => togglePanel("assets")}
-        />
-        <IconButton
-          name="upload"
-          label="上传本地素材"
-          onClick={() => openFilePicker()}
-        />
-      </nav>
+      <CanvasToolRail
+        holdCollapsed={panel === "tools"}
+        items={[
+          {
+            name: "text",
+            label: "文本",
+            actionLabel: "添加文本",
+            shortcut: "T",
+            onClick: () => addNode("text"),
+          },
+          {
+            name: "image",
+            label: "图片",
+            actionLabel: "添加图片",
+            onClick: () => addNode("image"),
+          },
+          {
+            name: "video",
+            label: "视频",
+            actionLabel: "添加视频",
+            onClick: () => addNode("video"),
+          },
+          {
+            name: "audio",
+            label: "音频",
+            actionLabel: "添加音频",
+            onClick: () => addNode("audio"),
+          },
+          {
+            name: "timeline",
+            label: "时间线",
+            actionLabel: "添加时间线",
+            onClick: () => addNode("timeline"),
+          },
+          {
+            name: "subject",
+            label: "主体",
+            actionLabel: "添加主体",
+            onClick: () => addNode("subject"),
+          },
+          {
+            name: "tool",
+            label: "媒体工具箱",
+            active: panel === "tools",
+            onClick: () =>
+              panel === "tools"
+                ? setPanel(null)
+                : openTools(single?.data.taskDraft?.tool ?? "layers"),
+          },
+          {
+            name: "external",
+            label: "导演台",
+            actionLabel: "添加导演台",
+            onClick: () => addNode("external"),
+          },
+          {
+            name: "folder",
+            label: "资产库",
+            preserveCollapsedOnFocusRestore: true,
+            separatorBefore: true,
+            active: panel === "assets",
+            onClick: () => togglePanel("assets"),
+          },
+          {
+            name: "upload",
+            label: "上传",
+            preserveCollapsedOnFocusRestore: true,
+            actionLabel: "上传本地素材",
+            shortcut: navigator.platform.includes("Mac")
+              ? "Meta+O"
+              : "Control+O",
+            onClick: () => openFilePicker(),
+          },
+        ]}
+      />
       {!doc.nodes.length && ready && (
         <div className="cw-empty">
           <div className="cw-aurora" />
@@ -2506,41 +2543,52 @@ function Workspace() {
       <div className="cw-bottom-controls">
         <IconButton
           name={hand ? "hand" : "pointer"}
-          label={hand ? "切换到选择工具 (V)" : "切换到抓手工具 (H)"}
+          label={hand ? "切换到选择工具" : "切换到抓手工具"}
+          shortcut={hand ? "V" : "H"}
+          tooltipDelay={0}
           active={hand}
           onClick={() => setHand(!hand)}
         />
         <span className="cw-vline" />
         <IconButton
           name="map"
-          label="小地图"
+          label={minimap ? "隐藏小地图" : "显示小地图"}
+          tooltipDelay={0}
           active={minimap}
           onClick={() => setMinimap(!minimap)}
         />
         <IconButton
           name="link"
-          label="显示连线"
+          label={showEdges ? "隐藏连线" : "显示连线"}
+          tooltipDelay={0}
           active={showEdges}
           onClick={() => setShowEdges(!showEdges)}
         />
-        <button
+        <TooltipButton
           className="cw-zoom-button"
-          aria-label="缩放选项"
+          label="缩放选项"
+          tooltipDelay={0}
           onClick={() => setZoomMenu(!zoomMenu)}
         >
           {Math.round(zoom * 100)}%<CanvasIcon name="chevron" size={11} />
-        </button>
+        </TooltipButton>
       </div>
       <div className="cw-undo-controls">
         <IconButton
           name="undo"
           label="撤销"
+          shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
+          tooltipDelay={0}
           disabled={!history.past.length && !history.transaction}
           onClick={() => setHistory(undo)}
         />
         <IconButton
           name="redo"
           label="重做"
+          shortcut={
+            navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
+          }
+          tooltipDelay={0}
           disabled={!history.future.length}
           onClick={() => setHistory(redo)}
         />
@@ -2604,6 +2652,7 @@ function Workspace() {
         <IconButton
           name="help"
           label="使用帮助"
+          shortcut="?"
           onClick={() => setHelp(true)}
         />
         <button
@@ -2731,15 +2780,15 @@ function Workspace() {
                   </button>
                 </>
               )}
-              <button
-                aria-label="关闭生成面板"
+              <TooltipButton
+                label="关闭生成面板"
                 onClick={() => {
                   setDismissedComposer(composerNode.id);
                   root.current?.focus({ preventScroll: true });
                 }}
               >
                 ×
-              </button>
+              </TooltipButton>
             </div>
             <NodeComposer
               selectedNode={composerNode}
@@ -3708,6 +3757,7 @@ function Workspace() {
                 ["缩放画布", "⌘ / Ctrl＋滚动"],
                 ["框选多个节点", "空白处拖动 / Shift"],
                 ["选择 / 抓手 / 文本", "V / H / T"],
+                ["上传本地素材", "⌘ / Ctrl＋O"],
                 ["撤销 / 重做", "⌘ Z / ⌘ ⇧ Z"],
                 ["复制 / 粘贴 / 副本", "⌘ C / ⌘ V / ⌘ D"],
                 ["编组 / 取消编组", "⌘ G / ⌘ ⇧ G"],

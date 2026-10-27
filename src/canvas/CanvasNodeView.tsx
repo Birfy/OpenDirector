@@ -11,6 +11,7 @@ import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
+import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import "./nodes.css";
 import {
@@ -83,16 +84,16 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         </span>
         {locked && <CanvasIcon name="lock" size={12} />}
         <div className="cw-node-heading-actions nodrag nopan">
-          <button
+          <TooltipButton
             aria-label={`重命名${data.title}`}
-            title="重命名"
+            label="重命名"
             onClick={() => actions?.rename(id)}
           >
             <CanvasIcon name="pencil" size={13} />
-          </button>
-          <button aria-label="节点选项" title="节点选项" onClick={menu}>
+          </TooltipButton>
+          <TooltipButton aria-label="节点选项" label="节点选项" onClick={menu}>
             <CanvasIcon name="tag" size={13} />
-          </button>
+          </TooltipButton>
         </div>
       </div>
 
@@ -396,25 +397,25 @@ function DomainCard({
       )}
       {kind === "stack" && (
         <div className="cw-card-stack-controls nodrag nopan">
-          <button
-            aria-label="上一个堆叠素材"
+          <TooltipButton
+            label="上一个堆叠素材"
             disabled={!stack?.nodeIds.length}
             onClick={() => actions?.cycleStack(id, -1)}
           >
             ‹
-          </button>
+          </TooltipButton>
           <span>
             {stack?.nodeIds.length ? stack.activeIndex + 1 : 0} /{" "}
             {stack?.nodeIds.length ?? 0}
             <small>{member?.data.title ?? "尚无资源"}</small>
           </span>
-          <button
-            aria-label="下一个堆叠素材"
+          <TooltipButton
+            label="下一个堆叠素材"
             disabled={!stack?.nodeIds.length}
             onClick={() => actions?.cycleStack(id, 1)}
           >
             ›
-          </button>
+          </TooltipButton>
         </div>
       )}
       {kind === "tool" && (

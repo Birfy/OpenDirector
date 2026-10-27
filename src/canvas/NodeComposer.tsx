@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
+import { TooltipButton } from "./TooltipButton";
 import {
   changeGenerationSettings,
   generationBlocker,
@@ -554,14 +555,14 @@ export function NodeComposer({
             <strong>
               选择{presetLabels[panel as PresetKey]} · 本地提示词预设
             </strong>
-            <button
+            <TooltipButton
               type="button"
               className="cw-icon-button"
-              aria-label="关闭选项"
+              label="关闭选项"
               onClick={() => setPanel(null)}
             >
               <CanvasIcon name="close" size={15} />
-            </button>
+            </TooltipButton>
           </div>
           <div className="cw-preset-options">
             {presets[panel as PresetKey].map((preset) => (
@@ -658,11 +659,11 @@ export function NodeComposer({
               </div>
             );
           })}
-          <button
+          <TooltipButton
             type="button"
             className="cw-frame-swap"
             aria-label="互换首尾帧"
-            title="两个槽位都有素材时可互换"
+            label="互换首尾帧 · 两个槽位都有素材时可互换"
             disabled={
               running ||
               !settings.firstFrameNodeId ||
@@ -685,7 +686,7 @@ export function NodeComposer({
             }
           >
             ⇄
-          </button>
+          </TooltipButton>
           <button
             type="button"
             className="cw-frame-add"
@@ -715,16 +716,16 @@ export function NodeComposer({
       <div className="cw-composer-body">
         {!firstLast && !reading && !music && (
           <div className="cw-reference-strip">
-            <button
+            <TooltipButton
               type="button"
               className="cw-add-reference"
               onClick={onPickReference}
               aria-label="添加参考素材"
-              title="添加参考素材"
+              label="添加参考素材"
             >
               <CanvasIcon name="plus" size={20} />
               <span>参考</span>
-            </button>
+            </TooltipButton>
             {incomingNodes.map((node) => (
               <button
                 type="button"
@@ -850,26 +851,33 @@ export function NodeComposer({
           </button>
         )}
         <span className="cw-footer-spacer" />
-        <button
+        <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
           aria-label={
             running ? "取消生成" : backend ? "提交生成" : "创建本地任务"
           }
-          title={
+          label={
             running
               ? "取消生成"
               : canRun
                 ? backend
-                  ? "提交到本地服务 · ⌘/Ctrl + Enter"
-                  : "创建本地任务 · ⌘/Ctrl + Enter · 未连接生成服务"
+                  ? "提交到本地服务"
+                  : "创建本地任务 · 未连接生成服务"
                 : (blocker ?? "请补全创作参数")
+          }
+          shortcut={
+            !running && canRun
+              ? navigator.platform.includes("Mac")
+                ? "⌘ Enter"
+                : "Ctrl Enter"
+              : undefined
           }
           disabled={!running && !canRun}
           onClick={running ? onCancel : onRun}
         >
           <CanvasIcon name={running ? "stop" : "arrowUp"} size={20} />
-        </button>
+        </TooltipButton>
       </div>
       <div className="cw-generation-evidence">
         <span
@@ -930,14 +938,14 @@ export function NodeComposer({
         >
           <div className="cw-popover-heading">
             <strong>生成参数</strong>
-            <button
+            <TooltipButton
               type="button"
               className="cw-icon-button"
-              aria-label="关闭参数"
+              label="关闭参数"
               onClick={() => setPanel(null)}
             >
               <CanvasIcon name="close" size={15} />
-            </button>
+            </TooltipButton>
           </div>
           {mode !== "audio" && (
             <div className="cw-parameter-section">
@@ -1104,14 +1112,14 @@ export function NodeComposer({
         >
           <div className="cw-popover-heading">
             <strong>语音库 · 已观察音色</strong>
-            <button
+            <TooltipButton
               type="button"
               className="cw-icon-button"
-              aria-label="关闭语音库"
+              label="关闭语音库"
               onClick={() => setPanel(null)}
             >
               <CanvasIcon name="close" size={15} />
-            </button>
+            </TooltipButton>
           </div>
           <button
             type="button"
@@ -1142,14 +1150,14 @@ export function NodeComposer({
         >
           <div className="cw-popover-heading">
             <strong>已连接的参考</strong>
-            <button
+            <TooltipButton
               type="button"
               className="cw-icon-button"
-              aria-label="关闭引用"
+              label="关闭引用"
               onClick={() => setPanel(null)}
             >
               <CanvasIcon name="close" size={15} />
-            </button>
+            </TooltipButton>
           </div>
           {incomingNodes.length ? (
             incomingNodes.map((node) => (

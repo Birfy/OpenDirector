@@ -53,6 +53,7 @@
   transition: opacity 0.15s;
 }
 .cw-node:hover .cw-node-heading-actions,
+.cw-node-heading-actions:focus-within,
 .cw-node-selected .cw-node-heading-actions {
   opacity: 1;
 }

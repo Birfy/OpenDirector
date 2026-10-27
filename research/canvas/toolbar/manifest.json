@@ -1,0 +1,16 @@
+{
+  "source_manifest": "../lazy-chunks.json",
+  "scope": "Anonymous public GET; inspected creation toolbar dependency, no credentials or target execution. Readable file is formatting-only.",
+  "entries": [
+    {
+      "id": "1039",
+      "url": "https://lf3-lv-buz.vlabstatic.com/obj/image-lvweb-buz/ies/lvweb/octo_web/static/js/async/1039.525c1475f8.js",
+      "file": "1039.525c1475f8.js",
+      "sha256": "3e610f97ecf1e431e80373d2151736ee452c03a9e2eff2394571d1113d5dee7a",
+      "bytes": 14862,
+      "status": 200,
+      "capture": "capture/1039.525c1475f8.js",
+      "readable": "readable/1039.525c1475f8.js"
+    }
+  ]
+}
