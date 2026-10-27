@@ -2,11 +2,13 @@ import {
   applyCommand,
   createNode,
   type CanvasDocument,
+  type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeKind,
 } from "./model.ts";
 import { absolutePosition } from "./geometry.ts";
 import { indexNodes, isNodeLocked } from "./hierarchy.ts";
+import type { CanvasToolTask } from "./toolCatalog.ts";
 export interface ResultSource {
   documentId: string;
   nodeId: string;
@@ -34,6 +36,27 @@ function sourceError(document: CanvasDocument, source: ResultSource) {
   if (!target) return "来源节点已被删除，结果未写入画布。";
   if (target.type !== source.kind)
     return "来源节点类型已改变，结果未写入画布。";
+}
+
+/** Post-edit sessions require the same usable media and an editable source until commit. */
+export function validateNodeActionSource(
+  document: CanvasDocument,
+  source: Readonly<ResultSource>,
+):
+  | { node: CanvasNode; error?: undefined }
+  | { node?: undefined; error: string } {
+  const error = sourceError(document, source);
+  if (error) return { error };
+  const node = document.nodes.find((item) => item.id === source.nodeId)!;
+  if (
+    !source.src ||
+    node.data.src !== source.src ||
+    node.data.assetState === "missing"
+  )
+    return { error: "来源素材已改变或不可用，请重新打开工具。" };
+  if (isNodeLocked(node, indexNodes(document.nodes)))
+    return { error: "来源节点已锁定，请先解锁节点。" };
+  return { node };
 }
 
 function hasInvalidMedia(outputs: readonly LinkedMediaResult[]) {
@@ -122,19 +145,16 @@ export function appendLinkedMediaResults(
   document: CanvasDocument,
   source: ResultSource,
   outputs: readonly LinkedMediaResult[],
+  sourceTask?: CanvasToolTask,
 ): PlacementResult {
-  const error = sourceError(document, source);
-  if (error) return { document, ids: [], error };
-  const target = document.nodes.find((node) => node.id === source.nodeId)!;
-  if (target.data.src !== source.src)
-    return {
-      document,
-      ids: [],
-      error: "来源素材已改变，请重新打开工具后处理。",
-    };
+  const validation = validateNodeActionSource(document, source);
+  if (!validation.node) return { document, ids: [], error: validation.error };
+  const target = validation.node;
   if (!outputs.length) return { document, ids: [] };
   if (hasInvalidMedia(outputs))
     return { document, ids: [], error: "结果不包含有效媒体。" };
+  if (sourceTask && sourceTask.sourceNodeIds[0] !== source.nodeId)
+    return { document, ids: [], error: "编辑草稿与来源节点不匹配。" };
   const p = absolutePosition(target, document.nodes);
   const nodes = placeResults(document, outputs, {
     x: p.x + target.width + 100,
@@ -149,7 +169,17 @@ export function appendLinkedMediaResults(
   return {
     document: {
       ...document,
-      nodes: [...document.nodes, ...nodes],
+      nodes: [
+        ...document.nodes.map((node) =>
+          sourceTask && node.id === source.nodeId
+            ? {
+                ...node,
+                data: { ...node.data, taskDraft: structuredClone(sourceTask) },
+              }
+            : node,
+        ),
+        ...nodes,
+      ],
       edges: [...document.edges, ...edges],
     },
     ids: nodes.map((node) => node.id),

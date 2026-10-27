@@ -19,21 +19,26 @@ export function useSelectionPresentation({
   toolbar,
   composer,
   bounds,
+  mediaBounds = bounds,
   nodeId,
   panel,
   focusRequest,
   blocked,
   controlsKey,
+  preferredZoom,
 }: {
   root: RefObject<HTMLDivElement | null>;
   toolbar: RefObject<HTMLDivElement | null>;
   composer: RefObject<HTMLDivElement | null>;
   bounds: Rect | null;
+  mediaBounds?: Rect | null;
   nodeId: string | undefined;
   panel: string | null;
   focusRequest: number;
   blocked: boolean;
   controlsKey: string;
+  /** Dedicated media editing may enlarge its source; ordinary selection preserves zoom. */
+  preferredZoom?: number;
 }) {
   const flow = useReactFlow();
   const viewport = useViewport();
@@ -141,14 +146,32 @@ export function useSelectionPresentation({
     if (!bounds || blocked || obscured) stopPresentation();
     // A new node must not be fitted using the previous node's generator height.
     if (measurement.key !== measurementKey) return;
-    const key = JSON.stringify([nodeId, focusRequest, chrome, obscured]);
+    const key = JSON.stringify([
+      nodeId,
+      focusRequest,
+      controlsKey,
+      chrome,
+      obscured,
+    ]);
     if (key === lastLayout.current) return;
-    lastLayout.current = key;
     if (!bounds || blocked || obscured || chrome.safe.width === 0) return;
+    lastLayout.current = key;
     const current = flow.getViewport();
     const intent = JSON.stringify([nodeId, focusRequest, panel]);
     if (origin.current?.key !== intent)
-      origin.current = { key: intent, viewport: current };
+      origin.current = {
+        key: intent,
+        viewport: preferredZoom
+          ? {
+              ...current,
+              zoom: preferredZoom,
+              x:
+                current.x +
+                (bounds.x + bounds.width / 2) * (current.zoom - preferredZoom),
+              y: current.y + bounds.y * (current.zoom - preferredZoom),
+            }
+          : current,
+      };
     // Measurement may settle over several frames (wrapping and max-height). Fit
     // from the same user viewport, otherwise each intermediate size only shrinks.
     const next = selectionViewport(bounds, origin.current.viewport, chrome);
@@ -171,6 +194,7 @@ export function useSelectionPresentation({
     flow,
     measurement.key,
     measurementKey,
+    preferredZoom,
   ]);
 
   const placement = bounds
@@ -198,6 +222,14 @@ export function useSelectionPresentation({
       present(selectionViewport(bounds, view, chrome));
     },
     placement,
+    mediaRect: mediaBounds
+      ? {
+          left: mediaBounds.x * viewport.zoom + viewport.x + viewport.zoom,
+          top: mediaBounds.y * viewport.zoom + viewport.y + viewport.zoom,
+          width: (mediaBounds.width - 2) * viewport.zoom,
+          height: (mediaBounds.height - 2) * viewport.zoom,
+        }
+      : null,
     visible: Boolean(placement?.visible) && !obscured,
     composerWidth: chrome.safe.width ? Math.min(680, chrome.safe.width) : 680,
     toolbarMaxWidth: chrome.safe.width || undefined,

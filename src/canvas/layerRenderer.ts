@@ -3,7 +3,7 @@ import {
   type ImageLayer,
   type LayerDocument,
   type MaskStroke,
-} from "./layerDocument";
+} from "./layerDocument.ts";
 
 export function localLayerSource(src: string): boolean {
   if (/^data:image\//i.test(src)) return true;

@@ -1267,14 +1267,6 @@
   max-height: calc(100vh - 80px);
   overflow-y: auto;
 }
-.cw-side-panel.is-tools {
-  padding: 0;
-  width: 365px;
-  overflow: hidden;
-}
-.cw-side-panel.is-tools > .cw-panel-heading {
-  display: none;
-}
 .cw-generation-dialog {
   width: min(700px, 96vw);
 }
@@ -1366,9 +1358,6 @@
   cursor: wait;
 }
 @media (max-width: 700px) {
-  .cw-side-panel.is-tools {
-    width: auto;
-  }
   .cw-selected-tools {
     overflow-x: auto;
   }

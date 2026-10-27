@@ -73,7 +73,14 @@ import { TimelineEditor } from "./TimelineEditor";
 import { SubjectEditor } from "./SubjectEditor";
 import { StackEditor } from "./StackEditor";
 import { ToolEditor } from "./ToolEditor";
-import { CanvasToolsPanel } from "./CanvasToolsPanel";
+import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
+import { VideoActionEditor } from "./VideoActionEditor";
+import { NodeTaskPanel } from "./NodeTaskPanel";
+import {
+  createVideoExtensionDraft,
+  gridSplitImage,
+} from "./nodeActionWorkflow";
+import { captureVideoEndpoint, extractVideoAudio } from "./videoActionRuntime";
 import { EditorModal } from "./EditorModal";
 import { LocalImageTools } from "./LocalImageTools";
 import { LocalMediaEditor } from "./LocalMediaEditor";
@@ -94,6 +101,7 @@ import {
 } from "./generationHistory";
 import {
   appendLinkedMediaResults,
+  validateNodeActionSource,
   appendServiceResults,
   applyGenerationResults,
   type GenerationResultMode,
@@ -197,7 +205,7 @@ type Panel =
   | "history"
   | "assistant"
   | "projects"
-  | "tools"
+  | "director"
   | null;
 type Menu = {
   x: number;
@@ -381,7 +389,13 @@ function Workspace() {
   const [editing, setEditing] = useState<CanvasNode | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("default");
   const editorOrigin = useRef<ResultSource | null>(null);
-  const [toolInitial, setToolInitial] = useState<CanvasToolId>("layers");
+  const [actionSession, setActionSession] = useState<
+    (ResultSource & { tool: CanvasToolId; token: string }) | null
+  >(null);
+  const actionSessionRef = useRef(actionSession);
+  actionSessionRef.current = actionSession;
+  const [actionMedia, setActionMedia] = useState<HTMLDivElement | null>(null);
+  const quickAction = useRef<AbortController | null>(null);
   const [maskTool, setMaskTool] = useState<CanvasToolId>("cutout");
   const [generationTarget, setGenerationTarget] = useState<{
     documentId: string;
@@ -393,6 +407,8 @@ function Workspace() {
   const resultBinding = useRef<
     | (ResultSource & {
         expectedKind?: "image" | "video" | "audio";
+        placement: "generation" | "post-edit";
+        actionToken?: string;
         jobId?: string;
       })
     | null
@@ -457,7 +473,20 @@ function Workspace() {
     () => incomingNodes(doc, composerNodeId),
     [doc.nodes, doc.edges, composerNodeId],
   );
-  const selectedOwner = doc.nodes.find((node) => node.id === selected[0]);
+  const actionSource = actionSession
+    ? validateNodeActionSource(doc, actionSession)
+    : null;
+  const actionNode =
+    actionSource &&
+    "node" in actionSource &&
+    single?.id === actionSession?.nodeId
+      ? actionSource.node
+      : undefined;
+  const activeAction = actionNode ? actionSession : null;
+  useEffect(() => {
+    if (actionSession && !actionNode) setActionSession(null);
+  }, [actionSession, actionNode]);
+  useEffect(() => () => quickAction.current?.abort(), [doc.id]);
   const command = useCallback(
     (value: CanvasCommand) => setHistory((h) => executeCommand(h, value)),
     [],
@@ -558,6 +587,8 @@ function Workspace() {
       setResultBusy(false);
       setGenerationTarget(null);
       setEditing(null);
+      setActionSession(null);
+      quickAction.current?.abort();
       setPreview(null);
       editorOrigin.current = null;
       referenceTarget.current = null;
@@ -1006,6 +1037,7 @@ function Workspace() {
   );
   const hasComposer = Boolean(
     selectionControls &&
+    !activeAction &&
     composerNode &&
     single?.id === composerNode.id &&
     ["image", "video", "audio"].includes(composerNode.type) &&
@@ -1015,21 +1047,44 @@ function Workspace() {
   );
   const hasToolbar = Boolean(
     selectionControls &&
+    !activeAction &&
     single &&
     (!["image", "video", "audio", "file"].includes(single.type) ||
       (single.data.src && single.data.assetState !== "missing")),
   );
+  const mediaBounds = single
+    ? {
+        ...absolutePosition(single, doc.nodes),
+        width: single.width,
+        height: single.height,
+      }
+    : null;
+  const actionParameters =
+    actionNode?.data.taskDraft?.tool === activeAction?.tool
+      ? actionNode?.data.taskDraft?.parameters
+      : undefined;
+  const expansion = (key: string) =>
+    typeof actionParameters?.[key] === "number"
+      ? Math.max(0, Math.min(4, actionParameters[key] as number))
+      : 0.25;
+  const presentationBounds =
+    activeAction?.tool === "outpaint" && mediaBounds
+      ? {
+          x: mediaBounds.x - mediaBounds.width * expansion("left"),
+          y: mediaBounds.y - mediaBounds.height * expansion("top"),
+          width:
+            mediaBounds.width * (1 + expansion("left") + expansion("right")),
+          height:
+            mediaBounds.height * (1 + expansion("top") + expansion("bottom")),
+        }
+      : mediaBounds;
   const selectionPresentation = useSelectionPresentation({
     root,
     toolbar: toolbarElement,
     composer: composerElement,
-    bounds: single
-      ? {
-          ...absolutePosition(single, doc.nodes),
-          width: single.width,
-          height: single.height,
-        }
-      : null,
+    bounds: presentationBounds,
+    mediaBounds,
+    preferredZoom: activeAction ? 1.5 : undefined,
     nodeId: single?.id,
     panel,
     focusRequest: presentationFocus,
@@ -1038,7 +1093,7 @@ function Workspace() {
       panning ||
       pointerGesture.current.moved ||
       !selectionControls,
-    controlsKey: `${hasComposer}:${hasToolbar}`,
+    controlsKey: `${hasComposer}:${hasToolbar}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
   });
   const flowNodes: FlowNode[] = useMemo(
     () =>
@@ -1046,13 +1101,22 @@ function Workspace() {
         ...n,
         measured: measurements[n.id],
         selected: selected.includes(n.id),
-        draggable: !lockedIds.has(n.id) && !panning,
-        connectable: !lockedIds.has(n.id) && !panning,
+        draggable:
+          !lockedIds.has(n.id) && !panning && activeAction?.nodeId !== n.id,
+        connectable:
+          !lockedIds.has(n.id) && !panning && activeAction?.nodeId !== n.id,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
       })),
-    [doc.nodes, selected, panning, measurements, lockedIds],
+    [
+      doc.nodes,
+      selected,
+      panning,
+      measurements,
+      lockedIds,
+      activeAction?.nodeId,
+    ],
   );
   const flowEdges: Edge[] = useMemo(
     () =>
@@ -1304,6 +1368,7 @@ function Workspace() {
       kind: node.type,
       src: node.data.src,
     };
+    setActionSession(null);
     setEditorMode(mode);
     setEditing(node);
     setMenu(null);
@@ -1334,11 +1399,13 @@ function Workspace() {
   const addLinkedOutputs = (
     source: ResultSource,
     outputs: readonly LinkedMediaResult[],
+    sourceTask?: CanvasToolTask,
   ) => {
     const result = appendLinkedMediaResults(
       historyRef.current.present,
       source,
       outputs,
+      sourceTask,
     );
     if (result.error) {
       notify(result.error);
@@ -1369,21 +1436,115 @@ function Workspace() {
       notify(error instanceof Error ? error.message : "无法创建堆叠。");
     }
   };
-  const openTools = (tool: CanvasToolId = "layers") => {
-    setToolInitial(tool);
-    setPanel("tools");
-    referenceTarget.current = null;
-    setMenu(null);
+  const sourceFor = (node: CanvasNode): ResultSource => ({
+    documentId: doc.id,
+    nodeId: node.id,
+    kind: node.type,
+    src: node.data.src,
+  });
+  const closeAction = () => {
+    setActionSession(null);
+    root.current?.focus({ preventScroll: true });
   };
-  const editSelected = (
-    mode: EditorMode = "default",
-    kind: "image" | "video" | "audio" = "image",
+  const openNodeAction = (tool: CanvasToolId, source = single) => {
+    if (!source) return;
+    const origin = sourceFor(source);
+    const valid = validateNodeActionSource(historyRef.current.present, origin);
+    if (valid.error) {
+      notify(valid.error);
+      return;
+    }
+    setMenu(null);
+    setGenerationTarget(null);
+    setPanel(null);
+    if (tool === "video-extend") {
+      const next = createVideoExtensionDraft(
+        historyRef.current.present,
+        origin,
+      );
+      if (next.error) {
+        notify(next.error);
+        return;
+      }
+      setActionSession(null);
+      change(() => next.document);
+      setSelected(next.ids);
+      if (next.ids[0]) focusSelection(next.ids[0]);
+      return;
+    }
+    const modalModes: Partial<Record<CanvasToolId, EditorMode>> = {
+      layers: "layers",
+      composition: "default",
+      crop: "default",
+      "audio-trim": "trim",
+      "director-stage": "default",
+    };
+    if (modalModes[tool]) {
+      openEditor(source, modalModes[tool]);
+      return;
+    }
+    setEditing(null);
+    editorOrigin.current = null;
+    setActionSession({ ...origin, tool, token: crypto.randomUUID() });
+    focusSelection(source.id);
+  };
+  const saveActionDraft = (session: ResultSource, task: CanvasToolTask) => {
+    const valid = validateNodeActionSource(historyRef.current.present, session);
+    if ("error" in valid || task.sourceNodeIds[0] !== session.nodeId) return;
+    if (JSON.stringify(valid.node.data.taskDraft) !== JSON.stringify(task))
+      command({
+        type: "update-node",
+        id: session.nodeId,
+        patch: { data: { taskDraft: task } },
+      });
+  };
+  const importActionResults = (
+    session: ResultSource & { token: string },
+    task: CanvasToolTask,
   ) => {
-    const source = doc.nodes.find(
-      (node) => selected.includes(node.id) && node.type === kind,
-    );
-    if (source) openEditor(source, mode);
-    else notify("请先选择一个媒体节点。");
+    const valid = validateNodeActionSource(historyRef.current.present, session);
+    if (valid.error) {
+      notify(valid.error);
+      return;
+    }
+    saveActionDraft(session, task);
+    resultBinding.current = {
+      ...session,
+      placement: "post-edit",
+      actionToken: session.token,
+    };
+    if (resultInput.current) {
+      resultInput.current.accept = "image/*,video/*,audio/*";
+      resultInput.current.click();
+    }
+  };
+  const runQuickAction = async (
+    operation: (
+      source: ResultSource,
+      signal: AbortSignal,
+    ) => Promise<LinkedMediaResult[]>,
+  ) => {
+    if (!single) return;
+    const source = sourceFor(single);
+    const valid = validateNodeActionSource(historyRef.current.present, source);
+    if (valid.error) {
+      notify(valid.error);
+      return;
+    }
+    quickAction.current?.abort();
+    const controller = new AbortController();
+    quickAction.current = controller;
+    setActionSession(null);
+    notify("正在处理素材…");
+    try {
+      const outputs = await operation(source, controller.signal);
+      if (!controller.signal.aborted) addLinkedOutputs(source, outputs);
+    } catch (error) {
+      if (!controller.signal.aborted)
+        notify(error instanceof Error ? error.message : "素材处理失败。");
+    } finally {
+      if (quickAction.current === controller) quickAction.current = null;
+    }
   };
   const updateJob = (id: string, patch: Partial<Job>) =>
     setJobs((current) =>
@@ -1832,6 +1993,7 @@ function Workspace() {
       expectedKind: generationNode.type as "image" | "video" | "audio",
       src: generationNode.data.src,
       jobId: generationTarget?.jobId,
+      placement: "generation",
     };
     if (resultInput.current) {
       resultInput.current.accept = `${generationNode.type}/*`;
@@ -1879,11 +2041,14 @@ function Workspace() {
         });
       }
       if (controller.signal.aborted) return;
-      const placed = applyGenerationResults(
-        historyRef.current.present,
-        origin,
-        outputs,
-      );
+      const placed =
+        binding.placement === "post-edit"
+          ? appendLinkedMediaResults(
+              historyRef.current.present,
+              origin,
+              outputs,
+            )
+          : applyGenerationResults(historyRef.current.present, origin, outputs);
       setJobs((current) =>
         current.map((job) =>
           job.id === binding.jobId
@@ -1902,7 +2067,25 @@ function Workspace() {
       else if (placed.ids.length) {
         change(() => placed.document);
         revealResults(placed.ids);
-        setGenerationTarget(null);
+        if (binding.placement === "generation")
+          setGenerationTarget((target) =>
+            target?.documentId === binding.documentId &&
+            target.nodeId === binding.nodeId &&
+            target.jobId === binding.jobId
+              ? null
+              : target,
+          );
+        // A late file decode may finish after another tool or node was selected.
+        // Keep its frozen output provenance without closing the newer workflow.
+        if (
+          binding.placement === "post-edit" &&
+          actionSessionRef.current?.token === binding.actionToken &&
+          selectedRef.current.length === 1 &&
+          selectedRef.current[0] === binding.nodeId
+        ) {
+          setActionSession(null);
+          setSelected(placed.ids);
+        }
       }
     } catch (error) {
       if (!controller.signal.aborted)
@@ -1930,7 +2113,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host",
       )
     )
       return;
@@ -1941,6 +2124,10 @@ function Workspace() {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (activeAction) {
+        closeAction();
+        return;
+      }
       if (textEditingId) {
         end();
         setTextEditingId(null);
@@ -1964,6 +2151,7 @@ function Workspace() {
     }
     if (
       editingText ||
+      activeAction ||
       rename ||
       preview ||
       editing ||
@@ -2713,7 +2901,7 @@ function Workspace() {
       )}
 
       <CanvasToolRail
-        holdCollapsed={panel === "tools"}
+        holdCollapsed={false}
         items={[
           {
             name: "text",
@@ -2754,12 +2942,9 @@ function Workspace() {
           },
           {
             name: "tool",
-            label: "媒体工具箱",
-            active: panel === "tools",
-            onClick: () =>
-              panel === "tools"
-                ? setPanel(null)
-                : openTools(single?.data.taskDraft?.tool ?? "layers"),
+            label: "导演参数",
+            active: panel === "director",
+            onClick: () => togglePanel("director"),
           },
           {
             name: "external",
@@ -3033,20 +3218,39 @@ function Workspace() {
             node={single}
             locked={lockedIds.has(single.id)}
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
-            onTool={openTools}
-            onTools={() =>
-              openTools(
-                single.data.taskDraft?.tool ??
-                  (single.type === "video"
-                    ? "video-trim"
-                    : single.type === "audio"
-                      ? "audio-trim"
-                      : "layers"),
+            onTool={openNodeAction}
+            onCaptureFrame={(position) =>
+              void runQuickAction(async (source, signal) => [
+                await captureVideoEndpoint(
+                  source.src!,
+                  single.data.title,
+                  position,
+                  signal,
+                ),
+              ])
+            }
+            onGridSplit={(rows, columns) =>
+              void runQuickAction((source, signal) =>
+                gridSplitImage(source, rows, columns, signal),
               )
             }
             onEdit={(mode) => {
               if (single.type === "text") setTextEditingId(single.id);
-              else openEditor(single, mode);
+              else if (single.type === "video") {
+                if (mode === "extract-audio")
+                  void runQuickAction(async (source, signal) => [
+                    await extractVideoAudio(
+                      source.src!,
+                      single.data.title,
+                      undefined,
+                      signal,
+                    ),
+                  ]);
+                else
+                  openNodeAction(
+                    mode === "frame" ? "video-frame-capture" : "video-trim",
+                  );
+              } else openEditor(single, mode);
             }}
             onPreview={() => setPreview(single)}
             onDownload={() => downloadNode(single)}
@@ -3054,6 +3258,92 @@ function Workspace() {
             onDuplicate={() => paste(true)}
           />
         </div>
+      )}
+      {activeAction && actionNode && (
+        <>
+          <div
+            ref={setActionMedia}
+            className="cw-action-media-host"
+            style={selectionPresentation.mediaRect ?? undefined}
+            data-hidden={
+              interacting || panning || !selectionPresentation.visible
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeAction();
+              }
+              event.stopPropagation();
+            }}
+          />
+          <div
+            ref={composerElement}
+            className="cw-composer-dock cw-node-action-dock"
+            style={{
+              ...selectionPresentation.placement?.composer,
+              width: selectionPresentation.composerWidth,
+              maxHeight: selectionPresentation.composerMaxHeight,
+              background: "#1e2028",
+              border: "1px solid #ffffff20",
+            }}
+            data-interacting={
+              interacting || panning || !selectionPresentation.visible
+            }
+            inert={interacting || panning || !selectionPresentation.visible}
+          >
+            {isImageActionTool(activeAction.tool) ? (
+              <ImageActionEditor
+                key={activeAction.token}
+                node={actionNode}
+                tool={activeAction.tool}
+                draft={actionNode.data.taskDraft}
+                mediaContainer={actionMedia}
+                onDraftChange={(task) => saveActionDraft(activeAction, task)}
+                onImportResults={(task) =>
+                  importActionResults(activeAction, task)
+                }
+                onApply={(outputs, task) =>
+                  addLinkedOutputs(activeAction, outputs, task)
+                }
+                onClose={closeAction}
+              />
+            ) : actionNode.type === "video" ? (
+              <VideoActionEditor
+                key={activeAction.token}
+                node={actionNode}
+                tool={activeAction.tool}
+                draft={actionNode.data.taskDraft}
+                mediaContainer={actionMedia}
+                onDraftChange={(task) => saveActionDraft(activeAction, task)}
+                onImportResults={(task) =>
+                  importActionResults(activeAction, task)
+                }
+                onApply={(outputs) => addLinkedOutputs(activeAction, outputs)}
+                onClose={closeAction}
+              />
+            ) : (
+              <NodeTaskPanel
+                key={activeAction.token}
+                node={actionNode}
+                nodes={doc.nodes}
+                tool={activeAction.tool}
+                draft={actionNode.data.taskDraft}
+                onDraftChange={(task) => saveActionDraft(activeAction, task)}
+                onImportResults={(task) =>
+                  importActionResults(activeAction, task)
+                }
+                onClose={closeAction}
+                onEditSelection={() => {
+                  setMaskTool(activeAction.tool);
+                  openEditor(actionNode, "mask");
+                }}
+              />
+            )}
+          </div>
+        </>
       )}
       {hasComposer && composerNode && (
         <div
@@ -3214,8 +3504,8 @@ function Workspace() {
                 menuButton("打开编辑器", single.type, () => openEditor(single))}
               {single?.data.src &&
                 ["image", "video", "audio"].includes(single.type) &&
-                menuButton("媒体工具箱", "tool", () =>
-                  openTools(
+                menuButton("编辑素材", "tool", () =>
+                  openNodeAction(
                     single.data.taskDraft?.tool ??
                       (single.type === "image"
                         ? "smart-edit"
@@ -3260,7 +3550,7 @@ function Workspace() {
 
       {panel && (
         <aside
-          className={`cw-side-panel ${panel === "assets" || panel === "tools" ? "from-left" : ""} ${panel === "tools" ? "is-tools" : ""}`}
+          className={`cw-side-panel ${panel === "assets" || panel === "director" ? "from-left" : ""}`}
           aria-label={
             {
               assets: "资产库",
@@ -3269,7 +3559,7 @@ function Workspace() {
               history: "生成历史",
               assistant: "AI 对话",
               projects: "本地项目",
-              tools: "媒体工具箱",
+              director: "导演参数",
             }[panel]
           }
         >
@@ -3283,7 +3573,7 @@ function Workspace() {
                   history: "生成历史",
                   assistant: "与 AI 对话",
                   projects: "本地项目",
-                  tools: "媒体工具箱",
+                  director: "导演参数",
                 }[panel]
               }
             </h2>
@@ -3558,86 +3848,32 @@ function Workspace() {
               }}
             />
           )}
-          {panel === "tools" && (
-            <CanvasToolsPanel
-              key={`${doc.id}:${selected.join(",")}:${toolInitial}`}
-              sources={selectedSources}
-              initialTool={toolInitial}
-              initialDraft={
-                selectedOwner?.data.taskDraft?.tool === toolInitial
-                  ? selectedOwner.data.taskDraft
-                  : undefined
-              }
-              selection={selectedOwner?.data.taskDraft?.selection}
-              selectionTool={selectedOwner?.data.taskDraft?.tool}
-              onClose={() => setPanel(null)}
-              localTools={{
-                layers: () => editSelected("layers"),
-                crop: () => editSelected(),
-                composition: () => editSelected(),
-                annotation: () => editSelected("annotation"),
-                "grid-split": () => editSelected("grid"),
-                "video-trim": () => editSelected("trim", "video"),
-                "video-crop": () => editSelected("crop", "video"),
-                "audio-trim": () => editSelected("trim", "audio"),
-                "video-frame-capture": () => editSelected("frame", "video"),
-                "extract-audio": () => editSelected("extract-audio", "video"),
-                "director-stage": () => {
-                  const node =
-                    single?.type === "external" ? single : addNode("external");
-                  if (node) openEditor(node);
-                },
-              }}
-              onDraftChange={(task) => {
-                const owner = doc.nodes.find((node) => node.id === selected[0]);
-                if (owner && !lockedIds.has(owner.id))
-                  command({
-                    type: "update-node",
-                    id: owner.id,
-                    patch: { data: { taskDraft: task } },
-                  });
-              }}
-              onEditSelection={(tool) => {
-                const source = doc.nodes.find(
-                  (node) =>
-                    node.id === selected[0] &&
-                    node.type === "image" &&
-                    node.data.src,
-                );
-                if (!source) {
-                  notify("请先选择有素材的图片节点。");
-                  return;
-                }
-                setMaskTool(tool);
-                openEditor(source, "mask");
-              }}
-              onImportResults={(task) => {
-                const owner = doc.nodes.find(
-                  (node) => node.id === task.sourceNodeIds[0],
-                );
-                if (!owner) {
-                  notify("请选择结果对应的来源素材。");
-                  return;
-                }
-                if (!lockedIds.has(owner.id))
-                  command({
-                    type: "update-node",
-                    id: owner.id,
-                    patch: { data: { taskDraft: task } },
-                  });
-                resultBinding.current = {
-                  documentId: doc.id,
-                  nodeId: owner.id,
-                  kind: owner.type,
-                  src: owner.data.src,
-                };
-                if (resultInput.current) {
-                  resultInput.current.accept = "image/*,video/*,audio/*";
-                  resultInput.current.click();
-                }
-              }}
-              importingResults={resultBusy}
-            />
+          {panel === "director" && (
+            <div className="cw-director-parameters">
+              <p>添加参数节点，连接到图片或视频作为创作参考。</p>
+              {(
+                [
+                  ["camera", "相机参数"],
+                  ["palette", "配色"],
+                  ["style", "风格"],
+                  ["camera_motion", "运镜"],
+                ] as const
+              ).map(([kind, title]) => (
+                <button
+                  key={kind}
+                  onClick={() => {
+                    addNode("tool", undefined, {
+                      title,
+                      tool: { kind, fields: [] },
+                    });
+                    setPanel(null);
+                  }}
+                >
+                  {title}
+                  <CanvasIcon name="plus" size={16} />
+                </button>
+              ))}
+            </div>
           )}
           {panel === "assistant" && backendCatalog.connected && (
             <AssistantPanel
@@ -3991,25 +4227,37 @@ function Workspace() {
               )
             }
             onSelection={(selection) => {
+              const origin = editorOrigin.current;
+              if (!origin) return;
+              const current = validateNodeActionSource(
+                historyRef.current.present,
+                origin,
+              );
+              if (!current.node) {
+                notify(current.error);
+                return;
+              }
               const spec = CANVAS_TOOLS.find((tool) => tool.id === maskTool)!;
+              // The panel saved its latest parameters before opening this editor;
+              // editing is an older image snapshot and does not own that draft.
               const previous =
-                editing.data.taskDraft?.tool === maskTool
-                  ? editing.data.taskDraft
+                current.node.data.taskDraft?.tool === maskTool
+                  ? current.node.data.taskDraft
                   : undefined;
               const draft =
                 previous ??
                 createCanvasToolTask(
                   maskTool,
-                  selectedSources
-                    .filter((source) =>
-                      spec.sources.some((kind) => kind === source.kind),
-                    )
-                    .map((source) => source.nodeId),
+                  [origin.nodeId],
                   initialToolParameters(spec),
                 );
-              applyEditorData({ taskDraft: { ...draft, selection } });
-              setToolInitial(maskTool);
-              setPanel("tools");
+              saveActionDraft(origin, { ...draft, selection });
+              setActionSession({
+                ...origin,
+                tool: maskTool,
+                token: crypto.randomUUID(),
+              });
+              focusSelection(origin.nodeId);
             }}
           />
         )}

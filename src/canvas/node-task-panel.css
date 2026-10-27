@@ -1,0 +1,119 @@
+.cw-node-task-panel {
+  padding: 14px;
+  color: #dce0e9;
+  font-size: 12px;
+}
+.cw-node-task-panel header,
+.cw-node-task-panel footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cw-node-task-panel header {
+  margin-bottom: 12px;
+}
+.cw-node-task-panel header strong {
+  font-size: 14px;
+}
+.cw-node-task-panel header span {
+  color: #9299a9;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cw-node-task-panel button,
+.cw-node-task-panel input,
+.cw-node-task-panel textarea,
+.cw-node-task-panel select {
+  font: inherit;
+  color: inherit;
+  border: 1px solid #3b3e4b;
+  background: #242630;
+  border-radius: 7px;
+  padding: 8px;
+}
+.cw-node-task-panel button {
+  cursor: pointer;
+}
+.cw-node-task-panel button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cw-node-task-panel button:focus-visible,
+.cw-node-task-panel input:focus-visible,
+.cw-node-task-panel textarea:focus-visible,
+.cw-node-task-panel select:focus-visible {
+  outline: 2px solid #b69af6;
+  outline-offset: 2px;
+}
+.cw-node-task-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.cw-node-task-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cw-node-task-fields .is-wide {
+  grid-column: 1/-1;
+}
+.cw-node-task-panel textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.cw-node-task-note {
+  color: #9da3b3;
+  line-height: 1.5;
+}
+.cw-node-task-panel footer {
+  justify-content: flex-end;
+}
+.cw-action-media-host {
+  position: absolute;
+  z-index: 9;
+  pointer-events: auto;
+  overflow: visible;
+}
+.cw-action-media-host[data-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.cw-node-action-dock {
+  z-index: 10;
+}
+.cw-node-action-dock > section {
+  min-width: 0;
+}
+
+.cw-node-action-dock > .image-action-editor,
+.cw-node-action-dock > .cw-video-action-editor {
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  box-shadow: none;
+}
+.cw-director-parameters {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  font-size: 12px;
+  color: #b8bdc9;
+}
+.cw-director-parameters p {
+  line-height: 1.6;
+}
+.cw-director-parameters button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px;
+  border-radius: 9px;
+  background: #292a30;
+  color: #eee;
+  border: 1px solid #ffffff20;
+  cursor: pointer;
+}

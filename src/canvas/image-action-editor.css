@@ -1,0 +1,439 @@
+.image-action-editor {
+  width: min(640px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #ffffff1c;
+  border-radius: 15px;
+  background: #242426;
+  color: #eeeef1;
+  box-shadow: 0 14px 44px #0005;
+  font:
+    12px/1.45 system-ui,
+    sans-serif;
+  pointer-events: auto;
+}
+.image-action-editor *,
+.iae-media-overlay * {
+  box-sizing: border-box;
+}
+.image-action-editor button,
+.image-action-editor input,
+.image-action-editor select,
+.image-action-editor textarea {
+  font: inherit;
+}
+.image-action-editor button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  color: inherit;
+  background: #ffffff08;
+  border: 1px solid #ffffff0e;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.image-action-editor button:hover:not(:disabled) {
+  background: #ffffff13;
+}
+.image-action-editor button[aria-pressed="true"] {
+  color: #d6c9ff;
+  background: #a889ff25;
+  border-color: #a889ff70;
+}
+.image-action-editor button:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+.image-action-editor button:focus-visible,
+.image-action-editor input:focus-visible,
+.image-action-editor select:focus-visible,
+.image-action-editor textarea:focus-visible,
+.iae-handle:focus-visible {
+  outline: 2px solid #b39aff;
+  outline-offset: 3px;
+}
+.image-action-editor input:not([type="range"]):not([type="color"]),
+.image-action-editor select,
+.image-action-editor textarea {
+  color: inherit;
+  background: #19191c;
+  border: 1px solid #ffffff16;
+  border-radius: 7px;
+  padding: 6px 8px;
+  min-width: 0;
+}
+.image-action-editor option {
+  background: #242426;
+}
+.iae-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+.iae-header strong {
+  font-size: 13px;
+}
+.iae-header > span {
+  color: #ada9ba;
+}
+.iae-header > button {
+  margin-left: auto;
+  min-height: 26px;
+  padding: 4px;
+  background: none;
+  border: 0;
+}
+.iae-brush-tools,
+.iae-row,
+.iae-actions,
+.iae-segment {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.iae-brush-tools {
+  overflow-x: auto;
+  padding: 2px 0 7px;
+}
+.iae-brush-tools > * {
+  flex-shrink: 0;
+}
+.iae-separator {
+  width: 1px;
+  height: 20px;
+  background: #ffffff1a;
+}
+.iae-row {
+  margin: 7px 0;
+}
+.iae-wrap {
+  flex-wrap: wrap;
+}
+.iae-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 120px;
+  white-space: nowrap;
+}
+.iae-range input {
+  flex: 1;
+  min-width: 40px;
+  width: 110px;
+  accent-color: #ad92fa;
+}
+.iae-range output {
+  min-width: 35px;
+  text-align: right;
+  color: #c0bacd;
+  font-variant-numeric: tabular-nums;
+}
+.iae-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.iae-color input[type="color"] {
+  width: 28px;
+  height: 27px;
+  border: 1px solid #ffffff2a;
+  border-radius: 6px;
+  padding: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.image-action-editor .iae-hex {
+  width: 74px;
+}
+.iae-text {
+  flex: 1;
+}
+.iae-prompt {
+  display: block;
+  margin: 7px 0;
+}
+.iae-prompt > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.iae-prompt textarea {
+  display: block;
+  resize: vertical;
+  width: 100%;
+  min-height: 64px;
+  max-height: 180px;
+}
+.iae-hint,
+.iae-error {
+  margin: 6px 0;
+  color: #a9a5b3;
+  font-size: 11px;
+}
+.iae-error {
+  color: #ffaaa8;
+}
+.iae-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #ffffff0b;
+  padding-top: 9px;
+  margin-top: 9px;
+}
+.iae-service-note {
+  color: #9f99ad;
+  font-size: 11px;
+  flex: 1 1 auto;
+}
+.iae-actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.image-action-editor .iae-generate {
+  background: #a991ef;
+  color: #17131e;
+  font-weight: 600;
+  border-color: #b89dff;
+}
+.image-action-editor .iae-generate:hover:not(:disabled) {
+  background: #bda4ff;
+}
+.iae-image-hd {
+  width: min(570px, calc(100vw - 32px));
+}
+.iae-segment {
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #19191c;
+}
+.iae-segment button {
+  background: none;
+  border-color: transparent;
+  min-height: 26px;
+  padding: 3px 9px;
+}
+.iae-angle-layout {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+.iae-camera-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.iae-camera-grid button {
+  padding: 6px 1px;
+}
+.iae-direction {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 7px;
+}
+.iae-direction button {
+  flex: 1;
+}
+.iae-angle-fields {
+  min-width: 0;
+}
+.iae-angle-fields .iae-row {
+  flex-wrap: wrap;
+}
+.iae-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+  margin: 2px 0 8px;
+}
+.iae-ticks button {
+  padding: 2px;
+  min-height: 24px;
+  border: none;
+  background: transparent;
+  color: #aaa4b9;
+  font-size: 10px;
+}
+.iae-light-sphere {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 7px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    #686572,
+    #34323d 48%,
+    #17151c 90%
+  );
+  border: 1px solid #b6acc440;
+}
+.iae-light-sphere i {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--light-color, white);
+  box-shadow: 0 0 14px var(--light-color, white);
+  border: 1px solid white;
+}
+.iae-sphere-grid {
+  position: absolute;
+  inset: 10%;
+  border: 1px solid #ffffff20;
+  border-radius: 50%;
+}
+.iae-sphere-grid::before,
+.iae-sphere-grid::after {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  border: 1px solid #ffffff24;
+  border-radius: 50%;
+}
+.iae-sphere-grid::before {
+  transform: scaleX(0.4);
+}
+.iae-sphere-grid::after {
+  transform: scaleY(0.3);
+}
+.iae-sphere-perspective {
+  transform: rotate(-24deg);
+}
+.iae-light-views {
+  display: flex;
+  gap: 4px;
+}
+.iae-light-views button {
+  flex: 1;
+}
+.iae-media-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 4;
+}
+.iae-ink {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: crosshair;
+}
+.iae-expansion {
+  position: absolute;
+  border: 1.5px solid #b39aff;
+  outline: 1px solid #16111b44;
+  background: transparent;
+  pointer-events: none;
+}
+.iae-expansion-label {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #272331;
+  border: 1px solid #b39aff70;
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: #e6dcff;
+  font:
+    11px/1.4 system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+.iae-handle {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid #d6c7ff;
+  border-radius: 3px;
+  background: #8d6ed5;
+  transform: translate(-50%, -50%);
+}
+.iae-handle-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.iae-handle-n {
+  top: 0;
+  left: 50%;
+  cursor: ns-resize;
+}
+.iae-handle-ne {
+  top: 0;
+  left: 100%;
+  cursor: nesw-resize;
+}
+.iae-handle-e {
+  top: 50%;
+  left: 100%;
+  cursor: ew-resize;
+}
+.iae-handle-se {
+  top: 100%;
+  left: 100%;
+  cursor: nwse-resize;
+}
+.iae-handle-s {
+  top: 100%;
+  left: 50%;
+  cursor: ns-resize;
+}
+.iae-handle-sw {
+  top: 100%;
+  left: 0;
+  cursor: nesw-resize;
+}
+.iae-handle-w {
+  top: 50%;
+  left: 0;
+  cursor: ew-resize;
+}
+@media (max-width: 520px) {
+  .iae-angle-layout {
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .iae-camera-grid button {
+    font-size: 10px;
+  }
+  .iae-direction button {
+    padding: 3px;
+  }
+  .iae-light-sphere {
+    width: 92px;
+    height: 92px;
+  }
+  .iae-ticks {
+    flex-wrap: wrap;
+  }
+  .iae-light-views {
+    flex-wrap: wrap;
+  }
+  .iae-actions {
+    gap: 4px;
+  }
+  .iae-actions button {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+}
