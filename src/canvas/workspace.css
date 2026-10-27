@@ -1,7 +1,7 @@
 .cw-workspace {
   position: fixed;
   inset: 0;
-  overflow: hidden;
+  overflow: clip;
   background: #0d0d0d;
   color: #ededee;
   font-family:
@@ -53,8 +53,96 @@
 .cw-workspace .react-flow__node {
   font-family: inherit;
 }
-.cw-workspace .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #d1ddd0;
+.cw-reference-edge .react-flow__edge-path {
+  stroke: #686b72;
+  stroke-width: 1.5;
+  transition: stroke 160ms;
+}
+.cw-reference-edge.is-emphasized .react-flow__edge-path,
+.cw-reference-edge.is-running .react-flow__edge-path,
+.react-flow__edge:hover .cw-reference-edge .react-flow__edge-path {
+  stroke: #6995ff;
+}
+.cw-edge-flow {
+  fill: none;
+  stroke: #c2e8ff;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 70 930;
+  pointer-events: none;
+  opacity: 0;
+}
+.cw-reference-edge.is-emphasized .cw-edge-flow,
+.cw-reference-edge.is-running .cw-edge-flow,
+.react-flow__edge:hover .cw-edge-flow {
+  opacity: 0.9;
+  animation: cw-edge-travel 2.8s linear infinite;
+}
+.cw-reference-edge.is-running .cw-edge-flow {
+  animation-duration: 1.5s;
+}
+@keyframes cw-edge-travel {
+  from {
+    stroke-dashoffset: 1000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.cw-interaction-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.cw-snap-guide {
+  stroke: #739eff;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.cw-connection-preview {
+  fill: none;
+  stroke: #739eff;
+  stroke-width: 2;
+  pointer-events: none;
+}
+.cw-connection-preview.is-invalid {
+  stroke: #d77878;
+}
+.cw-connection-endpoint {
+  fill: #b8d5ff;
+  stroke: #739eff;
+  stroke-width: 2;
+}
+.cw-snap-hint {
+  display: block;
+  padding: 6px 10px;
+  color: #999ba5;
+  font-size: 10px;
+}
+.cw-menu-popover button > span {
+  margin-left: auto;
+}
+.cw-selection-bar select {
+  color: #ddd;
+  background: #262628;
+  border: 1px solid #ffffff20;
+  border-radius: 6px;
+  padding: 6px;
+  font: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-edge-flow {
+    animation: none !important;
+    display: none;
+  }
+  .cw-reference-edge .react-flow__edge-path {
+    transition: none;
+  }
 }
 .cw-workspace .react-flow__selection {
   background: #b7c7bf10;

@@ -111,8 +111,23 @@
   gap: 15px;
   background: transparent;
   color: #4e5057;
-  cursor: pointer;
+  cursor: inherit;
   font: inherit;
+}
+.cw-placeholder-upload {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 11px;
+  border: 1px solid #ffffff20 !important;
+  border-radius: 7px;
+  color: #aeb2be;
+  background: #ffffff05 !important;
+  font-size: 11px;
+}
+.cw-placeholder-upload:hover {
+  color: white;
+  background: #ffffff10 !important;
 }
 .cw-placeholder-symbol {
   display: flex;

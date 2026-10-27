@@ -22,7 +22,19 @@ import {
   type Edge,
   type NodeChange,
   type Connection,
+  type OnConnectEnd,
 } from "@xyflow/react";
+import {
+  CanvasReferenceEdge,
+  CanvasConnectionLine,
+  CanvasInteractionOverlay,
+} from "./CanvasConnections";
+import {
+  snapNodePositions,
+  alignNodes,
+  type SnapGuide,
+  type Alignment,
+} from "./snapping";
 import { CanvasNodeView } from "./CanvasNodeView";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import {
@@ -156,6 +168,7 @@ type Menu = {
   y: number;
   world: Point;
   nodeId?: string;
+  parentId?: string;
   connected?: { id: string; direction: "source" | "target" };
 };
 type Job = {
@@ -196,6 +209,7 @@ const nodeTypes = {
   tool: CanvasNodeView,
   external: CanvasNodeView,
 };
+const edgeTypes = { reference: CanvasReferenceEdge };
 const labels: Record<CanvasNodeKind, string> = {
   image: "图片",
   video: "视频",
@@ -289,6 +303,7 @@ function Workspace() {
   >({});
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const selectionAtPointerDown = useRef<string[]>([]);
   const [panel, setPanel] = useState<Panel>(null);
   const [projectMenu, setProjectMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
@@ -296,6 +311,15 @@ function Workspace() {
   const [hand, setHand] = useState(false);
   const [minimap, setMinimap] = useState(false);
   const [showEdges, setShowEdges] = useState(true);
+  const [showDots, setShowDots] = useState(true);
+  const [objectSnapping, setObjectSnapping] = useState(true);
+  const [gridSnapping, setGridSnapping] = useState(false);
+  const [guides, setGuides] = useState<SnapGuide[]>([]);
+  const snapGuides = useRef<SnapGuide[]>([]);
+  const dragging = useRef(false);
+  const bypassSnapping = useRef(false);
+  const connectionStarted = useRef<Point | null>(null);
+  const connectionReleasedAt = useRef(0);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const [toast, setToast] = useState("");
@@ -356,6 +380,7 @@ function Workspace() {
   const uploadTarget = useRef<string | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const focusAfterCreate = useRef<string[] | null>(null);
   const saveQueue = useRef(Promise.resolve(true));
   const [zoom, setZoom] = useState(1);
   const spacePressed = useKeyPress("Space");
@@ -383,6 +408,30 @@ function Workspace() {
   );
   const begin = useCallback(() => setHistory(beginTransaction), []);
   const end = useCallback(() => setHistory(commitTransaction), []);
+  const clearGuides = useCallback(() => {
+    snapGuides.current = [];
+    setGuides([]);
+  }, []);
+  const beginDrag = () => {
+    dragging.current = true;
+    setMenu(null);
+    begin();
+  };
+  const endDrag = useCallback(() => {
+    dragging.current = false;
+    clearGuides();
+    end();
+  }, [clearGuides, end]);
+  useEffect(() => {
+    const blur = () => {
+      bypassSnapping.current = false;
+      endDrag();
+    };
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("blur", blur);
+    };
+  }, [endDrag]);
   const notify = useCallback((message: string) => setToast(message), []);
   const togglePanel = (value: Panel) => {
     referenceTarget.current = null;
@@ -581,6 +630,67 @@ function Workspace() {
       x: window.innerWidth / 2 - (panel ? 150 : 0),
       y: window.innerHeight * 0.32,
     });
+  const revealNodes = (ids: string[], centerView = false) => {
+    const current = historyRef.current.present;
+    const bounds = boundsOfNodes(
+      current.nodes.filter((node) => ids.includes(node.id)),
+      current.nodes,
+    );
+    if (!bounds) return;
+    const pane = root.current?.getBoundingClientRect();
+    if (!pane) return;
+    const composerTop = root.current
+      ?.querySelector(".cw-composer-dock")
+      ?.getBoundingClientRect().top;
+    const area = {
+      left: panel && pane.width >= 1000 ? 400 : Math.min(90, pane.width * 0.15),
+      right: pane.width - Math.min(60, pane.width * 0.08),
+      top: 90,
+      bottom: Math.max(
+        220,
+        composerTop === undefined
+          ? pane.height - 80
+          : composerTop - pane.top - 24,
+      ),
+    };
+    const view = flow.getViewport();
+    const nextZoom = Math.max(
+      MIN_ZOOM,
+      Math.min(
+        view.zoom,
+        (area.right - area.left) / bounds.width,
+        (area.bottom - area.top) / bounds.height,
+      ),
+    );
+    const fitAxis = (
+      offset: number,
+      start: number,
+      size: number,
+      min: number,
+      max: number,
+    ) =>
+      centerView || nextZoom !== view.zoom
+        ? (min + max - size * nextZoom) / 2 - start * nextZoom
+        : Math.max(
+            min - start * nextZoom,
+            Math.min(max - (start + size) * nextZoom, offset),
+          );
+    void flow.setViewport(
+      {
+        zoom: nextZoom,
+        x: fitAxis(view.x, bounds.x, bounds.width, area.left, area.right),
+        y: fitAxis(view.y, bounds.y, bounds.height, area.top, area.bottom),
+      },
+      { duration: 180 },
+    );
+  };
+  useEffect(() => {
+    const ids = focusAfterCreate.current;
+    if (!ids) return;
+    focusAfterCreate.current = null;
+    const frame = requestAnimationFrame(() => revealNodes(ids, true));
+    return () => cancelAnimationFrame(frame);
+  }, [doc.nodes.length, selected]);
   const addNode = (
     kind: CanvasNodeKind,
     position?: Point,
@@ -588,11 +698,10 @@ function Workspace() {
   ) => {
     const where = position ?? center();
     const count = doc.nodes.filter((n) => n.type === kind).length + 1;
-    const node = createNode(
-      kind,
-      { x: where.x - 160, y: where.y - 140 },
-      { title: `${labels[kind]} ${count}`, ...extra },
-    );
+    const node = createNode(kind, where, {
+      title: `${labels[kind]} ${count}`,
+      ...extra,
+    });
     if (kind === "image") {
       node.width = 320;
       node.height = 320;
@@ -603,17 +712,27 @@ function Workspace() {
     }
     if (kind === "text") node.height = 220;
     if (kind === "timeline") node.width = 720;
+    node.position = {
+      x: where.x - node.width / 2,
+      y: where.y - node.height / 2,
+    };
     if (menu?.connected) {
-      const original = doc.nodes.find((n) => n.id === menu.connected!.id);
-      if (original) {
-        const abs = absolutePosition(original, doc.nodes);
+      // The dropped endpoint becomes the new node's input/output port.
+      node.position = {
+        x: where.x - (menu.connected.direction === "target" ? node.width : 0),
+        y: where.y - node.height / 2,
+      };
+    }
+    if (menu?.parentId) {
+      const parent = doc.nodes.find(
+        (candidate) => candidate.id === menu.parentId,
+      );
+      if (parent) {
+        const origin = absolutePosition(parent, doc.nodes);
+        node.parentId = parent.id;
         node.position = {
-          x:
-            abs.x +
-            (menu.connected.direction === "source"
-              ? original.width + 160
-              : -node.width - 160),
-          y: abs.y,
+          x: node.position.x - origin.x,
+          y: node.position.y - origin.y,
         };
       }
     }
@@ -627,9 +746,14 @@ function Workspace() {
             menu.connected.direction === "source" ? menu.connected.id : node.id,
           target:
             menu.connected.direction === "source" ? node.id : menu.connected.id,
+          sourceHandle: "out",
+          targetHandle: "in",
         },
       });
     command({ type: "batch", commands });
+    focusAfterCreate.current = menu?.connected
+      ? [menu.connected.id, node.id]
+      : [node.id];
     setSelected([node.id]);
     referenceTarget.current = null;
     setMenu(null);
@@ -655,6 +779,7 @@ function Workspace() {
   };
   const connect = useCallback(
     (connection: Connection) => {
+      setMenu(null);
       if (
         !connection.source ||
         !connection.target ||
@@ -668,6 +793,38 @@ function Workspace() {
     },
     [command],
   );
+  const onConnectEnd: OnConnectEnd = (event, state) => {
+    const start = connectionStarted.current;
+    connectionStarted.current = null;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    if (
+      !point ||
+      !start ||
+      Math.hypot(point.clientX - start.x, point.clientY - start.y) < 4
+    )
+      return;
+    connectionReleasedAt.current = Date.now();
+    if (state.isValid || !state.fromNode || !state.fromHandle) return;
+    const target = document.elementFromPoint(point.clientX, point.clientY);
+    const targetId = target
+      ?.closest(".react-flow__node")
+      ?.getAttribute("data-id");
+    const group = doc.nodes.find(
+      (node) =>
+        node.id === targetId &&
+        node.type === "group" &&
+        !lockedIds.has(node.id),
+    );
+    if (state.toNode && state.toNode.id !== group?.id) return;
+    if (!group && !target?.classList.contains("react-flow__pane")) return;
+    setMenu({
+      x: point.clientX,
+      y: point.clientY,
+      world: flow.screenToFlowPosition({ x: point.clientX, y: point.clientY }),
+      connected: { id: state.fromNode.id, direction: state.fromHandle.type },
+      parentId: group?.id,
+    });
+  };
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode>[]) => {
       const dimensionChanges = changes.flatMap((c) =>
@@ -721,17 +878,32 @@ function Workspace() {
         });
         return;
       }
-      for (const c of changes) {
-        if (c.type === "position" && c.position)
-          patches.push({
-            type: "update-node",
-            id: c.id,
-            patch: { position: c.position },
-          });
+      let positions = changes.flatMap((c) =>
+        c.type === "position" && c.position
+          ? [{ id: c.id, position: c.position }]
+          : [],
+      );
+      if (positions.length && dragging.current) {
+        const snapped = snapNodePositions(
+          historyRef.current.present.nodes,
+          positions,
+          {
+            zoom: flow.getZoom(),
+            objects: objectSnapping,
+            grid: gridSnapping,
+            bypass: bypassSnapping.current,
+            previous: snapGuides.current,
+          },
+        );
+        positions = snapped.positions;
+        snapGuides.current = snapped.guides;
+        setGuides(snapped.guides);
       }
+      for (const { id, position } of positions)
+        patches.push({ type: "update-node", id, patch: { position } });
       if (patches.length) command({ type: "batch", commands: patches });
     },
-    [command],
+    [command, flow, objectSnapping, gridSnapping],
   );
   const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
   const flowNodes: FlowNode[] = useMemo(
@@ -741,6 +913,7 @@ function Workspace() {
         measured: measurements[n.id],
         selected: selected.includes(n.id),
         draggable: !lockedIds.has(n.id) && !panning,
+        connectable: !lockedIds.has(n.id) && !panning,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
@@ -751,16 +924,19 @@ function Workspace() {
     () =>
       doc.edges.map((e) => ({
         ...e,
-        type: "default",
+        type: "reference",
         selected: selectedEdges.includes(e.id),
         hidden: !showEdges,
-        style: {
-          stroke: selectedEdges.includes(e.id) ? "#c6d5c4" : "#68696a",
-          strokeWidth: 1.5,
+        data: {
+          emphasized:
+            selectedEdges.includes(e.id) ||
+            selected.includes(e.source) ||
+            selected.includes(e.target),
+          running: generationByNode.has(e.target),
         },
         ariaLabel: "参考连线",
       })),
-    [doc.edges, selectedEdges, showEdges],
+    [doc.edges, selectedEdges, selected, showEdges, generationByNode],
   );
 
   const removeSelected = () => {
@@ -1447,101 +1623,101 @@ function Workspace() {
     setGenerationTarget(null);
   };
 
+  const onWorkspaceKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    bypassSnapping.current = event.metaKey || event.ctrlKey;
+    if (bypassSnapping.current) clearGuides();
+    if (!ready || switchPending.current) return;
+    const el = event.target as HTMLElement;
+    const editingText = el.closest(
+      "input,textarea,select,[contenteditable=true]",
+    );
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      clearGuides();
+      setSelectedEdges([]);
+      setMenu(null);
+      setPreview(null);
+      setEditing(null);
+      setGenerationTarget(null);
+      setRename(null);
+      setHelp(false);
+      setProjectMenu(false);
+      setMoreMenu(false);
+      setZoomMenu(false);
+      if (!editingText) setSelected([]);
+      return;
+    }
+    if (editingText || rename || preview || editing || help || generationTarget)
+      return;
+    const mod = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    if (mod && key === "z") {
+      event.preventDefault();
+      setHistory(event.shiftKey ? redo : undo);
+    } else if (mod && key === "y") {
+      event.preventDefault();
+      setHistory(redo);
+    } else if (mod && key === "a") {
+      event.preventDefault();
+      setSelected(doc.nodes.map((n) => n.id));
+    } else if (mod && key === "c") {
+      event.preventDefault();
+      copy();
+    } else if (mod && key === "v" && clipboard.current) {
+      event.preventDefault();
+      paste();
+    } else if (mod && key === "d") {
+      event.preventDefault();
+      paste(true);
+    } else if (mod && key === "g") {
+      event.preventDefault();
+      if (event.shiftKey) ungroup();
+      else group();
+    } else if (mod && key === "s") {
+      event.preventDefault();
+      void persist(doc);
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      removeSelected();
+    } else if (event.shiftKey && event.code === "Digit1") {
+      event.preventDefault();
+      fit();
+    } else if (event.shiftKey && event.code === "Digit2") {
+      event.preventDefault();
+      fit(true);
+    } else if (!mod && key === "v") setHand(false);
+    else if (!mod && key === "h") setHand(true);
+    else if (!mod && key === "t") addNode("text");
+    else if (!mod && key === "f" && single) setPreview(single);
+    else if (!mod && key === "?") setHelp(true);
+    else if (
+      ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.shiftKey ? 10 : 1;
+      command({
+        type: "move-nodes",
+        ids: selectedRef.current,
+        delta: {
+          x:
+            event.key === "ArrowLeft"
+              ? -step
+              : event.key === "ArrowRight"
+                ? step
+                : 0,
+          y:
+            event.key === "ArrowUp"
+              ? -step
+              : event.key === "ArrowDown"
+                ? step
+                : 0,
+        },
+      });
+    }
+  };
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!ready || switchPending.current) return;
-      const el = event.target as HTMLElement;
-      const editingText = el.closest(
-        "input,textarea,select,[contenteditable=true]",
-      );
-      if (event.key === "Escape") {
-        setMenu(null);
-        setPreview(null);
-        setEditing(null);
-        setGenerationTarget(null);
-        setRename(null);
-        setHelp(false);
-        setProjectMenu(false);
-        setMoreMenu(false);
-        setZoomMenu(false);
-        if (!editingText) setSelected([]);
-        return;
-      }
-      if (
-        editingText ||
-        rename ||
-        preview ||
-        editing ||
-        help ||
-        generationTarget
-      )
-        return;
-      const mod = event.metaKey || event.ctrlKey;
-      const key = event.key.toLowerCase();
-      if (mod && key === "z") {
-        event.preventDefault();
-        setHistory(event.shiftKey ? redo : undo);
-      } else if (mod && key === "y") {
-        event.preventDefault();
-        setHistory(redo);
-      } else if (mod && key === "a") {
-        event.preventDefault();
-        setSelected(doc.nodes.map((n) => n.id));
-      } else if (mod && key === "c") {
-        event.preventDefault();
-        copy();
-      } else if (mod && key === "v" && clipboard.current) {
-        event.preventDefault();
-        paste();
-      } else if (mod && key === "d") {
-        event.preventDefault();
-        paste(true);
-      } else if (mod && key === "g") {
-        event.preventDefault();
-        if (event.shiftKey) ungroup();
-        else group();
-      } else if (mod && key === "s") {
-        event.preventDefault();
-        void persist(doc);
-      } else if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        removeSelected();
-      } else if (event.shiftKey && event.code === "Digit1") {
-        event.preventDefault();
-        fit();
-      } else if (event.shiftKey && event.code === "Digit2") {
-        event.preventDefault();
-        fit(true);
-      } else if (!mod && key === "v") setHand(false);
-      else if (!mod && key === "h") setHand(true);
-      else if (!mod && key === "t") addNode("text");
-      else if (!mod && key === "f" && single) setPreview(single);
-      else if (!mod && key === "?") setHelp(true);
-      else if (
-        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
-      ) {
-        event.preventDefault();
-        const step = event.shiftKey ? 10 : 1;
-        command({
-          type: "move-nodes",
-          ids: selectedRef.current,
-          delta: {
-            x:
-              event.key === "ArrowLeft"
-                ? -step
-                : event.key === "ArrowRight"
-                  ? step
-                  : 0,
-            y:
-              event.key === "ArrowUp"
-                ? -step
-                : event.key === "ArrowDown"
-                  ? step
-                  : 0,
-          },
-        });
-      }
-    };
     const onPaste = (event: ClipboardEvent) => {
       if (!ready || switchPending.current) return;
       if (
@@ -1563,10 +1739,8 @@ function Workspace() {
         void importFiles([...event.clipboardData.files]);
       }
     };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("paste", onPaste);
     return () => {
-      window.removeEventListener("keydown", onKey);
       window.removeEventListener("paste", onPaste);
     };
   });
@@ -1585,17 +1759,19 @@ function Workspace() {
       if (n) setPreview(n);
     },
     newConnected: (id: string, direction: "source" | "target") => {
+      if (Date.now() - connectionReleasedAt.current < 200) return;
       const n = doc.nodes.find((n) => n.id === id);
-      if (!n) return;
+      if (!n || lockedIds.has(id)) return;
       const p = absolutePosition(n, doc.nodes);
-      const screen = flow.flowToScreenPosition({
-        x: p.x + (direction === "source" ? n.width : 0),
+      const world = {
+        x: p.x + (direction === "source" ? n.width + 140 : -140),
         y: p.y + n.height / 2,
-      });
+      };
+      const screen = flow.flowToScreenPosition(world);
       setMenu({
         x: Math.min(screen.x, window.innerWidth - 232),
         y: Math.min(screen.y, window.innerHeight - 330),
-        world: p,
+        world,
         connected: { id, direction },
       });
     },
@@ -1704,6 +1880,23 @@ function Workspace() {
       {shortcut && <kbd>{shortcut}</kbd>}
     </button>
   );
+  const pendingSource =
+    menu?.connected && doc.nodes.find((node) => node.id === menu.connected!.id);
+  const pendingConnection =
+    pendingSource && menu?.connected
+      ? {
+          from: {
+            x:
+              absolutePosition(pendingSource, doc.nodes).x +
+              (menu.connected.direction === "source" ? pendingSource.width : 0),
+            y:
+              absolutePosition(pendingSource, doc.nodes).y +
+              pendingSource.height / 2,
+          },
+          to: menu.world,
+          direction: menu.connected.direction,
+        }
+      : undefined;
 
   const workspace = (
     <div
@@ -1712,42 +1905,14 @@ function Workspace() {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
-      onKeyDownCapture={(event) => {
-        if (
-          !(event.target as HTMLElement).closest(".react-flow") ||
-          (event.target as HTMLElement).closest(
-            "input,textarea,select,[contenteditable=true]",
-          )
-        )
-          return;
-        if (
-          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-            event.key,
-          )
-        )
-          return;
-        // Own keyboard movement before React Flow's node handler, avoiding duplicate commands.
-        event.preventDefault();
-        event.stopPropagation();
-        const step = event.shiftKey ? 10 : 1;
-        command({
-          type: "move-nodes",
-          ids: selectedRef.current,
-          delta: {
-            x:
-              event.key === "ArrowLeft"
-                ? -step
-                : event.key === "ArrowRight"
-                  ? step
-                  : 0,
-            y:
-              event.key === "ArrowUp"
-                ? -step
-                : event.key === "ArrowDown"
-                  ? step
-                  : 0,
-          },
-        });
+      tabIndex={-1}
+      onPointerDownCapture={(event) => {
+        selectionAtPointerDown.current = selectedRef.current;
+        bypassSnapping.current = event.metaKey || event.ctrlKey;
+      }}
+      onKeyDownCapture={onWorkspaceKey}
+      onKeyUpCapture={(event) => {
+        bypassSnapping.current = event.metaKey || event.ctrlKey;
       }}
       onDragOver={(event) => {
         if ((event.target as HTMLElement).closest("[role=dialog]")) return;
@@ -1777,6 +1942,7 @@ function Workspace() {
           nodes={flowNodes}
           edges={flowEdges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={(changes) => {
             for (const c of changes)
@@ -1788,36 +1954,47 @@ function Workspace() {
                 );
           }}
           onConnect={connect}
+          connectionLineComponent={CanvasConnectionLine}
+          onConnectStart={(event) => {
+            setMenu(null);
+            const point = "touches" in event ? event.touches[0] : event;
+            connectionStarted.current = point
+              ? { x: point.clientX, y: point.clientY }
+              : null;
+          }}
+          onConnectEnd={onConnectEnd}
           connectOnClick={false}
           elementsSelectable={!panning}
           nodesConnectable={!panning}
           isValidConnection={(c) =>
             c.source !== c.target &&
+            !lockedIds.has(c.source) &&
+            !lockedIds.has(c.target) &&
             !doc.edges.some(
               (e) => e.source === c.source && e.target === c.target,
             )
           }
-          onNodeClick={(_, node) => {
+          onNodeClick={(event, node) => {
             if (panning) return;
+            setMenu(null);
+            // Read modifiers from the gesture itself, including focus changes between clicks.
+            if (event.shiftKey || event.metaKey || event.ctrlKey) {
+              const ids = new Set(selectionAtPointerDown.current);
+              if (ids.has(node.id)) ids.delete(node.id);
+              else ids.add(node.id);
+              setSelected([...ids]);
+              return;
+            }
             if (!["image", "video", "audio"].includes(node.type ?? "")) return;
-            const item = doc.nodes.find((n) => n.id === node.id);
-            if (!item) return;
-            const p = absolutePosition(item, doc.nodes);
-            const view = flow.getViewport();
-            const bottom = (p.y + item.height) * view.zoom + view.y;
-            const available =
-              window.innerHeight - (window.innerWidth < 700 ? 108 : 80) - 290;
-            if (bottom > available)
-              void flow.setViewport(
-                { ...view, y: view.y - (bottom - Math.max(180, available)) },
-                { duration: 180 },
-              );
+            requestAnimationFrame(() => revealNodes([node.id]));
           }}
-          onNodeDragStart={begin}
-          onNodeDragStop={end}
-          onSelectionDragStart={begin}
-          onSelectionDragStop={end}
+          onNodeDragStart={beginDrag}
+          onNodeDragStop={endDrag}
+          onSelectionDragStart={beginDrag}
+          onSelectionDragStop={endDrag}
           onPaneClick={(event) => {
+            if (Date.now() - connectionReleasedAt.current < 200) return;
+            root.current?.focus({ preventScroll: true });
             setMenu(null);
             setSelected([]);
             setSelectedEdges([]);
@@ -1836,6 +2013,7 @@ function Workspace() {
           }}
           onPaneContextMenu={(event) => {
             event.preventDefault();
+            root.current?.focus({ preventScroll: true });
             setMenu({
               x: event.clientX,
               y: event.clientY,
@@ -1849,7 +2027,8 @@ function Workspace() {
           onMoveEnd={(_, viewport) => command({ type: "viewport", viewport })}
           minZoom={MIN_ZOOM}
           maxZoom={MAX_ZOOM}
-          nodeDragThreshold={4}
+          nodeDragThreshold={0}
+          nodeClickDistance={4}
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={!panning}
           panOnDrag={panning ? [0, 1, 2] : [1, 2]}
@@ -1865,12 +2044,18 @@ function Workspace() {
           colorMode="dark"
           aria-label="无限创作画布"
         >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={24}
-            size={1}
-            color="#333338"
-            bgColor="#0d0d0d"
+          {showDots && (
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
+              size={Math.max(1, 1 / zoom)}
+              color="#55565d"
+              bgColor="#0d0d0d"
+            />
+          )}
+          <CanvasInteractionOverlay
+            guides={guides}
+            pending={pendingConnection}
           />
           {minimap && (
             <MiniMap
@@ -1986,6 +2171,34 @@ function Workspace() {
       {moreMenu && (
         <div className="cw-more-menu cw-menu-popover">
           <button
+            role="menuitemcheckbox"
+            aria-checked={showDots}
+            onClick={() => setShowDots(!showDots)}
+          >
+            背景点阵 <span>{showDots ? "✓" : ""}</span>
+          </button>
+          <button
+            role="menuitemcheckbox"
+            aria-checked={objectSnapping}
+            onClick={() => {
+              setObjectSnapping(!objectSnapping);
+              clearGuides();
+            }}
+          >
+            对齐吸附与辅助线 <span>{objectSnapping ? "✓" : ""}</span>
+          </button>
+          <button
+            role="menuitemcheckbox"
+            aria-checked={gridSnapping}
+            onClick={() => setGridSnapping(!gridSnapping)}
+          >
+            吸附到网格 <span>{gridSnapping ? "✓" : ""}</span>
+          </button>
+          <small className="cw-snap-hint">
+            拖动时按住 ⌘ / Ctrl 暂时取消吸附
+          </small>
+          <hr />
+          <button
             onClick={() => {
               setHistory(undo);
               setMoreMenu(false);
@@ -2077,17 +2290,17 @@ function Workspace() {
         <IconButton
           name="timeline"
           label="添加时间线"
-          onClick={() => openEditor(addNode("timeline"))}
+          onClick={() => addNode("timeline")}
         />
         <IconButton
           name="subject"
           label="添加主体"
-          onClick={() => openEditor(addNode("subject"))}
+          onClick={() => addNode("subject")}
         />
         <IconButton
           name="external"
           label="添加导演台"
-          onClick={() => openEditor(addNode("external"))}
+          onClick={() => addNode("external")}
         />
         <span className="cw-divider" />
         <IconButton
@@ -2254,6 +2467,34 @@ function Workspace() {
       {selected.length > 1 && (
         <div className="cw-selection-bar">
           <span>已选 {selected.length} 个节点</span>
+          <select
+            aria-label="对齐所选节点"
+            value=""
+            onChange={(event) => {
+              const alignment = event.target.value as Alignment;
+              if (alignment)
+                change((document) => ({
+                  ...document,
+                  nodes: alignNodes(document.nodes, selected, alignment),
+                }));
+            }}
+          >
+            <option value="" disabled>
+              对齐 / 分布
+            </option>
+            <option value="left">左对齐</option>
+            <option value="center">水平居中</option>
+            <option value="right">右对齐</option>
+            <option value="top">顶对齐</option>
+            <option value="middle">垂直居中</option>
+            <option value="bottom">底对齐</option>
+            <option value="horizontal" disabled={selected.length < 3}>
+              水平等间距
+            </option>
+            <option value="vertical" disabled={selected.length < 3}>
+              垂直等间距
+            </option>
+          </select>
           <button onClick={group}>
             <CanvasIcon name="group" size={16} />
             编组
@@ -2445,16 +2686,25 @@ function Workspace() {
               <div className="cw-menu-caption">
                 {menu.connected ? "创建参考关联节点" : "添加节点"}
               </div>
-              {kinds.map((kind) => (
+              {(menu.connected
+                ? kinds.filter((kind) =>
+                    ["text", "image", "video", "audio"].includes(kind),
+                  )
+                : kinds
+              ).map((kind) => (
                 <div key={kind}>
                   {menuButton(labels[kind], kind, () =>
                     addNode(kind, menu.world),
                   )}
                 </div>
               ))}
-              <hr />
-              {menuButton("上传素材", "upload", () => openFilePicker())}
-              {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
+              {!menu.connected && (
+                <>
+                  <hr />
+                  {menuButton("上传素材", "upload", () => openFilePicker())}
+                  {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
+                </>
+              )}
             </>
           ),
         )}

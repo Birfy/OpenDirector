@@ -212,20 +212,29 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           )}
         </div>
       ) : (
-        <button
-          className="cw-node-placeholder nodrag nopan"
-          onClick={() => actions?.upload(id)}
-          aria-label={`上传${names[kind]}`}
-        >
+        <div className="cw-node-placeholder">
           <span className="cw-placeholder-symbol">
             <CanvasIcon name={kind} size={42} />
           </span>
           <span className="cw-placeholder-label">
             {data.assetState === "missing"
-              ? "素材未找到，点击重新选择"
-              : `点击上传${names[kind]}`}
+              ? "素材未找到，请重新选择"
+              : names[kind]}
           </span>
-        </button>
+          {!locked && (
+            <button
+              className="cw-placeholder-upload nodrag nopan"
+              aria-label={`上传${names[kind]}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                actions?.upload(id);
+              }}
+            >
+              <CanvasIcon name="upload" size={14} />
+              本地上传
+            </button>
+          )}
+        </div>
       )}
 
       {activity && (
