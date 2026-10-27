@@ -24,11 +24,15 @@ import { readEditorResource, withMediaDuration } from "./editorMedia";
 import { EditorModal } from "./EditorModal";
 import { CanvasIcon } from "./CanvasIcon";
 import "./timeline-editor.css";
+import { downloadFile, downloadFilename } from "./assets";
+import { mediaBlobDataUrl } from "./localMediaRuntime";
+import type { LinkedMediaResult } from "./linkedResults";
 
 export interface TimelineEditorProps {
   node: CanvasNode;
   resources?: CanvasResource[];
   onApply: (data: TimelineData) => void;
+  onRender: (result: LinkedMediaResult) => boolean;
   onClose: () => void;
 }
 const timeLabel = (time: number) =>
@@ -40,6 +44,7 @@ export function TimelineEditor({
   node,
   resources = [],
   onApply,
+  onRender,
   onClose,
 }: TimelineEditorProps) {
   const [timeline, setTimeline] = useState(() =>
@@ -66,6 +71,9 @@ export function TimelineEditor({
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [audioTrack, setAudioTrack] = useState("");
+  const [inserted, setInserted] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<number | null>(null);
+  const [rendered, setRendered] = useState<Blob | null>(null);
   const jsonInput = useRef<HTMLInputElement>(null),
     history = useRef<{ past: TimelineData[]; future: TimelineData[] }>({
       past: [],
@@ -173,6 +181,7 @@ export function TimelineEditor({
       )
         element.currentTime = desired;
       element.playbackRate = segment.clip.speed;
+      element.preservesPitch = false;
       element.volume = segment.clip.volume;
       element.muted = segment.clip.muted || segment.track.muted;
       if (playing && element.paused && !pendingPlay.current.has(element)) {
@@ -334,6 +343,64 @@ export function TimelineEditor({
       if (ownsLoad(controller)) setBusy(false);
     }
   };
+  const renderVideo = async () => {
+    const controller = beginLoad(),
+      snapshot = copyTimeline(timelineRef.current);
+    setPlaying(false);
+    setRendered(null);
+    setInserted(false);
+    setRenderProgress(0);
+    try {
+      const { renderTimelineMp4 } = await import("./timelineRender");
+      const blob = await renderTimelineMp4(
+        snapshot,
+        controller.signal,
+        (value) => {
+          if (ownsLoad(controller)) setRenderProgress(value);
+        },
+      );
+      if (ownsLoad(controller)) setRendered(blob);
+    } catch (reason) {
+      if (ownsLoad(controller))
+        setError(reason instanceof Error ? reason.message : "视频导出失败。");
+    } finally {
+      if (active.current && loading.current === controller) {
+        setBusy(false);
+        setRenderProgress(null);
+      }
+    }
+  };
+  const insertRender = async () => {
+    if (!rendered) return;
+    const controller = beginLoad();
+    try {
+      const src = await mediaBlobDataUrl(rendered, controller.signal);
+      const media = await withMediaDuration(
+        { id: "rendered", kind: "video", title: node.data.title, src },
+        controller.signal,
+      );
+      if (ownsLoad(controller)) {
+        setInserted(
+          onRender({
+            kind: "video",
+            src,
+            mimeType: "video/mp4",
+            title: `${node.data.title} · 合成`,
+            media: {
+              width: media.width,
+              height: media.height,
+              durationSeconds: media.durationSeconds,
+            },
+          }),
+        );
+      }
+    } catch (reason) {
+      if (ownsLoad(controller))
+        setError(reason instanceof Error ? reason.message : "加入画布失败。");
+    } finally {
+      if (ownsLoad(controller)) setBusy(false);
+    }
+  };
   const editableAtPlayhead =
     !!selected && position > selected.start && position < selected.end;
   const mediaReady = (
@@ -368,546 +435,607 @@ export function TimelineEditor({
           <button disabled={busy} onClick={() => jsonInput.current?.click()}>
             导入 JSON
           </button>
-          <button onClick={exportJson}>
+          <button disabled={busy} onClick={exportJson}>
             <CanvasIcon name="download" size={16} />
             导出可编辑 JSON
+          </button>
+          <button
+            disabled={busy || !duration}
+            onClick={() => void renderVideo()}
+          >
+            合成 MP4
           </button>
         </>
       }
     >
-      <div className="cw-timeline-top">
-        <aside className="cw-timeline-library">
-          <div className="cw-domain-section-heading">
-            <h3>素材库</h3>
-            <button disabled={busy} onClick={() => fileInput.current?.click()}>
-              <CanvasIcon name="upload" size={14} />
-              导入
-            </button>
-          </div>
-          <p className="cw-domain-note">
-            图片、视频与音频。视频和音频会先读取实际时长。
-          </p>
-          <div className="cw-domain-row">
-            <select
-              aria-label="素材类型筛选"
-              value={libraryKind}
-              onChange={(event) => setLibraryKind(event.target.value)}
-            >
-              <option value="all">全部类型</option>
-              <option value="image">图片</option>
-              <option value="video">视频</option>
-              <option value="audio">音频</option>
-            </select>
-            <select
-              aria-label="素材来源筛选"
-              value={librarySource}
-              onChange={(event) => setLibrarySource(event.target.value)}
-            >
-              <option value="all">全部来源</option>
-              <option value="canvas">画布素材</option>
-              <option value="imported">已导入</option>
-            </select>
-          </div>
-          <div className="cw-domain-resource-list">
-            {libraryResources.map((resource) => (
-              <button
-                key={resource.id}
-                disabled={busy}
-                onClick={() => {
-                  void addResource(resource);
-                }}
-              >
-                <CanvasIcon name={resource.kind} size={16} />
-                <span>{resource.title}</span>
-                <CanvasIcon name="plus" size={14} />
-              </button>
-            ))}
-            {!libraryResources.length && (
-              <p>可从本地导入，也可引用画布上的媒体节点。</p>
-            )}
-          </div>
-          <label className="cw-domain-field">
-            音频加入轨道
-            <select
-              value={audioTrack}
-              onChange={(event) => setAudioTrack(event.target.value)}
-            >
-              <option value="">首条音轨 / 自动新建</option>
-              {timeline.tracks
-                .filter((track) => track.kind === "audio")
-                .map((track) => (
-                  <option key={track.id} value={track.id}>
-                    {track.title}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <button onClick={() => change(addAudioTrack)}>
-            <CanvasIcon name="plus" size={14} />
-            添加音轨
-          </button>
-          <p className="cw-domain-status" role="status">
-            {busy ? "正在读取素材…" : ""}
-          </p>
-        </aside>
-        <div className="cw-timeline-monitor">
-          <div
-            className="cw-timeline-screen"
-            style={{ aspectRatio: `${timeline.width}/${timeline.height}` }}
+      {renderProgress !== null && (
+        <div className="cw-render-status" role="status">
+          <progress value={renderProgress} max={1} />
+          <span>正在合成 {Math.round(renderProgress * 100)}%</span>
+          <button onClick={() => loading.current?.abort()}>取消合成</button>
+        </div>
+      )}
+      {rendered && (
+        <div className="cw-render-status" role="status">
+          <span>
+            MP4 已完成 · {(rendered.size / 1024 / 1024).toFixed(2)}{" "}
+            MB（合成时的时间线）
+          </span>
+          <button
+            disabled={busy}
+            onClick={() =>
+              downloadFile(
+                rendered,
+                downloadFilename(node.data.title, "video/mp4"),
+              )
+            }
           >
-            {currentVisual?.clip.resource.src ? (
-              currentVisual.clip.resource.kind === "image" ? (
-                <img
-                  src={currentVisual.clip.resource.src}
-                  alt={currentVisual.clip.resource.title}
-                />
+            下载 MP4
+          </button>
+          <button
+            disabled={busy || node.locked || inserted}
+            onClick={() => void insertRender()}
+          >
+            {inserted ? "已加入画布" : "将合成视频加入画布"}
+          </button>
+        </div>
+      )}
+      <fieldset className="cw-editor-work" disabled={busy}>
+        <div className="cw-timeline-top">
+          <aside className="cw-timeline-library">
+            <div className="cw-domain-section-heading">
+              <h3>素材库</h3>
+              <button
+                disabled={busy}
+                onClick={() => fileInput.current?.click()}
+              >
+                <CanvasIcon name="upload" size={14} />
+                导入
+              </button>
+            </div>
+            <p className="cw-domain-note">
+              图片、视频与音频。视频和音频会先读取实际时长。
+            </p>
+            <div className="cw-domain-row">
+              <select
+                aria-label="素材类型筛选"
+                value={libraryKind}
+                onChange={(event) => setLibraryKind(event.target.value)}
+              >
+                <option value="all">全部类型</option>
+                <option value="image">图片</option>
+                <option value="video">视频</option>
+                <option value="audio">音频</option>
+              </select>
+              <select
+                aria-label="素材来源筛选"
+                value={librarySource}
+                onChange={(event) => setLibrarySource(event.target.value)}
+              >
+                <option value="all">全部来源</option>
+                <option value="canvas">画布素材</option>
+                <option value="imported">已导入</option>
+              </select>
+            </div>
+            <div className="cw-domain-resource-list">
+              {libraryResources.map((resource) => (
+                <button
+                  key={resource.id}
+                  disabled={busy}
+                  onClick={() => {
+                    void addResource(resource);
+                  }}
+                >
+                  <CanvasIcon name={resource.kind} size={16} />
+                  <span>{resource.title}</span>
+                  <CanvasIcon name="plus" size={14} />
+                </button>
+              ))}
+              {!libraryResources.length && (
+                <p>可从本地导入，也可引用画布上的媒体节点。</p>
+              )}
+            </div>
+            <label className="cw-domain-field">
+              音频加入轨道
+              <select
+                value={audioTrack}
+                onChange={(event) => setAudioTrack(event.target.value)}
+              >
+                <option value="">首条音轨 / 自动新建</option>
+                {timeline.tracks
+                  .filter((track) => track.kind === "audio")
+                  .map((track) => (
+                    <option key={track.id} value={track.id}>
+                      {track.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button onClick={() => change(addAudioTrack)}>
+              <CanvasIcon name="plus" size={14} />
+              添加音轨
+            </button>
+            <p className="cw-domain-status" role="status">
+              {busy ? "正在读取素材…" : ""}
+            </p>
+          </aside>
+          <div className="cw-timeline-monitor">
+            <div
+              className="cw-timeline-screen"
+              style={{ aspectRatio: `${timeline.width}/${timeline.height}` }}
+            >
+              {currentVisual?.clip.resource.src ? (
+                currentVisual.clip.resource.kind === "image" ? (
+                  <img
+                    src={currentVisual.clip.resource.src}
+                    alt={currentVisual.clip.resource.title}
+                  />
+                ) : (
+                  <video
+                    key={currentVisual.clip.id}
+                    ref={bindMedia(currentVisual.clip)}
+                    src={currentVisual.clip.resource.src}
+                    playsInline
+                    preload="auto"
+                    onLoadedMetadata={(event) =>
+                      mediaReady(
+                        event.currentTarget,
+                        currentVisual.clip,
+                        currentVisual.start,
+                      )
+                    }
+                    onError={() => {
+                      setPlaying(false);
+                      setError("当前视频无法播放，请检查素材或重新导入。");
+                    }}
+                  />
+                )
               ) : (
-                <video
-                  key={currentVisual.clip.id}
-                  ref={bindMedia(currentVisual.clip)}
-                  src={currentVisual.clip.resource.src}
-                  playsInline
+                <div className="cw-timeline-monitor-empty">
+                  <CanvasIcon name="video" size={38} />
+                  <span>
+                    {duration ? "当前时间没有画面" : "添加素材开始编排"}
+                  </span>
+                </div>
+              )}
+              {currentAudio.map((segment) => (
+                <audio
+                  key={segment.clip.id}
+                  ref={bindMedia(segment.clip)}
+                  src={segment.clip.resource.src}
                   preload="auto"
                   onLoadedMetadata={(event) =>
-                    mediaReady(
-                      event.currentTarget,
-                      currentVisual.clip,
-                      currentVisual.start,
-                    )
+                    mediaReady(event.currentTarget, segment.clip, segment.start)
                   }
                   onError={() => {
                     setPlaying(false);
-                    setError("当前视频无法播放，请检查素材或重新导入。");
+                    setError("音频素材无法播放，请重新导入。");
                   }}
                 />
-              )
-            ) : (
-              <div className="cw-timeline-monitor-empty">
-                <CanvasIcon name="video" size={38} />
-                <span>
-                  {duration ? "当前时间没有画面" : "添加素材开始编排"}
-                </span>
-              </div>
-            )}
-            {currentAudio.map((segment) => (
-              <audio
-                key={segment.clip.id}
-                ref={bindMedia(segment.clip)}
-                src={segment.clip.resource.src}
-                preload="auto"
-                onLoadedMetadata={(event) =>
-                  mediaReady(event.currentTarget, segment.clip, segment.start)
-                }
-                onError={() => {
-                  setPlaying(false);
-                  setError("音频素材无法播放，请重新导入。");
-                }}
-              />
-            ))}
-          </div>
-          <div className="cw-timeline-transport">
-            <button
-              aria-label="回到时间线开始"
-              onClick={() => seek(0)}
-              disabled={!duration}
-            >
-              ↤
-            </button>
-            <button
-              className="cw-timeline-play"
-              aria-label={playing ? "暂停时间线" : "播放时间线"}
-              disabled={!duration || busy}
-              onClick={() => {
-                if (position >= duration) setPosition(0);
-                setPlaying((current) => !current);
-              }}
-            >
-              <CanvasIcon name={playing ? "stop" : "play"} size={18} />
-            </button>
-            <output>
-              {timeLabel(position)} <span>/ {timeLabel(duration)}</span>
-            </output>
-            <label>
-              帧率
-              <select
-                value={timeline.fps}
-                onChange={(event) =>
-                  change((current) => ({
-                    ...current,
-                    fps: Number(event.target.value),
-                  }))
-                }
+              ))}
+            </div>
+            <div className="cw-timeline-transport">
+              <button
+                aria-label="回到时间线开始"
+                onClick={() => seek(0)}
+                disabled={!duration}
               >
-                {[24, 25, 30, 50, 60].map((fps) => (
-                  <option key={fps} value={fps}>
-                    {fps} fps
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <input
-            className="cw-timeline-seek"
-            aria-label="时间线播放位置"
-            type="range"
-            min={0}
-            max={Math.max(0.01, duration)}
-            step={1 / timeline.fps}
-            value={position}
-            onChange={(event) => seek(Number(event.target.value))}
-            disabled={!duration}
-          />
-        </div>
-        <aside className="cw-timeline-inspector">
-          <div className="cw-domain-section-heading">
-            <h3>{selected ? "片段属性" : "项目设置"}</h3>
-          </div>
-          {selected ? (
-            <>
-              <strong>{selected.clip.resource.title}</strong>
-              <p className="cw-domain-note">
-                {selected.track.title} · 播放{" "}
-                {clipDuration(selected.clip).toFixed(2)} 秒
-              </p>
-              {selected.clip.resource.kind !== "image" && (
-                <label className="cw-domain-field">
-                  源入点（秒）
-                  <input
-                    type="number"
-                    min={0}
-                    step={1 / timeline.fps}
-                    value={selected.clip.inPoint}
-                    onChange={(event) =>
-                      patchSelected({ inPoint: Number(event.target.value) })
-                    }
-                  />
-                </label>
-              )}
-              <label className="cw-domain-field">
-                {selected.clip.resource.kind === "image"
-                  ? "展示时长（秒）"
-                  : "源出点（秒）"}
-                <input
-                  type="number"
-                  min={0.01}
-                  step={1 / timeline.fps}
-                  value={selected.clip.outPoint}
-                  onChange={(event) =>
-                    patchSelected({ outPoint: Number(event.target.value) })
-                  }
-                />
-              </label>
-              {selected.clip.resource.kind !== "image" && (
-                <label className="cw-domain-field">
-                  播放速度
-                  <select
-                    value={selected.clip.speed}
-                    onChange={(event) =>
-                      patchSelected({ speed: Number(event.target.value) })
-                    }
-                  >
-                    {[0.25, 0.5, 1, 1.5, 2, 4].map((speed) => (
-                      <option key={speed} value={speed}>
-                        {speed}×
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {selected.track.kind === "audio" && (
-                <label className="cw-domain-field">
-                  时间线起点（秒）
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    value={selected.clip.start}
-                    onChange={(event) =>
-                      patchSelected({ start: Number(event.target.value) })
-                    }
-                  />
-                </label>
-              )}
-              {selected.clip.resource.kind !== "image" && (
-                <>
-                  <label className="cw-domain-field">
-                    片段音量 {Math.round(selected.clip.volume * 100)}%
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={selected.clip.volume}
-                      onChange={(event) =>
-                        patchSelected({ volume: Number(event.target.value) })
-                      }
-                    />
-                  </label>
-                  <label className="cw-domain-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={selected.clip.muted}
-                      onChange={(event) =>
-                        patchSelected({ muted: event.target.checked })
-                      }
-                    />
-                    片段静音
-                  </label>
-                </>
-              )}
-              <div className="cw-domain-row">
-                <button
-                  onClick={() =>
-                    change((current) =>
-                      moveTimelineClip(current, selected.clip.id, -1),
-                    )
-                  }
-                  aria-label="片段前移"
-                >
-                  ←
-                </button>
-                <button
-                  onClick={() =>
-                    change((current) =>
-                      moveTimelineClip(current, selected.clip.id, 1),
-                    )
-                  }
-                  aria-label="片段后移"
-                >
-                  →
-                </button>
-                <button
-                  onClick={() => {
-                    change((current) =>
-                      removeTimelineClip(current, selected.clip.id),
-                    );
-                    setSelectedId(null);
-                  }}
-                >
-                  删除片段
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <label className="cw-domain-field">
-                画面比例
+                ↤
+              </button>
+              <button
+                className="cw-timeline-play"
+                aria-label={playing ? "暂停时间线" : "播放时间线"}
+                disabled={!duration || busy}
+                onClick={() => {
+                  if (position >= duration) setPosition(0);
+                  setPlaying((current) => !current);
+                }}
+              >
+                <CanvasIcon name={playing ? "stop" : "play"} size={18} />
+              </button>
+              <output>
+                {timeLabel(position)} <span>/ {timeLabel(duration)}</span>
+              </output>
+              <label>
+                帧率
                 <select
-                  value={`${timeline.width}:${timeline.height}`}
-                  onChange={(event) => {
-                    const [width, height] = event.target.value
-                      .split(":")
-                      .map(Number);
+                  value={timeline.fps}
+                  onChange={(event) =>
                     change((current) => ({
                       ...current,
-                      width: width!,
-                      height: height!,
-                    }));
-                  }}
+                      fps: Number(event.target.value),
+                    }))
+                  }
                 >
-                  <option value="1920:1080">16:9 · 1920×1080</option>
-                  <option value="1080:1920">9:16 · 1080×1920</option>
-                  <option value="1080:1080">1:1 · 1080×1080</option>
+                  {[24, 25, 30, 50, 60].map((fps) => (
+                    <option key={fps} value={fps}>
+                      {fps} fps
+                    </option>
+                  ))}
                 </select>
               </label>
-              <p className="cw-domain-note">
-                点击轨道片段编辑源入点、出点、播放速度与音量。视觉片段自动顺序衔接；音轨保留显式起点，同轨不能重叠。
-              </p>
-            </>
-          )}
-        </aside>
-      </div>
-      <div className="cw-domain-row cw-timeline-edit-toolbar">
-        <button
-          disabled={!history.current.past.length || busy}
-          onClick={() => historyStep("undo")}
-        >
-          撤销
-        </button>
-        <button
-          disabled={!history.current.future.length || busy}
-          onClick={() => historyStep("redo")}
-        >
-          重做
-        </button>
-        <button
-          disabled={!editableAtPlayhead}
-          onClick={() => {
-            if (selected)
-              change((current) =>
-                splitTimelineClip(current, selected.clip.id, position),
-              );
-          }}
-        >
-          在播放头分割
-        </button>
-        <button
-          disabled={!editableAtPlayhead}
-          onClick={() => {
-            if (selected)
-              change((current) =>
-                trimTimelineClip(current, selected.clip.id, position, "left"),
-              );
-          }}
-        >
-          剪掉播放头左侧
-        </button>
-        <button
-          disabled={!editableAtPlayhead}
-          onClick={() => {
-            if (selected)
-              change((current) =>
-                trimTimelineClip(current, selected.clip.id, position, "right"),
-              );
-          }}
-        >
-          剪掉播放头右侧
-        </button>
-      </div>
-      <div className="cw-timeline-tracks">
-        <div className="cw-timeline-ruler">
-          <span>轨道 / 秒</span>
-          <div>
-            {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
-              <span key={fraction} style={{ left: `${fraction * 100}%` }}>
-                {(duration * fraction).toFixed(1)}
-              </span>
-            ))}
-          </div>
-        </div>
-        {timeline.tracks.map((track) => (
-          <div className="cw-timeline-track" key={track.id}>
-            <div className="cw-timeline-track-label">
-              <span>{track.title}</span>
-              <button
-                onClick={() =>
-                  change((current) => ({
-                    ...current,
-                    tracks: current.tracks.map((item) =>
-                      item.id === track.id
-                        ? { ...item, muted: !item.muted }
-                        : item,
-                    ),
-                  }))
-                }
-                aria-label={`${track.muted ? "取消静音" : "静音"}${track.title}`}
-              >
-                {track.muted ? "静音" : "有声"}
-              </button>
-              {track.kind === "audio" && (
-                <button
-                  aria-label={`删除${track.title}`}
-                  onClick={() => {
-                    setPlaying(false);
-                    if (audioTrack === track.id) setAudioTrack("");
-                    change((current) => ({
-                      ...current,
-                      tracks: current.tracks.filter(
-                        (item) => item.id !== track.id,
-                      ),
-                    }));
-                  }}
-                >
-                  ×
-                </button>
-              )}
             </div>
-            <div
-              className="cw-timeline-track-lane"
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  seek(((event.clientX - rect.left) / rect.width) * duration);
-                }
-              }}
-            >
-              <div
-                className="cw-timeline-playhead"
-                style={{
-                  left: `${duration ? (position / duration) * 100 : 0}%`,
-                }}
-              />
-              {segments
-                .filter((segment) => segment.track.id === track.id)
-                .map((segment) => (
+            <input
+              className="cw-timeline-seek"
+              aria-label="时间线播放位置"
+              type="range"
+              min={0}
+              max={Math.max(0.01, duration)}
+              step={1 / timeline.fps}
+              value={position}
+              onChange={(event) => seek(Number(event.target.value))}
+              disabled={!duration}
+            />
+          </div>
+          <aside className="cw-timeline-inspector">
+            <div className="cw-domain-section-heading">
+              <h3>{selected ? "片段属性" : "项目设置"}</h3>
+            </div>
+            {selected ? (
+              <>
+                <strong>{selected.clip.resource.title}</strong>
+                <p className="cw-domain-note">
+                  {selected.track.title} · 播放{" "}
+                  {clipDuration(selected.clip).toFixed(2)} 秒
+                </p>
+                {selected.clip.resource.kind !== "image" && (
+                  <label className="cw-domain-field">
+                    源入点（秒）
+                    <input
+                      type="number"
+                      min={0}
+                      step={1 / timeline.fps}
+                      value={selected.clip.inPoint}
+                      onChange={(event) =>
+                        patchSelected({ inPoint: Number(event.target.value) })
+                      }
+                    />
+                  </label>
+                )}
+                <label className="cw-domain-field">
+                  {selected.clip.resource.kind === "image"
+                    ? "展示时长（秒）"
+                    : "源出点（秒）"}
+                  <input
+                    type="number"
+                    min={0.01}
+                    step={1 / timeline.fps}
+                    value={selected.clip.outPoint}
+                    onChange={(event) =>
+                      patchSelected({ outPoint: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                {selected.clip.resource.kind !== "image" && (
+                  <label className="cw-domain-field">
+                    播放速度
+                    <select
+                      value={selected.clip.speed}
+                      onChange={(event) =>
+                        patchSelected({ speed: Number(event.target.value) })
+                      }
+                    >
+                      {[0.25, 0.5, 1, 1.5, 2, 4].map((speed) => (
+                        <option key={speed} value={speed}>
+                          {speed}×
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {selected.track.kind === "audio" && (
+                  <label className="cw-domain-field">
+                    时间线起点（秒）
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={selected.clip.start}
+                      onChange={(event) =>
+                        patchSelected({ start: Number(event.target.value) })
+                      }
+                    />
+                  </label>
+                )}
+                {selected.clip.resource.kind !== "image" && (
+                  <>
+                    <label className="cw-domain-field">
+                      片段音量 {Math.round(selected.clip.volume * 100)}%
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={selected.clip.volume}
+                        onChange={(event) =>
+                          patchSelected({ volume: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                    <label className="cw-domain-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={selected.clip.muted}
+                        onChange={(event) =>
+                          patchSelected({ muted: event.target.checked })
+                        }
+                      />
+                      片段静音
+                    </label>
+                  </>
+                )}
+                <div className="cw-domain-row">
                   <button
-                    key={segment.clip.id}
-                    draggable
-                    className={`cw-timeline-clip ${selectedId === segment.clip.id ? "selected" : ""} ${track.kind}`}
-                    style={{
-                      left: `${duration ? (segment.start / duration) * 100 : 0}%`,
-                      width: `${duration ? (clipDuration(segment.clip) / duration) * 100 : 100}%`,
+                    onClick={() =>
+                      change((current) =>
+                        moveTimelineClip(current, selected.clip.id, -1),
+                      )
+                    }
+                    aria-label="片段前移"
+                  >
+                    ←
+                  </button>
+                  <button
+                    onClick={() =>
+                      change((current) =>
+                        moveTimelineClip(current, selected.clip.id, 1),
+                      )
+                    }
+                    aria-label="片段后移"
+                  >
+                    →
+                  </button>
+                  <button
+                    onClick={() => {
+                      change((current) =>
+                        removeTimelineClip(current, selected.clip.id),
+                      );
+                      setSelectedId(null);
                     }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setSelectedId(segment.clip.id);
-                      seek(segment.start);
-                    }}
-                    onDragStart={() => {
-                      draggingId.current = segment.clip.id;
-                    }}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const source = draggingId.current;
-                      draggingId.current = null;
-                      if (!source || source === segment.clip.id) return;
+                  >
+                    删除片段
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label className="cw-domain-field">
+                  画面比例
+                  <select
+                    value={`${timeline.width}:${timeline.height}`}
+                    onChange={(event) => {
+                      const [width, height] = event.target.value
+                        .split(":")
+                        .map(Number);
                       change((current) => ({
                         ...current,
-                        tracks: current.tracks.map((item) => {
-                          const from = item.clips.findIndex(
-                              (clip) => clip.id === source,
-                            ),
-                            to = item.clips.findIndex(
-                              (clip) => clip.id === segment.clip.id,
-                            );
-                          if (from < 0 || to < 0) return item;
-                          const clips = [...item.clips],
-                            [clip] = clips.splice(from, 1);
-                          clips.splice(to, 0, clip!);
-                          return { ...item, clips };
-                        }),
+                        width: width!,
+                        height: height!,
                       }));
                     }}
                   >
-                    <CanvasIcon name={segment.clip.resource.kind} size={14} />
-                    <span>{segment.clip.resource.title}</span>
-                    <small>{clipDuration(segment.clip).toFixed(1)}s</small>
-                  </button>
-                ))}
+                    {![
+                      "1280:720",
+                      "1920:1080",
+                      "720:1280",
+                      "1080:1920",
+                      "1080:1080",
+                    ].includes(`${timeline.width}:${timeline.height}`) && (
+                      <option value={`${timeline.width}:${timeline.height}`}>
+                        导入尺寸 · {timeline.width}×{timeline.height}
+                      </option>
+                    )}
+                    <option value="1280:720">16:9 · 1280×720</option>
+                    <option value="1920:1080">16:9 · 1920×1080</option>
+                    <option value="720:1280">9:16 · 720×1280</option>
+                    <option value="1080:1920">9:16 · 1080×1920</option>
+                    <option value="1080:1080">1:1 · 1080×1080</option>
+                  </select>
+                </label>
+                <p className="cw-domain-note">
+                  点击轨道片段编辑源入点、出点、播放速度与音量。视觉片段自动顺序衔接；音轨保留显式起点，同轨不能重叠。
+                </p>
+              </>
+            )}
+          </aside>
+        </div>
+        <div className="cw-domain-row cw-timeline-edit-toolbar">
+          <button
+            disabled={!history.current.past.length || busy}
+            onClick={() => historyStep("undo")}
+          >
+            撤销
+          </button>
+          <button
+            disabled={!history.current.future.length || busy}
+            onClick={() => historyStep("redo")}
+          >
+            重做
+          </button>
+          <button
+            disabled={!editableAtPlayhead}
+            onClick={() => {
+              if (selected)
+                change((current) =>
+                  splitTimelineClip(current, selected.clip.id, position),
+                );
+            }}
+          >
+            在播放头分割
+          </button>
+          <button
+            disabled={!editableAtPlayhead}
+            onClick={() => {
+              if (selected)
+                change((current) =>
+                  trimTimelineClip(current, selected.clip.id, position, "left"),
+                );
+            }}
+          >
+            剪掉播放头左侧
+          </button>
+          <button
+            disabled={!editableAtPlayhead}
+            onClick={() => {
+              if (selected)
+                change((current) =>
+                  trimTimelineClip(
+                    current,
+                    selected.clip.id,
+                    position,
+                    "right",
+                  ),
+                );
+            }}
+          >
+            剪掉播放头右侧
+          </button>
+        </div>
+        <div className="cw-timeline-tracks">
+          <div className="cw-timeline-ruler">
+            <span>轨道 / 秒</span>
+            <div>
+              {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
+                <span key={fraction} style={{ left: `${fraction * 100}%` }}>
+                  {(duration * fraction).toFixed(1)}
+                </span>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
-      <p className="cw-domain-note cw-timeline-footnote">
-        播放和编排在本地进行；JSON
-        保存全部片段、素材与时间信息。此处不调用原站渲染、MP4
-        合成或剪映草稿生成服务。
-      </p>
-      <input
-        className="cw-domain-file-input"
-        ref={jsonInput}
-        type="file"
-        accept="application/json,.json"
-        aria-label="导入时间线 JSON"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) void importJson(file);
-          event.target.value = "";
-        }}
-      />
-      <input
-        className="cw-domain-file-input"
-        ref={fileInput}
-        type="file"
-        accept="image/*,video/*,audio/*"
-        multiple
-        aria-label="导入时间线素材"
-        onChange={(event) => {
-          if (event.target.files) void importFiles(event.target.files);
-          event.target.value = "";
-        }}
-      />
+          {timeline.tracks.map((track) => (
+            <div className="cw-timeline-track" key={track.id}>
+              <div className="cw-timeline-track-label">
+                <span>{track.title}</span>
+                <button
+                  onClick={() =>
+                    change((current) => ({
+                      ...current,
+                      tracks: current.tracks.map((item) =>
+                        item.id === track.id
+                          ? { ...item, muted: !item.muted }
+                          : item,
+                      ),
+                    }))
+                  }
+                  aria-label={`${track.muted ? "取消静音" : "静音"}${track.title}`}
+                >
+                  {track.muted ? "静音" : "有声"}
+                </button>
+                {track.kind === "audio" && (
+                  <button
+                    aria-label={`删除${track.title}`}
+                    onClick={() => {
+                      setPlaying(false);
+                      if (audioTrack === track.id) setAudioTrack("");
+                      change((current) => ({
+                        ...current,
+                        tracks: current.tracks.filter(
+                          (item) => item.id !== track.id,
+                        ),
+                      }));
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              <div
+                className="cw-timeline-track-lane"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    seek(((event.clientX - rect.left) / rect.width) * duration);
+                  }
+                }}
+              >
+                <div
+                  className="cw-timeline-playhead"
+                  style={{
+                    left: `${duration ? (position / duration) * 100 : 0}%`,
+                  }}
+                />
+                {segments
+                  .filter((segment) => segment.track.id === track.id)
+                  .map((segment) => (
+                    <button
+                      key={segment.clip.id}
+                      draggable
+                      className={`cw-timeline-clip ${selectedId === segment.clip.id ? "selected" : ""} ${track.kind}`}
+                      style={{
+                        left: `${duration ? (segment.start / duration) * 100 : 0}%`,
+                        width: `${duration ? (clipDuration(segment.clip) / duration) * 100 : 100}%`,
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedId(segment.clip.id);
+                        seek(segment.start);
+                      }}
+                      onDragStart={() => {
+                        draggingId.current = segment.clip.id;
+                      }}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const source = draggingId.current;
+                        draggingId.current = null;
+                        if (!source || source === segment.clip.id) return;
+                        change((current) => ({
+                          ...current,
+                          tracks: current.tracks.map((item) => {
+                            const from = item.clips.findIndex(
+                                (clip) => clip.id === source,
+                              ),
+                              to = item.clips.findIndex(
+                                (clip) => clip.id === segment.clip.id,
+                              );
+                            if (from < 0 || to < 0) return item;
+                            const clips = [...item.clips],
+                              [clip] = clips.splice(from, 1);
+                            clips.splice(to, 0, clip!);
+                            return { ...item, clips };
+                          }),
+                        }));
+                      }}
+                    >
+                      <CanvasIcon name={segment.clip.resource.kind} size={14} />
+                      <span>{segment.clip.resource.title}</span>
+                      <small>{clipDuration(segment.clip).toFixed(1)}s</small>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="cw-domain-note cw-timeline-footnote">
+          MP4
+          在浏览器内合成，保留顺序、裁剪、倍速、音量和多轨混音；画面等比适配并补黑边。
+          倍速会同时改变音调。JSON 可继续编辑，文件只保存在本机。
+        </p>
+        <input
+          className="cw-domain-file-input"
+          ref={jsonInput}
+          type="file"
+          accept="application/json,.json"
+          aria-label="导入时间线 JSON"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void importJson(file);
+            event.target.value = "";
+          }}
+        />
+        <input
+          className="cw-domain-file-input"
+          ref={fileInput}
+          type="file"
+          accept="image/*,video/*,audio/*"
+          multiple
+          aria-label="导入时间线素材"
+          onChange={(event) => {
+            if (event.target.files) void importFiles(event.target.files);
+            event.target.value = "";
+          }}
+        />
+      </fieldset>
     </EditorModal>
   );
 }

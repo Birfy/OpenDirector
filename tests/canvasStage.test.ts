@@ -74,3 +74,59 @@ test("keyframes interpolate actual camera and object positions and hold endpoint
     /不能重复/,
   );
 });
+
+test("character motion survives document parsing and transforms without sharing mutable settings", async () => {
+  const { sampleJointPose } = await import("../src/canvas/stageMotion.ts");
+  const stage = createLocalStage();
+  stage.objects[0]!.motion = { preset: "walk", speed: 1.5, amount: 0.8 };
+  const parsed = parseLocalStageValue(JSON.parse(JSON.stringify(stage)));
+  assert.equal(sameLocalStage(stage, parsed), true);
+  const motion = parsed.objects[0]!.motion!;
+  const first = sampleJointPose(motion, 0),
+    moving = sampleJointPose(motion, 1 / 6);
+  assert.notDeepEqual(first, moving);
+  assert.equal(moving.leftHip, -moving.rightHip);
+  assert.deepEqual(
+    sampleJointPose(motion, 0.1),
+    sampleJointPose({ ...motion, speed: 3 }, 0.05),
+  );
+  assert.equal(sampleStage(parsed, 2).objects[0]!.motion?.preset, "walk");
+  motion.amount = 0;
+  assert.equal(stage.objects[0]!.motion!.amount, 0.8);
+  assert.equal(sameLocalStage(stage, parsed), false);
+  assert.ok(
+    Object.values(sampleJointPose(motion, 4)).every((value) => value === 0),
+  );
+});
+
+test("persisted motion rejects unknown actions, invalid rates and inapplicable object kinds", () => {
+  const stage = createLocalStage();
+  for (const motion of [
+    { preset: "missing", speed: 1, amount: 1 },
+    { preset: "walk", speed: 0, amount: 1 },
+    { preset: "wave", speed: Infinity, amount: 1 },
+    { preset: "run", speed: 1, amount: 2 },
+  ])
+    assert.throws(
+      () =>
+        parseLocalStageValue({
+          ...stage,
+          objects: [{ ...stage.objects[0], motion }],
+        }),
+      /动作/,
+    );
+  assert.throws(
+    () =>
+      parseLocalStageValue({
+        ...stage,
+        objects: [
+          {
+            ...stage.objects[0],
+            kind: "box",
+            motion: { preset: "wave", speed: 1, amount: 1 },
+          },
+        ],
+      }),
+    /只有人物/,
+  );
+});

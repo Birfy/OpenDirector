@@ -1,0 +1,84 @@
+/** Original articulated mannequin motions, sampled in seconds independently of frame rate. */
+export const STAGE_MOTIONS = {
+  idle: "站立",
+  walk: "行走",
+  run: "跑步",
+  wave: "挥手",
+} as const;
+export interface StageMotion {
+  preset: keyof typeof STAGE_MOTIONS;
+  speed: number;
+  amount: number;
+}
+export interface JointPose {
+  hipsY: number;
+  leftHip: number;
+  rightHip: number;
+  leftKnee: number;
+  rightKnee: number;
+  leftShoulderX: number;
+  rightShoulderX: number;
+  rightShoulderZ: number;
+  leftElbow: number;
+  rightElbow: number;
+}
+export function parseStageMotion(value: unknown): StageMotion {
+  if (!value || typeof value !== "object")
+    throw new Error("人物动作设置无效。");
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.preset !== "string" ||
+    !Object.hasOwn(STAGE_MOTIONS, raw.preset) ||
+    typeof raw.speed !== "number" ||
+    !Number.isFinite(raw.speed) ||
+    raw.speed <= 0 ||
+    typeof raw.amount !== "number" ||
+    !Number.isFinite(raw.amount) ||
+    raw.amount < 0 ||
+    raw.amount > 1
+  )
+    throw new Error("人物动作、速度或幅度无效。");
+  return {
+    preset: raw.preset as StageMotion["preset"],
+    speed: raw.speed,
+    amount: raw.amount,
+  };
+}
+export function sampleJointPose(
+  motion: StageMotion | undefined,
+  time: number,
+): JointPose {
+  const pose: JointPose = {
+    hipsY: 0,
+    leftHip: 0,
+    rightHip: 0,
+    leftKnee: 0,
+    rightKnee: 0,
+    leftShoulderX: 0,
+    rightShoulderX: 0,
+    rightShoulderZ: 0,
+    leftElbow: 0,
+    rightElbow: 0,
+  };
+  if (!motion || motion.preset === "idle") return pose;
+  const phase = time * motion.speed * Math.PI * 2,
+    amount = motion.amount;
+  if (motion.preset === "wave") {
+    pose.rightShoulderZ = 2.5 * amount;
+    pose.rightElbow = (-0.7 + Math.sin(phase) * 0.5) * amount;
+  } else {
+    const running = motion.preset === "run",
+      swing = Math.sin(phase) * (running ? 0.95 : 0.55) * amount;
+    pose.hipsY = Math.abs(Math.sin(phase)) * (running ? 0.15 : 0.04) * amount;
+    pose.leftHip = swing;
+    pose.rightHip = -swing;
+    pose.leftKnee =
+      Math.max(0, -Math.sin(phase)) * (running ? 1.5 : 0.65) * amount;
+    pose.rightKnee =
+      Math.max(0, Math.sin(phase)) * (running ? 1.5 : 0.65) * amount;
+    pose.leftShoulderX = -swing;
+    pose.rightShoulderX = swing;
+    pose.leftElbow = pose.rightElbow = (running ? -1.1 : -0.2) * amount;
+  }
+  return pose;
+}

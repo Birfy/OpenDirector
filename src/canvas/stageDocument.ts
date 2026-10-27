@@ -1,3 +1,4 @@
+import { parseStageMotion, type StageMotion } from "./stageMotion.ts";
 /** Authored local 3D previsualization format; not the original director-stage cloud schema. */
 export interface Vector3Value {
   x: number;
@@ -14,6 +15,7 @@ export interface StageObject extends StageTransform {
   kind: "person" | "box" | "sphere";
   name: string;
   color: string;
+  motion?: StageMotion;
 }
 export interface StageCamera {
   position: Vector3Value;
@@ -141,12 +143,17 @@ export function parseLocalStageValue(value: unknown): LocalStageDocument {
       !color(raw.color)
     )
       throw new Error("舞台对象 ID、类型或颜色无效。");
+    if (raw.motion !== undefined && raw.kind !== "person")
+      throw new Error("只有人物支持关节动作。");
     ids.add(raw.id);
     return {
       id: raw.id,
       kind: raw.kind as StageObject["kind"],
       name: raw.name,
       color: raw.color,
+      ...(raw.motion !== undefined
+        ? { motion: parseStageMotion(raw.motion) }
+        : {}),
       ...parseTransform(raw),
     };
   });
@@ -221,6 +228,9 @@ export function sameLocalStage(
           object.kind === other.kind &&
           object.name === other.name &&
           object.color === other.color &&
+          object.motion?.preset === other.motion?.preset &&
+          object.motion?.speed === other.motion?.speed &&
+          object.motion?.amount === other.motion?.amount &&
           sameTransform(object, other)
         );
       }) &&

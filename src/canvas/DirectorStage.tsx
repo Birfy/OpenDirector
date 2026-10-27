@@ -16,11 +16,18 @@ import type {
 } from "./stageDocument";
 import { EditorModal } from "./EditorModal";
 import "./director-stage.css";
+import { STAGE_MOTIONS, sampleJointPose } from "./stageMotion";
+import { encodeMp4 } from "./mp4Export";
+import { downloadFile, downloadFilename } from "./assets";
+import { withMediaDuration } from "./editorMedia";
+import { mediaBlobDataUrl } from "./localMediaRuntime";
+import type { LinkedMediaResult } from "./linkedResults";
 
 export interface DirectorStageProps {
   node: CanvasNode;
   onApply: (stage: LocalStageDocument, screenshot?: string) => void;
   onClose: () => void;
+  onRender: (result: LinkedMediaResult) => boolean;
 }
 interface StageRuntime {
   renderer: THREE.WebGLRenderer;
@@ -66,15 +73,70 @@ function buildObject(value: StageObject): THREE.Group {
   else if (value.kind === "sphere")
     add(new THREE.SphereGeometry(0.6, 32, 24), 0, 0.6, 0);
   else {
-    add(new THREE.SphereGeometry(0.22, 24, 16), 0, 1.68, 0);
-    add(new THREE.CylinderGeometry(0.25, 0.19, 0.62, 16), 0, 1.13, 0);
-    add(new THREE.CapsuleGeometry(0.085, 0.54, 6, 12), -0.13, 0.42, 0);
-    add(new THREE.CapsuleGeometry(0.085, 0.54, 6, 12), 0.13, 0.42, 0);
-    add(new THREE.CapsuleGeometry(0.065, 0.49, 6, 12), -0.32, 1.09, 0);
-    add(new THREE.CapsuleGeometry(0.065, 0.49, 6, 12), 0.32, 1.09, 0);
+    const bone = (
+      parent: THREE.Object3D,
+      name: string,
+      x: number,
+      y: number,
+      z = 0,
+    ) => {
+      const joint = new THREE.Bone();
+      joint.name = name;
+      joint.position.set(x, y, z);
+      parent.add(joint);
+      return joint;
+    };
+    const mesh = (
+      parent: THREE.Object3D,
+      geometry: THREE.BufferGeometry,
+      y: number,
+    ) => {
+      const part = new THREE.Mesh(geometry, material);
+      part.position.y = y;
+      part.castShadow = true;
+      part.receiveShadow = true;
+      parent.add(part);
+    };
+    const hips = bone(group, "hips", 0, 0.9);
+    mesh(hips, new THREE.CylinderGeometry(0.23, 0.19, 0.55, 16), 0.28);
+    mesh(hips, new THREE.SphereGeometry(0.22, 24, 16), 0.8);
+    for (const [side, sign] of [
+      ["left", -1],
+      ["right", 1],
+    ] as const) {
+      const hip = bone(hips, `${side}Hip`, sign * 0.13, 0);
+      mesh(hip, new THREE.CapsuleGeometry(0.085, 0.25, 6, 12), -0.21);
+      const knee = bone(hip, `${side}Knee`, 0, -0.42);
+      mesh(knee, new THREE.CapsuleGeometry(0.075, 0.28, 6, 12), -0.22);
+      const shoulder = bone(hips, `${side}Shoulder`, sign * 0.3, 0.5);
+      mesh(shoulder, new THREE.CapsuleGeometry(0.065, 0.2, 6, 12), -0.16);
+      const elbow = bone(shoulder, `${side}Elbow`, 0, -0.32);
+      mesh(elbow, new THREE.CapsuleGeometry(0.055, 0.2, 6, 12), -0.15);
+    }
   }
   applyTransform(group, value);
   return group;
+}
+function poseJoints(group: THREE.Object3D, value: StageObject, time: number) {
+  if (value.kind !== "person") return;
+  const pose = sampleJointPose(value.motion, time);
+  const hips = group.getObjectByName("hips");
+  if (hips) hips.position.y = 0.9 + pose.hipsY;
+  for (const side of ["left", "right"] as const) {
+    const hip = group.getObjectByName(`${side}Hip`),
+      knee = group.getObjectByName(`${side}Knee`);
+    const shoulder = group.getObjectByName(`${side}Shoulder`),
+      elbow = group.getObjectByName(`${side}Elbow`);
+    if (hip) hip.rotation.x = pose[`${side}Hip`];
+    if (knee) knee.rotation.x = pose[`${side}Knee`];
+    if (shoulder)
+      shoulder.rotation.set(
+        pose[`${side}ShoulderX`],
+        0,
+        side === "right" ? pose.rightShoulderZ : 0,
+      );
+    if (elbow) elbow.rotation.x = pose[`${side}Elbow`];
+  }
 }
 function disposeObject(object: THREE.Object3D) {
   const materials = new Set<THREE.Material>();
@@ -103,13 +165,17 @@ function setCamera(runtime: StageRuntime, value: StageCamera) {
 function displayPose(
   runtime: StageRuntime,
   pose: Pick<LocalStageDocument, "camera" | "objects">,
+  time = 0,
 ) {
   setCamera(runtime, pose.camera);
   for (const child of runtime.root.children) {
     const data = pose.objects.find(
       (item) => item.id === child.userData.objectId,
     );
-    if (data) applyTransform(child, data);
+    if (data) {
+      applyTransform(child, data);
+      poseJoints(child, data, time);
+    }
   }
 }
 const focalLength = (fov: number) =>
@@ -165,7 +231,12 @@ function VectorFields({
   );
 }
 
-export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
+export function DirectorStage({
+  node,
+  onApply,
+  onClose,
+  onRender,
+}: DirectorStageProps) {
   const [stage, setStage] = useState(() =>
     node.data.localStage
       ? parseLocalStageValue(node.data.localStage)
@@ -179,6 +250,10 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
     [time, setTime] = useState(0),
     [preview, setPreview] = useState(false),
     [ready, setReady] = useState(false);
+  const [inserted, setInserted] = useState(false);
+  const [renderProgress, setRenderProgress] = useState<number | null>(null);
+  const [rendered, setRendered] = useState<Blob | null>(null);
+  const exporting = useRef<AbortController | null>(null);
   const mount = useRef<HTMLDivElement>(null),
     runtime = useRef<StageRuntime | null>(null),
     stageRef = useRef(stage),
@@ -245,6 +320,7 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
     controls.enableDamping = false;
     controls.minDistance = 0.2;
     controls.maxDistance = 200;
+    root.name = "stage-objects";
     scene.add(root);
     const grid = new THREE.GridHelper(30, 30, 0x535b76, 0x2b344b);
     scene.add(grid);
@@ -348,6 +424,7 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
     setReady(true);
     return () => {
       active.current = false;
+      exporting.current?.abort();
       setReady(false);
       cancelAnimationFrame(frame);
       observer.disconnect();
@@ -396,8 +473,12 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
     });
   }, [selected, stage.objects, ready]);
   useEffect(() => {
-    if (!preview || !runtime.current) return;
-    displayPose(runtime.current, sampleStage(stage, time));
+    if (!runtime.current) return;
+    displayPose(
+      runtime.current,
+      preview ? sampleStage(stage, time) : stage,
+      preview ? time : 0,
+    );
   }, [stage, time, preview, ready]);
   useEffect(() => {
     if (!playing) return;
@@ -524,6 +605,125 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
     }
   };
 
+  const renderVideo = async () => {
+    if (!runtime.current) return;
+    const controller = new AbortController();
+    exporting.current?.abort();
+    exporting.current = controller;
+    const snapshot = parseLocalStageValue(stageRef.current);
+    setPlaying(false);
+    setError("");
+    setRendered(null);
+    setInserted(false);
+    setRenderProgress(0);
+    const scene = runtime.current.scene.clone(true);
+    const root = scene.getObjectByName("stage-objects")!;
+    const materials = new Map<THREE.Material, THREE.Material>();
+    scene.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const clone = (source: THREE.Material) => {
+        let material = materials.get(source);
+        if (!material) {
+          material = source.clone();
+          if (material instanceof THREE.MeshStandardMaterial)
+            material.emissive.set("#000000");
+          materials.set(source, material);
+        }
+        return material;
+      };
+      child.material = Array.isArray(child.material)
+        ? child.material.map(clone)
+        : clone(child.material);
+    });
+    let renderer: THREE.WebGLRenderer | undefined;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(1280, 720);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.shadowMap.enabled = true;
+      const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.05, 1000);
+      const blob = await encodeMp4({
+        canvas: renderer.domElement,
+        duration: snapshot.duration,
+        fps: 30,
+        signal: controller.signal,
+        progress: setRenderProgress,
+        draw: (at) => {
+          const pose = sampleStage(snapshot, at);
+          camera.position.set(
+            pose.camera.position.x,
+            pose.camera.position.y,
+            pose.camera.position.z,
+          );
+          camera.fov = pose.camera.fov;
+          camera.updateProjectionMatrix();
+          camera.lookAt(
+            pose.camera.target.x,
+            pose.camera.target.y,
+            pose.camera.target.z,
+          );
+          for (const child of root.children) {
+            const object = pose.objects.find(
+              (item) => item.id === child.userData.objectId,
+            );
+            if (object) {
+              applyTransform(child, object);
+              poseJoints(child, object, at);
+            }
+          }
+          renderer!.render(scene, camera);
+        },
+      });
+      if (active.current && !controller.signal.aborted) setRendered(blob);
+    } catch (reason) {
+      if (active.current && !controller.signal.aborted)
+        setError(
+          reason instanceof Error ? reason.message : "预演视频导出失败。",
+        );
+    } finally {
+      // Geometry stays shared with the preview; cloned materials, renderer and shadows are export-owned.
+      scene.traverse((child) => {
+        if (child instanceof THREE.DirectionalLight) child.shadow.dispose();
+      });
+      materials.forEach((material) => material.dispose());
+      renderer?.dispose();
+      if (active.current && exporting.current === controller)
+        setRenderProgress(null);
+    }
+  };
+  const insertRender = async () => {
+    if (!rendered) return;
+    const controller = new AbortController();
+    exporting.current = controller;
+    setRenderProgress(1);
+    try {
+      const src = await mediaBlobDataUrl(rendered, controller.signal);
+      const media = await withMediaDuration(
+        { id: "rendered", kind: "video", title: node.data.title, src },
+        controller.signal,
+      );
+      if (active.current && !controller.signal.aborted) {
+        setInserted(
+          onRender({
+            kind: "video",
+            src,
+            mimeType: "video/mp4",
+            title: `${node.data.title} · 动作预演`,
+            media: {
+              width: media.width,
+              height: media.height,
+              durationSeconds: media.durationSeconds,
+            },
+          }),
+        );
+      }
+    } catch (reason) {
+      if (active.current && !controller.signal.aborted)
+        setError(reason instanceof Error ? reason.message : "加入画布失败。");
+    } finally {
+      if (active.current) setRenderProgress(null);
+    }
+  };
   return (
     <EditorModal
       title={`导演预演 · ${node.data.title}`}
@@ -541,11 +741,14 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
           setError(reason instanceof Error ? reason.message : "保存舞台失败。");
         }
       }}
-      disabled={node.locked}
+      disabled={node.locked || renderProgress !== null}
       error={error}
       actions={
         <>
-          <button onClick={() => importInput.current?.click()}>
+          <button
+            disabled={renderProgress !== null}
+            onClick={() => importInput.current?.click()}
+          >
             导入舞台 JSON
           </button>
           <button
@@ -562,274 +765,381 @@ export function DirectorStage({ node, onApply, onClose }: DirectorStageProps) {
           <button disabled={!ready} onClick={snapshot}>
             下载镜头截图
           </button>
+          <button
+            disabled={!ready || renderProgress !== null}
+            onClick={() => void renderVideo()}
+          >
+            合成预演 MP4
+          </button>
         </>
       }
     >
-      <div className="cw-stage-layout">
-        <aside className="cw-stage-objects">
-          <h3>场景主体</h3>
-          <div className="cw-stage-add">
-            {(["person", "box", "sphere"] as const).map((kind) => (
-              <button key={kind} onClick={() => addObject(kind)}>
-                + {titles[kind]}
-              </button>
-            ))}
-          </div>
-          <div className="cw-stage-object-list">
-            {stage.objects.map((item) => (
-              <button
-                key={item.id}
-                aria-pressed={selected === item.id}
-                onClick={() => setSelected(item.id)}
-              >
-                <span style={{ background: item.color }} />
-                {item.name}
-              </button>
-            ))}
-          </div>
-          <label className="cw-domain-field">
-            背景颜色
-            <input
-              type="color"
-              value={stage.background}
-              onChange={(event) =>
-                edit((current) => ({
-                  ...current,
-                  background: event.target.value,
-                }))
-              }
-            />
-          </label>
-          <label className="cw-domain-checkbox">
-            <input
-              type="checkbox"
-              checked={stage.grid}
-              onChange={(event) =>
-                edit((current) => ({ ...current, grid: event.target.checked }))
-              }
-            />
-            显示地面网格
-          </label>
-          <p className="cw-domain-note">
-            左键环绕 · 右键平移 · 滚轮缩放
-            <br />
-            点击主体选择，再调整右侧变换。
-          </p>
-        </aside>
-        <section className="cw-stage-center">
-          <div
-            className="cw-stage-viewport"
-            ref={mount}
-            role="img"
-            aria-label="可交互的三维导演舞台"
-          />
-          <div className="cw-stage-transport">
-            <button
-              disabled={!ready || !stage.keyframes.length}
-              onClick={() => {
-                setPreview(true);
-                if (time >= stage.duration) setTime(0);
-                setPlaying((current) => !current);
-              }}
-            >
-              {playing ? "暂停" : "播放关键帧"}
-            </button>
-            <output>
-              {time.toFixed(2)} / {stage.duration.toFixed(2)} 秒
-            </output>
-            <label>
-              总时长
+      {renderProgress !== null && (
+        <div className="cw-render-status" role="status">
+          <progress value={renderProgress} max={1} />
+          <span>正在合成预演 {Math.round(renderProgress * 100)}%</span>
+          <button onClick={() => exporting.current?.abort()}>取消合成</button>
+        </div>
+      )}
+      {rendered && (
+        <div className="cw-render-status" role="status">
+          <span>预演 MP4 已完成 · 1280×720 · 30 fps</span>
+          <button
+            disabled={renderProgress !== null}
+            onClick={() =>
+              downloadFile(
+                rendered,
+                downloadFilename(node.data.title + "-预演", "video/mp4"),
+              )
+            }
+          >
+            下载预演 MP4
+          </button>
+          <button
+            disabled={renderProgress !== null || node.locked || inserted}
+            onClick={() => void insertRender()}
+          >
+            {inserted ? "已加入画布" : "将预演视频加入画布"}
+          </button>
+        </div>
+      )}
+      <fieldset className="cw-editor-work" disabled={renderProgress !== null}>
+        <div className="cw-stage-layout">
+          <aside className="cw-stage-objects">
+            <h3>场景主体</h3>
+            <div className="cw-stage-add">
+              {(["person", "box", "sphere"] as const).map((kind) => (
+                <button key={kind} onClick={() => addObject(kind)}>
+                  + {titles[kind]}
+                </button>
+              ))}
+            </div>
+            <div className="cw-stage-object-list">
+              {stage.objects.map((item) => (
+                <button
+                  key={item.id}
+                  aria-pressed={selected === item.id}
+                  onClick={() => setSelected(item.id)}
+                >
+                  <span style={{ background: item.color }} />
+                  {item.name}
+                </button>
+              ))}
+            </div>
+            <label className="cw-domain-field">
+              背景颜色
               <input
-                aria-label="舞台总时长"
-                type="number"
-                min={0.1}
-                step={0.5}
-                value={stage.duration}
+                type="color"
+                value={stage.background}
                 onChange={(event) =>
                   edit((current) => ({
                     ...current,
-                    duration: Number(event.target.value),
+                    background: event.target.value,
                   }))
                 }
               />
             </label>
-            <button onClick={captureKeyframe} disabled={!ready}>
-              在此记录关键帧
-            </button>
-          </div>
-          <input
-            aria-label="舞台播放位置"
-            type="range"
-            min={0}
-            max={stage.duration}
-            step={0.01}
-            value={Math.min(time, stage.duration)}
-            onChange={(event) => {
-              setPlaying(false);
-              setTime(Number(event.target.value));
-              setPreview(true);
-            }}
-          />
-          <div className="cw-stage-keyframes">
-            {stage.keyframes.map((frame) => (
-              <div key={frame.id}>
-                <button
-                  onClick={() => {
-                    setPlaying(false);
-                    setTime(frame.time);
-                    setPreview(true);
-                  }}
-                >
-                  {frame.time.toFixed(2)}s
-                </button>
-                <button
-                  aria-label={`删除 ${frame.time} 秒关键帧`}
-                  onClick={() =>
-                    edit((current) => ({
-                      ...current,
-                      keyframes: current.keyframes.filter(
-                        (item) => item.id !== frame.id,
-                      ),
-                    }))
-                  }
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            {!stage.keyframes.length && (
-              <p>在起点和终点分别调整镜头或主体，然后记录关键帧即可预演。</p>
-            )}
-          </div>
-        </section>
-        <aside className="cw-stage-inspector">
-          <h3>{object ? "主体变换" : "摄像机"}</h3>
-          {object && (
-            <>
-              <label className="cw-domain-field">
-                名称
-                <input
-                  value={object.name}
-                  onChange={(event) => editObject({ name: event.target.value })}
-                />
-              </label>
-              <label className="cw-domain-field">
-                材质颜色
-                <input
-                  type="color"
-                  value={object.color}
-                  onChange={(event) =>
-                    editObject({ color: event.target.value })
-                  }
-                />
-              </label>
-              <VectorFields
-                label="位置"
-                value={object.position}
-                onChange={(position) => editObject({ position })}
-              />
-              <VectorFields
-                label="旋转"
-                value={object.rotation}
-                rotation
-                onChange={(rotation) => editObject({ rotation })}
-              />
-              <VectorFields
-                label="缩放"
-                value={object.scale}
-                min={0.01}
-                onChange={(scale) => editObject({ scale })}
-              />
-              <button onClick={removeObject}>删除此主体</button>
-            </>
-          )}
-          <h3>摄像机</h3>
-          <VectorFields
-            label="机位"
-            value={stage.camera.position}
-            onChange={(position) =>
-              edit((current) => ({
-                ...current,
-                camera: { ...current.camera, position },
-              }))
-            }
-          />
-          <VectorFields
-            label="目标"
-            value={stage.camera.target}
-            onChange={(target) =>
-              edit((current) => ({
-                ...current,
-                camera: { ...current.camera, target },
-              }))
-            }
-          />
-          <label className="cw-domain-field">
-            焦距（35mm 胶片，16:9）
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={Number(focalLength(stage.camera.fov).toFixed(1))}
-              onChange={(event) => {
-                const focal = Number(event.target.value);
-                if (focal > 0)
+            <label className="cw-domain-checkbox">
+              <input
+                type="checkbox"
+                checked={stage.grid}
+                onChange={(event) =>
                   edit((current) => ({
                     ...current,
-                    camera: { ...current.camera, fov: fovFromFocal(focal) },
-                  }));
+                    grid: event.target.checked,
+                  }))
+                }
+              />
+              显示地面网格
+            </label>
+            <p className="cw-domain-note">
+              左键环绕 · 右键平移 · 滚轮缩放
+              <br />
+              点击主体选择，再调整右侧变换。
+            </p>
+          </aside>
+          <section className="cw-stage-center">
+            <div
+              className="cw-stage-viewport"
+              ref={mount}
+              role="img"
+              aria-label="可交互的三维导演舞台"
+            />
+            <div className="cw-stage-transport">
+              <button
+                disabled={!ready}
+                onClick={() => {
+                  setPreview(true);
+                  if (time >= stage.duration) setTime(0);
+                  setPlaying((current) => !current);
+                }}
+              >
+                {playing ? "暂停" : "播放动作与关键帧"}
+              </button>
+              <output>
+                {time.toFixed(2)} / {stage.duration.toFixed(2)} 秒
+              </output>
+              <label>
+                总时长
+                <input
+                  aria-label="舞台总时长"
+                  type="number"
+                  min={0.1}
+                  step={0.5}
+                  value={stage.duration}
+                  onChange={(event) =>
+                    edit((current) => ({
+                      ...current,
+                      duration: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <button onClick={captureKeyframe} disabled={!ready}>
+                在此记录关键帧
+              </button>
+            </div>
+            <input
+              aria-label="舞台播放位置"
+              type="range"
+              min={0}
+              max={stage.duration}
+              step={0.01}
+              value={Math.min(time, stage.duration)}
+              onChange={(event) => {
+                setPlaying(false);
+                setTime(Number(event.target.value));
+                setPreview(true);
               }}
             />
-          </label>
-          <label className="cw-domain-field">
-            垂直视角 {stage.camera.fov.toFixed(1)}°
-            <input
-              type="range"
-              min={10}
-              max={120}
-              step={0.1}
-              value={stage.camera.fov}
-              onChange={(event) =>
+            <div className="cw-stage-keyframes">
+              {stage.keyframes.map((frame) => (
+                <div key={frame.id}>
+                  <button
+                    onClick={() => {
+                      setPlaying(false);
+                      setTime(frame.time);
+                      setPreview(true);
+                    }}
+                  >
+                    {frame.time.toFixed(2)}s
+                  </button>
+                  <button
+                    aria-label={`删除 ${frame.time} 秒关键帧`}
+                    onClick={() =>
+                      edit((current) => ({
+                        ...current,
+                        keyframes: current.keyframes.filter(
+                          (item) => item.id !== frame.id,
+                        ),
+                      }))
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {!stage.keyframes.length && (
+                <p>在起点和终点分别调整镜头或主体，然后记录关键帧即可预演。</p>
+              )}
+            </div>
+          </section>
+          <aside className="cw-stage-inspector">
+            <h3>{object ? "主体变换" : "摄像机"}</h3>
+            {object && (
+              <>
+                <label className="cw-domain-field">
+                  名称
+                  <input
+                    value={object.name}
+                    onChange={(event) =>
+                      editObject({ name: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="cw-domain-field">
+                  材质颜色
+                  <input
+                    type="color"
+                    value={object.color}
+                    onChange={(event) =>
+                      editObject({ color: event.target.value })
+                    }
+                  />
+                </label>
+                {object.kind === "person" && (
+                  <>
+                    <label className="cw-domain-field">
+                      角色动作
+                      <select
+                        value={object.motion?.preset ?? "idle"}
+                        onChange={(event) =>
+                          editObject({
+                            motion: {
+                              preset: event.target
+                                .value as keyof typeof STAGE_MOTIONS,
+                              speed: object.motion?.speed ?? 1,
+                              amount: object.motion?.amount ?? 1,
+                            },
+                          })
+                        }
+                      >
+                        {Object.entries(STAGE_MOTIONS).map(([key, title]) => (
+                          <option key={key} value={key}>
+                            {title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="cw-domain-field">
+                      动作速度
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        value={object.motion?.speed ?? 1}
+                        onChange={(event) =>
+                          editObject({
+                            motion: {
+                              preset: object.motion?.preset ?? "idle",
+                              amount: object.motion?.amount ?? 1,
+                              speed: Number(event.target.value),
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="cw-domain-field">
+                      动作幅度
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={object.motion?.amount ?? 1}
+                        onChange={(event) =>
+                          editObject({
+                            motion: {
+                              preset: object.motion?.preset ?? "idle",
+                              speed: object.motion?.speed ?? 1,
+                              amount: Number(event.target.value),
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                    <p className="cw-domain-note">
+                      本地关节人偶，可叠加主体位移和镜头关键帧。
+                    </p>
+                  </>
+                )}
+                <VectorFields
+                  label="位置"
+                  value={object.position}
+                  onChange={(position) => editObject({ position })}
+                />
+                <VectorFields
+                  label="旋转"
+                  value={object.rotation}
+                  rotation
+                  onChange={(rotation) => editObject({ rotation })}
+                />
+                <VectorFields
+                  label="缩放"
+                  value={object.scale}
+                  min={0.01}
+                  onChange={(scale) => editObject({ scale })}
+                />
+                <button onClick={removeObject}>删除此主体</button>
+              </>
+            )}
+            <h3>摄像机</h3>
+            <VectorFields
+              label="机位"
+              value={stage.camera.position}
+              onChange={(position) =>
                 edit((current) => ({
                   ...current,
-                  camera: {
-                    ...current.camera,
-                    fov: Number(event.target.value),
-                  },
+                  camera: { ...current.camera, position },
                 }))
               }
             />
-          </label>
-          <button
-            onClick={() => {
-              setSelected(null);
-              edit((current) => ({
-                ...current,
-                camera: createLocalStage().camera,
-              }));
-            }}
-          >
-            重置镜头
-          </button>
-        </aside>
-      </div>
-      <p className="cw-domain-note">
-        镜头与主体关键帧使用本地线性插值，截图来自实际 WebGL
-        渲染。基础几何体可直接编辑；原站 FBX
-        角色资产、云端导演版本和视频渲染服务尚未恢复。
-      </p>
-      <input
-        className="cw-domain-file-input"
-        ref={importInput}
-        type="file"
-        accept="application/json,.json"
-        aria-label="导入导演舞台"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) void importStage(file);
-          event.target.value = "";
-        }}
-      />
+            <VectorFields
+              label="目标"
+              value={stage.camera.target}
+              onChange={(target) =>
+                edit((current) => ({
+                  ...current,
+                  camera: { ...current.camera, target },
+                }))
+              }
+            />
+            <label className="cw-domain-field">
+              焦距（35mm 胶片，16:9）
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={Number(focalLength(stage.camera.fov).toFixed(1))}
+                onChange={(event) => {
+                  const focal = Number(event.target.value);
+                  if (focal > 0)
+                    edit((current) => ({
+                      ...current,
+                      camera: { ...current.camera, fov: fovFromFocal(focal) },
+                    }));
+                }}
+              />
+            </label>
+            <label className="cw-domain-field">
+              垂直视角 {stage.camera.fov.toFixed(1)}°
+              <input
+                type="range"
+                min={10}
+                max={120}
+                step={0.1}
+                value={stage.camera.fov}
+                onChange={(event) =>
+                  edit((current) => ({
+                    ...current,
+                    camera: {
+                      ...current.camera,
+                      fov: Number(event.target.value),
+                    },
+                  }))
+                }
+              />
+            </label>
+            <button
+              onClick={() => {
+                setSelected(null);
+                edit((current) => ({
+                  ...current,
+                  camera: createLocalStage().camera,
+                }));
+              }}
+            >
+              重置镜头
+            </button>
+          </aside>
+        </div>
+        <p className="cw-domain-note">
+          镜头与主体关键帧使用本地线性插值，截图来自实际 WebGL
+          渲染，支持本地关节动作和 720p MP4 导出。外部 FBX/GLB 蒙皮角色与云端导演版本尚未接入。
+        </p>
+        <input
+          className="cw-domain-file-input"
+          ref={importInput}
+          type="file"
+          accept="application/json,.json"
+          aria-label="导入导演舞台"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void importStage(file);
+            event.target.value = "";
+          }}
+        />
+      </fieldset>
     </EditorModal>
   );
 }

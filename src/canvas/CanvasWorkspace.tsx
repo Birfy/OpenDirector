@@ -25,6 +25,8 @@ import { CanvasNodeView, CanvasActionsContext } from "./CanvasNodeView";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { CanvasIcon } from "./CanvasIcon";
 import { ImageEditor } from "./ImageEditor";
+import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
+import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
 import { SubjectEditor } from "./SubjectEditor";
 import { StackEditor } from "./StackEditor";
@@ -697,19 +699,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       for (const [i, file] of files.entries()) {
         const resource = await readEditorResource(file, controller.signal);
         const kind = resource.kind;
-        const data = {
-          src: resource.src,
-          title: resource.title,
-          mimeType: resource.mimeType,
-          assetState: "ready" as const,
-          layers: undefined,
-          taskDraft: undefined,
-          media: {
-            width: resource.width,
-            height: resource.height,
-            durationSeconds: resource.durationSeconds,
-          },
-        };
+        const data = resourceNodeData(resource);
         if (target && i === 0) {
           commands.push({
             type: "update-node",
@@ -855,7 +845,9 @@ function Workspace({ onExit }: { onExit: () => void }) {
     return true;
   };
   const editorOutputs = (outputs: readonly LinkedMediaResult[]) => {
-    if (editorOrigin.current) addLinkedOutputs(editorOrigin.current, outputs);
+    return editorOrigin.current
+      ? addLinkedOutputs(editorOrigin.current, outputs)
+      : false;
   };
   const stack = () => {
     try {
@@ -2126,6 +2118,36 @@ function Workspace({ onExit }: { onExit: () => void }) {
                     </button>
                   ))}
               </div>
+              <ProjectAssetLibrary
+                key={doc.id}
+                currentId={doc.id}
+                onImport={(resource) => {
+                  const target = referenceTarget.current;
+                  const where = center();
+                  const node = createNode(
+                    resource.kind,
+                    { x: where.x - 160, y: where.y - 140 },
+                    resourceNodeData(resource),
+                  );
+                  const commands: CanvasCommand[] = [
+                    { type: "add-nodes", nodes: [node] },
+                  ];
+                  if (target && doc.nodes.some((item) => item.id === target))
+                    commands.push({
+                      type: "add-edge",
+                      edge: {
+                        id: crypto.randomUUID(),
+                        source: node.id,
+                        target,
+                      },
+                    });
+                  command({ type: "batch", commands });
+                  setSelected([node.id]);
+                  referenceTarget.current = null;
+                  setPanel(null);
+                  notify("素材已复制到当前画布，可独立编辑。");
+                }}
+              />
               <h3>原创示例素材</h3>
               <div className="cw-asset-grid">
                 {["青山", "暮色", "远湖"].map((title, i) => (
@@ -2536,6 +2558,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           node={editing}
           resources={resources}
           onApply={(timeline) => applyEditorData({ timeline })}
+          onRender={(result) => editorOutputs([result])}
           onClose={closeEditor}
         />
       )}
@@ -2601,6 +2624,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
           }
         >
           <DirectorStage
+            onRender={(result) => editorOutputs([result])}
             node={editing}
             onApply={(localStage, screenshot) =>
               applyEditorData({
