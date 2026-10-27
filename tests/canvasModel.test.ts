@@ -12,6 +12,51 @@ import {
   fitViewport,
 } from "../src/canvas/geometry.ts";
 
+test("resizing a group keeps locked and nested children in world space", () => {
+  const group = createNode("group", { x: 100, y: 200 });
+  const child = {
+    ...createNode("group", { x: 20, y: 30 }),
+    parentId: group.id,
+    locked: true,
+  };
+  const leaf = { ...createNode("image", { x: 10, y: 10 }), parentId: child.id };
+  const before = { ...createDocument(), nodes: [group, child, leaf] };
+  const after = applyCommand(before, {
+    type: "resize-node",
+    id: group.id,
+    position: { x: 40, y: 150 },
+    width: group.width + 60,
+    height: group.height + 50,
+  });
+  for (let i = 1; i < before.nodes.length; i++)
+    assert.deepEqual(
+      absolutePosition(after.nodes[i]!, after.nodes),
+      absolutePosition(before.nodes[i]!, before.nodes),
+    );
+  assert.equal(after.nodes[1]!.locked, true);
+  assert.equal(after.nodes[1]!.data, child.data);
+  assert.equal(after.nodes[2], leaf);
+  assert.equal(
+    applyCommand(before, {
+      type: "resize-node",
+      id: child.id,
+      width: 500,
+      height: 500,
+    }),
+    before,
+  );
+  assert.throws(
+    () =>
+      applyCommand(before, {
+        type: "resize-node",
+        id: group.id,
+        width: NaN,
+        height: 500,
+      }),
+    /尺寸/,
+  );
+});
+
 test("group and child multiselection translates once; deletion removes attached edges", () => {
   const group = createNode("group", { x: -100, y: 40 });
   const image = {

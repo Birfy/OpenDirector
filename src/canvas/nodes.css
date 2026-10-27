@@ -193,6 +193,12 @@
   border: 1px dashed #6c6f7b;
   border-radius: 14px;
 }
+.cw-workspace .react-flow__node-group {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 14px;
+}
 .cw-node-group.cw-node-selected {
   border-color: #dedee6;
 }
@@ -1314,4 +1320,10 @@
   color: #8b8e95;
   font-size: 9px;
   margin-top: 4px;
+}
+.cw-workspace-panning .react-flow__node .cw-node {
+  pointer-events: none;
+}
+.cw-workspace-panning .react-flow__node {
+  cursor: grab;
 }

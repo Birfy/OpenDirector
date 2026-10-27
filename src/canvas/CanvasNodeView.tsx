@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, type MouseEvent } from "react";
+import { memo, useContext, useCallback, type MouseEvent } from "react";
 import {
   Handle,
   NodeResizer,
@@ -6,37 +6,17 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import type {
-  CanvasNode,
-  CanvasNodeData,
-  CanvasNodeKind,
-  CanvasResource,
-} from "./model";
+import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
 import "./nodes.css";
+import {
+  CanvasActionsContext,
+  type CanvasActions,
+} from "./CanvasActionsContext";
 
-export interface CanvasActions {
-  update: (id: string, data: Partial<CanvasNodeData>) => void;
-  rename: (id: string) => void;
-  upload: (id: string) => void;
-  newConnected: (id: string, direction: "source" | "target") => void;
-  preview: (id: string) => void;
-  contextMenu: (id: string, event: MouseEvent) => void;
-  beginEdit?: (id: string) => void;
-  endEdit?: (id: string) => void;
-  edit: (id: string) => void;
-  getNode: (id: string) => CanvasNode | undefined;
-  cycleStack: (id: string, delta: number) => void;
-  metadata: (
-    id: string,
-    media: { width?: number; height?: number; durationSeconds?: number },
-  ) => void;
-}
-
-export const CanvasActionsContext = createContext<CanvasActions | null>(null);
 export type CanvasFlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 
 const names: Record<CanvasNodeKind, string> = {
@@ -61,8 +41,13 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   draggable,
 }: NodeProps<CanvasFlowNode>) {
   const actions = useContext(CanvasActionsContext);
+  const beginEdit = actions?.beginEdit;
+  const endEdit = actions?.endEdit;
+  const resizeStart = useCallback(() => beginEdit?.(id), [beginEdit, id]);
+  const resizeEnd = useCallback(() => endEdit?.(id), [endEdit, id]);
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
+  const locked = Boolean(actions?.getNode(id)?.locked);
   const menu = (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -75,7 +60,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
 
   return (
     <div
-      className={`cw-node cw-node-${kind}${selected ? " cw-node-selected" : ""}${!draggable ? " cw-node-locked" : ""}`}
+      className={`cw-node cw-node-${kind}${selected ? " cw-node-selected" : ""}${locked ? " cw-node-locked" : ""}`}
       onContextMenu={menu}
     >
       <NodeResizer
@@ -85,8 +70,8 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         color="#e7e7ec"
         handleClassName="cw-resize-handle"
         lineClassName="cw-resize-line"
-        onResizeStart={() => actions?.beginEdit?.(id)}
-        onResizeEnd={() => actions?.endEdit?.(id)}
+        onResizeStart={resizeStart}
+        onResizeEnd={resizeEnd}
       />
       <div className="cw-node-heading">
         <span className="cw-node-type">
@@ -102,7 +87,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         >
           {data.title || names[kind]}
         </span>
-        {!draggable && <CanvasIcon name="lock" size={12} />}
+        {locked && <CanvasIcon name="lock" size={12} />}
         <div className="cw-node-heading-actions nodrag nopan">
           <button
             aria-label={`重命名${data.title}`}
@@ -129,7 +114,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           aria-label={`${data.title}内容`}
           placeholder="输入你的想法…"
           spellCheck={false}
-          readOnly={!draggable}
+          readOnly={locked}
           value={data.text ?? ""}
           onFocus={() => actions?.beginEdit?.(id)}
           onBlur={() => actions?.endEdit?.(id)}
@@ -380,7 +365,12 @@ function DomainCard({
           <span>{data.subject?.description || "主体描述尚未填写"}</span>
           <div>
             {data.subject?.auxiliaries.map((item) => (
-              <img key={item.id} src={item.src} alt={item.title} />
+              <img
+                key={item.id}
+                src={item.src}
+                alt={item.title}
+                draggable={false}
+              />
             ))}
             <small>
               {data.subject?.auxiliaries.length ?? 0}/3 辅助视角 ·{" "}

@@ -146,6 +146,60 @@ export function moveTimelineClip(
   };
 }
 
+/** Drop placement is owned here: visual order versus frame-aligned audio time. */
+export function placeTimelineClip(
+  timeline: TimelineData,
+  clipId: string,
+  trackId: string,
+  time: number,
+): TimelineData {
+  if (!Number.isFinite(time)) throw new Error("拖放时间必须是有限数字。");
+  const segments = timelineSegments(timeline);
+  const source = segments.find((segment) => segment.clip.id === clipId);
+  const target = timeline.tracks.find((track) => track.id === trackId);
+  if (!source || !target) throw new Error("找不到拖动片段或目标轨道。");
+  if (source.track.kind !== target.kind)
+    throw new Error("请将片段拖到同类型轨道。");
+  const remaining = target.clips.filter((clip) => clip.id !== clipId);
+  let placed = source.clip;
+  let index: number;
+  if (target.kind === "audio") {
+    const start = Math.max(0, Math.round(time * timeline.fps) / timeline.fps);
+    if (target.id === source.track.id && start === source.start)
+      return timeline;
+    placed = { ...source.clip, start };
+    index = remaining.findIndex((clip) => clip.start! > start);
+  } else {
+    // Use the original target midpoints, so dragging a clip does not move its drop targets.
+    const next = segments.find(
+      (segment) =>
+        segment.track.id === target.id &&
+        segment.clip.id !== clipId &&
+        time < (segment.start + segment.end) / 2,
+    );
+    index = next ? remaining.findIndex((clip) => clip.id === next.clip.id) : -1;
+  }
+  remaining.splice(index < 0 ? remaining.length : index, 0, placed);
+  if (
+    target.id === source.track.id &&
+    remaining.every((clip, i) => clip === target.clips[i])
+  )
+    return timeline;
+  return checked({
+    ...timeline,
+    tracks: timeline.tracks.map((track) =>
+      track.id === trackId
+        ? { ...track, clips: remaining }
+        : track.id === source.track.id
+          ? {
+              ...track,
+              clips: track.clips.filter((clip) => clip.id !== clipId),
+            }
+          : track,
+    ),
+  });
+}
+
 export function addAudioTrack(timeline: TimelineData): TimelineData {
   return {
     ...timeline,

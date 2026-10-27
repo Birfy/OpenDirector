@@ -199,6 +199,14 @@
     #302038 10%
   );
 }
+.cw-timeline-drag-status {
+  height: 24px;
+  padding: 0 20px;
+  overflow: hidden;
+  color: #d8c0ec;
+  font-size: 11px;
+  line-height: 24px;
+}
 .cw-timeline-playhead {
   position: absolute;
   z-index: 5;
@@ -219,6 +227,8 @@
   content: "";
 }
 .cw-timeline-dialog .cw-timeline-clip {
+  touch-action: none;
+  user-select: none;
   position: absolute;
   top: 3px;
   bottom: 3px;
@@ -234,6 +244,11 @@
   background: #423050;
   cursor: grab;
   text-align: left;
+}
+.cw-timeline-dialog .cw-timeline-clip.dragging {
+  cursor: grabbing;
+  opacity: 0.75;
+  z-index: 4;
 }
 .cw-timeline-dialog .cw-timeline-clip.audio {
   border-color: #356a61;

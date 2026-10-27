@@ -16,12 +16,14 @@ import {
   MiniMap,
   SelectionMode,
   useReactFlow,
+  useKeyPress,
   type Node,
   type Edge,
   type NodeChange,
   type Connection,
 } from "@xyflow/react";
-import { CanvasNodeView, CanvasActionsContext } from "./CanvasNodeView";
+import { CanvasNodeView } from "./CanvasNodeView";
+import { CanvasActionsContext } from "./CanvasActionsContext";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { CanvasIcon } from "./CanvasIcon";
 import { ImageEditor } from "./ImageEditor";
@@ -230,6 +232,10 @@ function Workspace({ onExit }: { onExit: () => void }) {
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
+  // React Flow's measured geometry is UI state, independent of authored dimensions.
+  const [measurements, setMeasurements] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const [panel, setPanel] = useState<Panel>(null);
@@ -281,6 +287,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const saveQueue = useRef(Promise.resolve(true));
   const [zoom, setZoom] = useState(1);
+  const spacePressed = useKeyPress("Space");
+  const panning = hand || spacePressed;
   const single =
     selected.length === 1
       ? (doc.nodes.find((n) => n.id === selected[0]) ?? null)
@@ -348,6 +356,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
       uploadTarget.current = null;
       setJobs([]);
       setHistory(createHistory(next));
+      setMeasurements({});
       setSelected([]);
       setSelectedEdges([]);
       setPanel(null);
@@ -406,6 +415,12 @@ function Workspace({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     const nodeIds = new Set(doc.nodes.map((node) => node.id));
     const edgeIds = new Set(doc.edges.map((edge) => edge.id));
+    setMeasurements((current) => {
+      const entries = Object.entries(current).filter(([id]) => nodeIds.has(id));
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
     setSelected((ids) => {
       const existing = ids.filter((id) => nodeIds.has(id));
       return existing.length === ids.length ? ids : existing;
@@ -545,6 +560,26 @@ function Workspace({ onExit }: { onExit: () => void }) {
   );
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode>[]) => {
+      const dimensionChanges = changes.flatMap((c) =>
+        c.type === "dimensions" && c.dimensions
+          ? [{ id: c.id, dimensions: c.dimensions }]
+          : [],
+      );
+      if (dimensionChanges.length)
+        setMeasurements((current) => {
+          const next = { ...current };
+          let changed = false;
+          for (const { id, dimensions } of dimensionChanges) {
+            if (
+              next[id]?.width === dimensions.width &&
+              next[id]?.height === dimensions.height
+            )
+              continue;
+            next[id] = dimensions;
+            changed = true;
+          }
+          return changed ? next : current;
+        });
       const selections = changes.filter((c) => c.type === "select");
       if (selections.length)
         setSelected((ids) => {
@@ -557,18 +592,31 @@ function Workspace({ onExit }: { onExit: () => void }) {
           return [...next];
         });
       const patches: CanvasCommand[] = [];
+      const resize = changes.find(
+        (c) => c.type === "dimensions" && c.dimensions && c.setAttributes,
+      );
+      if (resize?.type === "dimensions" && resize.dimensions) {
+        const move = changes.find(
+          (c) => c.type === "position" && c.id === resize.id,
+        );
+        // The document owns child-coordinate compensation, including locked children.
+        // Do not apply React Flow's child position patches a second time.
+        command({
+          type: "resize-node",
+          id: resize.id,
+          ...resize.dimensions,
+          ...(move?.type === "position" && move.position
+            ? { position: move.position }
+            : {}),
+        });
+        return;
+      }
       for (const c of changes) {
         if (c.type === "position" && c.position)
           patches.push({
             type: "update-node",
             id: c.id,
             patch: { position: c.position },
-          });
-        if (c.type === "dimensions" && c.dimensions && c.setAttributes)
-          patches.push({
-            type: "update-node",
-            id: c.id,
-            patch: { width: c.dimensions.width, height: c.dimensions.height },
           });
       }
       if (patches.length) command({ type: "batch", commands: patches });
@@ -579,13 +627,14 @@ function Workspace({ onExit }: { onExit: () => void }) {
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
         ...n,
+        measured: measurements[n.id],
         selected: selected.includes(n.id),
-        draggable: !n.locked,
+        draggable: !n.locked && !panning,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
       })),
-    [doc.nodes, selected],
+    [doc.nodes, selected, panning, measurements],
   );
   const flowEdges: Edge[] = useMemo(
     () =>
@@ -1302,7 +1351,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
 
   return (
     <div
-      className="cw-workspace"
+      className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
       onKeyDownCapture={(event) => {
@@ -1381,6 +1430,9 @@ function Workspace({ onExit }: { onExit: () => void }) {
                 );
           }}
           onConnect={connect}
+          connectOnClick={false}
+          elementsSelectable={!panning}
+          nodesConnectable={!panning}
           isValidConnection={(c) =>
             c.source !== c.target &&
             !doc.edges.some(
@@ -1388,6 +1440,7 @@ function Workspace({ onExit }: { onExit: () => void }) {
             )
           }
           onNodeClick={(_, node) => {
+            if (panning) return;
             if (!["image", "video", "audio"].includes(node.type ?? "")) return;
             const item = doc.nodes.find((n) => n.id === node.id);
             if (!item) return;
@@ -1440,8 +1493,8 @@ function Workspace({ onExit }: { onExit: () => void }) {
           maxZoom={MAX_ZOOM}
           nodeDragThreshold={4}
           selectionMode={SelectionMode.Partial}
-          selectionOnDrag={!hand}
-          panOnDrag={hand ? [0, 1, 2] : [1, 2]}
+          selectionOnDrag={!panning}
+          panOnDrag={panning ? [0, 1, 2] : [1, 2]}
           panOnScroll
           zoomOnScroll={false}
           zoomOnPinch

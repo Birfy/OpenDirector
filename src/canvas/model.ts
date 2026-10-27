@@ -276,6 +276,13 @@ export type NodePatch = Partial<Omit<CanvasNode, "id" | "data">> & {
 export type CanvasCommand =
   | { type: "add-nodes"; nodes: CanvasNode[] }
   | { type: "update-node"; id: string; patch: NodePatch }
+  | {
+      type: "resize-node";
+      id: string;
+      width: number;
+      height: number;
+      position?: Point;
+    }
   | { type: "remove-nodes"; ids: string[] }
   | { type: "move-nodes"; ids: string[]; delta: Point }
   | {
@@ -317,6 +324,48 @@ export function applyCommand(
     return command.nodes.length
       ? { ...document, nodes: [...document.nodes, ...command.nodes] }
       : document;
+  }
+  if (command.type === "resize-node") {
+    const source = document.nodes.find((node) => node.id === command.id);
+    if (!source || source.locked) return document;
+    const position = command.position ?? source.position;
+    if (
+      ![position.x, position.y, command.width, command.height].every(
+        Number.isFinite,
+      ) ||
+      command.width <= 0 ||
+      command.height <= 0
+    )
+      throw new Error("节点尺寸必须为正数，坐标必须是有限数字。");
+    const dx = source.position.x - position.x,
+      dy = source.position.y - position.y;
+    if (
+      !dx &&
+      !dy &&
+      source.width === command.width &&
+      source.height === command.height
+    )
+      return document;
+    return {
+      ...document,
+      nodes: document.nodes.map((node) => {
+        if (node.id === source.id)
+          return {
+            ...node,
+            position: { ...position },
+            width: command.width,
+            height: command.height,
+          };
+        // Resizing the frame changes its local origin, not its children's world positions.
+        // This coordinate compensation also applies to locked children.
+        if (node.parentId === source.id && (dx || dy))
+          return {
+            ...node,
+            position: { x: node.position.x + dx, y: node.position.y + dy },
+          };
+        return node;
+      }),
+    };
   }
   if (command.type === "update-node") {
     let changed = false;

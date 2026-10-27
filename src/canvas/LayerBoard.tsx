@@ -977,7 +977,7 @@ export function LayerBoard({
                       >
                         <span className="lb-layer-thumb">
                           {layer.content.kind === "image" ? (
-                            <img src={layer.content.src} alt="" />
+                            <img src={layer.content.src} alt="" draggable={false} />
                           ) : layer.content.kind === "text" ? (
                             "T"
                           ) : (

@@ -40,6 +40,30 @@ test("a drag with multiple updates is one undo step; redo restores the final pos
   });
 });
 
+test("group resize and child compensation are restored together in one undo step", () => {
+  const group = createNode("group", { x: 100, y: 100 });
+  const child = {
+    ...createNode("image", { x: 24, y: 40 }),
+    parentId: group.id,
+    locked: true,
+  };
+  const document = { ...createDocument(), nodes: [group, child] };
+  let history = beginTransaction(createHistory(document));
+  for (const delta of [10, 20, 50]) {
+    history = executeCommand(history, {
+      type: "resize-node",
+      id: group.id,
+      position: { x: 100 - delta, y: 100 - delta },
+      width: group.width + delta,
+      height: group.height + delta,
+    });
+  }
+  history = commitTransaction(history);
+  assert.equal(history.past.length, 1);
+  assert.deepEqual(undo(history).present.nodes, document.nodes);
+  assert.deepEqual(redo(undo(history)).present.nodes, history.present.nodes);
+});
+
 test("cancel and no-op drags do not consume history or erase redo", () => {
   let history = executeCommand(createHistory(createDocument("original")), {
     type: "title",

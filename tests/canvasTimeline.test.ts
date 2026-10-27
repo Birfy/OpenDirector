@@ -6,12 +6,93 @@ import {
   exportTimeline,
   importTimeline,
   moveTimelineClip,
+  placeTimelineClip,
+  addAudioTrack,
   splitTimelineClip,
   timelineDuration,
   timelineSegments,
   trimTimelineClip,
   updateTimelineClip,
 } from "../src/canvas/timeline.ts";
+
+test("dragging visuals uses original midpoints, preserves trims, and ignores a drop in place", () => {
+  const original = sequence();
+  const [first, second] = original.tracks[0]!.clips;
+  assert.equal(placeTimelineClip(original, first!.id, "visual", 3), original);
+  const moved = placeTimelineClip(original, first!.id, "visual", 10);
+  assert.deepEqual(moved.tracks[0]!.clips, [second, first]);
+  assert.deepEqual(
+    timelineSegments(moved).map((s) => [s.start, s.end]),
+    [
+      [0, 5],
+      [5, 10],
+    ],
+  );
+  assert.deepEqual(placeTimelineClip(moved, first!.id, "visual", 0), original);
+});
+
+test("audio drops move in time, snap to frames, cross empty tracks and survive serialization", () => {
+  const original = addAudioTrack(
+    addTimelineClip(sequence(), {
+      id: "sound",
+      title: "sound",
+      kind: "audio",
+      durationSeconds: 3,
+    }),
+  );
+  const audio = original.tracks[1]!.clips[0]!;
+  const target = original.tracks[2]!.id;
+  const placed = placeTimelineClip(original, audio.id, target, 2.017);
+  assert.equal(placed.tracks[1]!.clips.length, 0);
+  assert.deepEqual(placed.tracks[2]!.clips, [{ ...audio, start: 61 / 30 }]);
+  assert.equal(original.tracks[1]!.clips[0]!.start, 0);
+  assert.equal(placeTimelineClip(placed, audio.id, target, 61 / 30), placed);
+  const clamped = placeTimelineClip(placed, audio.id, target, -10);
+  assert.equal(clamped.tracks[2]!.clips[0]!.start, 0);
+  assert.deepEqual(importTimeline(exportTimeline(placed, "drag")), placed);
+});
+
+test("invalid audio drops cannot overlap, change media type, or damage the original", () => {
+  let original = addTimelineClip(sequence(), {
+    id: "a",
+    title: "a",
+    kind: "audio",
+    durationSeconds: 3,
+  });
+  original = addTimelineClip(original, {
+    id: "b",
+    title: "b",
+    kind: "audio",
+    durationSeconds: 2,
+  });
+  const track = original.tracks[1]!;
+  const clip = track.clips[1]!;
+  assert.throws(
+    () => placeTimelineClip(original, clip.id, track.id, 1),
+    /重叠/,
+  );
+  assert.throws(
+    () => placeTimelineClip(original, clip.id, "visual", 1),
+    /同类型/,
+  );
+  assert.throws(
+    () => placeTimelineClip(original, clip.id, track.id, NaN),
+    /有限/,
+  );
+  assert.throws(
+    () => placeTimelineClip(original, "missing", track.id, 0),
+    /找不到/,
+  );
+  assert.deepEqual(
+    track.clips.map((c) => c.start),
+    [0, 3],
+  );
+  const touching = placeTimelineClip(original, track.clips[0]!.id, track.id, 5);
+  assert.deepEqual(
+    touching.tracks[1]!.clips.map((c) => c.start),
+    [3, 5],
+  );
+});
 
 function sequence() {
   let value = createNode("timeline").data.timeline!;
