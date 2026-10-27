@@ -2,17 +2,56 @@ import type { CanvasResource } from "./model";
 
 const aborted = () => new DOMException("素材读取已取消。", "AbortError");
 
+const mediaExtensions: Readonly<Record<string, string>> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  avif: "image/avif",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  m4v: "video/mp4",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+};
+
+/** Missing/generic browser MIME may fall back to the filename; explicit types win.
+ * This classifies an import, not its validity: the media decoder still validates it.
+ */
+export function classifyImportFile(file: Pick<File, "name" | "type">): {
+  kind: CanvasResource["kind"];
+  mimeType: string;
+} {
+  const reported = file.type.trim().toLowerCase();
+  const extension = /\.([^.]+)$/.exec(file.name)?.[1]?.toLowerCase() ?? "";
+  const mimeType =
+    !reported || reported === "application/octet-stream"
+      ? (mediaExtensions[extension] ?? reported)
+      : reported;
+  const kind = mimeType.startsWith("image/")
+    ? "image"
+    : mimeType.startsWith("video/")
+      ? "video"
+      : mimeType.startsWith("audio/")
+        ? "audio"
+        : "file";
+  return { kind, mimeType };
+}
+
 export async function readEditorResource(
   file: File,
   signal?: AbortSignal,
 ): Promise<CanvasResource> {
-  const kind = file.type.startsWith("image/")
-    ? "image"
-    : file.type.startsWith("video/")
-      ? "video"
-      : file.type.startsWith("audio/")
-        ? "audio"
-        : "file";
+  const { kind, mimeType } = classifyImportFile(file);
   const src = await new Promise<string>((resolve, reject) => {
     if (signal?.aborted) {
       reject(aborted());
@@ -41,7 +80,9 @@ export async function readEditorResource(
       reject(aborted());
     };
     signal?.addEventListener("abort", cancel, { once: true });
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(
+      file.type === mimeType ? file : file.slice(0, file.size, mimeType),
+    );
   });
   return withMediaDuration(
     {
@@ -49,7 +90,7 @@ export async function readEditorResource(
       kind,
       title: file.name,
       src,
-      mimeType: file.type,
+      mimeType,
     },
     signal,
   );

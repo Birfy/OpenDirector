@@ -300,6 +300,35 @@ export type CanvasCommand =
   | { type: "viewport"; viewport: Viewport }
   | { type: "batch"; commands: CanvasCommand[] };
 
+/** Shared by the port preview and every reference-creation command. */
+export function canAddReference(
+  document: Pick<CanvasDocument, "nodes" | "edges">,
+  source: string | null | undefined,
+  target: string | null | undefined,
+): boolean {
+  if (!source || !target || source === target) return false;
+  const ids = new Set(document.nodes.map((node) => node.id));
+  if (!ids.has(source) || !ids.has(target)) return false;
+  const outgoing = new Map<string, string[]>();
+  for (const edge of document.edges) {
+    if (edge.source === source && edge.target === target) return false;
+    const targets = outgoing.get(edge.source) ?? [];
+    targets.push(edge.target);
+    outgoing.set(edge.source, targets);
+  }
+  // Adding source → target is cyclic exactly when target already reaches source.
+  const pending = [target],
+    visited = new Set<string>();
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (id === source) return false;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    pending.push(...(outgoing.get(id) ?? []));
+  }
+  return true;
+}
+
 /** Applies a document command; UI-only selection and dragging flags stay outside this model. */
 export function applyCommand(
   document: CanvasDocument,
@@ -574,14 +603,7 @@ export function applyCommand(
     const ids = new Set(document.nodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))
       throw new Error("连线两端必须是当前画布中的节点。");
-    if (
-      command.edge.source === command.edge.target ||
-      document.edges.some(
-        (edge) =>
-          edge.source === command.edge.source &&
-          edge.target === command.edge.target,
-      )
-    )
+    if (!canAddReference(document, command.edge.source, command.edge.target))
       return document;
     return { ...document, edges: [...document.edges, { ...command.edge }] };
   }

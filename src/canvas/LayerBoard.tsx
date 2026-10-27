@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { classifyImportFile } from "./editorMedia";
 import {
   assertLayerSize,
   createImageLayer,
@@ -332,9 +333,13 @@ export function LayerBoard({
     try {
       const layers: ImageLayer[] = [];
       for (const file of files) {
-        if (!file.type.startsWith("image/"))
-          throw new Error(`「${file.name}」不是图片。`);
-        const src = await readFile(file),
+        const { kind, mimeType } = classifyImportFile(file);
+        if (kind !== "image") throw new Error(`「${file.name}」不是图片。`);
+        const src = await readFile(
+            file.type === mimeType
+              ? file
+              : new File([file], file.name, { type: mimeType }),
+          ),
           image = await loadLayerImage(src);
         const layer = createImageLayer(
           {

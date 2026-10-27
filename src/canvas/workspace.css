@@ -811,6 +811,57 @@
   font-size: 12px !important;
   flex-shrink: 0;
 }
+.cw-search-field {
+  position: relative;
+  flex-shrink: 0;
+}
+.cw-search-field input {
+  padding-right: 34px;
+}
+.cw-search-field > button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.cw-search-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 6px;
+}
+.cw-search-categories > button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #b3b3b9;
+}
+.cw-search-categories > button[aria-selected="true"] {
+  color: #fff;
+  background: #ffffff14;
+}
+.cw-search-categories > button > span {
+  color: #929298;
+  font-size: 10px;
+}
+.cw-search-categories > button:focus-visible,
+.cw-search-field > button:focus-visible {
+  outline: 2px solid #a6ddd3;
+  outline-offset: 1px;
+}
+.cw-search-count {
+  margin: 8px 0;
+  color: #929298;
+  font-size: 11px;
+}
 .cw-node-list {
   display: flex;
   flex-direction: column;

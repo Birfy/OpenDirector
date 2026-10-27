@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { withMediaDuration } from "../src/canvas/editorMedia.ts";
+import {
+  classifyImportFile,
+  readEditorResource,
+  withMediaDuration,
+} from "../src/canvas/editorMedia.ts";
 import type { CanvasResource } from "../src/canvas/model.ts";
 
 const resource: CanvasResource = {
@@ -10,6 +14,69 @@ const resource: CanvasResource = {
   src: "data:video/webm;base64,fixture",
   mimeType: "video/webm",
 };
+
+test("imports fall back only for missing or generic MIME and preserve explicit types", () => {
+  for (const type of ["", "application/octet-stream"]) {
+    for (const [name, kind, mimeType] of [
+      ["portrait.JPG", "image", "image/jpeg"],
+      ["clip.MOV", "video", "video/quicktime"],
+      ["voice.wav", "audio", "audio/wav"],
+    ])
+      assert.deepEqual(classifyImportFile({ name: name!, type }), {
+        kind,
+        mimeType,
+      });
+  }
+  assert.deepEqual(
+    classifyImportFile({ name: "photo.jpg", type: "application/pdf" }),
+    { kind: "file", mimeType: "application/pdf" },
+  );
+  assert.deepEqual(
+    classifyImportFile({ name: "photo.bin", type: " IMAGE/PNG " }),
+    { kind: "image", mimeType: "image/png" },
+  );
+  assert.deepEqual(classifyImportFile({ name: "unknown.xyz", type: "" }), {
+    kind: "file",
+    mimeType: "",
+  });
+  assert.deepEqual(classifyImportFile({ name: "png", type: "" }), {
+    kind: "file",
+    mimeType: "",
+  });
+});
+
+test("normalized import MIME reaches both the data URL reader and retained media metadata", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "FileReader");
+  class Reader {
+    onload: (() => void) | null = null;
+    onerror = null;
+    onabort = null;
+    result = "";
+    readAsDataURL(blob: Blob) {
+      assert.equal(blob.type, "video/quicktime");
+      this.result = `data:${blob.type};base64,fixture`;
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  Object.defineProperty(globalThis, "FileReader", {
+    value: Reader,
+    configurable: true,
+  });
+  try {
+    await loaderFixture(2, async () => {
+      const imported = await readEditorResource(
+        new File(["fixture"], "clip.MOV", { type: "application/octet-stream" }),
+      );
+      assert.equal(imported.kind, "video");
+      assert.equal(imported.mimeType, "video/quicktime");
+      assert.match(imported.src!, /^data:video\/quicktime;/);
+      assert.equal(imported.durationSeconds, 2);
+    });
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "FileReader", previous);
+    else Reflect.deleteProperty(globalThis, "FileReader");
+  }
+});
 async function loaderFixture(
   initialDuration: number,
   run: (getElement: () => Video) => Promise<void>,

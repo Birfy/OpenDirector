@@ -51,6 +51,7 @@ import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
 import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
+import { CanvasSearchPanel } from "./CanvasSearchPanel";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
 import { SubjectEditor } from "./SubjectEditor";
@@ -109,6 +110,7 @@ import {
 import {
   createDocument,
   createNode,
+  canAddReference,
   MAX_ZOOM,
   MIN_ZOOM,
   type CanvasDocument,
@@ -355,7 +357,6 @@ function Workspace() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const [toast, setToast] = useState("");
-  const [search, setSearch] = useState("");
   const [projects, setProjects] = useState<DocumentSummary[]>([]);
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
@@ -2119,12 +2120,9 @@ function Workspace() {
           elementsSelectable={!panning}
           nodesConnectable={!panning}
           isValidConnection={(c) =>
-            c.source !== c.target &&
             !lockedIds.has(c.source) &&
             !lockedIds.has(c.target) &&
-            !doc.edges.some(
-              (e) => e.source === c.source && e.target === c.target,
-            )
+            canAddReference(doc, c.source, c.target)
           }
           onNodeClick={(event, node) => {
             if (
@@ -2936,7 +2934,7 @@ function Workspace() {
               history: "生成历史",
               assistant: "AI 对话",
               projects: "本地项目",
-              tools: "导演工具箱",
+              tools: "媒体工具箱",
             }[panel]
           }
         >
@@ -2949,7 +2947,7 @@ function Workspace() {
                   history: "生成历史",
                   assistant: "与 AI 对话",
                   projects: "本地项目",
-                  tools: "导演工具箱",
+                  tools: "媒体工具箱",
                 }[panel]
               }
             </h2>
@@ -2963,34 +2961,7 @@ function Workspace() {
             />
           </div>
           {panel === "search" && (
-            <>
-              <input
-                className="cw-search-input"
-                placeholder="搜索名称、提示词或文本"
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <div className="cw-node-list">
-                {doc.nodes
-                  .filter((n) =>
-                    `${n.data.title} ${n.data.prompt} ${n.data.text ?? ""}`
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                  )
-                  .map((n) => (
-                    <button key={n.id} onClick={() => selectAndFocus(n)}>
-                      <CanvasIcon name={n.type} />
-                      <span>
-                        {n.data.title}
-                        <small>
-                          {n.data.prompt || n.data.text || labels[n.type]}
-                        </small>
-                      </span>
-                    </button>
-                  ))}
-              </div>
-            </>
+            <CanvasSearchPanel nodes={doc.nodes} onSelect={selectAndFocus} />
           )}
           {panel === "assets" && (
             <>

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasResource, SubjectData } from "./model";
 import { copySubject, subjectError } from "./dataBoundary";
-import { readEditorResource, withMediaDuration } from "./editorMedia";
+import {
+  classifyImportFile,
+  readEditorResource,
+  withMediaDuration,
+} from "./editorMedia";
 import { EditorModal, ResourcePreview } from "./EditorModal";
 import { CanvasIcon } from "./CanvasIcon";
 
@@ -79,6 +83,7 @@ export function SubjectEditor({
     setBusy(true);
     setError("");
     try {
+      const { kind, mimeType } = classifyImportFile(file);
       const allowed =
         slot === "voice"
           ? ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp3"]
@@ -92,14 +97,13 @@ export function SubjectEditor({
                 "video/mp4",
                 "video/quicktime",
               ];
-      if (!allowed.includes(file.type))
+      if (!allowed.includes(mimeType))
         throw new Error(
           slot === "voice"
             ? "声音支持 MP3/WAV。"
             : "主素材支持 JPEG/PNG/WebP/BMP 图片或 MP4/MOV 视频，辅助素材仅支持图片。",
         );
-      const max =
-        slot === "voice" ? 15 : file.type.startsWith("video/") ? 500 : 25;
+      const max = slot === "voice" ? 15 : kind === "video" ? 500 : 25;
       if (file.size > max * 1024 * 1024)
         throw new Error(`该类主体素材最大 ${max} MiB。`);
       loading.current?.abort();

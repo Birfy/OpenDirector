@@ -7,6 +7,7 @@ import {
   applyCommand,
   createDocument,
   createNode,
+  canAddReference,
 } from "../src/canvas/model.ts";
 import {
   absolutePosition,
@@ -268,6 +269,53 @@ test("reference commands reject self references and duplicate relationships from
     }),
     doc,
   );
+});
+
+test("reference commands and port previews reject direct and transitive cycles", () => {
+  const [a, b, c, d] = Array.from({ length: 4 }, () => createNode("image"));
+  const initial = { ...createDocument(), nodes: [a!, b!, c!, d!] };
+  const chain = applyCommand(initial, {
+    type: "batch",
+    commands: [
+      { type: "add-edge", edge: { id: "ab", source: a!.id, target: b!.id } },
+      { type: "add-edge", edge: { id: "bc", source: b!.id, target: c!.id } },
+    ],
+  });
+  for (const [source, target] of [
+    [b!.id, a!.id],
+    [c!.id, a!.id],
+  ]) {
+    assert.equal(canAddReference(chain, source, target), false);
+    assert.equal(
+      applyCommand(chain, {
+        type: "add-edge",
+        edge: { id: "cycle", source: source!, target: target! },
+      }),
+      chain,
+    );
+  }
+  assert.equal(canAddReference(chain, a!.id, c!.id), true);
+  assert.equal(canAddReference(chain, d!.id, b!.id), true);
+  assert.equal(canAddReference(chain, a!.id, "absent"), false);
+});
+
+test("old cyclic documents terminate validation without deleting retained edges", () => {
+  const [a, b, c] = Array.from({ length: 3 }, () => createNode("image"));
+  const old = {
+    ...createDocument(),
+    nodes: [a!, b!, c!],
+    edges: [
+      { id: "ab", source: a!.id, target: b!.id },
+      { id: "ba", source: b!.id, target: a!.id },
+    ],
+  };
+  assert.equal(canAddReference(old, c!.id, a!.id), true);
+  const added = applyCommand(old, {
+    type: "add-edge",
+    edge: { id: "ca", source: c!.id, target: a!.id },
+  });
+  assert.deepEqual(added.edges.slice(0, 2), old.edges);
+  assert.equal(canAddReference(added, b!.id, c!.id), false);
 });
 
 test("locking a group protects nested nodes and their live references until the group is unlocked", () => {
