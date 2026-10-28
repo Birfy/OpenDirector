@@ -782,14 +782,6 @@ function Workspace() {
       title: `${labels[kind]} ${count}`,
       ...extra,
     });
-    if (kind === "image") {
-      node.width = 320;
-      node.height = 320;
-    }
-    if (kind === "video") {
-      node.width = 360;
-      node.height = 240;
-    }
     if (kind === "text") node.height = 220;
     if (kind === "timeline") node.width = 720;
     node.position = {
@@ -1276,13 +1268,9 @@ function Workspace() {
         }
         const node = createNode(
           kind,
-          { x: origin.x - 160 + i * 360, y: origin.y - 130 },
+          { x: origin.x - 176 + i * 400, y: origin.y - 130 },
           data,
         );
-        if (kind === "image") {
-          node.width = 320;
-          node.height = 320;
-        }
         nodes.push(node);
       }
       if (controller.signal.aborted) return;
@@ -3914,16 +3902,13 @@ function Workspace() {
                     .filter(Boolean);
                   if (!prompts.length) return;
                   const p = center();
-                  const nodes = prompts.map((prompt, i) => {
-                    const n = createNode(
+                  const nodes = prompts.map((prompt, i) =>
+                    createNode(
                       "image",
                       { x: p.x + i * 440, y: p.y },
                       { title: `画面 ${i + 1}`, prompt },
-                    );
-                    n.width = 320;
-                    n.height = 320;
-                    return n;
-                  });
+                    ),
+                  );
                   command({
                     type: "batch",
                     commands: [

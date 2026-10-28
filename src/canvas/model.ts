@@ -203,14 +203,33 @@ export function createDocument(title = "未命名画布"): CanvasDocument {
   };
 }
 
+/** Image and video blocks start as a 16:9 preview. */
+export const PREVIEW_SIZE = { width: 352, height: 198 } as const;
+const MEDIA_KINDS: readonly CanvasNodeKind[] = ["image", "video"];
+
+/** Once a file's pixel size is known the block takes its aspect ratio and keeps its long edge. */
+export function mediaNodeSize(
+  box: { width: number; height: number },
+  media: CanvasNodeData["media"],
+) {
+  if (!media?.width || !media.height) return { ...box };
+  const long = Math.max(box.width, box.height);
+  const ratio = media.width / media.height;
+  return {
+    // The node resizer's minimum stays valid; extreme panoramas letterbox instead.
+    width: Math.max(160, Math.round(ratio >= 1 ? long : long * ratio)),
+    height: Math.max(120, Math.round(ratio >= 1 ? long / ratio : long)),
+  };
+}
+
 export function createNode(
   kind: CanvasNodeKind,
   position: Point = { x: 0, y: 0 },
   data: Partial<Omit<CanvasNodeData, "kind">> = {},
 ): CanvasNode {
   const sizes: Record<CanvasNodeKind, [number, number]> = {
-    image: [300, 220],
-    video: [320, 220],
+    image: [PREVIEW_SIZE.width, PREVIEW_SIZE.height],
+    video: [PREVIEW_SIZE.width, PREVIEW_SIZE.height],
     audio: [300, 110],
     file: [260, 110],
     text: [280, 160],
@@ -234,7 +253,12 @@ export function createNode(
     tool: "工具",
     external: "导演预演",
   };
-  const [width, height] = sizes[kind];
+  const { width, height } = MEDIA_KINDS.includes(kind)
+    ? mediaNodeSize(
+        { width: sizes[kind][0], height: sizes[kind][1] },
+        data.media as CanvasNodeData["media"],
+      )
+    : { width: sizes[kind][0], height: sizes[kind][1] };
   return {
     id: crypto.randomUUID(),
     type: kind,
@@ -433,7 +457,24 @@ export function applyCommand(
       const data = command.patch.data
         ? { ...base, ...command.patch.data }
         : base;
-      return { ...node, ...command.patch, type, data: { ...data, kind: type } };
+      // New pixels (upload, generation, edit, or decoded metadata) reshape the block.
+      const reshaped =
+        MEDIA_KINDS.includes(type) &&
+        command.patch.width === undefined &&
+        command.patch.height === undefined &&
+        data.media?.width &&
+        data.media.height &&
+        (data.media.width !== node.data.media?.width ||
+          data.media.height !== node.data.media?.height)
+          ? mediaNodeSize(node, data.media)
+          : {};
+      return {
+        ...node,
+        ...command.patch,
+        ...reshaped,
+        type,
+        data: { ...data, kind: type },
+      };
     });
     return changed ? { ...document, nodes } : document;
   }

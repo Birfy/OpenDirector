@@ -53,8 +53,6 @@ export function exampleDocument(): CanvasDocument {
       prompt: "清晨，远山与湖泊，薄雾，低饱和青绿色，电影感广角构图",
     },
   );
-  a.width = 320;
-  a.height = 320;
   const b = createNode(
     "image",
     { x: 930, y: 130 },
@@ -67,8 +65,6 @@ export function exampleDocument(): CanvasDocument {
       prompt: "参考场景结构，转为暮色暖调，保留静谧的氛围",
     },
   );
-  b.width = 320;
-  b.height = 320;
   const video = createNode(
     "video",
     { x: 1400, y: 130 },
@@ -86,8 +82,6 @@ export function exampleDocument(): CanvasDocument {
       },
     },
   );
-  video.width = 360;
-  video.height = 240;
   const timeline = createNode(
     "timeline",
     { x: 80, y: 600 },
@@ -194,8 +188,10 @@ export function fileDataUrl(file: File): Promise<string> {
 }
 
 export function downloadFile(contents: Blob | string, filename: string): void {
-  const downloadable = typeof contents === "string" && /^data:/i.test(contents)
-    ? dataUrlToBlob(contents) : contents;
+  const downloadable =
+    typeof contents === "string" && /^data:/i.test(contents)
+      ? dataUrlToBlob(contents)
+      : contents;
   const ownsUrl = downloadable instanceof Blob;
   const url = ownsUrl ? URL.createObjectURL(downloadable) : downloadable;
   const a = document.createElement("a");

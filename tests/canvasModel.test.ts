@@ -452,3 +452,55 @@ test("replacing media drops old pixel edits and metadata but allows atomic layer
   assert.deepEqual(audio.nodes[0]!.position, image.position);
   assert.equal(parseDocument(audio).ok, true);
 });
+
+test("media blocks start at 16:9 and take the file's aspect once its size is known", () => {
+  const blank = createNode("video");
+  assert.deepEqual([blank.width, blank.height], [352, 198]);
+  assert.deepEqual(
+    [createNode("image").width, createNode("image").height],
+    [352, 198],
+  );
+  const portrait = createNode("image", undefined, {
+    src: "data:image/png;base64,a",
+    media: { width: 1080, height: 1920 },
+  });
+  assert.deepEqual([portrait.width, portrait.height], [198, 352]);
+
+  const before = { ...createDocument(), nodes: [blank] };
+  const decoded = applyCommand(before, {
+    type: "update-node",
+    id: blank.id,
+    patch: { data: { media: { width: 1000, height: 1000 } } },
+  });
+  assert.deepEqual(
+    [decoded.nodes[0]!.width, decoded.nodes[0]!.height],
+    [352, 352],
+  );
+  // A duration update or an unchanged size keeps a block the user resized.
+  const resized = { ...decoded.nodes[0]!, width: 500, height: 200 };
+  const same = applyCommand(
+    { ...decoded, nodes: [resized] },
+    {
+      type: "update-node",
+      id: blank.id,
+      patch: {
+        data: { media: { width: 1000, height: 1000, durationSeconds: 4 } },
+      },
+    },
+  );
+  assert.deepEqual([same.nodes[0]!.width, same.nodes[0]!.height], [500, 200]);
+  // Text and audio blocks never follow pixel sizes.
+  const audio = createNode("audio");
+  const sound = applyCommand(
+    { ...createDocument(), nodes: [audio] },
+    {
+      type: "update-node",
+      id: audio.id,
+      patch: { data: { media: { width: 10, height: 10 } } },
+    },
+  );
+  assert.deepEqual(
+    [sound.nodes[0]!.width, sound.nodes[0]!.height],
+    [audio.width, audio.height],
+  );
+});

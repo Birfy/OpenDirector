@@ -247,10 +247,6 @@ function placeResults(
             ...(output.media ? { media: { ...output.media } } : {}),
           },
     );
-    if (output.kind === "image") {
-      node.width = 320;
-      node.height = 320;
-    }
     // Repeated operations share an origin, but each result needs its own space.
     // Moving down past a collision cannot collide with that rectangle again.
     for (let attempt = 0; attempt <= occupied.length; attempt++) {
