@@ -447,13 +447,6 @@ function Workspace() {
   }, [arrivingNodes]);
   const syncing = useRef(new Set<string>());
   const following = useRef(new Set<string>());
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   const [chat, setChat] = useState("");
   const [chatLog, setChatLog] = useState<string[]>([]);
   const clipboard = useRef<CanvasFragment | null>(null);
