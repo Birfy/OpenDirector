@@ -1,23 +1,18 @@
 import asyncio
 import io
 import json
-from pathlib import Path
 from uuid import uuid4
 
 import httpx
 from PIL import Image
 import pytest
-from fastapi.testclient import TestClient
 
 from museshow.application.generation import Generation
-from museshow.application.production import Production
 from museshow.domain.generation import GenerationError
-from museshow.domain.projects import ProjectError
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow.integrations.chat_completions import ChatCompletions
 from museshow.integrations.volcengine import VolcengineGeneration
-from museshow_api.main import create_app
 
 
 SECRET = 'private-key-never-record'
@@ -82,53 +77,6 @@ def test_non_json_and_oversized_errors_have_safe_fallback(project, body):
         assert caught.value.details.category == 'temporary'
         assert SECRET not in str(caught.value) and 'secret-signature' not in str(caught.value)
     asyncio.run(run())
-
-
-def test_reference_error_is_persisted_in_task_plan_and_api(project):
-    store, project, session = project
-    configs = ModelConfigs(store.repository)
-    config = configs.save('image', 'https://ark.test', 'image', SECRET)
-    calls = []
-    def handle(request):
-        calls.append(request)
-        return httpx.Response(400, json={'error': {
-            'code': 'InputImageSensitiveContentDetected.PrivacyInformation',
-            'message': f'The input image may contain real person. Request id: original-request-123 {SECRET} {SIGNED_URL}'}})
-    provider = VolcengineGeneration(store, httpx.MockTransport(handle))
-    async def run():
-        generation = Generation(store, configs, provider)
-        production = Production(store, generation)
-        await production.submit(project['id'], str(uuid4()), {'title': '参考失败', 'shots': [
-            {'title': '首镜', 'imagePrompt': '角色参考'}]}, {'image': config['id']}, session)
-        await asyncio.gather(*list(production.jobs.values()))
-        receipt = generation.canvas.snapshot(project['id'])['tasks'][0]
-        plan = production.list(project['id'])[0]
-        assert receipt['status'] == 'failed' and plan['status'] == 'blocked'
-        assert receipt['errorDetails'] == plan['errorDetails']
-        assert receipt['errorDetails']['requestId'] == 'original-request-123'
-        assert '可能包含真人' in receipt['error'] and receipt['error'] == plan['error']
-        assert generation.canvas.snapshot(project['id'])['assets'] == [] and len(calls) == 1
-        for folder in ['tasks', 'production-plans']:
-            for path in (Path(project['path']) / folder).glob('*.json'):
-                assert SECRET not in path.read_text() and 'secret-signature' not in path.read_text()
-        await production.close(); await generation.close()
-        return receipt, plan
-    receipt, plan = asyncio.run(run())
-    with TestClient(create_app(store, generation_provider=provider), headers={
-        'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
-        assert client.get(f'/api/projects/{project["id"]}/canvas').json()['tasks'][0]['errorDetails'] == receipt['errorDetails']
-        shown = client.get(f'/api/projects/{project["id"]}/production-plans').json()[0]
-        assert shown['errorDetails'] == plan['errorDetails']
-        assert shown['steps'][0]['task']['status'] == 'failed'
-        assert shown['steps'][0]['task']['errorDetails'] == receipt['errorDetails']
-        path = Path(project['path']) / 'production-plans' / (plan['id'] + '.json')
-        assert 'task' not in json.loads(path.read_text())['steps'][0]
-        cancelled = client.post(f'/api/projects/{project["id"]}/production-plans/{plan["id"]}/stop?cancelTasks=true').json()
-        assert cancelled['status'] == 'stopped'
-        assert cancelled['errorDetails'] == plan['errorDetails'] and cancelled['error'] == plan['error']
-        assert cancelled['steps'][0]['task']['status'] == 'failed'
-        assert '已请求取消' not in cancelled['error']
-    assert len(calls) == 1
 
 
 @pytest.mark.parametrize('source', ['body', 'header', 'message'])
@@ -284,35 +232,4 @@ def test_error_stream_is_not_read_beyond_diagnostic_limit(project):
                 {'kind': 'image', 'projectId': project['id'], 'prompt': '图像', 'referenceIds': [], 'parameters': {}}, None)
         assert caught.value.details.requestId == 'bounded-id'
         assert caught.value.details.category == 'temporary'
-    asyncio.run(run())
-
-
-def test_storyboard_adoption_failure_retains_generated_output(project, monkeypatch):
-    store, project, session = project
-    configs = ModelConfigs(store.repository)
-    config = configs.save('image', 'https://ark.test', 'image', SECRET)
-    output = io.BytesIO(); Image.new('RGB', (16, 12)).save(output, 'PNG')
-    class Provider:
-        calls = 0
-        def validate(self, kind, config): pass
-        async def generate(self, config, task, submitted):
-            self.calls += 1
-            return 'png', output.getvalue()
-    provider = Provider()
-    async def run():
-        generation = Generation(store, configs, provider)
-        production = Production(store, generation)
-        def fail(*args, **kwargs): raise ProjectError(SECRET + SIGNED_URL, 409)
-        monkeypatch.setattr(production.board, 'adopt_asset', fail)
-        await production.submit(project['id'], str(uuid4()), {'title': '采用冲突', 'shots': [
-            {'title': '首镜', 'imagePrompt': '图像'}]}, {'image': config['id']}, session)
-        await asyncio.gather(*list(production.jobs.values()))
-        snapshot = generation.canvas.snapshot(project['id'])
-        plan = production.list(project['id'])[0]
-        assert plan['status'] == 'blocked' and plan['errorDetails']['category'] == 'local'
-        assert plan['errorDetails']['stage'] == 'adopt'
-        assert plan['steps'][0]['assetId'] == snapshot['assets'][0]['id']
-        assert snapshot['tasks'][0]['status'] == 'succeeded' and snapshot['tasks'][0]['errorDetails'] is None
-        assert provider.calls == 1 and SECRET not in plan['error'] and 'secret-signature' not in plan['error']
-        await production.close(); await generation.close()
     asyncio.run(run())

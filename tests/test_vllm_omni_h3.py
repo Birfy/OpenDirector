@@ -14,7 +14,6 @@ import pytest
 
 from museshow.application.generation import Generation
 from museshow.domain.input_rules import input_rules
-from museshow.domain.production import ProductionRequest
 from museshow.domain.projects import ProjectError
 from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.local_projects import LocalProjects
@@ -185,52 +184,6 @@ def test_other_models_keep_rejecting_video_references(project):
     with pytest.raises(ProjectError, match='不支持接续生成'):
         VolcengineGeneration(store).prepare_inputs(value['id'], {'kind': 'video', 'prompt': 'p', 'promptContent': None,
                                                                 'referenceIds': [], 'videoMode': 'continuation'}, seedance)
-
-
-def test_production_continuation_shot_validation():
-    shot = {'title': '镜头', 'videoPrompt': '继续'}
-    ProductionRequest(title='计划', shots=[shot, {**shot, 'videoMode': 'continuation'}])
-    for shots in ([{**shot, 'videoMode': 'continuation'}],
-                  [shot, {**shot, 'videoMode': 'continuation', 'imagePrompt': '关键帧'}],
-                  [{'title': '镜头', 'imagePrompt': '图'}, {**shot, 'videoMode': 'continuation'}]):
-        with pytest.raises(ValueError, match='continuation shot'):
-            ProductionRequest(title='计划', shots=shots)
-
-
-@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
-def test_production_plan_chains_continuation_shots(project, tmp_path):
-    from museshow.application.production import Production
-
-    store, value, session, canvas = project
-    clip = tmp_path / 'clip.mp4'
-    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
-    configs = ModelConfigs(store.repository)
-    config = configs.save('video', H3['url'], H3['modelId'], 'token')
-    tasks = []
-
-    class Provider:
-        def validate(self, kind, config): pass
-        async def generate(self, config, task, submitted):
-            tasks.append(task)
-            return 'mp4', clip.read_bytes()
-
-    generation = Generation(store, configs, Provider())
-    manager = Production(store, generation)
-    specification = {'title': '两镜接续', 'shots': [
-        {'title': '镜头1', 'videoPrompt': '灯塔亮起'},
-        {'title': '镜头2', 'videoPrompt': '光束扫过海面', 'videoMode': 'continuation'}]}
-
-    async def run():
-        plan = await manager.submit(value['id'], str(uuid4()), specification, {'video': config['id']}, session)
-        first, second = plan['steps']
-        assert second['dependency'] == first['id'] and second['videoMode'] == 'continuation'
-        await asyncio.gather(*manager.jobs.values())
-        result = manager.list(value['id'])[0]
-        assert result['status'] == 'succeeded', result['error']
-        assert [task['videoMode'] for task in tasks] == ['first_frame', 'continuation']
-        assert tasks[1]['referenceIds'] == [result['steps'][0]['assetId']]
-
-    asyncio.run(run())
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')

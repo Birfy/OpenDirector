@@ -1,9 +1,8 @@
 """Explain business retention separately from canvas undo/redo retention."""
 
-from museshow.domain.storyboard import shot_asset_ids
 from museshow.infrastructure.canvas_history import referenced_assets
 from museshow.infrastructure.canvas_assets import logical_nodes
-from museshow.infrastructure.execution import read_generation_task, read_production_plan
+from museshow.infrastructure.execution import read_generation_task
 from museshow.infrastructure.local_projects import child, read_json
 
 
@@ -12,16 +11,12 @@ def content_uses(content, asset_id):
 
 
 def dependency_context(store, directory, owner):
-    from museshow.infrastructure.storyboard import read_storyboard
-
     canvas_path = child(directory, 'canvas.json')
-    tasks, plans = child(directory, 'tasks'), child(directory, 'production-plans')
+    tasks = child(directory, 'tasks')
     return {'canvas': read_json(canvas_path) if canvas_path.exists() else {},
             'inventory': store._inventory(directory),
             'conversation': store._conversation(directory) if owner != 'scratch' else None,
-            'shots': read_storyboard(directory)['shots'] if owner != 'scratch' else [],
-            'tasks': [read_generation_task(child(tasks, path.name)) for path in sorted(tasks.glob('*.json'))] if tasks.exists() else [],
-            'plans': [read_production_plan(child(plans, path.name)) for path in sorted(plans.glob('*.json'))] if plans.exists() else []}
+            'tasks': [read_generation_task(child(tasks, path.name)) for path in sorted(tasks.glob('*.json'))] if tasks.exists() else []}
 
 
 def asset_dependencies(store, directory, owner, asset_id, *, context=None):
@@ -58,10 +53,6 @@ def asset_dependencies(store, directory, owner, asset_id, *, context=None):
     for node_id, group in canvas.get('assetGroups', {}).items():
         if asset_id in group['assetIds'] and len(group['assetIds']) > 1:
             add('versions', node_id, '节点的资产版本历史')
-    for shot in context['shots']:
-        if asset_id in shot_asset_ids(shot):
-            add('shot', shot['id'], f'分镜「{shot["title"]}」')
-
     for task in context['tasks']:
         snapshot = task.get('inputSnapshot') or {}
         if asset_id in task.get('referenceIds', []) or asset_id in snapshot.get('references', {}):
@@ -69,18 +60,4 @@ def asset_dependencies(store, directory, owner, asset_id, *, context=None):
         elif asset_id == task.get('assetId') and task['status'] != 'succeeded':
             add('task', task['id'], '尚未完成的生成任务结果')
 
-    for plan in context['plans']:
-        used = asset_id == plan.get('scriptAssetId')
-        used |= any(asset_id in (item['request']['assetId'], item['nodeAssetId'], item['shotAssetId']) for item in plan['feedback'])
-        for repair in plan['repairs']:
-            used |= asset_id == repair['request']['reviewedAssetId']
-            for item in (repair['before'], repair['after']):
-                basis = item.get('inputBasis') or {}
-                node, shot = basis.get('node') or {}, basis.get('shot') or {}
-                used |= asset_id in [*item['referenceIds'], *(item.get('baseReferenceIds') or []), item['assetId'], item.get('reuseAssetId'),
-                                     *node.get('referenceIds', []), node.get('assetId'), *shot.get('referenceIds', []), *shot.get('selected', {}).values()]
-        if plan.get('status') != 'succeeded':
-            used |= any(asset_id in step.get('referenceIds', []) or asset_id == step.get('assetId') for step in plan.get('steps', []))
-        if used:
-            add('plan', plan['id'], '制作计划及修复记录')
     return {'blockers': blockers, 'history': history}

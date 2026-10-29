@@ -9,7 +9,6 @@ from museshow.domain.assets import AssetPurpose
 from museshow.domain.canvas import NodeKind
 from museshow.domain.canvas_layout import CANVAS_LIMIT, Coordinate, Height
 from museshow.domain.video_capabilities import VideoAdapter, VideoCapabilities
-from museshow.domain.storyboard import MediaRole, OriginalAudioMode
 
 
 class Model(BaseModel):
@@ -24,12 +23,6 @@ class ProjectCreate(Model):
 class ProjectRename(Model):
     name: str = Field(min_length=1, max_length=100)
     expectedName: str
-
-
-class ProductionChatAction(Model):
-    id: UUID
-    messageId: UUID
-    action: Literal['resume', 'stop', 'cancel']
 
 
 class Session(Model):
@@ -152,7 +145,6 @@ class ChatRequest(Model):
     thinking: Literal["auto", "low", "medium", "high"] = "auto"
     modelSelections: dict[Literal["agent", "image", "video", "audio"], UUID | None] = Field(default_factory=dict)
     selectedNodeId: UUID | None = None
-    selectedShotId: UUID | None = None
 
     @model_validator(mode="after")
     def inline_references(self):
@@ -267,60 +259,6 @@ class GenerateNode(Model):
 
 
     inputs: GenerationInputs | None = None
-
-
-class ShotCreate(Model):
-    id: UUID
-    expectedOrderRevision: int = Field(ge=0)
-    afterId: UUID | None = None
-    sourceId: UUID | None = None
-
-
-class ShotReorder(Model):
-    expectedOrderRevision: int = Field(ge=0)
-    shotIds: list[UUID] = Field(max_length=500)
-
-
-class ShotVersion(Model):
-    expectedRevision: int = Field(ge=1)
-
-
-class ShotPatch(ShotVersion):
-    title: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=20000)
-
-
-class ShotAssociation(ShotVersion):
-    kind: Literal["visual", "audio"]
-    assetIds: list[UUID] = Field(max_length=2000)
-
-
-class ShotAdoption(ShotVersion):
-    kind: MediaRole
-    assetId: UUID | None
-
-
-class ShotOriginalAudio(ShotVersion):
-    mode: OriginalAudioMode
-
-
-class TimelineVersion(Model):
-    expectedRevision: int = Field(ge=0)
-    expectedStoryboardRevision: int = Field(ge=0)
-
-
-class ExportCreate(TimelineVersion):
-    id: UUID
-    name: str = Field(default="成片.mp4", min_length=1, max_length=64)
-
-
-class TimelineMute(TimelineVersion):
-    muted: bool
-
-
-class TimelineClipPatch(TimelineVersion):
-    durationFrames: int | None = Field(default=None, ge=3, le=108000)
-    muted: bool | None = None
 
 
 class SessionClose(Model):

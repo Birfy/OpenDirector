@@ -19,7 +19,7 @@ from museshow.infrastructure.canvas_versions import node_history
 from museshow.infrastructure.local_projects import empty_conversation, read_json, write_json
 from museshow.infrastructure.model_configs import ModelConfigs
 from test_project_assets import project_api
-from test_production_repairs import context, close
+from canvas_helpers import context, close
 from test_canvas_version_application import generate, restore
 
 

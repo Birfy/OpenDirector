@@ -79,7 +79,6 @@ class AssetCatalog:
                  "purpose": "document" if attributes["kind"] == "text" else "reference", **attributes}
         if generation:
             value.update(generationTaskId=generation["id"], modelConfigId=generation["modelConfigId"], referenceIds=generation["referenceIds"])
-            value.update({key: generation[key] for key in ('productionPlanId', 'productionStepId', 'shotId') if generation.get(key)})
         if agent_run:
             value.update(source="generated", agentRunId=agent_run["id"], modelConfigId=agent_run["modelConfigId"], referenceIds=agent_run["referenceIds"])
             value['generationInputs'] = agent_run.get('inputs')

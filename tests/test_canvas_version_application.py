@@ -1,19 +1,16 @@
 """Version restore, eligibility and preserved downstream selections as one flow."""
 import asyncio
 from copy import deepcopy
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.agent.loop import AgentLoop
 from museshow.domain.projects import ProjectError
 from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow.infrastructure.timeline import TimelineProjects
 from museshow_api.main import create_app
-from test_production_repairs import close, command, context, media, wait
+from canvas_helpers import close, context, media
 
 
 def restore(c, node_id, asset_id, **changes):
@@ -65,64 +62,6 @@ def test_restore_is_atomic_undoable_and_never_generates_or_rewrites_receipts(tmp
         assert next(v for v in node_history(canvas, c.owner, node['id'])['versions'] if v['asset']['id'] == old_id)['applied']
         if kind == 'text':
             assert c.store.asset(c.owner, old_id)[0].decode() == '原始要求'
-        await close(c)
-    asyncio.run(run())
-
-
-def test_generated_node_rejects_upload_and_missing_model_keeps_original_label(tmp_path):
-    c = context(tmp_path)
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '原始模型', 'shots': [{'title': '镜头', 'imagePrompt': '原始提示'}]}, c.models, c.session)
-        plan = await wait(c); step = plan['steps'][0]; canvas = c.generation.canvas
-        old = step['assetId']
-        upload = canvas.assets.import_file(c.owner, str(uuid4()), '上传.png', c.store.asset(c.owner, c.reference['id'])[0], c.session)
-        with pytest.raises(ProjectError, match='生成节点'):
-            canvas.attach(c.owner, step['nodeId'], upload['id'], c.session)
-        assert canvas._node(canvas.snapshot(c.owner)['canvas'], step['nodeId'])['assetId'] == old
-        c.generation.configs.save('image', 'https://other.test', 'changed-model', 'private', c.models['image'])
-        version = next(v for v in node_history(canvas, c.owner, step['nodeId'])['versions'] if v['asset']['id'] == old)
-        assert version['modelName'] == 'seedream' and version['applicableModelConfigId'] is None
-        assert restore(c, step['nodeId'], old)['modelConfigId'] is None
-        c.generation.configs.delete(c.models['image'])
-        assert restore(c, step['nodeId'], old)['assetId'] == old
-        await close(c)
-    asyncio.run(run())
-
-
-def test_history_apply_preserves_plan_shot_timeline_and_existing_reference_but_blocks_new_use(tmp_path, media):
-    c = context(tmp_path, media)
-    async def run():
-        canvas = c.generation.canvas
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '完整制作', 'shots': [
-            {'title': '原镜头', 'imagePrompt': '首帧一', 'videoPrompt': '视频', 'narration': '旁白'}]}, c.models, c.session)
-        plan = await wait(c); step = plan['steps'][0]; old = step['assetId']
-        await c.manager.repair(c.owner, plan['id'], command(c, plan, step, prompt='首帧二', adoptionPolicy='candidate_only'), c.session)
-        plan = await wait(c); candidate = plan['steps'][0]['assetId']
-        other = canvas.create(c.owner, {'id': str(uuid4()), 'kind': 'image', 'prompt': '使用旧版', 'referenceIds': [old]}, c.session)
-        board_before = c.manager.board.snapshot(c.owner)['storyboard']
-        timeline_before = TimelineProjects(c.store).snapshot(c.owner)
-        saved = {p: p.read_bytes() for p in [*(c.directory / 'production-plans').glob('*.json'), *(c.directory / 'tasks').glob('*.json')]}
-        restore(c, step['nodeId'], candidate)
-        assert c.manager.board.snapshot(c.owner)['storyboard'] == board_before
-        assert TimelineProjects(c.store).snapshot(c.owner) == timeline_before
-        assert {p: p.read_bytes() for p in saved} == saved
-        canvas.patch(c.owner, other['id'], {'title': '已有引用可继续保存'}, c.session)
-        new_node = canvas.create(c.owner, {'id': str(uuid4()), 'kind': 'image'}, c.session)
-        with pytest.raises(ProjectError, match='不是有效的当前版本'):
-            canvas.patch(c.owner, new_node['id'], {'referenceIds': [old]}, c.session)
-        calls = len(c.provider.calls)
-        with pytest.raises(ProjectError, match='不是有效的当前版本'):
-            await generate(c, other['id'], 'image', '新的生成', [old])
-        assert len(c.provider.calls) == calls
-        shot = c.manager.board.create(c.owner, {'id': str(uuid4()), 'title': '新镜头', 'expectedOrderRevision': board_before['orderRevision']}, c.session)['shots'][0]
-        with pytest.raises(ProjectError, match='不是有效的当前版本'):
-            c.manager.board.adopt_asset(c.owner, shot['id'], shot['revision'], 'visual', old, c.session)
-        c.manager.board.adopt_asset(c.owner, shot['id'], shot['revision'], 'visual', candidate, c.session)
-        state = canvas.snapshot(c.owner)
-        assert candidate in state['availableAssetIds'] and old not in state['availableAssetIds'] and old not in state['listedAssetIds']
-        turn = SimpleNamespace(owner=c.owner, selected_shot_id=None, selected_node_id=None, selections={})
-        observed = AgentLoop(c.store, c.generation.configs, c.generation, None)._project(turn)
-        assert old not in {a['id'] for a in observed['assets']} and candidate in {a['id'] for a in observed['assets']}
         await close(c)
     asyncio.run(run())
 
@@ -220,24 +159,6 @@ def test_apply_endpoint_is_scoped_and_hidden_version_cannot_be_new_chat_attachme
         assert old['id'] in {a['id'] for a in client.get(root + '/assets?current_only=true').json()}
 
 
-def test_unknown_inputs_can_restore_result_even_after_shot_is_removed(tmp_path):
-    c = context(tmp_path)
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '缺失历史', 'shots': [{'title': '原镜头', 'imagePrompt': '原始输入'}]}, c.models, c.session)
-        plan = await wait(c); step = plan['steps'][0]
-        (c.directory / 'tasks' / (step['taskId'] + '.json')).unlink()
-        shot = c.manager.board.snapshot(c.owner)['storyboard']['shots'][0]
-        c.manager.board.change(c.owner, shot['id'], shot['revision'], c.session, remove=True)
-        c.generation.canvas.patch(c.owner, step['nodeId'], {'prompt': '草稿', 'referenceIds': [c.reference['id']]}, c.session)
-        result = restore(c, step['nodeId'], step['assetId'])
-        assert result['assetId'] == step['assetId'] and result['prompt'] == ''
-        assert result['referenceIds'] == [] and result['modelConfigId'] is None
-        assert not node_history(c.generation.canvas, c.owner, step['nodeId'])['versions'][0]['recorded']
-        assert not c.manager.board.snapshot(c.owner)['storyboard']['shots']
-        await close(c)
-    asyncio.run(run())
-
-
 def test_agent_text_inputs_remain_immutable_after_metadata_edits_and_keep_reference_files(tmp_path):
     c = context(tmp_path); canvas = c.generation.canvas
     canvas.snapshot(c.owner)  # Project the reference onto the canvas before use.
@@ -258,23 +179,3 @@ def test_agent_text_inputs_remain_immutable_after_metadata_edits_and_keep_refere
     with pytest.raises(ProjectError, match='引用'):
         canvas.assets.delete(c.owner, c.reference['id'], c.session)
     assert restore(c, node['id'], asset['id'])['referenceIds'] == [c.reference['id']]
-
-
-def test_copy_shot_keeps_current_selection_without_promoting_archived_candidates(tmp_path):
-    c = context(tmp_path)
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '复制镜头', 'shots': [{'title': '原镜头', 'imagePrompt': '当前图'}]}, c.models, c.session)
-        plan = await wait(c); step = plan['steps'][0]
-        await c.manager.repair(c.owner, plan['id'], command(c, plan, step, prompt='历史候选', adoptionPolicy='candidate_only'), c.session)
-        await wait(c)
-        before = c.manager.board.snapshot(c.owner)['storyboard']
-        original = deepcopy(before['shots'][0])
-        assert len(original['candidates']['visual']) == 2
-        board = c.manager.board.create(c.owner, {'id': str(uuid4()), 'expectedOrderRevision': before['orderRevision'],
-            'sourceId': original['id'], 'afterId': original['id']}, c.session)
-        assert board['shots'][0] == original
-        assert board['shots'][1]['selected'] == original['selected']
-        assert board['shots'][1]['candidates']['visual'] == [original['selected']['visual']]
-        assert len(c.provider.calls) == 2
-        await close(c)
-    asyncio.run(run())

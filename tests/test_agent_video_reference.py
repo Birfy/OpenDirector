@@ -80,9 +80,6 @@ def test_chat_edit_keeps_video_connection_original_prompt_and_actual_multipart(t
             assert '本期不接通视频文件' not in payload['messages'][0]['content']
             if first_call == 'image_fallback':
                 return reply_tool('generate_asset', {**wrong, 'kind': 'image'}, 'bad-image')
-            if first_call == 'new_plan':
-                return reply_tool('start_production_plan', {'title': '重新构思的剧情', 'shots': [
-                    {'title': '新镜头', 'videoPrompt': '虚构夜店新剧情', 'referenceIds': [c.photo['id']]}]}, 'bad-plan')
             return reply_tool('generate_asset', wrong, 'edit')
         result = json.loads(payload['messages'][-1]['content'])
         if 'error' in result:

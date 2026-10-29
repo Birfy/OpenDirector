@@ -14,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from museshow.application.generation import Generation
-from museshow.application.production import Production
 from museshow.infrastructure.generation_results import GenerationResults
 from museshow.infrastructure.local_projects import LocalProjects, write_json
 from museshow.infrastructure.model_configs import ModelConfigs
@@ -211,45 +210,6 @@ def test_saved_results_recover_locally_without_duplicate_assets_or_adoption(cont
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('automatic', [True, False])
-def test_storyboard_adoption_committed_before_plan_checkpoint_is_idempotent(context, monkeypatch, automatic):
-    store, session, project, configs = context
-    config = configs.save('image', 'https://unused.test', 'image', 'private')
-    class Provider:
-        calls = 0
-        def validate(self, kind, config): pass
-        async def generate(self, config, task, submitted):
-            self.calls += 1
-            return 'png', png()
-    provider = Provider()
-    async def run():
-        generation = Generation(store, configs, provider)
-        manager = Production(store, generation)
-        adopt = manager.board.adopt_asset
-        def interrupted(*args, **kwargs):
-            adopt(*args, **kwargs)
-            raise OSError('plan checkpoint interrupted after storyboard commit')
-        with monkeypatch.context() as patch:
-            patch.setattr(manager.board, 'adopt_asset', interrupted)
-            plan = await manager.submit(project['id'], str(uuid4()), {'title': '单镜', 'shots': [
-                {'title': '首镜', 'imagePrompt': '画面'}]}, {'image': config['id']}, session)
-            await asyncio.gather(*list(manager.jobs.values()))
-        before = manager.board.snapshot(project['id'])['storyboard']
-        if automatic:
-            record = manager.list(project['id'])[0]
-            record['status'] = 'interrupted'
-            manager._save(project['id'], record)
-            await manager.start()
-        else:
-            await manager.resume(project['id'], plan['id'], session)
-        await asyncio.gather(*list(manager.jobs.values()))
-        assert manager.list(project['id'])[0]['status'] == 'succeeded'
-        assert manager.board.snapshot(project['id'])['storyboard'] == before
-        assert provider.calls == 1 and len(generation.canvas.snapshot(project['id'])['assets']) == 1
-        await manager.close(); await generation.close()
-    asyncio.run(run())
-
-
 def test_proven_unsubmitted_queue_runs_once_but_legacy_unknown_state_does_not(context):
     store, session, project, configs = context
     config = configs.save('image', 'https://ark.test', 'image', 'private')
@@ -298,36 +258,6 @@ def test_temporary_query_and_download_failures_retry_reads_only(context, video):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('failure', ['timeout', 'malformed', 'server_error'])
-def test_plan_continuation_keeps_unknown_attempt_and_does_not_charge_again(context, failure):
-    store, session, project, configs = context
-    config = configs.save('image', 'https://ark.test', 'image', 'private')
-    calls = []
-    def handle(request):
-        calls.append(request)
-        if failure == 'timeout': raise httpx.ReadTimeout('result unknown', request=request)
-        return httpx.Response(200 if failure == 'malformed' else 500, json={})
-    provider = VolcengineGeneration(store, httpx.MockTransport(handle), retry_delays=(0, 0))
-    async def run():
-        generation = Generation(store, configs, provider)
-        manager = Production(store, generation)
-        plan = await manager.submit(project['id'], str(uuid4()), {'title': '提交待核对', 'shots': [
-            {'title': '首镜', 'imagePrompt': '画面'}]}, {'image': config['id']}, session)
-        await asyncio.gather(*list(manager.jobs.values()))
-        first = manager.list(project['id'])[0]['steps'][0]
-        for _ in range(2):
-            await manager.resume(project['id'], plan['id'], session)
-            await asyncio.gather(*list(manager.jobs.values()))
-            current = manager.list(project['id'])[0]
-            assert current['status'] == 'blocked'
-            assert current['steps'][0]['taskId'] == first['taskId']
-            assert current['steps'][0]['attempt'] == 0
-            assert '不会自动重新生成' in current['error']
-        assert len(calls) == 1 and generation.canvas.snapshot(project['id'])['assets'] == []
-        await manager.close(); await generation.close()
-    asyncio.run(run())
-
-
 def test_recovery_api_checks_session_and_keeps_unknown_request_read_only(context):
     store, session, project, configs = context
     config = configs.save('image', 'https://unused.test', 'image', 'private')
@@ -350,44 +280,3 @@ def test_recovery_api_checks_session_and_keeps_unknown_request_read_only(context
             assert response.json()['id'] == task['id'] and response.json()['recovery'] == 'review'
         snapshot = client.get(f'/api/projects/{project["id"]}/canvas').json()
         assert snapshot['assets'] == [] and len(snapshot['tasks']) == 1
-
-
-def test_plan_waits_for_recovery_worker_instead_of_reusing_old_failure(context, monkeypatch):
-    store, session, project, configs = context
-    config = configs.save('image', 'https://unused.test', 'image', 'private')
-    class Provider:
-        calls = 0
-        def validate(self, kind, config): pass
-        async def generate(self, config, task, submitted):
-            self.calls += 1
-            return 'png', png()
-    provider = Provider()
-    async def run():
-        generation = Generation(store, configs, provider)
-        manager = Production(store, generation)
-        with monkeypatch.context() as patch:
-            def broken(*args, **kwargs): raise OSError('save interrupted')
-            patch.setattr(generation.canvas.assets, 'import_file', broken)
-            plan = await manager.submit(project['id'], str(uuid4()), {'title': '等待恢复', 'shots': [
-                {'title': '首镜', 'imagePrompt': '画面'}]}, {'image': config['id']}, session)
-            await asyncio.gather(*list(manager.jobs.values()))
-        original_run = generation._run
-        gate = asyncio.Event()
-        async def delayed(*args):
-            await gate.wait()
-            return await original_run(*args)
-        with monkeypatch.context() as patch:
-            patch.setattr(generation, '_run', delayed)
-            await manager.resume(project['id'], plan['id'], session)
-            for _ in range(200):
-                if generation.jobs: break
-                await asyncio.sleep(.01)
-            assert generation.jobs
-            assert manager.list(project['id'])[0]['status'] == 'running'
-            assert generation.canvas.snapshot(project['id'])['tasks'][0]['status'] == 'queued'
-            gate.set()
-            await asyncio.gather(*list(manager.jobs.values()))
-        assert manager.list(project['id'])[0]['status'] == 'succeeded'
-        assert provider.calls == 1
-        await manager.close(); await generation.close()
-    asyncio.run(run())

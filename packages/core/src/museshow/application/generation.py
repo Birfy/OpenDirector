@@ -24,9 +24,8 @@ from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.app_settings import AppSettings
 from museshow.infrastructure.canvas_assets import require_current_assets
 from museshow.infrastructure.local_projects import child
-from museshow.infrastructure.execution import read_generation_task, read_production_plan
+from museshow.infrastructure.execution import read_generation_task
 from museshow.infrastructure.generation_results import GenerationResults
-from museshow.infrastructure.storyboard import StoryboardProjects, read_storyboard
 from museshow.infrastructure.adoption import decision, fingerprints, node_basis, reason
 from museshow.integrations.providers import GenerationProviders
 from museshow.integrations.fasth3 import video_parameters, finalize_video_edit
@@ -57,8 +56,6 @@ class Generation:
         self.store, self.configs = store, configs
         self.settings = AppSettings(store.repository)
         self.canvas = CanvasProjects(store)
-        self.board = StoryboardProjects(store)
-        self.paused_plans = set()
         self.provider = provider or GenerationProviders(store)
         self.jobs: dict[str, GenerationJob] = {}
         self.accepting: dict[tuple[str, str], asyncio.Task] = {}
@@ -67,7 +64,7 @@ class Generation:
         self.limit = asyncio.Semaphore(2)
         self.remote_limits: dict[str, asyncio.Lock] = {}
 
-    def _prepare(self, project_id, node_id, value, session, *, create=None, production=None, adoption_policy='if_current'):
+    def _prepare(self, project_id, node_id, value, session, *, create=None, adoption_policy='if_current'):
         identifier(project_id)
         identifier(node_id)
         task_id = identifier(str(value["id"]))
@@ -81,20 +78,6 @@ class Generation:
                     raise ProjectError("生成任务标识已使用。", 409)
                 return old, str(directory), None
             state, records = self.canvas._sync(directory, project_id)
-            plan_step = None
-            if production:
-                plan = read_production_plan(child(child(directory, 'production-plans'), identifier(production['productionPlanId']) + '.json'))
-                plan_step = next((item for item in plan['steps'] if item['id'] == production['productionStepId']), None)
-                if plan_step is None or plan_step['taskId'] != task_id or plan_step['nodeId'] != node_id:
-                    raise ProjectError('制作步骤与任务不匹配，未提交生成。', 409)
-                authorization = plan_step.get('inputBasis')
-                if authorization:
-                    current = next((item for item in state['nodes'] if item['id'] == node_id), None)
-                    if authorization['nodeExists']:
-                        if current is None or node_basis(current) != authorization['node'] or current['taskId'] != authorization['nodeTaskId']:
-                            raise ProjectError('局部修复授权后的节点输入或当前素材已变化，未提交生成。', 409)
-                    elif current is not None:
-                        raise ProjectError('局部修复的目标节点已变化，未提交生成。', 409)
             if create:
                 if any(item["id"] == node_id for item in state["nodes"]):
                     raise ProjectError("节点标识已使用。", 409)
@@ -110,14 +93,6 @@ class Generation:
             updates = dict(value.get("inputs") or {})
             # Output length and canvas belong to the task, not to the node inputs.
             output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'resolution', 'voice') if updates.get(key) is not None}
-            if production and not create and not plan_step.get('inputBasis'):
-                if any(node[key] != updates.get(key, node[key]) for key in ('prompt', 'referenceIds', 'videoMode')) or node['modelConfigId'] != str(value['modelConfigId']):
-                    raise ProjectError('节点输入已变化，计划未覆盖当前输入或重新提交生成。', 409)
-                if node['taskId']:
-                    previous = read_generation_task(child(folder, node['taskId'] + '.json'))
-                    previous_inputs = (previous.get('inputSnapshot') or {}).get('node')
-                    if previous_inputs is None or node_basis(node) != previous_inputs:
-                        raise ProjectError('节点输入或当前素材已变化，请核对候选；未重新提交生成。', 409)
             try:
                 candidate = CanvasNode.model_validate(replace_inputs(node, {**updates, **({"modelConfigId": str(value["modelConfigId"])} if value.get("inputs") is not None else {})}, records)).model_dump(mode="json")
             except ValidationError:
@@ -155,11 +130,6 @@ class Generation:
             task['videoMode'] = node['videoMode']
             task['referenceInputs'] = reference_inputs
             task['inputSnapshot'] = {'node': node_basis(node), 'references': fingerprints(records, node['referenceIds'])}
-            if production:
-                task.update({key: identifier(production[key]) for key in ('productionPlanId', 'productionStepId', 'shotId')})
-                shot = next(item for item in plan['shots'] if item['id'] == task['shotId'])
-                task['inputSnapshot']['shot'] = plan_step.get('shotBasis') or (plan_step.get('inputBasis') or {}).get('shot', shot.get('basis'))
-                task['inputSnapshot']['script'] = {'assetId': plan['scriptAssetId'], 'fingerprint': plan.get('scriptFingerprint')}
             task["parameters"] = {"image": {"size": "2K", "response_format": "url", "output_format": "png"},
                 "video": {"duration": 5, "ratio": "adaptive", "generate_audio": True},
                 "audio": {"speaker": "zh_female_vv_uranus_bigtts", "audio_params": {"format": "mp3", "sample_rate": 24000}},
@@ -188,12 +158,8 @@ class Generation:
             if node['kind'] in {'image', 'video'} and config.get('protocol') != 'vllm_omni':
                 # Snapshot once, before the durable task is accepted. Recovery
                 # and idempotent submissions keep the original parameters.
-                task['parameters']['watermark'] = plan['watermark'] if production else not self.settings.get()['removeWatermark']
+                task['parameters']['watermark'] = not self.settings.get()['removeWatermark']
             node["taskId"] = task_id
-            if production:
-                held = reason(task, directory, node, records, read_storyboard(directory), self.configs, task['productionPlanId'] in self.paused_plans, submission=True)
-                if held:
-                    raise ProjectError(decision(held)['message'] + ' 未提交新的生成请求。', 409)
             # All rejection checks precede any input or task write. Atomic JSON
             # replacement preserves the old canvas if its write fails.
             self.canvas.task_write(project_id, task, str(directory))
@@ -204,12 +170,12 @@ class Generation:
                 raise
             return task, str(directory), config
 
-    async def submit(self, project_id, node_id, value, session, *, create=None, production=None, adoption_policy='if_current'):
+    async def submit(self, project_id, node_id, value, session, *, create=None, adoption_policy='if_current'):
         key = (project_id, str(value["id"]))
         pending = self.accepting.get(key)
         if pending is None:
             async def accept():
-                task, pinned, config = await asyncio.to_thread(self._prepare, project_id, node_id, value, session, create=create, production=production, adoption_policy=adoption_policy)
+                task, pinned, config = await asyncio.to_thread(self._prepare, project_id, node_id, value, session, create=create, adoption_policy=adoption_policy)
                 if config is not None:
                     self._launch(task, pinned, config)
                 return task
@@ -256,32 +222,15 @@ class Generation:
         return {'status': 'passed', 'facts': {key: asset[key] for key in keys if asset.get(key) is not None},
                 'message': '文件已通过格式和可读取性检查；创意效果、人物一致性及内容质量仍需人工确认。', 'humanReviewRequired': True}
 
-    def _place_result(self, task, directory, asset, *, storyboard=False):
+    def _place_result(self, task, directory, asset):
         """The same guards apply during completion, local recovery and continue."""
         state = self.canvas._read(directory)
         node = next((item for item in state['nodes'] if item['id'] == task['nodeId']), None)
         records = self.canvas.assets._records(directory, task['projectId'])
-        board = read_storyboard(directory) if task.get('productionPlanId') else {'shots': []}
-        held = reason(task, directory, node, records, board, self.configs,
-                      task.get('productionPlanId') in self.paused_plans)
+        held = reason(task, directory, node, records, self.configs)
         adopted = self.canvas.attach(task['projectId'], task['nodeId'], asset['id'], adopt=held is None)
         task['adopted'] = adopted
         task['canvasAdoption'] = decision(held or (None if adopted else 'canvas_held'))
-        if task.get('productionPlanId'):
-            role = 'audio' if task['kind'] == 'audio' else 'visual'
-            self.board.record_candidate(task['projectId'], task['shotId'], role, asset['id'])
-            task['storyboardAdoption'] = decision(held or ('canvas_held' if not adopted else 'awaiting_plan'))
-            if storyboard and held is None and adopted:
-                plan = read_production_plan(child(child(directory, 'production-plans'), task['productionPlanId'] + '.json'))
-                step = next(item for item in plan['steps'] if item['id'] == task['productionStepId'])
-                if step.get('preserveStoryboardSelection'):
-                    task['storyboardAdoption'] = decision('downstream_kept')
-                    return
-                board = read_storyboard(directory)
-                shot = next(item for item in board['shots'] if item['id'] == task['shotId'])
-                if shot['selected'][role] != asset['id']:
-                    self.board.adopt_asset(task['projectId'], shot['id'], shot['revision'], role, asset['id'], None)
-                task['storyboardAdoption'] = decision()
 
     def adopt_result(self, project_id, task_id):
         with self.store.transaction() as db:
@@ -290,18 +239,13 @@ class Generation:
             asset = self._result_asset(task, directory)
             if task['status'] != 'succeeded' or asset is None:
                 raise ProjectError('候选结果尚未保存完成，请先核对原任务。', 409)
-            outcome = task.get('storyboardAdoption') or {}
-            if task.get('productionPlanId') and (outcome.get('status') == 'adopted' or outcome.get('reason') == 'downstream_kept'):
-                plan = read_production_plan(child(child(directory, 'production-plans'), task['productionPlanId'] + '.json'))
-                if any(step['id'] == task['productionStepId'] and step['status'] == 'completed' for step in plan['steps']):
-                    return task  # A committed adoption is not a new authorization.
             task['technicalCheck'] = task.get('technicalCheck') or self._technical_check(asset)
-            self._place_result(task, directory, asset, storyboard=True)
+            self._place_result(task, directory, asset)
             self.canvas.task_write(project_id, task, str(directory))
             return task
 
     def recovery(self, task, directory):
-        """One decision table for startup, canvas recovery and plan continuation."""
+        """One decision table for startup and same-task canvas recovery."""
         if task['status'] == 'succeeded':
             return 'done'
         if self._result_asset(task, directory):
@@ -325,14 +269,6 @@ class Generation:
             return 'retry'  # An explicit continuation may create a new attempt.
         return 'review'
 
-    def _submission_hold(self, task, directory):
-        if not task.get('productionPlanId'):
-            return None
-        with self.store.transaction():
-            node = next((item for item in self.canvas._read(directory)['nodes'] if item['id'] == task['nodeId']), None)
-            records = self.canvas.assets._records(directory, task['projectId'])
-            return reason(task, directory, node, records, read_storyboard(directory), self.configs,
-                          task['productionPlanId'] in self.paused_plans, submission=True)
 
     async def recover(self, project_id, task_id, session=None):
         accepting = self.accepting.get((project_id, task_id))
@@ -366,16 +302,9 @@ class Generation:
                     error='原请求是否已被接收或完成尚无法确认。请核对供应商任务；不会自动重新生成。')
                 self.canvas.task_write(project_id, task, str(directory))
                 return task
-            if mode == 'submit':
-                held = self._submission_hold(task, directory)
-                if held:
-                    task.update(status='interrupted', recovery='submit', resumeAllowed=True,
-                        error=decision(held)['message'] + ' 原任务尚未提交，未发起模型请求。')
-                    self.canvas.task_write(project_id, task, str(directory))
-                    return task
             task.update(resumeAllowed=True, recovery=mode)
             self.canvas.task_write(project_id, task, str(directory))
-            # A plan may observe this receipt before the worker gets CPU time.
+            # Queries may observe this receipt before the worker gets CPU time.
             # Persist queued after explicitly permitting this same-task recovery.
             task['status'] = 'queued'
             self.canvas.task_write(project_id, task, str(directory))
@@ -433,12 +362,6 @@ class Generation:
                         stage = 'poll' if task.get('externalTaskId') else 'submit'
                         task['phase'] = stage
                         await save()  # Mark submission before entering any provider call.
-                        if not task.get('externalTaskId'):
-                            held = await asyncio.to_thread(self._submission_hold, task, Path(pinned))
-                            if held:
-                                stage, task['phase'] = 'prepare', 'queued'
-                                raise GenerationError(GenerationFailure(category='local', stage='prepare',
-                                    message=decision(held)['message'], suggestion='原任务尚未提交，请先核对制作计划和输入。'), 409)
                         if hasattr(self.provider, 'resume_result'):
                             suffix, data = await self.provider.generate(config, task, submitted, result_ready=result_ready)
                         else:

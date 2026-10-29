@@ -41,7 +41,6 @@ export interface BackendTask {
   error: string | null;
   title?: string;
   createdAt?: string;
-  productionPlanId?: string | null;
 }
 
 interface CanvasSnapshot {

@@ -55,9 +55,6 @@ class AssetBase(BaseModel):
     modelConfigId: UUID | None = None
     agentRunId: UUID | None = None
     generationInputs: GenerationInputs | None = None
-    productionPlanId: UUID | None = None
-    productionStepId: UUID | None = None
-    shotId: UUID | None = None
 
     @model_validator(mode="after")
     def validate_identity(self):

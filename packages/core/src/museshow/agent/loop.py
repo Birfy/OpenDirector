@@ -17,14 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from museshow.domain.projects import ProjectError
 from museshow.domain.canvas import NodeKind
 from museshow.domain.references import ReferenceContent, project_content
-from museshow.domain.storyboard import RETIRED_SHOT_FIELDS
 from museshow.infrastructure.local_projects import child, read_json, write_json
-from museshow.infrastructure.storyboard import StoryboardProjects
 from museshow.integrations.chat_completions import chat_payload
 from museshow.agent.prompts import SYSTEM_PROMPT
-from museshow.agent import production_tools, storyboard_tools
-from museshow.domain.production import ProductionRequest
-
+from museshow.agent.tasks import task_summary
 
 
 def argument_error(failure):
@@ -83,9 +79,6 @@ SCHEMAS = {"read_project": (Empty, "读取最新画布、资产、任务与当�
            "save_text_asset": (SaveText, "按用户要求将剧本、分镜文本或其他文字保存为画布资产，名称以 .md 或 .txt 结尾。"),
            "generate_asset": (Generate, "按用户要求调用已选择的模型生成资产；媒体任务在后台运行，返回提交记录。"),
            "get_generation_task": (ReadTask, "查询一次生成任务的状态和输出资产，不连续轮询。")}
-SCHEMAS.update(storyboard_tools.SCHEMAS)
-SCHEMAS.update(production_tools.SCHEMAS)
-SCHEMAS["start_production_plan"] = (ProductionRequest, "用户明确要求制作多镜短片或为已有镜头批量补充素材时提交有限制作计划。已有镜头填写 shotId 和 expectedRevision，可只填 narration 补旁白，保留画面与原声；后台完成生成及采用，无需逐条生成再采用。引用已保存剧本的资产 ID 和 fingerprint，不另传剧本正文。最多12镜，仅讨论方案时不要调用。")
 TOOLS = [{"type": "function", "function": {"name": name, "description": description, "parameters": schema.model_json_schema()}} for name, (schema, description) in SCHEMAS.items()]
 
 
@@ -93,8 +86,6 @@ class AgentLoop:
     def __init__(self, store, configs, generation, provider):
         self.store, self.configs, self.generation, self.provider = store, configs, generation, provider
         self.canvas = generation.canvas
-        self.storyboard = StoryboardProjects(store)
-        self.production = None
 
     def _run_file(self, directory, turn_id):
         return child(child(directory, "agent-runs"), turn_id + ".json")
@@ -139,55 +130,25 @@ class AgentLoop:
 
     def _project(self, turn):
         snapshot = self.canvas.snapshot(turn.owner)
-        board = self.storyboard.snapshot(turn.owner)["storyboard"]
-        selected_shot = next((shot for shot in board["shots"] if shot["id"] == turn.selected_shot_id), None)
         selected = next((node for node in snapshot["canvas"]["nodes"] if node["id"] == turn.selected_node_id), None)
-        plans = self.production.list(turn.owner) if self.production else []
-        progress = self.production.progress(turn.owner, plans) if self.production else {'delivery': None, 'plans': []}
-        progress_by_id = {item['planId']: item for item in progress['plans']}
-        def priority(plan):
-            if any(step['nodeId'] == turn.selected_node_id for step in plan['steps']):
-                return 0
-            if any(shot['id'] == turn.selected_shot_id for shot in plan['shots']):
-                return 1
-            return 2 if plan['status'] != 'succeeded' else 3
-        visible = sorted(plans, key=priority)[:10]
-        return {"productionPlans": [production_tools.summary(plan, progress_by_id[plan['id']]) for plan in visible],
-                'productionDelivery': progress['delivery'],
-                'productionPlanCount': len(plans), 'productionPlansTruncated': len(visible) < len(plans),
-                'videoEditRequest': video_edit_request(turn),
+        return {'videoEditRequest': video_edit_request(turn),
                 'modelSelections': turn.selections, "selectedNodeId": turn.selected_node_id,
-                "selectedShot": {key: value for key, value in selected_shot.items() if key not in RETIRED_SHOT_FIELDS} if selected_shot else None,
-                "storyboardRevision": board["revision"], "orderRevision": board["orderRevision"],
-                "shots": [{key: val for key, val in shot.items() if key not in RETIRED_SHOT_FIELDS} for shot in board["shots"]],
                 "selectedInput": {"prompt": selected["prompt"], "draftPreview": (selected["draft"] or "")[:8192]} if selected else None,
                 "nodes": [{key: node[key] for key in ("id", "kind", "role", "title", "assetId", "referenceIds", "videoMode", "taskId", "revision")} for node in snapshot["canvas"]["nodes"]],
-                "assets": [{key: asset[key] for key in ("id", "name", "kind", "purpose", "fingerprint", "referenceIds", "generationTaskId", "productionPlanId", "productionStepId", "shotId")} for asset in snapshot["assets"] if asset["id"] in snapshot["availableAssetIds"]],
+                "assets": [{key: asset[key] for key in ("id", "name", "kind", "purpose", "fingerprint", "referenceIds", "generationTaskId")} for asset in snapshot["assets"] if asset["id"] in snapshot["availableAssetIds"]],
                 "availableAssetIds": snapshot["availableAssetIds"],
-                "tasks": [production_tools.task_summary(task, include_inputs=False) for task in snapshot["tasks"][-20:]],
+                "tasks": [task_summary(task, include_inputs=False) for task in snapshot["tasks"][-20:]],
                 "models": [{key: model[key] for key in ("id", "kind", "modelId", "inputRules")} for model in self.configs.list()]}
 
     async def execute(self, turn, name, value, operation_id):
         history = getattr(turn, 'conversation', {}).get('messages', [])
         text = history[-2].get('text', '') if len(history) >= 2 else ''
         continuation = re.sub(r'[\s，,。.!！?？、]+', '', text) in {'继续', '继续吧', '好的继续', '好继续', '继续制作', '继续生成'}
-        if continuation and (name in {'repair_production_step', 'keep_production_candidate', *storyboard_tools.SCHEMAS}
-                or (name in {'generate_asset', 'save_text_asset'} and value.get('nodeId'))
-                or (name == 'start_production_plan' and self.production and self.production.list(turn.owner))):
-            raise ProjectError('“继续”只能按原设置续做，不能据此覆盖选中节点、改写步骤或重复建计划；请明确修改对象与要求。', 409)
+        if continuation and name in {'generate_asset', 'save_text_asset'} and value.get('nodeId'):
+            raise ProjectError('“继续”不能据此覆盖选中节点；请明确修改对象与要求。', 409)
         edit = video_edit_request(turn)
-        if edit and (name == 'start_production_plan' or name == 'generate_asset' and value['kind'] != 'video'):
+        if edit and name == 'generate_asset' and value['kind'] != 'video':
             raise ProjectError('本轮是对引用原视频进行编辑，请直接提交 video 参考任务并保留原要求；未创建关键帧或多镜重制计划。', 409)
-        if name in production_tools.SCHEMAS:
-            return await production_tools.execute(self.production, turn, name, value, operation_id)
-        if name == "start_production_plan":
-            if not self.production:
-                raise ProjectError("制作计划服务未启动。", 409)
-            plan = await self.production.submit(turn.owner, operation_id, value, turn.selections, turn.session)
-            return {"status": plan["status"], "planId": plan["id"], "name": plan["title"], "shots": len(plan["shots"]),
-                    'scriptAssetId': plan['scriptAssetId'], 'scriptFingerprint': plan.get('scriptFingerprint')}
-        if name in storyboard_tools.SCHEMAS:
-            return await asyncio.to_thread(storyboard_tools.execute, self.storyboard, turn, name, value, operation_id)
         if name == "read_project":
             return await asyncio.to_thread(self._project, turn)
         if name == "read_text_asset":
@@ -200,7 +161,7 @@ class AgentLoop:
             task = next((task for task in snapshot["tasks"] if task["id"] == value["taskId"]), None)
             if task is None:
                 raise ProjectError("任务不在当前项目中。", 404)
-            return production_tools.task_summary(task)
+            return task_summary(task)
         snapshot = await asyncio.to_thread(self.canvas.snapshot, turn.owner)
         node_id = value.get("nodeId")
         kind = "text" if name == "save_text_asset" else value["kind"]
@@ -224,9 +185,6 @@ class AgentLoop:
             raise ProjectError("修改节点需要读取到的最新 expectedRevision；节点可能已变化，请重新读取并核对。", 409)
         if node is not None and node["kind"] != kind:
             raise ProjectError("节点类型不匹配，请创建对应类型的新节点。")
-        if name == 'generate_asset' and node and self.production and any(
-                step['nodeId'] == node['id'] for plan in self.production.list(turn.owner) for step in plan['steps']):
-            raise ProjectError('该节点属于制作计划，请核对对应步骤并使用局部修复；未直接重新生成。', 409)
         if name == "save_text_asset":
             user = history[-2] if len(history) >= 2 else {'text': '', 'assets': [], 'content': None}
             asset = await asyncio.to_thread(self.canvas.save_text, turn.owner, node["id"] if node else str(uuid5(UUID(operation_id), "node")), str(uuid5(UUID(operation_id), "asset")), value["text"], value["name"], turn.session, create=node is None, expected_revision=value.get("expectedRevision"),
@@ -255,9 +213,8 @@ class AgentLoop:
         effects = 0
         observation_epoch = 0
         observations = set()
-        repair_failed = False
-        reads = {'read_project', 'get_generation_task', 'get_production_plan', 'list_production_plans'}
-        writes = {'save_text_asset', 'generate_asset', 'start_production_plan', *storyboard_tools.SCHEMAS, *production_tools.WRITES}
+        reads = {'read_project', 'get_generation_task'}
+        writes = {'save_text_asset', 'generate_asset'}
         try:
             for _ in range(6):
                 payload = chat_payload(turn.config, context, turn.thinking)
@@ -298,8 +255,6 @@ class AgentLoop:
                             if name not in SCHEMAS:
                                 raise ProjectError("工具不存在。")
                             value = SCHEMAS[name][0].model_validate_json(arguments).model_dump(mode="json")
-                            if repair_failed and name in {'generate_asset', 'start_production_plan', 'create_storyboard_shot'}:
-                                raise ProjectError('局部修复尚未通过核对，不能改用新素材或新计划绕过；请说明原因并等待用户处理。', 409)
                             if name in writes:
                                 effects += 1
                                 if effects > 4:
@@ -314,8 +269,6 @@ class AgentLoop:
                                 observation_epoch += 1
                             step["status"] = "complete"
                         except (ProjectError, ValidationError, UnicodeError, ValueError) as failure:
-                            if name == 'repair_production_step':
-                                repair_failed = True
                             result = {"error": str(failure) if isinstance(failure, ProjectError) else argument_error(failure)}
                             step["status"] = "failed"
                         step["result"] = result
@@ -324,7 +277,7 @@ class AgentLoop:
                     run["protocol"].append(result_message)
                     await asyncio.to_thread(self._save, turn, deepcopy(run))
                     failed = (previous or step)['status'] == 'failed'
-                    # Reading a failed production task is a successful read;
+                    # Reading a failed generation task is a successful read;
                     # its diagnostic belongs in the tool data, not an API error.
                     public_fields = ('error',) if failed else ('nodeId', 'assetId', 'taskId', 'message')
                     yield {"type": "tool", "name": name, "status": "failed" if failed else "complete",

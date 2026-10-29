@@ -12,7 +12,7 @@ from museshow_api.main import create_app
 from test_canvas_generation import png
 from test_canvas_version_application import restore
 from test_inline_references import document
-from test_production_repairs import context, close
+from canvas_helpers import context, close
 from test_multimodal_references import media
 
 

@@ -55,16 +55,12 @@ class GenerationReceipt(BaseModel):
     kind: NodeKind
     status: Literal['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
     assetId: UUID | None = None
-    adopted: bool = False  # Canvas selection only; not storyboard adoption.
+    adopted: bool = False  # Whether this result is the canvas node's selection.
     resumeAllowed: bool = False
     errorDetails: GenerationFailure | None = None
     phase: Literal['queued', 'submit', 'poll', 'download', 'save', 'adopt', 'complete'] | None = None
     recovery: Literal['submit', 'remote', 'download', 'local', 'review', 'retry', 'done'] | None = None
-    productionPlanId: UUID | None = None
-    productionStepId: UUID | None = None
-    shotId: UUID | None = None
     adoptionPolicy: Literal['if_current', 'candidate_only'] | None = None
     inputSnapshot: dict | None = None
     technicalCheck: ResultCheck | None = None
     canvasAdoption: AdoptionDecision | None = None
-    storyboardAdoption: AdoptionDecision | None = None

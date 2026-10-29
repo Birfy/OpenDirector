@@ -65,7 +65,11 @@ npm run build
 - **Z-Image-Turbo**：只按文字出图，1344×768，可直接作为 H3 首帧；连接的文本节点会并入提示词。
 - **自部署语音合成**：朗读提示词中的文字。“音色”填服务支持的说话人（如 Qwen3-TTS 的 `vivian`、`serena`），留空使用模型默认音色。
 
-“与 AI 对话”在接入对话 Agent 后连接本地 API 的助手：它可以写剧本、拆分镜头，并调用已接入的图片、视频和配音模型批量制作。助手写下的文档和生成的素材会自动加入当前画布；画布关闭期间完成的结果，会在再次打开该画布或点击“同步本地服务结果”时加入。
+“与 AI 对话”在接入对话 Agent 后连接本地 API 的助手：它可以构思剧本、将分镜设想保存为文本，并调用已接入的图片、视频和配音模型生成素材。助手写下的文档和生成的素材会自动加入当前画布；画布关闭期间完成的结果，会在再次打开该画布或点击“同步本地服务结果”时加入。
+
+运行服务已移除 MuseShow 旧分镜板、旧分镜驱动时间线、旧制作计划及其专属导出与审阅链路，助手不再提供这些工具。OpenDesign 的本地时间线、浏览器 MP4 合成、全部高级编辑器、模型接入与任务恢复继续保留；制作台暂不实现。此轮清理没有改变当前 IndexedDB 画布和后端生成项目的存储方式，统一项目存储属于后续重构。
+
+清理范围与验证见 [旧运行链路清理记录](docs/RUNTIME-CLEANUP.md)，后续工作见 [重构需求](OPENDESIGN_REFACTOR_REQUIREMENTS.md) 与 [实施计划](OPENDESIGN_REFACTOR_COMMIT_PLAN.md)。
 
 自部署连接与长视频任务：
 
@@ -81,7 +85,7 @@ npm run build
 
 ```sh
 npm test                 # 快照、画布命令/历史/持久化边界、本地服务输入规则与任务测试
-.venv/bin/python -m pytest tests   # 本地 API、生成、助手与制作计划测试
+.venv/bin/python -m pytest tests   # 本地 API、画布、生成、助手、模型与任务恢复测试
 npm run build            # TypeScript 检查 + Vite 生产构建
 npm run preview          # 查看生产构建
 npm run recovery:check   # 核验原文件/派生文件/映射完整性及静态依赖
@@ -110,7 +114,7 @@ src/
   domain/bannerSnapshot.ts 依据 TJ 模块移植的校验逻辑
   styles/                 全局基础样式
 apps/api/                 本地 API（FastAPI）路由与对话流
-packages/core/            项目、画布、生成任务、助手、制作计划与模型适配器
+packages/core/            项目、素材、画布、生成任务、助手与模型适配器
 scripts/museshow.py       同时启动本地 API 与前端
 tools/fasth3/             FastH3 远程部署工具
 tests/                    前端 *.test.ts 与本地 API test_*.py

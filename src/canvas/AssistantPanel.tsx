@@ -199,7 +199,7 @@ export function AssistantPanel({
         <h3>连接对话模型后开始</h3>
         <p>
           在“模型接入”中添加对话 Agent（OpenAI 兼容服务，如 vLLM
-          部署的模型），助手即可编写剧本、拆分分镜，并调用已接入的图片、视频和配音模型生成素材。
+          部署的模型），助手即可编写剧本、保存分镜设想文本，并调用已接入的图片、视频和配音模型生成素材。
         </p>
         <button className="cw-assistant-settings" onClick={onOpenSettings}>
           打开模型接入

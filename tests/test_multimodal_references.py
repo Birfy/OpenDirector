@@ -176,7 +176,7 @@ def test_video_mode_history_apply_and_inflight_guards(media):
     current = canvas._node(canvas.snapshot(owner)['canvas'], node['id'])
     changed = {**current, 'videoMode': 'first_frame'}
     directory = store.root / '四类参考'; records = canvas.assets._records(directory, owner)
-    assert reason(receipt, directory, changed, records, {}, manager.configs, False) == 'node_changed'
+    assert reason(receipt, directory, changed, records, manager.configs) == 'node_changed'
 
 
 def test_reference_error_classification_is_specific_and_redacted():
@@ -271,28 +271,3 @@ def test_audio_count_and_total_duration_are_checked_together(media, count, secon
     audios = [canvas.import_file(owner, str(uuid4()), f'音频{i}.wav', buf.getvalue(), session, str(uuid4())) for i in range(count)]
     with pytest.raises(ProjectError, match='最多 3 段，总时长不超过 15 秒'):
         generation_references(store, task(owner, [image, *audios]), config())
-
-
-def test_plan_and_local_repair_keep_explicit_reference_mode(tmp_path, small_video):
-    from test_production_repairs import context, wait, close, command
-    from test_result_adoption import audio_bytes
-    c = context(tmp_path, (small_video, audio_bytes()))
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '多图计划', 'shots': [{'title': '一镜', 'imagePrompt': '关键帧',
-            'videoPrompt': '视频', 'referenceIds': [c.reference['id']], 'videoMode': 'reference'}]}, c.models, c.session)
-        plan = await wait(c)
-        assert plan['status'] == 'succeeded'
-        image_step, video_step = plan['steps']
-        video = c.provider.calls[-1]
-        assert video['videoMode'] == video_step['videoMode'] == 'reference'
-        assert video['referenceIds'] == [image_step['assetId'], c.reference['id']]
-        old_tasks = {p: p.read_bytes() for p in (c.directory / 'tasks').glob('*.json')}
-        await c.manager.repair(c.owner, plan['id'], command(c, plan, video_step, mode='reference',
-            referenceIds=video['referenceIds'], prompt='局部修改', adoptionPolicy='candidate_only'), c.session)
-        repaired = await wait(c)
-        assert c.provider.calls[-1]['videoMode'] == 'reference'
-        assert repaired['steps'][0]['assetId'] == image_step['assetId']
-        assert {p: p.read_bytes() for p in old_tasks} == old_tasks
-        assert node_history(c.generation.canvas, c.owner, video_step['nodeId'])['versions'][-1]['videoMode'] == 'reference'
-        await close(c)
-    asyncio.run(run())

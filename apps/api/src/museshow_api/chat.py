@@ -36,7 +36,6 @@ class Turn:
     thinking: str = "auto"
     selections: dict = field(default_factory=dict)
     selected_node_id: str | None = None
-    selected_shot_id: str | None = None
 
 
 def event(value: dict) -> str:
@@ -59,13 +58,6 @@ class Chat:
             raise ProjectError("该对话仍在生成回复，请停止或等待上一条回复结束。", 409) from None
         try:
             config = self.configs.agent(str(value.modelId))
-            if value.selectedNodeId and value.selectedShotId:
-                raise ProjectError("请仅选择画布节点或分镜镜头中的一个作为对话范围。")
-            if value.selectedShotId:
-                if not self.loop:
-                    raise ProjectError("请先打开项目再选择镜头。", 409)
-                state = self.loop.storyboard.snapshot(owner)["storyboard"]
-                self.loop.storyboard._shot(state, str(value.selectedShotId))
             if value.selectedNodeId:
                 if not self.loop:
                     raise ProjectError("请先打开项目再选择画布节点。", 409)
@@ -94,7 +86,7 @@ class Chat:
             user = {**common, "id": str(uuid4()), "role": "user", "text": text, **({"content": [part.model_dump(mode="json") for part in value.content]} if value.content is not None else {}), "assets": assets, "status": "complete"}
             user['referenceInputs'] = []
             reply = {**common, "id": str(value.id), "role": "assistant", "text": "", "status": "streaming"}
-            messages = [{"role": "system", "content": "你是 MuseShow 视频创作助手。用用户使用的语言交流，帮助构思故事、剧本、分镜与剪辑方案。当前没有项目编辑或媒体生成工具，不要声称已经操作项目、生成素材或访问了未提供的内容。"}]
+            messages = [{"role": "system", "content": "你是 OpenDesign 画布创作助手。用用户使用的语言交流，帮助构思故事、剧本、分镜设想与剪辑方案。当前没有项目编辑或媒体生成工具，不要声称已经操作项目、生成素材或访问了未提供的内容。"}]
             # Project history is assembled by AgentLoop with its private tool
             # protocol; prepare only validates the current references here.
             for item in ([user] if self.loop else [*history, user]):
@@ -108,7 +100,6 @@ class Chat:
             turn.selections = {key: str(item) if item else None for key, item in value.modelSelections.items()}
             turn.selections["agent"] = str(value.modelId)
             turn.selected_node_id = str(value.selectedNodeId) if value.selectedNodeId else None
-            turn.selected_shot_id = str(value.selectedShotId) if value.selectedShotId else None
             # Register the turn before returning so a disconnect before the first
             # streamed event cannot leave the chat lock held forever.
             self.active[turn.owner] = turn

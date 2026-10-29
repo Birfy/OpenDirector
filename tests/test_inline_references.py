@@ -18,7 +18,7 @@ from museshow.integrations.volcengine import VolcengineGeneration
 from museshow_api.main import create_app
 from museshow_api.models import ChatRequest
 from test_chat import completion, events, setup
-from test_production_repairs import close, command, context, wait
+from canvas_helpers import close, context
 
 
 def document(asset, text='参考', suffix='完成修改'):
@@ -133,23 +133,6 @@ def test_generation_history_and_atomic_apply_restore_document_and_undo(tmp_path)
     asyncio.run(run())
 
 
-def test_scoped_repair_keeps_inline_document_in_new_candidate(tmp_path):
-    c = context(tmp_path)
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '局部引用', 'shots': [{'title': '一镜', 'imagePrompt': '原图'}]}, c.models, c.session)
-        plan = await wait(c); step = plan['steps'][0]; previous = step['assetId']
-        content = document(c.reference, '使用', '修复图像')
-        await c.manager.repair(c.owner, plan['id'], command(c, plan, step, promptContent=content, adoptionPolicy='candidate_only'), c.session)
-        plan = await wait(c)
-        assert plan['status'] == 'blocked' and '候选' in plan['error']
-        history = node_history(c.generation.canvas, c.owner, step['nodeId'])
-        assert history['versions'][-1]['promptContent'] == content
-        assert history['node']['assetId'] == previous
-        assert c.provider.calls[-1]['promptContent'] == content
-        await close(c)
-    asyncio.run(run())
-
-
 def test_provider_reference_numbering_and_audio_never_speaks_labels(tmp_path):
     c = context(tmp_path)
     provider = VolcengineGeneration(c.store)
@@ -171,14 +154,15 @@ def test_reference_document_changes_are_protected_by_existing_adoption_guard(tmp
     content = document(c.reference)
     node = CanvasNode(id=uuid4(), kind='image', promptContent=content, modelConfigId=c.models['image']).model_dump(mode='json')
     task_id = str(uuid4()); node['taskId'] = task_id
-    task = {'id': task_id, 'kind': 'image', 'modelConfigId': c.models['image'], 'baseURL': 'https://model.test',
+    model = c.generation.configs.resolve(c.models['image'], 'image')
+    task = {'id': task_id, 'kind': 'image', 'modelConfigId': c.models['image'], 'baseURL': model['url'],
             'model': 'seedream', 'inputSnapshot': {'node': node_basis(node), 'references': {c.reference['id']: c.reference['fingerprint']}}}
     records = c.generation.canvas.assets._records(c.directory, c.owner)
-    assert reason(task, c.directory, node, records, {}, c.generation.configs, False, check_model=False) is None
+    assert reason(task, c.directory, node, records, c.generation.configs) is None
     changed = {**node, 'promptContent': None}
-    assert reason(task, c.directory, changed, records, {}, c.generation.configs, False, check_model=False) == 'node_changed'
+    assert reason(task, c.directory, changed, records, c.generation.configs) == 'node_changed'
     legacy = deepcopy(task); legacy['inputSnapshot']['node'].pop('promptContent')
-    assert reason(legacy, c.directory, node, records, {}, c.generation.configs, False, check_model=False) == 'node_changed'
+    assert reason(legacy, c.directory, node, records, c.generation.configs) == 'node_changed'
 
 
 def test_agent_tools_keep_original_chat_document_and_can_submit_structured_generation(tmp_path):

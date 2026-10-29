@@ -282,7 +282,7 @@ class LocalProjects:
             db.execute("DELETE FROM sessions WHERE id=?", (session,))
 
     def _closed(self, db, project_id: str):
-        from museshow.infrastructure.execution import read_generation_task, read_production_plan
+        from museshow.infrastructure.execution import read_generation_task
 
         if db.execute("SELECT 1 FROM sessions WHERE project_id=? AND expires>?", (project_id, time.time())).fetchone():
             raise ProjectError("请先保存并关闭项目，等待相关任务结束后再操作。", 409)
@@ -295,14 +295,6 @@ class LocalProjects:
         tasks = child(directory, "tasks")
         if tasks.exists() and any(read_generation_task(child(tasks, path.name))["status"] in {"queued", "running"} for path in tasks.glob("*.json")):
             raise ProjectError("项目仍在生成资产，请等待或取消任务后再重命名。", 409)
-        for name, pattern in (("production-plans", "*.json"), ("exports", "*/export.json")):
-            folder = child(directory, name)
-            if folder.exists():
-                for path in folder.glob(pattern):
-                    receipt = child(child(folder, path.parent.name), path.name) if name == "exports" else child(folder, path.name)
-                    value = read_production_plan(receipt) if name == "production-plans" else read_json(receipt)
-                    if value.get("status") in {"queued", "running"}:
-                        raise ProjectError("项目仍在制作或导出，请等待或停止后再重命名。", 409)
 
     def rename(self, project_id: str, name: str, expected_name: str):
         name = project_name(name)

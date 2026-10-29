@@ -8,10 +8,8 @@ from museshow.domain.references import project_content, reference_content
 from museshow.infrastructure.canvas_assets import current_asset_ids, logical_nodes
 from museshow.infrastructure.canvas_references import resolve_content, reference_index
 from museshow.infrastructure.canvas_history import capture, record
-from museshow.infrastructure.execution import read_production_plan
 from museshow.infrastructure.local_projects import child, read_json
 from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.infrastructure.storyboard import read_storyboard
 
 
 def version_records(node_id, asset_ids, records, tasks, *, directory=None, node=None, models=None):
@@ -65,27 +63,15 @@ def node_history(canvas, owner, node_id):
         directory = canvas.store._owner(db, owner)
         node = canvas._node(canvas._read(directory), node_id)
         records, tasks = canvas.assets._records(directory, owner), canvas._tasks(directory)
-        production = None
-        folder = child(directory, 'production-plans')
-        plans = [read_production_plan(child(folder, f.name)) for f in folder.glob('*.json')]
-        for plan in sorted(plans, key=lambda value: value['createdAt'], reverse=True):
-            step = next((item for item in plan['steps'] if item['nodeId'] == node_id), None)
-            if step:
-                production = {'planId': plan['id'], 'stepId': step['id']}
-                break
         versions = version_records(node_id, node['assetIds'], records, tasks, directory=directory, node=node, models=ModelConfigs(canvas.store.repository).list())
         unsettled = any(task['nodeId'] == node_id and (task['status'] in {'queued', 'running'}
             or (task['status'] != 'succeeded' and (task.get('recovery') == 'review'
                 or (task.get('resumeAllowed') and task.get('recovery') not in {'retry', 'submit'})))) for task in tasks)
-        active_plan = any(plan['status'] in {'queued', 'running'} and
-            any(step['nodeId'] == node_id for step in plan['steps']) for plan in plans)
         state = canvas._read(directory)
         return {'node': node, 'nodes': logical_nodes(state), 'assets': list(records.values()),
-            'versions': versions, 'production': production,
-            'availableAssetIds': sorted(current_asset_ids(directory)), 'blocked': unsettled or active_plan,
-            'running': any(task['nodeId'] == node_id and task['status'] in {'queued', 'running'} for task in tasks),
-            'selectedByShots': [{'id': shot['id'], 'title': shot['title'], 'assetId': asset_id}
-                for shot in read_storyboard(directory)['shots'] for asset_id in shot['selected'].values() if asset_id in node['assetIds']]}
+            'versions': versions,
+            'availableAssetIds': sorted(current_asset_ids(directory)), 'blocked': unsettled,
+            'running': any(task['nodeId'] == node_id and task['status'] in {'queued', 'running'} for task in tasks)}
 
 
 def restored_fields(version):
@@ -103,7 +89,7 @@ def apply_version(canvas, owner, node_id, asset_id, expected_revision, fingerpri
         if node['revision'] != expected_revision:
             raise ProjectError('节点内容已变化，请重新读取历史版本后再应用。', 409, code='revision_conflict')
         if history['blocked']:
-            raise ProjectError('节点仍在制作或任务结果待核对，请先在节点或助手中处理任务。', 409)
+            raise ProjectError('节点仍在生成或任务结果待核对，请先在节点或助手中处理任务。', 409)
         version = next((item for item in history['versions'] if item['asset']['id'] == asset_id), None)
         if version is None:
             raise ProjectError('历史版本不属于该节点，或资产记录已缺失。', 404)

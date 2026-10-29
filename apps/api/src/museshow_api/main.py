@@ -13,31 +13,21 @@ from starlette.concurrency import run_in_threadpool
 
 from museshow.domain.projects import ProjectError, identifier
 from museshow.domain.settings import GeneralSettings, GeneralSettingsPatch
-from museshow.domain.production import CandidateFeedback, ProductionRepairCommand
 from museshow.domain.assets import MAX_ASSET_BYTES, ProjectAsset
 from museshow.application.generation import Generation
 from museshow.application.chat_references import validate_chat_references
-from museshow.application.exports import Exports
-from museshow.application.production import Production
-from museshow.application.production_chat import ProductionChat
-from museshow.application.production_review import ProductionReview
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow.infrastructure.model_configs import connection_fields, model_fields
 from museshow.domain.input_rules import input_rules
 from museshow.integrations.model_capabilities import read_video_capabilities
-from museshow.infrastructure.storyboard import StoryboardProjects
-from museshow.infrastructure.timeline import TimelineProjects
 from museshow.infrastructure.canvas_versions import apply_version, node_history
 from museshow_api.models import ApplyCanvasVersion
 from museshow_api.models import AssetBatchDelete, AssetSelection
-from museshow.domain.timeline import AudioTrack
 from museshow_api.chat import Chat
 from museshow_api.project_creation import ProjectCreation
 from museshow_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRequest, Conversation, Draft, GenerateNode, ModelConfigInput, ModelConfigPublic, NodeCreate, NodePatch, NodeText, ProjectCreate, ProjectRename, Session, SessionClose, TextAssetCreate
-from museshow_api.models import ShotAdoption, ShotAssociation, ShotCreate, ShotOriginalAudio, ShotPatch, ShotReorder, ShotVersion
-from museshow_api.models import TimelineClipPatch, TimelineMute, ExportCreate
-from museshow_api.models import ProjectFromMessage, ProductionChatAction
+from museshow_api.models import ProjectFromMessage
 from museshow_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
 from museshow_api.models import ModelCapabilityRequest
 
@@ -59,27 +49,15 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     generation = Generation(store, model_configs, generation_provider)
     canvas = generation.canvas
     assets = canvas.assets
-    storyboard = StoryboardProjects(store)
-    timeline = TimelineProjects(store)
-    exports = Exports(store)
     chat = Chat(store, model_configs, chat_provider, generation)
     project_creation = ProjectCreation(store, model_configs, chat.provider)
-    production = Production(store, generation)
-    production_chat = ProductionChat(store, production)
-    production_review = ProductionReview(production)
-    chat.loop.production = production
 
     @asynccontextmanager
     async def lifespan(app):
         await generation.start()
-        await exports.start()
-        await production.start()
         try:
             yield
         finally:
-            await production_chat.close()
-            await production.close()
-            await exports.close()
             await generation.close()
 
     app = FastAPI(title="MuseShow Local API", version="0.1.0", lifespan=lifespan)
@@ -212,113 +190,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         fields = value.model_dump(mode='json')
         return validate_chat_references(store, str(project_id), fields['content'], fields['selections'])
 
-    @app.get("/api/projects/{project_id}/storyboard")
-    def get_storyboard(project_id: UUID):
-        return storyboard.snapshot(str(project_id))
-
-    @app.post("/api/projects/{project_id}/storyboard/shots")
-    def create_shot(project_id: UUID, value: ShotCreate, x_museshow_session: str = Header()):
-        return storyboard.create(str(project_id), value.model_dump(mode="json"), identifier(x_museshow_session))
-
-    @app.put("/api/projects/{project_id}/storyboard/order")
-    def reorder_shots(project_id: UUID, value: ShotReorder, x_museshow_session: str = Header()):
-        return storyboard.reorder(str(project_id), value.model_dump(mode="json"), identifier(x_museshow_session))
-
-    @app.patch("/api/projects/{project_id}/storyboard/shots/{shot_id}")
-    def edit_shot(project_id: UUID, shot_id: UUID, value: ShotPatch, x_museshow_session: str = Header()):
-        fields = value.model_dump(mode="json", exclude_unset=True)
-        fields.pop("expectedRevision", None)
-        return storyboard.change(str(project_id), str(shot_id), value.expectedRevision, identifier(x_museshow_session), fields=fields)
-
-    @app.delete("/api/projects/{project_id}/storyboard/shots/{shot_id}")
-    def remove_shot(project_id: UUID, shot_id: UUID, value: ShotVersion, x_museshow_session: str = Header()):
-        return storyboard.change(str(project_id), str(shot_id), value.expectedRevision, identifier(x_museshow_session), remove=True)
-
-    @app.put("/api/projects/{project_id}/storyboard/shots/{shot_id}/assets")
-    def associate_shot_assets(project_id: UUID, shot_id: UUID, value: ShotAssociation, x_museshow_session: str = Header()):
-        return storyboard.change(str(project_id), str(shot_id), value.expectedRevision, identifier(x_museshow_session), association=value.model_dump(mode="json"))
-
-    @app.post("/api/projects/{project_id}/storyboard/shots/{shot_id}/adopt")
-    def adopt_shot_asset(project_id: UUID, shot_id: UUID, value: ShotAdoption, x_museshow_session: str = Header()):
-        return storyboard.change(str(project_id), str(shot_id), value.expectedRevision, identifier(x_museshow_session), adoption=value.model_dump(mode="json"))
-
-    @app.post("/api/projects/{project_id}/storyboard/shots/{shot_id}/original-audio")
-    def set_shot_original_audio(project_id: UUID, shot_id: UUID, value: ShotOriginalAudio, x_museshow_session: str = Header()):
-        return storyboard.change(str(project_id), str(shot_id), value.expectedRevision, identifier(x_museshow_session), original_audio=value.mode)
 
     @app.post("/api/projects/{project_id}/assets/{asset_id}/probe-audio", response_model=ProjectAsset)
     def probe_video_audio(project_id: UUID, asset_id: UUID, value: AssetProbe, x_museshow_session: str = Header()):
         return assets.probe_video_audio(str(project_id), str(asset_id), value.expectedRevision, identifier(x_museshow_session))
 
-    @app.get("/api/projects/{project_id}/production-plans")
-    def list_production(project_id: UUID):
-        return [production.view(str(project_id), plan) for plan in production.list(str(project_id))]
-
-    @app.get('/api/projects/{project_id}/production-chat')
-    def get_production_chat(project_id: UUID):
-        return production_chat.read(str(project_id))
-
-    @app.post('/api/projects/{project_id}/production-chat/refresh')
-    def refresh_production_chat(project_id: UUID, x_museshow_session: str = Header()):
-        return production_chat.refresh(str(project_id), identifier(x_museshow_session))
-
-    @app.post('/api/projects/{project_id}/production-chat/actions', status_code=202)
-    async def production_chat_action(project_id: UUID, value: ProductionChatAction, x_museshow_session: str = Header()):
-        return await production_chat.act(str(project_id), value.model_dump(mode='json'), identifier(x_museshow_session))
-
-    @app.post("/api/projects/{project_id}/production-plans/{plan_id}/stop")
-    async def stop_production(project_id: UUID, plan_id: UUID, cancelTasks: bool = False, expectedRevision: int | None = None, x_museshow_session: str = Header()):
-        plan = await production.stop(str(project_id), str(plan_id), identifier(x_museshow_session), cancelTasks, expected_revision=expectedRevision)
-        return production.view(str(project_id), plan)
-
-    @app.post("/api/projects/{project_id}/production-plans/{plan_id}/resume")
-    async def resume_production(project_id: UUID, plan_id: UUID, x_museshow_session: str = Header()):
-        plan = await production.resume(str(project_id), str(plan_id), identifier(x_museshow_session))
-        return production.view(str(project_id), plan)
-
-    @app.post('/api/projects/{project_id}/production-plans/{plan_id}/repairs', status_code=202)
-    async def repair_production(project_id: UUID, plan_id: UUID, value: ProductionRepairCommand, x_museshow_session: str = Header()):
-        plan = await production.repair(str(project_id), str(plan_id), value.model_dump(mode='json'), identifier(x_museshow_session))
-        return production.view(str(project_id), plan)
-
-    @app.get('/api/projects/{project_id}/production-plans/{plan_id}/steps/{step_id}')
-    def review_production_step(project_id: UUID, plan_id: UUID, step_id: UUID):
-        return production_review.read(str(project_id), str(plan_id), str(step_id))
-
-    @app.post('/api/projects/{project_id}/production-plans/{plan_id}/feedback')
-    def keep_production_candidate(project_id: UUID, plan_id: UUID, value: CandidateFeedback, x_museshow_session: str = Header()):
-        return production_review.keep(str(project_id), str(plan_id), value.model_dump(mode='json'), identifier(x_museshow_session))
-
-    @app.get("/api/projects/{project_id}/exports")
-    def list_exports(project_id: UUID):
-        return exports.list(str(project_id))
-
-    @app.post("/api/projects/{project_id}/exports")
-    async def export_movie(project_id: UUID, value: ExportCreate, x_museshow_session: str = Header()):
-        return await exports.submit(str(project_id), value.model_dump(mode="json"), identifier(x_museshow_session))
-
-    @app.post("/api/projects/{project_id}/exports/{export_id}/retry")
-    async def retry_export(project_id: UUID, export_id: UUID, x_museshow_session: str = Header()):
-        return await exports.retry(str(project_id), str(export_id), identifier(x_museshow_session))
-
-    @app.get("/api/projects/{project_id}/exports/{export_id}/file")
-    def download_export(project_id: UUID, export_id: UUID):
-        return FileResponse(exports.download(str(project_id), str(export_id)), media_type="video/mp4", filename=exports.filename(str(project_id), str(export_id)))
-
-    @app.get("/api/projects/{project_id}/timeline")
-    def get_timeline(project_id: UUID):
-        return timeline.snapshot(str(project_id))
-
-    @app.patch("/api/projects/{project_id}/timeline/tracks/{track}")
-    def mute_timeline_track(project_id: UUID, track: AudioTrack, value: TimelineMute, x_museshow_session: str = Header()):
-        return timeline.patch(str(project_id), value.expectedRevision, value.expectedStoryboardRevision, identifier(x_museshow_session), track=track, muted=value.muted)
-
-    @app.patch("/api/projects/{project_id}/timeline/clips/{clip_id}")
-    def patch_timeline_clip(project_id: UUID, clip_id: UUID, value: TimelineClipPatch, x_museshow_session: str = Header()):
-        fields = value.model_dump(mode="json", exclude_unset=True)
-        fields.pop("expectedRevision", None)
-        fields.pop("expectedStoryboardRevision", None)
-        return timeline.patch(str(project_id), value.expectedRevision, value.expectedStoryboardRevision, identifier(x_museshow_session), clip_id=str(clip_id), fields=fields)
 
     @app.post('/api/projects/{project_id}/canvas/arrange')
     def arrange_canvas(project_id: UUID, value: CanvasArrange, x_museshow_session: str = Header()):
