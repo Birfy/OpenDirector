@@ -49,6 +49,8 @@ npm run build
 
 点击右上角“模型接入”（或“更多 → 模型接入”），按类别添加模型。URL 填服务的 `/v1` 地址，Model ID 填服务的 `--served-model-name`。
 
+视频模型可以在接入表单中选择适配方式，并配置每档分辨率的可用时长、像素尺寸及默认值；生成面板根据配置联动，不需要逐个模型修改源码。已知模型可载入适配预设，支持扩展声明的服务可读取能力；未知模型不猜测输出规格。配置方法和声明格式见 [视频模型能力配置](docs/video-model-capabilities.md)。
+
 | 类别 | 接口协议 | URL 示例 | Model ID 示例 |
 |---|---|---|---|
 | 对话 Agent | OpenAI 兼容（vLLM 等） | `http://127.0.0.1:8100/v1` | `Qwen/Qwen3-30B-A3B` |
@@ -66,6 +68,11 @@ npm run build
 “与 AI 对话”在接入对话 Agent 后连接本地 API 的助手：它可以写剧本、拆分镜头，并调用已接入的图片、视频和配音模型批量制作。助手写下的文档和生成的素材会自动加入当前画布；画布关闭期间完成的结果，会在再次打开该画布或点击“同步本地服务结果”时加入。
 
 自部署连接与长视频任务：
+
+- FastH3 视频时长优先采用面板选定的 4–15 秒，并同时写入任务回执和服务请求的 `seconds`、`extra_params.duration`。只有未提供面板/API 时长的旧调用，才沿用提示词推断、编辑时保留原片长度或默认 5 秒的行为。显式选择时长的视频编辑不会再按原片长度裁剪；模型输出按自身帧数网格取整，可能存在少量时长差异。
+
+- 视频节点的“生成参数”提供分辨率选择，并随请求保存、恢复。FastH3 / 原生 H3 提供“自动 / 480P / 768P”；横屏原生尺寸分别为 832×480、1344×768，竖屏交换宽高，其他画幅按模型的 32 像素网格对齐。参考生成沿用参考视频或图片的画幅；接续保留上一段尺寸，仅使用“自动”。旧画布的“自动”保持原行为，FastH3 默认仍为 480P。原生尺寸依据 [FastH3 配方](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3-Omni.md)。
+- 火山 Seedance 2.0 接口提供 480P / 720P / 1080P / 4K，图片参考模式隐藏并拒绝 1080P，具体调用权限仍由服务账户决定。未知适配器只显示“自动”，不将其他模型的档位套用到它。能力依据 [Seedance 输出规格](https://docs.volcengine.com/docs/ark/video-generation-tutorial?lang=zh)及[参考模式限制](https://docs.volcengine.com/docs/lake-ai-service/video-generation-enhanced-edition-basic-edition?lang=zh)。
 
 - 连接方式选择“自部署服务”时，后端直接连接配置的服务地址，绕过系统 HTTP/HTTPS 代理；适用于 VPN、局域网和可直接访问的公网服务，不绑定特定 IP。普通 API 连接和不同来源的结果 CDN 仍遵循原代理设置。网络本身仍须可达；只能通过 HTTP 代理访问的服务应选择 API 连接方式并指定相应协议。
 - 同一个 OpenDesign 后端内，相同服务 URL 的 vLLM-Omni 视频任务串行执行，后续任务保留“排队”状态，不占用其他服务的执行名额。不同电脑和不同应用之间仍由服务器统一排队。

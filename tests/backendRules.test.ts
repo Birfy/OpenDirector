@@ -125,9 +125,26 @@ test("input rules bound references, duration and model availability", () => {
     backendBlocker({ ...image, prompt: " " }, [], [zimage])!,
     /生成要求/,
   );
+  const declared = {
+    ...h3,
+    inputRules: {
+      ...h3.inputRules,
+      videoCapabilities: {
+        outputs: [
+          {
+            resolution: "480P",
+            durations: Array.from({ length: 12 }, (_, index) => index + 4),
+          },
+        ],
+        defaultResolution: "auto",
+        defaultDuration: 5,
+        dimensionStep: 32 as const,
+      },
+    },
+  };
   assert.match(
-    backendBlocker(video({ durationSeconds: 20 }), [], [h3])!,
-    /4–15/,
+    backendBlocker(video({ durationSeconds: 20 }), [], [declared])!,
+    /时长/,
   );
   const images = Array.from({ length: 10 }, () => media("image"));
   assert.match(

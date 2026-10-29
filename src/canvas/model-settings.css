@@ -65,3 +65,57 @@
   justify-content: flex-end;
   gap: 8px;
 }
+.cw-video-config {
+  margin: 18px 0;
+  padding-top: 10px;
+  border-top: 1px solid #ffffff20;
+}
+.cw-video-config > summary {
+  width: fit-content;
+  padding: 6px 0;
+  color: #cbb9d8;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cw-video-config > summary:focus-visible {
+  outline: 2px solid #b99adb;
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.cw-capability-actions,
+.cw-output-spec-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.cw-capability-help {
+  color: #bba6ca;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.cw-output-spec {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #ffffff20;
+  border-radius: 8px;
+}
+.cw-output-spec-heading strong {
+  font-size: 12px;
+}
+.cw-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+.cw-capability-grid input,
+.cw-capability-grid select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+@media (max-width: 500px) {
+  .cw-capability-grid {
+    grid-template-columns: 1fr;
+  }
+}

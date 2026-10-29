@@ -19,6 +19,7 @@ from museshow.domain.projects import ProjectError, identifier
 from museshow.domain.canvas import CanvasNode, CanvasState, lock_role
 from museshow.domain.generation import GenerationError, GenerationFailure
 from museshow.domain.input_rules import input_rules
+from museshow.domain.video_output import apply_video_resolution
 from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.app_settings import AppSettings
 from museshow.infrastructure.canvas_assets import require_current_assets
@@ -108,7 +109,7 @@ class Generation:
                 raise ProjectError("该节点正在生成，请等待或取消当前任务。", 409)
             updates = dict(value.get("inputs") or {})
             # Output length and canvas belong to the task, not to the node inputs.
-            output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'voice') if updates.get(key) is not None}
+            output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'resolution', 'voice') if updates.get(key) is not None}
             if production and not create and not plan_step.get('inputBasis'):
                 if any(node[key] != updates.get(key, node[key]) for key in ('prompt', 'referenceIds', 'videoMode')) or node['modelConfigId'] != str(value['modelConfigId']):
                     raise ProjectError('节点输入已变化，计划未覆盖当前输入或重新提交生成。', 409)
@@ -163,14 +164,25 @@ class Generation:
                 "video": {"duration": 5, "ratio": "adaptive", "generate_audio": True},
                 "audio": {"speaker": "zh_female_vv_uranus_bigtts", "audio_params": {"format": "mp3", "sample_rate": 24000}},
                 "text": {"thinking": "auto", "max_tokens": 8192}}[node["kind"]]
-            if config.get('protocol') == 'vllm_omni':
-                task['parameters'] = video_parameters(node, records)
+            rules = input_rules(config)
+            capabilities = rules.get('videoCapabilities')
+            selected_duration = output.get('durationSeconds')
+            if selected_duration is None and config.get('videoCapabilities'):
+                selected_duration = capabilities['defaultDuration']
+            if node['kind'] == 'video' and rules['profile'] == 'fasth3-omni':
+                task['parameters'] = video_parameters(node, records, duration_seconds=selected_duration)
+            elif node['kind'] == 'video' and rules['profile'] == 'standard-video':
+                task['parameters'] = {}
+            if node['kind'] == 'video' and selected_duration is not None:
+                task['parameters']['duration'] = selected_duration
             task['protocol'] = config.get('protocol')
-            if node['kind'] == 'video' and output and input_rules(config)['profile'] != 'fasth3-omni':
+            if node['kind'] == 'video' and output and rules['profile'] != 'fasth3-omni':
                 if 'durationSeconds' in output:
                     task['parameters']['duration'] = output['durationSeconds']
                 if 'aspectRatio' in output:
                     task['parameters']['ratio'] = output['aspectRatio']
+            if node['kind'] == 'video':
+                apply_video_resolution(task['parameters'], node, records, config, output)
             if node['kind'] == 'audio' and 'voice' in output and config.get('protocol') == 'openai':
                 task['parameters']['voice'] = output['voice']
             if node['kind'] in {'image', 'video'} and config.get('protocol') != 'vllm_omni':

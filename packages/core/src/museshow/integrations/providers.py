@@ -92,15 +92,20 @@ class GenerationProviders(VolcengineGeneration):
                     if not external_id:
                         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
                         files = []
+                        fast = input_rules(config)['profile'] == 'fasth3-omni'
                         for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']):
                             if source_kind in {'image', 'video', 'audio'}:
-                                files.append(('input_references', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
+                                files.append(('input_references' if fast else 'input_reference', (meta['name'], data, image_type(data) if source_kind == 'image' else meta['type'])))
                         parameters = task['parameters']
-                        form = {'model': config['modelId'], 'prompt': prepared['prompt'],
+                        form = {'model': config['modelId'], 'prompt': prepared['prompt']}
+                        if 'duration' in parameters: form['seconds'] = format(parameters['duration'], 'g')
+                        if 'size' in parameters: form['size'] = parameters['size']
+                        if fast:
+                            form.update({
                                 'seconds': str(parameters.get('seconds', '5')), 'size': parameters.get('size', '832x480'),
                                 'num_inference_steps': '8', 'guidance_scale': '1', 'fps': '24',
                                 'seed': str(parameters.get('seed', 1234)),
-                                'extra_params': json.dumps({'task': 'ref2va', 'duration': float(parameters.get('duration', parameters.get('seconds', 5))), 'audio_flow_shift': 3})}
+                                'extra_params': json.dumps({'task': 'ref2va', 'duration': float(parameters.get('duration', parameters.get('seconds', 5))), 'audio_flow_shift': 3})})
                         # Force multipart even for an empty reference list.
                         value = await self._json(client, 'POST', url, config, data=form, files=files or {'_multipart': (None, '1')})
                         external_id = value['id']

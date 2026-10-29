@@ -8,6 +8,7 @@ from museshow.domain.references import ReferenceContent, project_content
 from museshow.domain.assets import AssetPurpose
 from museshow.domain.canvas import NodeKind
 from museshow.domain.canvas_layout import CANVAS_LIMIT, Coordinate, Height
+from museshow.domain.video_capabilities import VideoAdapter, VideoCapabilities
 from museshow.domain.storyboard import MediaRole, OriginalAudioMode
 
 
@@ -255,6 +256,7 @@ class GenerationInputs(Model):
     title: str = Field(default="", max_length=255)
     durationSeconds: float | None = Field(default=None, ge=1, le=60, allow_inf_nan=False)
     aspectRatio: str | None = Field(default=None, pattern=r'^\d{1,2}:\d{1,2}$')
+    resolution: str | None = Field(default=None, pattern=r'^(?:自动|[A-Za-z0-9][A-Za-z0-9_.-]{0,23})$')
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
 
 
@@ -337,9 +339,18 @@ class ModelConfigInput(ModelConnection):
     url: str = Field(max_length=2048)
     modelId: str = Field(max_length=200)
     apiKey: SecretStr = SecretStr("")
+    videoAdapter: VideoAdapter | None = None
+    videoCapabilities: VideoCapabilities | None = None
+
+
+class ModelCapabilityRequest(ModelConfigInput):
+    configId: UUID | None = None
+    source: Literal['preset', 'service'] = 'preset'
 
 
 class ModelConfigPublic(ModelConnection):
+    videoAdapter: VideoAdapter = 'auto'
+    videoCapabilities: VideoCapabilities | None = None
     inputRules: dict = Field(default_factory=dict)
     id: UUID
     kind: Literal["agent", "image", "video", "audio"]

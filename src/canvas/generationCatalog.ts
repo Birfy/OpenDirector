@@ -179,12 +179,14 @@ export function changeGenerationSettings(
   const model = generationModel(next);
   if (patch.model || patch.audioCreationType) {
     if (
+      !next.modelConfigId &&
       model?.resolutions.length &&
       !model.resolutions.includes(next.resolution)
     )
       next.resolution = model.resolutions[0]!;
-    else if (!model?.resolutions.length) next.resolution = "自动";
-    if (model?.duration)
+    else if (!next.modelConfigId && !model?.resolutions.length)
+      next.resolution = "自动";
+    if (!next.modelConfigId && model?.duration)
       next.durationSeconds = Math.max(
         model.duration.min,
         Math.min(model.duration.max, next.durationSeconds),

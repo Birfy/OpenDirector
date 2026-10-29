@@ -3,6 +3,18 @@ import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio";
 export type BackendVideoMode = "first_frame" | "reference" | "continuation";
+export type VideoAdapter = "auto" | "fasth3" | "minimax_h3" | "standard";
+export interface VideoCapabilities {
+  outputs: {
+    resolution: string;
+    durations: number[];
+    width?: number;
+    height?: number;
+  }[];
+  defaultResolution: string;
+  defaultDuration: number;
+  dimensionStep: 1 | 2 | 8 | 16 | 32 | 64;
+}
 
 export interface InputRules {
   profile: string;
@@ -11,6 +23,9 @@ export interface InputRules {
   maxVideos: number;
   maxAudios: number;
   videoModes: BackendVideoMode[];
+  outputResolutions?: string[];
+  referenceImageResolutions?: string[];
+  videoCapabilities?: VideoCapabilities | null;
 }
 
 export interface ModelConfig {
@@ -22,6 +37,8 @@ export interface ModelConfig {
   protocol: "openai" | "volcengine" | "vllm_omni" | null;
   authMode: "none" | "bearer" | null;
   inputRules: InputRules;
+  videoAdapter?: VideoAdapter;
+  videoCapabilities?: VideoCapabilities | null;
 }
 
 export interface BackendReference {
@@ -126,6 +143,78 @@ export function backendVideoMode(
     : "first_frame";
 }
 
+/** The backend publishes adapter capabilities; unknown services retain automatic sizing. */
+export function backendResolutions(
+  settings: Pick<GenerationSettings, "mode" | "videoMode"> &
+    Partial<Pick<GenerationSettings, "durationSeconds">>,
+  config: ModelConfig | undefined,
+  incoming: readonly CanvasNode[] = [],
+): string[] {
+  if (settings.mode !== "video" || settings.videoMode === "continuation")
+    return ["自动"];
+  const rules = config?.inputRules;
+  const choices =
+    settings.videoMode === "reference" &&
+    incoming.some((node) => node.data.kind === "image")
+      ? (rules?.referenceImageResolutions ?? rules?.outputResolutions)
+      : rules?.outputResolutions;
+  const outputs = rules?.videoCapabilities?.outputs;
+  return [
+    "自动",
+    ...(choices ?? []).filter(
+      (label) =>
+        !outputs ||
+        settings.durationSeconds === undefined ||
+        outputs.some(
+          (item) =>
+            item.resolution === label &&
+            item.durations.includes(settings.durationSeconds!),
+        ),
+    ),
+  ];
+}
+
+export function backendDurations(config: ModelConfig | undefined): number[] {
+  return [
+    ...new Set(
+      config?.inputRules.videoCapabilities?.outputs.flatMap(
+        (item) => item.durations,
+      ) ?? [],
+    ),
+  ].sort((a, b) => a - b);
+}
+
+/** Normalize a deliberate model/time change before persisting it to the canvas. */
+export function serviceVideoSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+  incoming: readonly CanvasNode[] = [],
+  modelChanged = false,
+): GenerationSettings {
+  const next = { ...settings };
+  const caps = config.inputRules.videoCapabilities;
+  const durations = backendDurations(config);
+  if (durations.length && !durations.includes(next.durationSeconds))
+    next.durationSeconds = caps!.defaultDuration;
+  if (
+    next.videoMode === "continuation" &&
+    !config.inputRules.videoModes.includes("continuation")
+  )
+    next.videoMode = "reference";
+  const resolutions = backendResolutions(next, config, incoming);
+  if (modelChanged || !resolutions.includes(next.resolution)) {
+    const preferred =
+      caps?.defaultResolution === "auto" ? "自动" : caps?.defaultResolution;
+    next.resolution =
+      !modelChanged && resolutions.includes(next.resolution)
+        ? next.resolution
+        : preferred && resolutions.includes(preferred)
+          ? preferred
+          : "自动";
+  }
+  return next;
+}
+
 export function backendBlocker(
   settings: GenerationSettings,
   incoming: readonly CanvasNode[],
@@ -142,6 +231,16 @@ export function backendBlocker(
   const rules = config.inputRules;
   const references = backendReferences(settings, incoming, config);
   if (settings.mode === "video") {
+    const durations = backendDurations(config);
+    if (durations.length && !durations.includes(settings.durationSeconds))
+      return "当前模型不支持所选时长，请重新选择。";
+    if (
+      rules.outputResolutions &&
+      !backendResolutions(settings, config, incoming).includes(
+        settings.resolution,
+      )
+    )
+      return "当前模型或参考模式不支持所选分辨率，请重新选择。";
     if (!rules.videoModes.includes(backendVideoMode(settings, references)))
       return "当前模型不支持所选视频模式。";
     if (settings.videoMode === "first-last") {
@@ -157,12 +256,6 @@ export function backendBlocker(
       references.filter((item) => item.role === "continuation").length !== 1
     )
       return "接续需要连接一段由当前 H3 服务生成的视频作为上一段。";
-    if (
-      !Number.isFinite(settings.durationSeconds) ||
-      settings.durationSeconds < 4 ||
-      settings.durationSeconds > 15
-    )
-      return "视频时长需在 4–15 秒之间。";
   }
   const count = (kind: string) =>
     references.filter(

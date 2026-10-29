@@ -30,7 +30,7 @@ def test_four_categories_survive_restart_without_exposing_secrets(api):
         response = client.post("/api/model-configs", json=payload(kind))
         assert response.status_code == 200
         assert "test-secret" not in response.text
-        assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode"}
+        assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities"}
         configs.append(response.json())
     assert len({item["id"] for item in configs}) == 5
     assert client.get("/api/model-configs").json() == configs

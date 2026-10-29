@@ -17,6 +17,9 @@ import {
 import {
   backendBlocker,
   backendModel,
+  backendResolutions,
+  backendDurations,
+  serviceVideoSettings,
   backendReferenceIssue,
   modelLabel,
   serviceVoice,
@@ -267,7 +270,9 @@ export function NodeComposer({
   const currentModels = choices.includes(settings.model)
     ? choices
     : [settings.model, ...choices];
-  const resolutions = model?.resolutions ?? [];
+  const resolutions = backend
+    ? backendResolutions(settings, config, incomingNodes)
+    : (model?.resolutions ?? []);
   const price = backend ? null : observedGenerationPrice(settings);
   const firstLast = mode === "video" && settings.videoMode === "first-last";
   // Service speech models only read text aloud.
@@ -278,9 +283,12 @@ export function NodeComposer({
   const frameCandidates = incomingNodes.filter(
     (node) => node.data.kind === "image",
   );
+  const serviceSeconds = backendDurations(config);
   const duration =
     backend && mode === "video"
-      ? { min: 4, max: 15, step: 1 }
+      ? serviceSeconds.length
+        ? { min: serviceSeconds[0]!, max: serviceSeconds.at(-1)!, step: 1 }
+        : undefined
       : model?.duration;
   const serviceModes = config?.inputRules.videoModes ?? [];
   const videoModes = [
@@ -313,25 +321,24 @@ export function NodeComposer({
       });
       return;
     }
-    updateSettings({
-      model: modelLabel(service),
-      modelConfigId: service.id,
-      ...(settings.videoMode === "continuation" &&
-      !service.inputRules.videoModes.includes("continuation")
-        ? { videoMode: "reference" as const }
-        : {}),
-      ...(mode === "video"
-        ? {
-            durationSeconds: Math.max(
-              4,
-              Math.min(15, Math.round(settings.durationSeconds)),
-            ),
-          }
-        : {}),
+    const selected = serviceVideoSettings(
+      { ...settings, model: modelLabel(service), modelConfigId: service.id },
+      service,
+      incomingNodes,
+      true,
+    );
+    updateSettings(selected);
+  };
+  const updateSettings = (patch: Partial<ComposerSettings>) => {
+    const next = changeGenerationSettings(settings, patch);
+    const target = backendModel(next, backendModels);
+    onUpdate({
+      settings:
+        target && next.mode === "video"
+          ? serviceVideoSettings(next, target, incomingNodes)
+          : next,
     });
   };
-  const updateSettings = (patch: Partial<ComposerSettings>) =>
-    onUpdate({ settings: changeGenerationSettings(settings, patch) });
   const updatePrompt = (value: string) =>
     onUpdate({ prompt: value, settings: { ...settings, prompt: value } });
   const togglePanel = (next: Panel, anchor: HTMLElement) => {
@@ -856,7 +863,7 @@ export function NodeComposer({
                 : reading
                   ? "文本朗读"
                   : "全能配音"
-              : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${settings.durationSeconds} 秒` : ` · ${settings.count} 张`}`}
+              : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${duration ? `${settings.durationSeconds} 秒` : "服务默认时长"}` : ` · ${settings.count} 张`}`}
           </span>
         </button>
         {!firstLast && !reading && !music && (
@@ -999,14 +1006,15 @@ export function NodeComposer({
               </div>
             </div>
           )}
-          {mode !== "audio" && !backend && (
+          {mode !== "audio" && (!backend || mode === "video") && (
             <div className="cw-parameter-section">
-              <span className="cw-field-label">已核实清晰度</span>
+              <span className="cw-field-label">分辨率</span>
               <div className="cw-segment-options">
                 {resolutions.map((resolution) => (
                   <button
                     type="button"
                     key={resolution}
+                    aria-label={`分辨率 ${resolution}`}
                     disabled={
                       settings.imagePreset === "product-views" &&
                       resolution !== "2K"
@@ -1040,14 +1048,24 @@ export function NodeComposer({
                   <input
                     type="range"
                     aria-label="创作时长"
-                    min={duration.min}
-                    max={duration.max}
+                    min={backend ? 0 : duration.min}
+                    max={backend ? serviceSeconds.length - 1 : duration.max}
                     step={duration.step}
                     disabled={running || duration.min === duration.max}
-                    value={settings.durationSeconds}
+                    value={
+                      backend
+                        ? Math.max(
+                            0,
+                            serviceSeconds.indexOf(settings.durationSeconds),
+                          )
+                        : settings.durationSeconds
+                    }
+                    aria-valuetext={`${settings.durationSeconds} 秒`}
                     onChange={(event) =>
                       updateSettings({
-                        durationSeconds: Number(event.target.value),
+                        durationSeconds: backend
+                          ? serviceSeconds[Number(event.target.value)]!
+                          : Number(event.target.value),
                       })
                     }
                   />
@@ -1061,9 +1079,12 @@ export function NodeComposer({
                       })
                     }
                   >
-                    {Array.from(
-                      { length: duration.max - duration.min + 1 },
-                      (_, index) => duration.min + index,
+                    {(backend
+                      ? serviceSeconds
+                      : Array.from(
+                          { length: duration.max - duration.min + 1 },
+                          (_, index) => duration.min + index,
+                        )
                     ).map((value) => (
                       <option key={value} value={value}>
                         {value} 秒
@@ -1126,7 +1147,11 @@ export function NodeComposer({
           {mode !== "audio" && (
             <p className="cw-generation-note">
               {backend
-                ? "比例用于文生视频；首帧、参考和接续沿用素材画幅，图片尺寸由模型服务决定。"
+                ? mode === "video"
+                  ? settings.videoMode === "continuation"
+                    ? "接续沿用上一段视频的尺寸，分辨率请选择自动。"
+                    : "分辨率将用于实际生成；自动沿用模型默认值。参考生成沿用素材画幅，输出尺寸按模型要求对齐。"
+                  : "图片尺寸由模型服务决定。"
                 : "比例为本地创作偏好；各模型的完整能力须由真实服务确认。"}
             </p>
           )}

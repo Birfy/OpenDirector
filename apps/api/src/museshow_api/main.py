@@ -23,6 +23,9 @@ from museshow.application.production_chat import ProductionChat
 from museshow.application.production_review import ProductionReview
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.model_configs import ModelConfigs
+from museshow.infrastructure.model_configs import connection_fields, model_fields
+from museshow.domain.input_rules import input_rules
+from museshow.integrations.model_capabilities import read_video_capabilities
 from museshow.infrastructure.storyboard import StoryboardProjects
 from museshow.infrastructure.timeline import TimelineProjects
 from museshow.infrastructure.canvas_versions import apply_version, node_history
@@ -36,6 +39,7 @@ from museshow_api.models import ShotAdoption, ShotAssociation, ShotCreate, ShotO
 from museshow_api.models import TimelineClipPatch, TimelineMute, ExportCreate
 from museshow_api.models import ProjectFromMessage, ProductionChatAction
 from museshow_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
+from museshow_api.models import ModelCapabilityRequest
 
 
 async def asset_bytes(request: Request) -> bytes:
@@ -127,11 +131,30 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode)
+        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode,
+                                  video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
+                                  capabilities_supplied='videoCapabilities' in value.model_fields_set)
+
+    @app.post('/api/model-configs/capabilities')
+    async def model_capabilities(value: ModelCapabilityRequest):
+        if value.kind != 'video':
+            raise ProjectError('能力配置仅适用于视频模型。')
+        config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': value.kind,
+                  **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode), 'videoAdapter': value.videoAdapter or 'auto'}
+        if value.source == 'preset':
+            return {'videoCapabilities': input_rules(config).get('videoCapabilities')}
+        if config['authMode'] == 'bearer' and not config['apiKey']:
+            existing = model_configs.resolve(str(value.configId), 'video') if value.configId else None
+            if not existing or existing['url'] != config['url']:
+                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
+            config['apiKey'] = existing['apiKey']
+        return {'videoCapabilities': await read_video_capabilities(config)}
 
     @app.patch("/api/model-configs/{config_id}", response_model=ModelConfigPublic)
     def update_model_config(config_id: UUID, value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode)
+        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode,
+                                  video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
+                                  capabilities_supplied='videoCapabilities' in value.model_fields_set)
 
     @app.delete("/api/model-configs/{config_id}", status_code=204)
     def delete_model_config(config_id: UUID):

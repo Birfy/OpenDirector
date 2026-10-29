@@ -43,7 +43,7 @@ def native_prompt(task, sources):
     return ''.join(parts)
 
 
-def video_parameters(node, records):
+def video_parameters(node, records, *, duration_seconds=None):
     visual = [records[key] for key in node['referenceIds'] if records[key]['kind'] in {'video', 'image'}]
     videos = [asset for asset in visual if asset['kind'] == 'video']
     basis = videos[0] if videos else visual[0] if visual else {}
@@ -51,8 +51,11 @@ def video_parameters(node, records):
     text = project_content(node['promptContent'], speech=True)[0] if node.get('promptContent') is not None else node['prompt']
     edit = len(videos) == 1 and bool(re.search(r'替换|换人|换脸|换装|修改|编辑|去除|去掉|移除|\b(?:replace|swap|edit|remove)\b', text, re.I))
     explicit = re.search(r'(?:生成|输出|制作|时长(?:为|是)?|长度(?:为|是)?)\s*(?:一段)?\s*(\d+(?:\.\d+)?)\s*秒|\b(\d+(?:\.\d+)?)\s*(?:-\s*)?(?:second|seconds|sec)\b', text, re.I)
-    seconds = float(next(group for group in explicit.groups() if group)) if explicit else (
-        max(4.0, basis['durationMs'] / 1000) if edit else 5.0)
+    # An explicit UI/API selection wins over prompt inference and source length.
+    # Legacy callers without that field retain the prompt/source/default policy.
+    seconds = float(duration_seconds) if duration_seconds is not None else (
+        float(next(group for group in explicit.groups() if group)) if explicit else (
+            max(4.0, basis['durationMs'] / 1000) if edit else 5.0))
     if not 4 <= seconds <= 15:
         raise ProjectError('当前 FastH3 支持生成 4—15 秒的视频，请调整输出时长；未提交生成。')
     requested_frames = round(seconds * 24)
@@ -65,7 +68,8 @@ def video_parameters(node, records):
         # local muxing, independent of the model's generative audio prediction.
         change_audio = re.search(r'(?:修改|替换|生成|更换|去除|去掉|移除|添加|改变|不要保留).{0,8}(?:音频|音乐|音轨|配音|声音|原音|BGM)|降噪|去噪|\b(?:change|replace|remove|add|generate)\b.{0,25}\b(?:audio|music|sound|voice)\b', text, re.I)
         result['videoEdit'] = {'sourceAssetId': basis['id'], 'sourceDurationMs': basis['durationMs'],
-                               'preserveDuration': explicit is None, 'preserveAudio': not bool(change_audio)}
+                               'preserveDuration': duration_seconds is None and explicit is None,
+                               'preserveAudio': not bool(change_audio)}
     return result
 
 

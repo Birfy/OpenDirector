@@ -204,7 +204,8 @@ def test_loopback_models_bypass_system_proxy_for_all_four_kinds(tmp_path, monkey
         async def submitted(value): assert value=='video-local'
         for kind,result in [('image',('png',b'image')),('audio',('mp3',b'audio')),('video',('mp4',b'video'))]:
             task={'kind':kind,'projectId':'owner','prompt':'test','referenceIds':[],'videoMode':'reference','parameters':{}}
-            assert await provider.generate({**config,'kind':kind,'protocol':'vllm_omni' if kind=='video' else 'openai'},task,submitted)==result
+            assert await provider.generate({**config,'kind':kind,'protocol':'vllm_omni' if kind=='video' else 'openai',
+                'videoAdapter':'fasth3' if kind=='video' else 'auto'},task,submitted)==result
     try:
         asyncio.run(run())
         assert trust_environment('https://api.example/v1') is True

@@ -9,6 +9,7 @@ from filelock import FileLock
 
 from museshow.domain.projects import ProjectError, identifier
 from museshow.domain.input_rules import input_rules
+from museshow.domain.video_capabilities import check_video_config
 from museshow.infrastructure.local_projects import child, read_json, write_json
 
 MODEL_KINDS = ("agent", "image", "video", "audio")
@@ -67,7 +68,7 @@ class ModelConfigs:
                 raise ValueError()
             seen = set()
             for item in value["models"]:
-                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode'}:
+                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'videoAdapter', 'videoCapabilities'}:
                     raise ValueError()
                 identifier(item["id"])
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
@@ -75,6 +76,12 @@ class ModelConfigs:
                 seen.add(item["id"])
                 fields = model_fields(item["url"], item["modelId"], item["apiKey"])
                 item.update(connection_fields(item['kind'], item.get('connectionType', 'api'), item.get('protocol'), item.get('authMode')))
+                # Old /videos entries used the FastH3 request shape for every name.
+                # Pin that adapter while new configurations use explicit detection.
+                if 'videoAdapter' not in item:
+                    item['videoAdapter'] = ('minimax_h3' if item['modelId'].rsplit('/', 1)[-1].lower() == 'minimax-h3'
+                                            else 'fasth3') if item['kind'] == 'video' and item['protocol'] == 'vllm_omni' else 'auto'
+                item['videoCapabilities'] = check_video_config(item['kind'], item['protocol'], item['videoAdapter'], item.get('videoCapabilities'))
                 if item['authMode'] == 'bearer' and not fields['apiKey']:
                     raise ValueError()
             return value["models"]
@@ -83,7 +90,7 @@ class ModelConfigs:
 
     @staticmethod
     def _public(item: dict) -> dict:
-        return {**{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode")}, 'inputRules': input_rules(item)}
+        return {**{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities")}, 'inputRules': input_rules(item)}
 
     def list(self) -> list[dict]:
         with self.lock:
@@ -100,7 +107,7 @@ class ModelConfigs:
                 raise ProjectError("所选模型不存在或类别不符，请在设置中配置并重新选择。", 409)
             return dict(item)
 
-    def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None) -> dict:
+    def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None, video_adapter=None, video_capabilities=None, capabilities_supplied=False) -> dict:
         if kind not in MODEL_KINDS:
             raise ProjectError("无效的模型类别。")
         fields = model_fields(url, model_id, api_key)
@@ -119,6 +126,12 @@ class ModelConfigs:
                     raise ProjectError('请填写 API Key，或将鉴权方式设为无需鉴权。')
                 fields['apiKey'] = existing['apiKey']
             item = {'id': config_id or str(uuid4()), 'kind': kind, **fields, **connection}
+            item['videoAdapter'] = video_adapter if video_adapter is not None else (existing or {}).get('videoAdapter', 'auto')
+            raw = video_capabilities if capabilities_supplied or video_capabilities is not None else (existing or {}).get('videoCapabilities')
+            item['videoCapabilities'] = check_video_config(kind, connection['protocol'], item['videoAdapter'], raw)
+            profile = input_rules(item)['profile']
+            if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
+                check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
             if existing:
                 models[models.index(existing)] = item
             else:

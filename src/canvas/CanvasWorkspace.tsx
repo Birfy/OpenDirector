@@ -1847,8 +1847,11 @@ function Workspace() {
       prompt: settings.prompt,
       title: node.data.title,
       videoMode: backendVideoMode(settings, references),
-      durationSeconds: settings.durationSeconds,
+      durationSeconds: config.inputRules.videoCapabilities
+        ? settings.durationSeconds
+        : undefined,
       aspectRatio: settings.aspectRatio,
+      resolution: settings.resolution,
       voice: serviceVoice(settings),
       references: references.map(({ node: item }) => ({
         kind: item.data.kind as "image" | "video" | "audio" | "text",

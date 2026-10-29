@@ -58,6 +58,31 @@ def test_explicit_audio_edit_is_not_overwritten_and_invalid_duration_is_rejected
         video_parameters({**node, 'prompt': '替换人物，输出 20 秒'}, {video['id']: video})
 
 
+@pytest.mark.parametrize('seconds, frames', [(4, 107), (7, 175), (10, 243), (15, 362)])
+def test_panel_duration_overrides_default_and_conflicting_prompt(seconds, frames):
+    for prompt in ('按参考图生成人物动作', '输出 5 秒的人物动作'):
+        parameters = video_parameters({'referenceIds': [], 'prompt': prompt}, {}, duration_seconds=seconds)
+        assert parameters['duration'] == seconds
+        assert parameters['seconds'] == str(seconds)
+        assert parameters['num_frames'] == frames
+
+
+def test_panel_duration_overrides_source_edit_length_without_losing_audio_policy():
+    video = source('video', '原片.mp4', durationMs=5000, width=480, height=832)
+    node = {'referenceIds': [video['id']], 'prompt': '替换视频中的人物'}
+    parameters = video_parameters(node, {video['id']: video}, duration_seconds=7)
+    assert parameters['duration'] == 7 and parameters['seconds'] == '7'
+    assert parameters['videoEdit']['sourceDurationMs'] == 5000
+    assert parameters['videoEdit']['preserveDuration'] is False
+    assert parameters['videoEdit']['preserveAudio'] is True
+
+
+@pytest.mark.parametrize('seconds', [3, 16, float('nan'), float('inf')])
+def test_panel_duration_outside_supported_range_is_rejected(seconds):
+    with pytest.raises(ProjectError, match='4—15 秒'):
+        video_parameters({'referenceIds': [], 'prompt': '人物动作'}, {}, duration_seconds=seconds)
+
+
 @pytest.mark.parametrize('has_audio', [True, False])
 def test_real_finalization_preserves_source_soundtrack_or_silence_and_duration(tmp_path, has_audio):
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
@@ -112,6 +137,29 @@ def test_preserved_soundtrack_does_not_extend_an_explicit_shorter_output(tmp_pat
     assert finalize_video_edit(store, task, 'mp4', b'generated') == ('mp4', b'final')
     command = commands[0]
     assert command[command.index('-t') + 1] == '5.0'
+
+
+def test_explicit_seven_second_edit_is_not_trimmed_back_to_five_second_source(tmp_path):
+    if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+        pytest.skip('FFmpeg required')
+    original, generated = tmp_path/'source.mp4', tmp_path/'generated.mp4'
+    for path, seconds, frequency in [(original, 5, 440), (generated, 8, 880)]:
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=24',
+            '-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000', '-t', str(seconds),
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(path)], check=True, capture_output=True)
+    meta = source('video', 'source.mp4', fingerprint='fixture', durationMs=5000, hasAudio=True)
+    parameters = video_parameters({'referenceIds': [meta['id']], 'prompt': '替换人物'},
+                                 {meta['id']: meta}, duration_seconds=7)
+    store = SimpleNamespace(asset=lambda *args: (original.read_bytes(), meta))
+    task = {'kind': 'video', 'protocol': 'vllm_omni', 'projectId': 'test', 'parameters': parameters,
+            'inputSnapshot': {'references': {meta['id']: 'fixture'}}}
+    suffix, data = finalize_video_edit(store, task, 'mp4', generated.read_bytes())
+    output = tmp_path/'output.mp4'
+    output.write_bytes(data)
+    info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-of', 'json', str(output)]))
+    assert suffix == 'mp4' and 6.95 <= float(info['format']['duration']) <= 7.1
+    decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output), '-f', 'null', '-'], capture_output=True, check=True)
+    assert not decoded.stderr.strip()
 
 
 def test_native_prompt_and_full_duration_reach_actual_video_multipart():

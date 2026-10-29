@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorMessage, json, request } from "./api.ts";
-import type { ModelConfig, ModelKind } from "./rules.ts";
+import type {
+  ModelConfig,
+  ModelKind,
+  VideoAdapter,
+  VideoCapabilities,
+} from "./rules.ts";
 
 export const MODEL_KINDS: readonly { id: ModelKind; label: string }[] = [
   { id: "agent", label: "对话 Agent" },
@@ -17,6 +22,19 @@ export interface ModelConfigInput {
   connectionType: "api" | "self_hosted";
   protocol: "openai" | "volcengine" | "vllm_omni";
   authMode: "none" | "bearer";
+  videoAdapter?: VideoAdapter;
+  videoCapabilities?: VideoCapabilities | null;
+}
+
+export function readModelCapabilities(
+  value: ModelConfigInput,
+  configId: string | undefined,
+  source: "preset" | "service",
+) {
+  return request<{ videoCapabilities: VideoCapabilities | null }>(
+    "/model-configs/capabilities",
+    json("POST", { ...value, configId, source }),
+  );
 }
 
 export interface GeneralSettings {

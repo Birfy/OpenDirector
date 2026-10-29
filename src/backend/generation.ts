@@ -66,6 +66,7 @@ export interface GenerationRequest {
   videoMode: BackendVideoMode;
   durationSeconds?: number;
   aspectRatio?: string;
+  resolution?: string;
   voice?: string;
   references: readonly ReferenceInput[];
 }
@@ -233,6 +234,14 @@ export async function submitGeneration(
           ? {
               durationSeconds: value.durationSeconds,
               aspectRatio: value.aspectRatio,
+              ...(value.resolution &&
+              (value.resolution !== "自动" ||
+                "videoCapabilities" in value.config.inputRules)
+                ? {
+                    resolution:
+                      value.resolution === "自动" ? "auto" : value.resolution,
+                  }
+                : {}),
             }
           : {}),
         ...(value.kind === "audio" && value.voice

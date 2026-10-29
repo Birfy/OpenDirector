@@ -67,6 +67,8 @@ class VllmOmniGeneration:
         seconds = task['parameters'].get('duration', 5)
         ratio = task['parameters'].get('ratio')
         fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'fps': str(FPS), 'num_frames': str(h3_frames(seconds))}
+        if task['parameters'].get('resolution') and task['parameters'].get('size'):
+            fields['size'] = task['parameters']['size']
         files, extra = [], {}
         if mode == 'continuation':
             # T2VA follows the cached tail closely; attached images or audio

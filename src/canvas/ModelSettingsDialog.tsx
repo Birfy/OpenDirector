@@ -3,10 +3,16 @@ import { EditorModal } from "./EditorModal";
 import { errorMessage } from "../backend/api.ts";
 import {
   MODEL_KINDS,
+  readModelCapabilities,
   type BackendModels,
   type ModelConfigInput,
 } from "../backend/models.ts";
 import type { ModelConfig, ModelKind } from "../backend/rules.ts";
+import { createVideoCapabilities } from "../backend/videoCapabilities.ts";
+import {
+  VideoCapabilitiesEditor,
+  capabilityDraft,
+} from "./VideoCapabilitiesEditor";
 import "./model-settings.css";
 
 type Protocol = ModelConfigInput["protocol"];
@@ -18,7 +24,7 @@ const PROTOCOLS: Record<ModelKind, readonly [Protocol, string][]> = {
     ["volcengine", "火山方舟 / Agent Plan"],
   ],
   video: [
-    ["vllm_omni", "vLLM-Omni 视频接口（MiniMax-H3 / FastH3）"],
+    ["vllm_omni", "异步 /videos 接口（含 vLLM-Omni）"],
     ["volcengine", "火山方舟 / Agent Plan"],
   ],
   audio: [
@@ -53,7 +59,14 @@ function ModelForm({
     connectionType: existing?.connectionType ?? "self_hosted",
     protocol: existing?.protocol ?? PROTOCOLS[kind][0][0],
     authMode: existing?.authMode ?? "none",
+    videoAdapter: existing?.videoAdapter ?? "auto",
   });
+  const [outputDraft, setOutputDraft] = useState(() =>
+    capabilityDraft(
+      existing?.videoCapabilities ?? existing?.inputRules.videoCapabilities,
+      Boolean(existing?.videoCapabilities),
+    ),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const update = (patch: Partial<ModelConfigInput>) =>
@@ -63,8 +76,35 @@ function ModelForm({
     setBusy(true);
     setError("");
     try {
-      await catalog.save(value, existing?.id);
+      const videoCapabilities = outputDraft.custom
+        ? createVideoCapabilities(
+            outputDraft.outputs,
+            outputDraft.defaultResolution,
+            Number(outputDraft.defaultDuration),
+            outputDraft.dimensionStep,
+          )
+        : null;
+      await catalog.save(
+        kind === "video" ? { ...value, videoCapabilities } : value,
+        existing?.id,
+      );
       onClose();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const loadCapabilities = async (source: "preset" | "service") => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await readModelCapabilities(value, existing?.id, source);
+      if (!result.videoCapabilities)
+        throw new Error("未识别到输出预设，请开启自定义输出规格并填写。");
+      setOutputDraft(
+        capabilityDraft(result.videoCapabilities, source === "service"),
+      );
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
@@ -88,6 +128,7 @@ function ModelForm({
               update({
                 connectionType,
                 authMode: connectionType === "self_hosted" ? "none" : "bearer",
+                videoAdapter: "auto",
                 protocol:
                   connectionType === "self_hosted"
                     ? PROTOCOLS[kind][0][0]
@@ -106,7 +147,10 @@ function ModelForm({
           <select
             value={value.protocol}
             onChange={(event) =>
-              update({ protocol: event.target.value as Protocol })
+              update({
+                protocol: event.target.value as Protocol,
+                videoAdapter: "auto",
+              })
             }
           >
             {PROTOCOLS[kind].map(([id, label]) => (
@@ -163,6 +207,60 @@ function ModelForm({
               onChange={(event) => update({ apiKey: event.target.value })}
             />
           </label>
+        )}
+        {kind === "video" && (
+          <details className="cw-video-config">
+            <summary>视频适配方式</summary>
+            {value.protocol === "vllm_omni" && (
+              <label className="cw-domain-field">
+                视频适配方式
+                <select
+                  value={value.videoAdapter}
+                  onChange={(event) =>
+                    update({
+                      videoAdapter: event.target
+                        .value as ModelConfigInput["videoAdapter"],
+                    })
+                  }
+                >
+                  <option value="auto">
+                    自动识别已知模型；其他使用通用首帧接口
+                  </option>
+                  <option value="fasth3">
+                    FastH3-Omni（8 步、多素材参考）
+                  </option>
+                  <option value="minimax_h3">
+                    原生 MiniMax-H3（首帧、素材参考、接续）
+                  </option>
+                  <option value="standard">
+                    通用 /videos（文本、单张首帧）
+                  </option>
+                </select>
+              </label>
+            )}
+            <div className="cw-capability-actions">
+              <button
+                type="button"
+                onClick={() => void loadCapabilities("preset")}
+              >
+                载入适配预设
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadCapabilities("service")}
+              >
+                读取服务声明
+              </button>
+            </div>
+            <p className="cw-capability-help">
+              服务需在 /models 中返回该模型的 videoCapabilities
+              扩展；仅返回模型名称时，请手动配置。
+            </p>
+            <VideoCapabilitiesEditor
+              value={outputDraft}
+              onChange={setOutputDraft}
+            />
+          </details>
         )}
         {error && (
           <p className="cw-domain-error" role="alert">
