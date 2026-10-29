@@ -355,7 +355,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.put("/api/projects/{project_id}/canvas/nodes/{node_id}/text")
     def save_node_text(project_id: UUID, node_id: UUID, value: NodeText, x_museshow_session: str = Header()):
-        if not value.name.lower().endswith((".txt", ".md")):
+        if not value.name.strip().lower().endswith((".txt", ".md")):
             raise ProjectError("文本名称需以 .txt 或 .md 结尾。")
         return canvas.save_text(str(project_id), str(node_id), str(value.id), value.text, value.name, identifier(x_museshow_session),
                                 expected_revision=value.expectedRevision, discard_inputs=value.discardInputs, remember=True)
@@ -458,7 +458,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     dist = repository / "dist"
     if dist.is_dir():
-        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
 
         @app.get("/")
         def index():

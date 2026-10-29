@@ -284,7 +284,7 @@ class AssetCatalog:
                     retained = False
                     deleted.append(asset_id)
                 except (OSError, ProjectError):
-                    failed.append({'id': asset_id, 'message': f'「{inventory[asset_id]["name"]}」删除未完成，请检查文件占用、目录权限及磁盘状态。'})
+                    failed.append({'id': asset_id, 'message': f'「{inventory.get(asset_id, {}).get("name", asset_id)}」删除未完成，请检查文件占用、目录权限及磁盘状态。'})
                     from museshow.infrastructure.asset_deletion import JOURNAL
                     if child(directory, JOURNAL).exists():
                         failed.extend({'id': key, 'message': '上一步需要恢复，本次未继续删除。'} for key in impact['assetIds'][index + 1:])

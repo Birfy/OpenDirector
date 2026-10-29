@@ -11,7 +11,6 @@ from museshow.domain.canvas import CanvasNode
 from museshow.domain.input_rules import input_rules
 from museshow.domain.storyboard import Shot
 from museshow.domain.generation import GenerationError, GenerationFailure
-from museshow.domain.input_rules import input_rules
 from museshow.domain.production import MAX_PRODUCTION_CONCURRENCY, MAX_REPAIR_SECONDS, MAX_STEP_ATTEMPTS, ProductionRequest
 from museshow.application.production_repairs import ProductionRepairs
 from museshow.domain.projects import ProjectError, identifier
@@ -256,7 +255,8 @@ class Production:
             if dependency and (dependency['status'] != 'completed' or not dependency['assetId'] or dependency['needsReview']):
                 raise ProjectError('上游步骤尚未完成或需要复核，未提交下游生成。', 409)
             base = step['baseReferenceIds'] if step['baseReferenceIds'] is not None else step['referenceIds']
-            text_only = step['kind'] == 'image' and not input_rules({**plan['models']['image'], 'kind': 'image'})['maxImages']
+            model_config = step.get('model') or plan['models'][step['kind']]
+            text_only = step['kind'] == 'image' and not input_rules({**model_config, 'kind': 'image'})['maxImages']
             refs = ([dependency['assetId']] if dependency and not text_only else []) + base
             if step['kind'] == 'video' and dependency and step.get('videoMode', 'first_frame') == 'first_frame':
                 refs = [dependency['assetId']]

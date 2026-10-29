@@ -35,7 +35,10 @@ class ProductionChat:
             raise ProjectError('制作对话记录格式无效，原文件已保留。', 409) from None
 
     def _snapshot(self, owner, plan, snapshot=None):
-        snapshot = snapshot or next(item for item in self.production.progress(owner)['plans'] if item['planId'] == plan['id'])
+        plans = self.production.progress(owner)['plans']
+        snapshot = snapshot or next((item for item in plans if item['planId'] == plan['id']), None)
+        if snapshot is None:
+            raise ProjectError('制作计划不存在，可能已被删除。', 409)
         if plan['scriptAssetId']:
             script = next((asset for asset in self.production.generation.canvas.assets.list(owner) if asset['id'] == plan['scriptAssetId']), None)
             snapshot['script'] = {'assetId': plan['scriptAssetId'], 'name': script['name'] if script else '剧本文件缺失',
@@ -159,8 +162,14 @@ class ProductionChat:
             with self.store.transaction() as db:
                 directory = self.store._owner(db, owner)
                 journal = self._read(directory)
-                reply = next(item for item in journal['messages'] if item['id'] == reply_id)
-                plan = next(plan for plan in self.production.list(owner) if plan['id'] == plan_id)
+                reply = next((item for item in journal['messages'] if item['id'] == reply_id), None)
+                if reply is None:
+                    return
+                plan = next((plan for plan in self.production.list(owner) if plan['id'] == plan_id), None)
+                if plan is None:
+                    reply.update(text=text or '制作计划已被删除。', error=error or '制作计划不存在，可能已被删除。', pending=False)
+                    self._save(directory, journal)
+                    return
                 snapshot, key = self._snapshot(owner, plan)
                 reply.update(text=text, error=error, pending=False, snapshot=snapshot, stateKey=key)
                 self._save(directory, journal)

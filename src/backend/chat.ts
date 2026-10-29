@@ -79,12 +79,28 @@ export async function* streamChat(
       buffer = lines.pop() ?? "";
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
-        const data = JSON.parse(line.slice(5)) as ChatEvent;
+        let data: ChatEvent;
+        try {
+          data = JSON.parse(line.slice(5)) as ChatEvent;
+        } catch {
+          continue; // Tolerate keepalives and malformed partial lines.
+        }
         yield data;
         if (data.type === "end") return;
       }
-      if (done)
+      if (done) {
+        const tail = buffer.trim();
+        if (tail.startsWith("data:")) {
+          try {
+            const data = JSON.parse(tail.slice(5)) as ChatEvent;
+            yield data;
+            if (data.type === "end") return;
+          } catch {
+            // Fall through to the interruption error below.
+          }
+        }
         throw new Error("回复连接已中断，请重新打开对话查看已保存的内容。");
+      }
     }
   } finally {
     await reader.cancel().catch(() => {});

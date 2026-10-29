@@ -98,6 +98,7 @@ function VideoActionSession({
   const [parameters, setParameters] =
     useState<ToolParameters>(initialParameters);
   const parametersRef = useRef(parameters);
+  const promptDebounce = useRef(0);
   const [duration, setDuration] = useState(
     node.data.media?.durationSeconds ?? 0,
   );
@@ -272,7 +273,18 @@ function VideoActionSession({
     parametersRef.current = { ...parametersRef.current, [key]: value };
     setParameters(parametersRef.current);
     setNotice("");
-    onDraftChange(task());
+    // Text parameters debounce like ImageActionEditor so typing does not
+    // create one undo entry per keystroke.
+    if (key === "prompt") {
+      window.clearTimeout(promptDebounce.current);
+      promptDebounce.current = window.setTimeout(() => {
+        try {
+          onDraftChange(task());
+        } catch {
+          // Ignore transient draft errors while typing; submit re-validates.
+        }
+      }, 250);
+    } else onDraftChange(task());
   };
   const seek = (value: number) => {
     if (!video.current || busy || !duration) return;

@@ -3,7 +3,6 @@ from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from museshow.domain.projects import ProjectError
 
 
 class Arguments(BaseModel):

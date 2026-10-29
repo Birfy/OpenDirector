@@ -39,10 +39,10 @@ def asset_dependencies(store, directory, owner, asset_id, *, context=None):
         return {'blockers': blockers, 'history': history}
 
     conversation = context['conversation']
-    if any(item['id'] == asset_id for item in conversation['assets']) or content_uses(conversation.get('draftContent'), asset_id):
+    if any(item['id'] == asset_id for item in conversation.get('assets', [])) or content_uses(conversation.get('draftContent'), asset_id):
         add('draft', owner, '助手聊天输入草稿')
-    for message in conversation['messages']:
-        if any(item['id'] == asset_id for item in message['assets']) or content_uses(message.get('content'), asset_id):
+    for message in conversation.get('messages', []):
+        if any(item['id'] == asset_id for item in message.get('assets', [])) or content_uses(message.get('content'), asset_id):
             add('message', message['id'], '助手历史消息')
     for asset in context['inventory'].values():
         inputs = asset.get('generationInputs') or {}

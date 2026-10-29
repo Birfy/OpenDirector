@@ -62,7 +62,7 @@ function keepAlive() {
 export async function openBackendProject(documentId: string, title: string) {
   const id = backendProjectId(documentId);
   if (opening) await opening.catch(() => {});
-  opening = (async () => {
+  const task = (async () => {
     try {
       await request(`/projects/${id}/open`, { method: "POST" });
     } catch (error) {
@@ -76,9 +76,10 @@ export async function openBackendProject(documentId: string, title: string) {
     keepAlive();
     return id;
   })();
+  opening = task;
   try {
-    return await opening;
+    return await task;
   } finally {
-    opening = null;
+    if (opening === task) opening = null;
   }
 }

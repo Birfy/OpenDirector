@@ -336,6 +336,12 @@ export function TimelineEditor({
           .finally(() => pendingPlay.current.delete(element));
       } else if (!playing) element.pause();
     }
+    // Segments the playhead already passed must stop too, or their audio
+    // keeps playing underneath the current segment.
+    const current = new Set(currentMedia.map((segment) => segment.clip.id));
+    for (const [clipId, element] of media.current) {
+      if (!current.has(clipId) && !element.paused) element.pause();
+    }
   }, [position, playing, timeline]);
 
   const change = (operation: (current: TimelineData) => TimelineData) => {

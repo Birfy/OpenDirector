@@ -177,19 +177,25 @@ export async function loadGenerationJobs(
   const records = await historyStore<StoredJob[]>("readonly", (store) =>
     store.index("documentId").getAll(documentId),
   );
-  return records
-    .filter((entry) => entry.documentId === documentId)
-    .map((entry) => {
+  const jobs: GenerationJob[] = [];
+  for (const entry of records) {
+    if (entry.documentId !== documentId) continue;
+    try {
       const job = parseGenerationJob(entry.job);
-      return job.status === "running"
-        ? {
-            ...job,
-            status: "interrupted" as const,
-            message: "上次会话未完成，可同步本地服务结果。",
-          }
-        : job;
-    })
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      jobs.push(
+        job.status === "running"
+          ? {
+              ...job,
+              status: "interrupted" as const,
+              message: "上次会话未完成，可同步本地服务结果。",
+            }
+          : job,
+      );
+    } catch {
+      // A single damaged record must not take down the whole history view.
+    }
+  }
+  return jobs.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 let writes: Promise<unknown> = Promise.resolve();

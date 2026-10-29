@@ -109,6 +109,9 @@ class Chat:
             turn.selections["agent"] = str(value.modelId)
             turn.selected_node_id = str(value.selectedNodeId) if value.selectedNodeId else None
             turn.selected_shot_id = str(value.selectedShotId) if value.selectedShotId else None
+            # Register the turn before returning so a disconnect before the first
+            # streamed event cannot leave the chat lock held forever.
+            self.active[turn.owner] = turn
             return turn
         except BaseException:
             lock.release()
@@ -122,7 +125,8 @@ class Chat:
             turn.stop.set()
 
     async def stream(self, turn: Turn):
-        self.active[turn.owner] = turn
+        # The turn is already registered by prepare(); overwriting here would
+        # let a concurrent turn clobber the active entry.
         text, status, error = "", "interrupted", None
         iterator = (self.loop.stream(turn) if self.loop else self.provider.stream(turn.config, turn.payload)).__aiter__()
         read = None

@@ -228,7 +228,7 @@ class AgentLoop:
                 step['nodeId'] == node['id'] for plan in self.production.list(turn.owner) for step in plan['steps']):
             raise ProjectError('该节点属于制作计划，请核对对应步骤并使用局部修复；未直接重新生成。', 409)
         if name == "save_text_asset":
-            user = turn.conversation['messages'][-2]
+            user = history[-2] if len(history) >= 2 else {'text': '', 'assets': [], 'content': None}
             asset = await asyncio.to_thread(self.canvas.save_text, turn.owner, node["id"] if node else str(uuid5(UUID(operation_id), "node")), str(uuid5(UUID(operation_id), "asset")), value["text"], value["name"], turn.session, create=node is None, expected_revision=value.get("expectedRevision"),
                 agent_run={"id": turn.id, "modelConfigId": turn.config["id"], "referenceIds": [asset["id"] for asset in user['assets']],
                     'inputs': {'prompt': user['text'], 'promptContent': user.get('content'), 'referenceIds': [asset['id'] for asset in user['assets']],

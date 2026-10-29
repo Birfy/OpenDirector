@@ -12,7 +12,14 @@ from museshow.domain.projects import ProjectError
 def rename_path(source: Path, target: Path) -> None:
     system = platform.system()
     if system == "Windows":
-        os.rename(source, target)  # Windows rejects an existing destination.
+        try:
+            os.rename(source, target)  # Windows rejects an existing destination.
+        except FileExistsError:
+            raise ProjectError("目标目录已存在，未覆盖任何文件。", 409) from None
+        except OSError as error:
+            if error.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise ProjectError("目标目录已存在，未覆盖任何文件。", 409) from None
+            raise
         return
     library = ctypes.CDLL(None, use_errno=True)
     try:

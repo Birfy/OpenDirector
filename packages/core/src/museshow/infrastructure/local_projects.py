@@ -503,11 +503,15 @@ class LocalProjects:
         if asset_id in inventory:
             # Older upload clients may retry after the catalog enriched metadata.
             # Compare submitted fields without dropping the richer stored record.
-            if any(inventory[asset_id].get(key) != item for key, item in value.items()) or file.read_bytes() != data:
+            if any(inventory[asset_id].get(key) != item for key, item in value.items()):
                 raise ProjectError("素材标识冲突，原素材未覆盖。", 409)
+            if not file.is_file() or file.read_bytes() != data:
+                raise ProjectError("素材文件缺失或内容不一致，原素材未覆盖。", 409)
             return
         created = not file.exists()
         if not created:
+            if not file.is_file():
+                raise ProjectError("素材文件缺失，请重新上传。", 409)
             if file.read_bytes() != data:
                 raise ProjectError("素材文件已存在且内容不一致，原文件未覆盖。", 409)
         else:
@@ -544,7 +548,7 @@ class LocalProjects:
     def remove_asset(self, owner: str, asset_id: str, session: str):
         identifier(asset_id)
         with self.transaction() as db:
-            path = self._owner(db, owner, session)
+            self._owner(db, owner, session)  # Verifies the project session.
             # Detaching a reference never deletes a saved asset, including an
             # unsent upload. Permanent deletion belongs to the asset catalog.
             return
