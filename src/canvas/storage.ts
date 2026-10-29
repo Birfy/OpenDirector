@@ -399,48 +399,7 @@ export async function listDocuments(
   };
 }
 
-/** Trash is record metadata; the complete document stays available for restoration. */
-export async function trashDocument(
-  id: string,
-  options: StorageOptions = {},
-): Promise<Result<void>> {
-  return setDocumentTrashed(id, true, options);
-}
-export async function restoreDocument(
-  id: string,
-  options: StorageOptions = {},
-): Promise<Result<void>> {
-  return setDocumentTrashed(id, false, options);
-}
-async function setDocumentTrashed(
-  id: string,
-  trashed: boolean,
-  options: StorageOptions,
-): Promise<Result<void>> {
-  return updateStoredDocument(
-    id,
-    (value) => {
-      if (!object(value) || !finite(value.updatedAt))
-        return failure("invalid-document", "本地项目不存在。");
-      const parsed = parseDocument(value.document);
-      if (!parsed.ok) return parsed;
-      if (parsed.value.id !== id)
-        return failure("invalid-document", "本地画布 ID 与存储键不一致。");
-      return {
-        ok: true,
-        value: {
-          id,
-          document: parsed.value,
-          updatedAt: value.updatedAt,
-          ...(trashed ? { trashedAt: Date.now() } : {}),
-        },
-      };
-    },
-    options,
-  );
-}
-
-/** Read/modify/write share one transaction, so autosave cannot resurrect a trashed project. */
+/** Preserve existing record metadata in the same transaction as autosave. */
 async function updateStoredDocument(
   id: string,
   transform: (existing: unknown) => Result<StoredDocument>,

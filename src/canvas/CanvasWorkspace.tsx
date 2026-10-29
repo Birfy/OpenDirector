@@ -62,11 +62,19 @@ import {
   REFERENCE_ISSUE_TEXT,
 } from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
-import { ProjectManagerPanel } from "./ProjectManagerPanel";
+import { persistCurrentDocument } from "./projectManagement";
+import museshowLogo from "../assets/museshow-logo.png";
+import { ProjectSelector } from "./ProjectSelector";
+import { ProjectNameDialog } from "./ProjectNameDialog";
 import {
-  duplicateCanvasDocument,
-  persistCurrentDocument,
-} from "./projectManagement";
+  initializeWorkspace,
+  saveWorkspaceDocument,
+  openWorkspaceProject,
+  createWorkspaceProject,
+  renameWorkspaceProject,
+  importWorkspaceDocument,
+  listWorkspaceProjects,
+} from "../backend/workspace";
 import { CanvasSearchPanel } from "./CanvasSearchPanel";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
@@ -168,14 +176,7 @@ import {
   type CanvasHistory,
 } from "./history";
 import { absolutePosition, arrangeNodes } from "./geometry";
-import {
-  saveDocument,
-  loadDocument,
-  trashDocument,
-  restoreDocument,
-  parseDocument,
-  serializeDocument,
-} from "./storage";
+import { parseDocument, serializeDocument } from "./storage";
 import {
   copySelection,
   cutSelection,
@@ -205,7 +206,6 @@ type Panel =
   | "tags"
   | "history"
   | "assistant"
-  | "projects"
   | "director"
   | null;
 type Menu = {
@@ -278,7 +278,6 @@ type EditorMode =
   | "frame"
   | "extract-audio"
   | "crop";
-const lastKey = "museshow-last-canvas";
 
 function IconButton({
   name,
@@ -356,6 +355,12 @@ function Workspace() {
   historyRef.current = history;
   const doc = history.present;
   const [ready, setReady] = useState(false);
+  const [initializationError, setInitializationError] = useState("");
+  const [projectDialog, setProjectDialog] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [projectRenaming, setProjectRenaming] = useState(false);
   const [switching, setSwitching] = useState(false);
   const switchPending = useRef(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -375,7 +380,6 @@ function Workspace() {
     null,
   );
   const [panel, setPanel] = useState<Panel>(null);
-  const [projectMenu, setProjectMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
@@ -422,7 +426,7 @@ function Workspace() {
     | null
   >(null);
   const importAbort = useRef<AbortController | null>(null);
-  const [rename, setRename] = useState<{ id?: string; value: string } | null>(
+  const [rename, setRename] = useState<{ id: string; value: string } | null>(
     null,
   );
   const [help, setHelp] = useState(false);
@@ -562,23 +566,15 @@ function Workspace() {
     referenceTarget.current = null;
     setPanel((p) => (p === value ? null : value));
     setMenu(null);
-    setProjectMenu(false);
   };
 
   const persist = useCallback((snapshot: CanvasDocument): Promise<boolean> => {
     saveQueue.current = saveQueue.current
       .then(async () => {
-        const result = await saveDocument(snapshot);
+        await saveWorkspaceDocument(snapshot);
         if (historyRef.current.present === snapshot)
-          setSaveStatus(result.ok ? "已保存到本机" : result.error.message);
-        if (result.ok) {
-          try {
-            localStorage.setItem(lastKey, snapshot.id);
-          } catch {
-            /* IndexedDB is the document owner. */
-          }
-        }
-        return result.ok;
+          setSaveStatus("已保存到本机");
+        return true;
       })
       .catch((error) => {
         setSaveStatus(`保存失败：${String(error)}`);
@@ -613,7 +609,6 @@ function Workspace() {
       setSelectedEdges([]);
       setPanel(null);
       setMenu(null);
-      setProjectMenu(false);
       setRename(null);
       setMoreMenu(false);
       setZoomMenu(false);
@@ -639,6 +634,7 @@ function Workspace() {
     async (
       read: () => CanvasDocument | Promise<CanvasDocument>,
       fit = false,
+      throwOnFailure = false,
     ) => {
       if (switchPending.current) return false;
       switchPending.current = true;
@@ -646,17 +642,29 @@ function Workspace() {
       // The workspace is inert until saving and loading finish, so later edits cannot be lost.
       importAbort.current?.abort();
       try {
-        const next = await read();
         if (
           !(await persistCurrentDocument(
             () => historyRef.current.present,
             persist,
           ))
-        )
+        ) {
+          if (throwOnFailure) throw new Error("当前画布保存失败，未切换项目。");
           return false;
+        }
+        const next = await read();
         installDocument(next, fit);
         return true;
       } catch (error) {
+        try {
+          const current = historyRef.current.present;
+          await openBackendProject(current.id, current.title);
+        } catch (reopenError) {
+          const message = `切换失败，原项目未能重新取得编辑权限：${errorMessage(reopenError)}`;
+          if (throwOnFailure) throw new Error(message);
+          notify(message);
+          return false;
+        }
+        if (throwOnFailure) throw error;
         notify(error instanceof Error ? error.message : "无法打开画布。");
         return false;
       } finally {
@@ -667,35 +675,55 @@ function Workspace() {
     [installDocument, persist, notify],
   );
 
+  const renameCurrentProject = async (name: string) => {
+    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    const projectId = historyRef.current.present.id;
+    switchPending.current = true;
+    setProjectRenaming(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("当前画布尚未保存，未执行重命名。");
+      const project = (await listWorkspaceProjects()).projects.find(
+        (item) => item.id === projectId,
+      );
+      if (!project) throw new Error("项目不存在，请重新打开。");
+      const renamed = await renameWorkspaceProject(project, name);
+      const document = { ...historyRef.current.present, title: renamed.name };
+      // Project metadata must stay consistent across canvas undo/redo.
+      setHistory((current) => ({
+        ...current,
+        present: { ...current.present, title: renamed.name },
+        past: current.past.map((item) => ({ ...item, title: renamed.name })),
+        future: current.future.map((item) => ({
+          ...item,
+          title: renamed.name,
+        })),
+        transaction: current.transaction
+          ? { ...current.transaction, title: renamed.name }
+          : null,
+      }));
+      await saveWorkspaceDocument(document);
+    } finally {
+      switchPending.current = false;
+      setProjectRenaming(false);
+    }
+  };
+
   useEffect(() => {
     let alive = true;
     const init = async () => {
-      const rawId = window.location.pathname.split("/ai-canvas/")[1];
-      let urlId: string | undefined;
       try {
-        urlId = rawId ? decodeURIComponent(rawId) : undefined;
-      } catch {
-        notify("项目地址格式无效，将打开最近的画布。");
-      }
-      let id: string | undefined = urlId;
-      if (!id)
-        try {
-          id = localStorage.getItem(lastKey) ?? undefined;
-        } catch {
-          /* A new document still works. */
-        }
-      let restored = false;
-      if (id) {
-        const result = await loadDocument(id);
+        const document = await initializeWorkspace();
         if (!alive) return;
-        if (result.ok && result.value) {
-          installDocument(result.value);
-          restored = true;
-        } else if (!result.ok) notify(result.error.message);
-      }
-      if (alive) {
-        if (!restored) installDocument(historyRef.current.present);
+        installDocument(document);
         setReady(true);
+      } catch (error) {
+        if (alive) setInitializationError(errorMessage(error));
       }
     };
     void init();
@@ -705,11 +733,13 @@ function Workspace() {
     };
   }, [installDocument, notify]);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || switching || projectRenaming) return;
     setSaveStatus("保存中…");
-    const timeout = setTimeout(() => void persist(doc), 450);
+    const timeout = setTimeout(() => {
+      if (!switchPending.current) void persist(doc);
+    }, 450);
     return () => clearTimeout(timeout);
-  }, [doc, ready, persist]);
+  }, [doc, ready, switching, projectRenaming, persist]);
   useEffect(() => {
     const nodeIds = new Set(doc.nodes.map((node) => node.id));
     const edgeIds = new Set(doc.edges.map((edge) => edge.id));
@@ -901,12 +931,7 @@ function Workspace() {
   const connect = useCallback(
     (connection: Connection) => {
       setMenu(null);
-      if (
-        !connection.source ||
-        !connection.target ||
-        connection.source === connection.target
-      )
-        return;
+      if (!connection.source || !connection.target) return;
       command({
         type: "add-edge",
         edge: { ...connection, id: crypto.randomUUID() },
@@ -1235,7 +1260,6 @@ function Workspace() {
       `${doc.title}.canvas.json`,
     );
     setMoreMenu(false);
-    setProjectMenu(false);
   };
   const openFilePicker = (id: string | null = null) => {
     if (id && lockedIds.has(id)) {
@@ -2119,7 +2143,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog",
       )
     )
       return;
@@ -2149,7 +2173,6 @@ function Workspace() {
       closeGeneration();
       setRename(null);
       setHelp(false);
-      setProjectMenu(false);
       setMoreMenu(false);
       setZoomMenu(false);
       if (!editingText) setSelected([]);
@@ -2640,7 +2663,6 @@ function Workspace() {
             setSelected([]);
             setDismissedComposer(null);
             setSelectedEdges([]);
-            setProjectMenu(false);
             setMoreMenu(false);
             setZoomMenu(false);
           }}
@@ -2708,22 +2730,27 @@ function Workspace() {
 
       <header className="cw-topbar">
         <div className="cw-project-heading">
-          <TooltipButton
+          <img
             className="cw-brand"
-            label="本地项目"
-            tooltipSide="bottom"
-            aria-label="本地项目"
-            onClick={() => togglePanel("projects")}
-          >
-            ✦
-          </TooltipButton>
-          <button
-            className="cw-project-title"
-            onClick={() => setProjectMenu(!projectMenu)}
-          >
-            {doc.title}
-            <CanvasIcon name="chevron" size={14} />
-          </button>
+            src={museshowLogo}
+            alt="MuseShow"
+            draggable={false}
+          />
+          <ProjectSelector
+            currentId={doc.id}
+            name={doc.title}
+            disabled={!ready || switching || projectRenaming}
+            onSelect={(project) =>
+              switchDocument(() => openWorkspaceProject(project))
+            }
+            onCreate={() =>
+              setProjectDialog({
+                id: crypto.randomUUID(),
+                name: "",
+              })
+            }
+            onRename={renameCurrentProject}
+          />
           <span className="cw-save-status" title={saveStatus}>
             <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
             {saveStatus}
@@ -2770,44 +2797,6 @@ function Workspace() {
           <span className="cw-avatar">M</span>
         </div>
       </header>
-      {projectMenu && (
-        <div className="cw-project-menu cw-menu-popover">
-          <button
-            onClick={() => {
-              setRename({ value: doc.title });
-              setProjectMenu(false);
-            }}
-          >
-            重命名项目
-          </button>
-          <button
-            onClick={() => {
-              void switchDocument(createDocument);
-            }}
-          >
-            新建空白画布 <kbd>＋</kbd>
-          </button>
-          <button onClick={() => togglePanel("projects")}>打开本地项目</button>
-          <hr />
-          <button
-            onClick={() => {
-              jsonInput.current?.click();
-              setProjectMenu(false);
-            }}
-          >
-            导入画布 JSON
-          </button>
-          <button onClick={exportDocument}>导出画布 JSON</button>
-          <hr />
-          <button
-            onClick={() => {
-              void switchDocument(exampleDocument, true);
-            }}
-          >
-            打开示例画布
-          </button>
-        </div>
-      )}
       {moreMenu && (
         <div className="cw-more-menu cw-menu-popover">
           <button
@@ -2897,7 +2886,10 @@ function Workspace() {
           </button>
           <button
             onClick={() => {
-              void switchDocument(exampleDocument, true);
+              void switchDocument(
+                () => importWorkspaceDocument(exampleDocument()),
+                true,
+              );
               setMoreMenu(false);
             }}
           >
@@ -2997,7 +2989,10 @@ function Workspace() {
             </button>
             <button
               onClick={() => {
-                void switchDocument(exampleDocument, true);
+                void switchDocument(
+                  () => importWorkspaceDocument(exampleDocument()),
+                  true,
+                );
               }}
             >
               体验示例画布 <span>↗</span>
@@ -3564,7 +3559,6 @@ function Workspace() {
               tags: "节点标签",
               history: "生成历史",
               assistant: "AI 对话",
-              projects: "本地项目",
               director: "导演参数",
             }[panel]
           }
@@ -3578,7 +3572,6 @@ function Workspace() {
                   tags: "节点标签",
                   history: "生成历史",
                   assistant: "与 AI 对话",
-                  projects: "本地项目",
                   director: "导演参数",
                 }[panel]
               }
@@ -3738,56 +3731,6 @@ function Workspace() {
                 示例为本工程绘制的矢量插画。
               </small>
             </>
-          )}
-          {panel === "projects" && (
-            <ProjectManagerPanel
-              currentId={doc.id}
-              onCreate={() => {
-                void switchDocument(createDocument);
-              }}
-              onOpen={async (id) => {
-                if (id === doc.id) {
-                  setPanel(null);
-                  return;
-                }
-                await switchDocument(async () => {
-                  const result = await loadDocument(id);
-                  if (!result.ok || !result.value)
-                    throw new Error(
-                      result.ok ? "项目不存在" : result.error.message,
-                    );
-                  return result.value;
-                });
-              }}
-              onDuplicate={async (id) => {
-                if (!(await persist(historyRef.current.present)))
-                  throw new Error("当前画布未保存，复制未执行。");
-                const loaded = await loadDocument(id);
-                if (!loaded.ok || !loaded.value)
-                  throw new Error(
-                    loaded.ok ? "项目不存在" : loaded.error.message,
-                  );
-                const copy = duplicateCanvasDocument(loaded.value);
-                const saved = await saveDocument(copy);
-                if (!saved.ok) throw new Error(saved.error.message);
-                notify("已创建独立副本，原项目保持不变。");
-              }}
-              onTrash={async (id) => {
-                if (
-                  id === historyRef.current.present.id &&
-                  !(await switchDocument(createDocument))
-                )
-                  throw new Error("当前画布未能保存，未移入回收站。");
-                const result = await trashDocument(id);
-                if (!result.ok) throw new Error(result.error.message);
-                notify("项目已移入本机回收站，可随时恢复。");
-              }}
-              onRestore={async (id) => {
-                const result = await restoreDocument(id);
-                if (!result.ok) throw new Error(result.error.message);
-                notify("项目已恢复。");
-              }}
-            />
           )}
           {panel === "history" && (
             <GenerationHistoryPanel
@@ -4042,7 +3985,7 @@ function Workspace() {
             void switchDocument(async () => {
               const r = parseDocument(await f.text());
               if (!r.ok) throw new Error(r.error.message);
-              return { ...r.value, id: crypto.randomUUID() };
+              return importWorkspaceDocument(r.value);
             }, true);
           e.target.value = "";
         }}
@@ -4061,19 +4004,15 @@ function Workspace() {
             onSubmit={(e) => {
               e.preventDefault();
               if (!rename.value.trim()) return;
-              command(
-                rename.id
-                  ? {
-                      type: "update-node",
-                      id: rename.id,
-                      patch: { data: { title: rename.value.trim() } },
-                    }
-                  : { type: "title", title: rename.value.trim() },
-              );
+              command({
+                type: "update-node",
+                id: rename.id,
+                patch: { data: { title: rename.value.trim() } },
+              });
               setRename(null);
             }}
           >
-            <h2>重命名{rename.id ? "节点" : "项目"}</h2>
+            <h2>重命名节点</h2>
             <input
               autoFocus
               aria-label="新名称"
@@ -4413,8 +4352,8 @@ function Workspace() {
               ))}
             </dl>
             <p className="cw-panel-note">
-              媒体与项目存储在当前浏览器的 IndexedDB。导出 JSON
-              可备份或迁移。图像裁剪与调色在本机实际执行；AI
+              项目与画布保存在本地 projects 目录，导出 JSON
+              可备份或交换。图像裁剪与调色在本机实际执行；AI
               生成和助手通过本地服务调用“模型接入”中的模型，云分享和云端资产尚未接入。
             </p>
           </section>
@@ -4427,8 +4366,41 @@ function Workspace() {
       {workspace}
       {(!ready || switching) && (
         <div className="canvas-loading-screen" role="status">
-          {switching ? "正在切换画布…" : "正在打开画布…"}
+          {initializationError ? (
+            <div role="alert">
+              <p>{initializationError}</p>
+              <button onClick={() => window.location.reload()}>重新连接</button>
+            </div>
+          ) : switching ? (
+            "正在切换画布…"
+          ) : (
+            "正在打开画布…"
+          )}
         </div>
+      )}
+      {projectDialog && (
+        <ProjectNameDialog
+          key={projectDialog.id}
+          initialName={projectDialog.name}
+          onClose={() => setProjectDialog(null)}
+          onSubmit={async (name) => {
+            const success = await switchDocument(
+              async () => {
+                const project = await createWorkspaceProject(
+                  name,
+                  projectDialog.id,
+                );
+                const document = await openWorkspaceProject(project);
+                await saveWorkspaceDocument(document);
+                return document;
+              },
+              false,
+              true,
+            );
+            if (!success)
+              throw new Error("项目创建未完成，请检查名称或保存状态后重试。");
+          }}
+        />
       )}
     </>
   );

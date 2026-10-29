@@ -26,7 +26,6 @@ export type ReferenceIssue =
   | "endpoint_missing"
   | "self_connection"
   | "duplicate_relation"
-  | "creates_cycle"
   | "source_type_unsupported"
   | "target_type_unsupported"
   | "capacity_exceeded";
@@ -35,7 +34,6 @@ export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
   endpoint_missing: "节点已不存在",
   self_connection: "节点不能引用自身",
   duplicate_relation: "已经连接过",
-  creates_cycle: "会形成循环引用",
   source_type_unsupported: "目标节点不接收这类素材",
   target_type_unsupported: "该节点不接收参考",
   capacity_exceeded: "参考数量已达上限",
@@ -83,7 +81,6 @@ export function referenceIssue(
   const a = document.nodes.find((n) => n.id === source),
     b = document.nodes.find((n) => n.id === target);
   if (!a || !b) return "endpoint_missing";
-  if (a.id === b.id) return "self_connection";
   if (
     document.edges.some(
       (e) =>
@@ -95,6 +92,7 @@ export function referenceIssue(
     return "duplicate_relation";
   // Provenance records an already produced result. It must not be interpreted as a generation input.
   if (intent === "post_edit_result") {
+    if (a.id === b.id) return "self_connection";
     if (!["image", "video", "audio"].includes(b.type))
       return "target_type_unsupported";
     return null;
@@ -112,20 +110,7 @@ export function referenceIssue(
     (capacity[b.type] ?? Infinity)
   )
     return "capacity_exceeded";
-  const outgoing = new Map<string, string[]>();
-  for (const edge of references)
-    outgoing.set(edge.source, [
-      ...(outgoing.get(edge.source) ?? []),
-      edge.target,
-    ]);
-  const pending = [b.id],
-    visited = new Set<string>();
-  while (pending.length) {
-    const id = pending.pop()!;
-    if (id === a.id) return "creates_cycle";
-    if (visited.has(id)) continue;
-    visited.add(id);
-    pending.push(...(outgoing.get(id) ?? []));
-  }
+  // Like MuseShow, input references may point to the same node or form a
+  // cycle: execution snapshots current outputs without following inputs.
   return null;
 }

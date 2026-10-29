@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDocument, createNode } from "../src/canvas/model.ts";
-import {
-  duplicateCanvasDocument,
-  persistCurrentDocument,
-} from "../src/canvas/projectManagement.ts";
-import { parseDocument } from "../src/canvas/storage.ts";
+import { persistCurrentDocument } from "../src/canvas/projectManagement.ts";
 import { visibleSelectionIds } from "../src/canvas/stackProjection.ts";
 import {
   stackSelection,
@@ -25,40 +21,6 @@ import {
 } from "../src/canvas/generationCatalog.ts";
 import { unsyncedResults } from "../src/backend/sync.ts";
 import { uploadReferences } from "../src/backend/generation.ts";
-
-test("project copies remap stacks, frame references and edges without sharing mutable data", () => {
-  const source = createDocument("original");
-  const image = createNode(
-    "image",
-    { x: 20, y: 40 },
-    { src: "data:image/png;base64,YQ==", tags: ["default-tag-1"] },
-  );
-  const video = createNode(
-    "video",
-    { x: 500, y: 40 },
-    {
-      settings: { ...generationDefaults("video"), firstFrameNodeId: image.id },
-    },
-  );
-  source.nodes = [image, video];
-  source.edges = [{ id: "edge", source: image.id, target: video.id }];
-  source.settings.firstFrameNodeId = image.id;
-  const stacked = stackSelection(source, [image.id, video.id]);
-  const copy = duplicateCanvasDocument(stacked);
-  assert.notEqual(copy.id, source.id);
-  assert.equal(parseDocument(copy).ok, true);
-  const a = copy.nodes.find((n) => n.type === "image")!,
-    b = copy.nodes.find((n) => n.type === "video")!,
-    stack = copy.nodes.find((n) => n.type === "stack")!;
-  assert.notEqual(a.id, image.id);
-  assert.deepEqual(a.position, image.position);
-  assert.deepEqual(stack.data.stack!.nodeIds, [a.id, b.id]);
-  assert.equal(b.data.settings!.firstFrameNodeId, a.id);
-  assert.equal(copy.settings.firstFrameNodeId, a.id);
-  assert.equal(copy.edges[0]!.source, a.id);
-  a.data.title = "edited";
-  assert.notEqual(image.data.title, "edited");
-});
 
 test("mixed batch imports preserve success order and original replacement index", async () => {
   const files = ["first.png", "broken.png", "last.png"].map(

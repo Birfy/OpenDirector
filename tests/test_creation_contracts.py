@@ -200,10 +200,35 @@ def test_undo_can_restore_empty_display_without_removing_accepted_history():
     assert restored.generationSpecs[0].purpose == 'generation'
 
 
-def test_following_reference_cycles_are_rejected():
+@pytest.mark.parametrize('links', [
+    [(51, 60)],
+    [(51, 62), (54, 60)],
+    [(51, 62), (54, 63), (55, 60)],
+])
+def test_following_self_references_and_cycles_roundtrip_without_changing_jobs(links):
     data = wire()
-    data['references'] = [entity(80, targetSpecId=uid(60), binding='follow_current', source=dict(id=uid(51)))]
-    with pytest.raises(ValidationError, match='Cyclic'):
+    frozen_jobs = json.dumps(data['jobs'], sort_keys=True)
+    for item_id, spec_id in [(54, 62), (55, 63)]:
+        data['generationSpecs'].append(entity(spec_id, kind='image', purpose='generation', prompt='Next image'))
+        data['canvasItems'].append(entity(item_id, kind='image', binding=dict(role='generation', objectRef=dict(id=uid(spec_id)))))
+    data['references'] = [entity(80 + index, targetSpecId=uid(target), binding='follow_current', source=dict(id=uid(source)))
+                          for index, (source, target) in enumerate(links)]
+    restored = ProjectSnapshot.model_validate(data)
+    assert ProjectSnapshot.model_validate_json(restored.model_dump_json()) == restored
+    assert len(restored.references) == len(links)
+    assert json.dumps(restored.model_dump(mode='json')['jobs'], sort_keys=True) == frozen_jobs
+
+
+@pytest.mark.parametrize('relationship', ['group', 'job_attempt'])
+def test_non_reference_cycles_remain_rejected(relationship):
+    data = wire()
+    if relationship == 'group':
+        data['canvasItems'][10]['parentId'] = str(uid(54))
+        data['canvasItems'].append(entity(54, kind='group', parentId=uid(50)))
+    else:
+        data['jobs'][0]['previousJobId'] = str(uid(72))
+        data['jobs'].append({**data['jobs'][0], 'id': str(uid(72)), 'previousJobId': str(uid(70))})
+    with pytest.raises(ValidationError, match='Cyclic canvas group hierarchy' if relationship == 'group' else 'Cyclic job attempts'):
         ProjectSnapshot.model_validate(data)
 
 

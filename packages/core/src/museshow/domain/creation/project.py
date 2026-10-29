@@ -104,7 +104,8 @@ class ProjectSnapshot(Contract):
                     if ref.id not in documents or documents[ref.id].kind != ref.kind:
                         raise ValueError('Missing or wrong-kind attached media editor')
         acyclic(parents, 'canvas group hierarchy')
-        dependencies = {}
+        # References read current outputs; they do not recursively execute
+        # upstream specs. Self-references and cycles are valid (MuseShow).
         reference_ids = {reference.id: reference for reference in self.references}
         target_orders = set()
         for reference in self.references:
@@ -122,12 +123,9 @@ class ProjectSnapshot(Contract):
                     raise ValueError('Following reference needs a stable logical media source')
                 if reference.role == 'first_frame' and source.kind != 'image' or reference.role == 'continuation' and source.kind != 'video':
                     raise ValueError('Reference source kind does not match its role')
-                if isinstance(source.binding, GenerationBinding):
-                    dependencies.setdefault(reference.targetSpecId, []).append(source.binding.objectRef.id)
             elif ((reference.role == 'first_frame' and reference.source.kind != 'image')
                   or (reference.role == 'continuation' and reference.source.kind != 'video')):
                 raise ValueError('Reference source kind does not match its role')
-        acyclic(dependencies, 'following generation references')
         for spec in self.generationSpecs:
             if spec.promptContent:
                 for part in spec.promptContent:

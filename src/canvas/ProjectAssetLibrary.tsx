@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import type { CanvasResource } from "./model";
-import { listDocuments, loadDocument, type DocumentSummary } from "./storage";
+import {
+  listWorkspaceProjects,
+  readWorkspaceDocument,
+  type WorkspaceProject,
+} from "../backend/workspace";
+import { errorMessage } from "../backend/api";
 import { projectAssets } from "./projectAssets";
 import { CanvasIcon } from "./CanvasIcon";
 
@@ -11,7 +16,7 @@ export function ProjectAssetLibrary({
   currentId: string;
   onImport: (resource: CanvasResource) => void;
 }) {
-  const [projects, setProjects] = useState<DocumentSummary[]>([]);
+  const [projects, setProjects] = useState<WorkspaceProject[]>([]);
   const [selected, setSelected] = useState("");
   const [assets, setAssets] = useState<CanvasResource[]>([]);
   const [query, setQuery] = useState("");
@@ -20,12 +25,14 @@ export function ProjectAssetLibrary({
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    void listDocuments().then((result) => {
-      if (!active) return;
-      if (result.ok)
-        setProjects(result.value.filter((item) => item.id !== currentId));
-      else setError(result.error.message);
-    });
+    void listWorkspaceProjects()
+      .then((result) => {
+        if (!active) return;
+        setProjects(result.projects.filter((item) => item.id !== currentId));
+      })
+      .catch((reason) => {
+        if (active) setError(errorMessage(reason));
+      });
     return () => {
       active = false;
     };
@@ -39,17 +46,26 @@ export function ProjectAssetLibrary({
       return;
     }
     setBusy(true);
-    void loadDocument(selected).then((result) => {
-      if (!active) return;
+    const project = projects.find((item) => item.id === selected);
+    if (!project) {
       setBusy(false);
-      if (!result.ok) setError(result.error.message);
-      else if (!result.value) setError("此项目已不存在，请重新打开素材库。");
-      else setAssets(projectAssets(result.value));
-    });
+      return;
+    }
+    void readWorkspaceDocument(project)
+      .then((document) => {
+        if (!active) return;
+        setAssets(projectAssets(document));
+      })
+      .catch((reason) => {
+        if (active) setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
     return () => {
       active = false;
     };
-  }, [selected]);
+  }, [selected, projects]);
   const visible = assets.filter(
     (asset) =>
       (kind === "all" || asset.kind === kind) &&
@@ -71,7 +87,7 @@ export function ProjectAssetLibrary({
           <option value="">选择本地项目</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
-              {project.title}
+              {project.name}
             </option>
           ))}
         </select>

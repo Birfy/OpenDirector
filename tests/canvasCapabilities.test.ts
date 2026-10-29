@@ -34,7 +34,7 @@ import {
   redo,
 } from "../src/canvas/history.ts";
 
-test("interactive reference policy enforces ports, source capabilities and cycles at the producing command", () => {
+test("interactive reference policy enforces ports and source capabilities while allowing cycles", () => {
   const kinds = [
     "image",
     "video",
@@ -69,7 +69,7 @@ test("interactive reference policy enforces ports, source capabilities and cycle
     edge: { id: "ab", source: image!.id, target: text!.id },
   });
   assert.equal(doc.edges.length, 1);
-  assert.equal(referenceIssue(doc, text!.id, image!.id), "creates_cycle");
+  assert.equal(referenceIssue(doc, text!.id, image!.id), null);
   assert.equal(canAddReference(doc, image!.id, video!.id), true);
 });
 

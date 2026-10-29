@@ -41,7 +41,7 @@ export interface GeneralSettings {
   removeWatermark: boolean;
 }
 
-/** The API is optional: without it the canvas keeps its local-only workflows. */
+/** Model availability is independent of the filesystem project's editable draft. */
 export function useBackendModels() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);

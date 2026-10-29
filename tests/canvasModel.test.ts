@@ -241,7 +241,7 @@ test("arrangement honors variable heights, locks, and existing group coordinates
   assert.equal(arranged[3], locked);
 });
 
-test("reference commands reject self references and duplicate relationships from alternate UI paths", () => {
+test("reference commands allow self references and keep duplicate relationships unchanged", () => {
   const a = createNode("image"),
     b = createNode("video");
   const doc = { ...createDocument(), nodes: [a, b] };
@@ -262,16 +262,26 @@ test("reference commands reject self references and duplicate relationships from
     }),
     connected,
   );
+  assert.equal(canAddReference(connected, a.id, a.id), true);
+  const self = applyCommand(connected, {
+    type: "add-edge",
+    edge: { id: "self", source: a.id, target: a.id },
+  });
+  assert.deepEqual(self.edges, [
+    ...connected.edges,
+    { id: "self", source: a.id, target: a.id },
+  ]);
   assert.equal(
-    applyCommand(doc, {
+    applyCommand(self, {
       type: "add-edge",
-      edge: { id: "self", source: a.id, target: a.id },
+      edge: { id: "self-again", source: a.id, target: a.id },
     }),
-    doc,
+    self,
   );
+  assert.equal(canAddReference(doc, a.id, a.id, "post_edit_result"), false);
 });
 
-test("reference commands and port previews reject direct and transitive cycles", () => {
+test("reference commands and port previews allow direct and transitive cycles", () => {
   const [a, b, c, d] = Array.from({ length: 4 }, () => createNode("image"));
   const initial = { ...createDocument(), nodes: [a!, b!, c!, d!] };
   const chain = applyCommand(initial, {
@@ -285,21 +295,20 @@ test("reference commands and port previews reject direct and transitive cycles",
     [b!.id, a!.id],
     [c!.id, a!.id],
   ]) {
-    assert.equal(canAddReference(chain, source, target), false);
-    assert.equal(
-      applyCommand(chain, {
-        type: "add-edge",
-        edge: { id: "cycle", source: source!, target: target! },
-      }),
-      chain,
-    );
+    assert.equal(canAddReference(chain, source, target), true);
+    const edge = { id: "cycle", source: source!, target: target! };
+    const connected = applyCommand(chain, { type: "add-edge", edge });
+    assert.deepEqual(connected.edges, [...chain.edges, edge]);
+    const parsed = parseDocument(connected);
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) assert.deepEqual(parsed.value.edges, connected.edges);
   }
   assert.equal(canAddReference(chain, a!.id, c!.id), true);
   assert.equal(canAddReference(chain, d!.id, b!.id), true);
   assert.equal(canAddReference(chain, a!.id, "absent"), false);
 });
 
-test("old cyclic documents terminate validation without deleting retained edges", () => {
+test("cyclic documents accept further references without deleting retained edges", () => {
   const [a, b, c] = Array.from({ length: 3 }, () => createNode("image"));
   const old = {
     ...createDocument(),
@@ -315,7 +324,7 @@ test("old cyclic documents terminate validation without deleting retained edges"
     edge: { id: "ca", source: c!.id, target: a!.id },
   });
   assert.deepEqual(added.edges.slice(0, 2), old.edges);
-  assert.equal(canAddReference(added, b!.id, c!.id), false);
+  assert.equal(canAddReference(added, b!.id, c!.id), true);
 });
 
 test("locking a group protects nested nodes and their live references until the group is unlocked", () => {
