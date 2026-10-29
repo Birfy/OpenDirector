@@ -33,6 +33,25 @@ class MediaMetadata(Contract):
         return self
 
 
+class UploadInfo(Contract):
+    id: UUID
+    projectId: UUID
+    name: str
+    status: Literal['uploading', 'ready', 'registered', 'cancelled']
+    kind: MediaKind | None = None
+    fingerprint: Fingerprint | None = None
+    metadata: MediaMetadata | None = None
+    assetId: UUID | None = None
+
+    @model_validator(mode='after')
+    def complete(self):
+        if self.status in {'ready', 'registered'} and (self.kind is None or self.fingerprint is None or self.metadata is None):
+            raise ValueError('Completed uploads require verified media facts')
+        if (self.status == 'registered') != (self.assetId is not None):
+            raise ValueError('Registered uploads identify their committed asset')
+        return self
+
+
 class AssetProvenance(Contract):
     source: Literal['upload', 'manual', 'agent_written', 'generated', 'edited', 'rendered']
     jobId: UUID | None = None

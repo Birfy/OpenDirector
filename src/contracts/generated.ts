@@ -64,6 +64,7 @@ export interface AssetRefInput extends ContractInput {
 export interface AssetWriteTextInput extends ContractInput {
   readonly name: string;
   readonly text: string;
+  readonly previousAsset?: AssetRefInput | null;
 }
 
 export interface AssetWriteTextCommandInput extends CommandBaseInput {
@@ -233,6 +234,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly writeModel: ModelConfigWriteInput;
   readonly capabilities: NodeCapabilitiesInput;
   readonly viewState: ViewStateInput;
+  readonly upload: UploadInfoInput;
 }
 
 export interface DirectorCanvasItemInput extends EditorCanvasItemInput {
@@ -942,6 +944,17 @@ export interface TransformFrameInput extends ContractInput {
   readonly value: StageTransformInput;
 }
 
+export interface UploadInfoInput extends ContractInput {
+  readonly id: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly status: "uploading" | "ready" | "registered" | "cancelled";
+  readonly kind?: "text" | "image" | "video" | "audio" | "file" | null;
+  readonly fingerprint?: string | null;
+  readonly metadata?: MediaMetadataInput | null;
+  readonly assetId?: string | null;
+}
+
 export interface Vector3Input extends ContractInput {
   readonly x: number;
   readonly y: number;
@@ -1089,6 +1102,7 @@ export interface AssetRef extends Contract {
 export interface AssetWriteText extends Contract {
   readonly name: string;
   readonly text: string;
+  readonly previousAsset: AssetRef | null;
 }
 
 export interface AssetWriteTextCommand extends CommandBase {
@@ -1258,6 +1272,7 @@ export interface CreationContracts extends Contract {
   readonly writeModel: ModelConfigWrite;
   readonly capabilities: NodeCapabilities;
   readonly viewState: ViewState;
+  readonly upload: UploadInfo;
 }
 
 export interface DirectorCanvasItem extends EditorCanvasItem {
@@ -1965,6 +1980,17 @@ export interface TransformFrame extends Contract {
   readonly id: string;
   readonly time: number;
   readonly value: StageTransform;
+}
+
+export interface UploadInfo extends Contract {
+  readonly id: string;
+  readonly projectId: string;
+  readonly name: string;
+  readonly status: "uploading" | "ready" | "registered" | "cancelled";
+  readonly kind: "text" | "image" | "video" | "audio" | "file" | null;
+  readonly fingerprint: string | null;
+  readonly metadata: MediaMetadata | null;
+  readonly assetId: string | null;
 }
 
 export interface Vector3 extends Contract {

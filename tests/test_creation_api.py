@@ -73,7 +73,7 @@ def test_conflicting_command_id_and_stale_version_have_distinct_outcomes(api):
 def test_api_exposes_only_implemented_commands_and_never_accepts_snapshot_replacement(api):
     client, _ = api
     path, command, _ = create(client)
-    unsupported = dict(type='asset.writeText', commandId=str(uuid4()), projectId=command['projectId'], payload=dict(name='note.txt', text='draft'))
+    unsupported = dict(type='history.undo', commandId=str(uuid4()), projectId=command['projectId'], payload=dict(targetCommandId=command['commandId']))
     response = client.post(path + '/commands', json=unsupported)
     assert response.status_code == 501 and response.json()['code'] == 'capability_unsupported'
     assert client.get(path + '/receipts/' + unsupported['commandId']).status_code == 404

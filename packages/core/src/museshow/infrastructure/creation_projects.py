@@ -22,6 +22,7 @@ from museshow.domain.creation.validation import ContractError, validate_command
 from museshow.domain.projects import ProjectError, identifier, project_name
 from museshow.infrastructure.local_projects import LocalProjects, child, read_json, write_json
 from museshow.infrastructure.rename import rename_path
+from museshow.infrastructure.creation_files import AssetFileWrite, cleanup_staging, install_files
 
 
 class Manifest(Contract):
@@ -65,6 +66,7 @@ class CommitIntent(Contract):
     toName: str
     beforeFingerprint: Digest | None
     record: CommitRecord
+    files: tuple[AssetFileWrite, ...] = ()
 
     @model_validator(mode='after')
     def consistent(self):
@@ -76,6 +78,16 @@ class CommitIntent(Contract):
             raise ValueError('Creation intent has no prior project')
         if creating and self.record.command.type != 'project.create':
             raise ValueError('First commit must create a project')
+        ids = [write.assetId for write in self.files]
+        if len(ids) != len(set(ids)):
+            raise ValueError('File destinations must be unique')
+        assets = {asset.id: asset for asset in self.record.snapshot.assets}
+        created = {version.id for version in self.record.receipt.changed if version.objectType == 'asset'}
+        for write in self.files:
+            asset = assets.get(write.assetId)
+            if (asset is None or asset.id not in created or asset.fingerprint != write.fingerprint
+                    or asset.metadata.size != write.size):
+                raise ValueError('File write must match its committed asset')
         return self
 
 
@@ -136,7 +148,7 @@ def object_changes(before, after, command):
 
 
 class CreationProjects:
-    """C03 repository. Only project.create/rename are public commands so far.
+    """C03/C04 repository for project lifecycle and shared asset commands.
 
     commit() is an internal application-service boundary for C04 and later;
     untrusted clients cannot supply a callback or replace an entire snapshot.
@@ -317,6 +329,9 @@ class CreationProjects:
                         currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
 
     def execute(self, command: Command, *, session=None, source='ui'):
+        if command.type in {'asset.import', 'asset.writeText', 'asset.updateMetadata'}:
+            from museshow.application.creation_assets import CreationAssets
+            return CreationAssets(self).execute(command, session=session, source=source)
         if command.type == 'project.create':
             return self._create(command, source)
         if command.type != 'project.rename':
@@ -338,6 +353,12 @@ class CreationProjects:
         if record.receipt.inputFingerprint != command_fingerprint(command):
             raise ProjectError('该 commandId 已用于不同输入，请使用新的命令标识。', 409, code='command_conflict')
         return record.receipt
+
+    def replay(self, command):
+        """Resolve an already committed command before reading upload handles."""
+        with self.local.transaction() as db:
+            self._recover()
+            return self._replay(self._load(db, command.projectId)[2], command)
 
     def _create(self, command, source):
         name = project_name(command.payload.name)
@@ -362,7 +383,7 @@ class CreationProjects:
             record = self._make_record(command, None, snapshot, changed, source)
             return self._publish(CommitIntent(fromName=None, toName=name, beforeFingerprint=None, record=record))
 
-    def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui'):
+    def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui', files=()):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
         with self.local.transaction() as db:
@@ -402,7 +423,7 @@ class CreationProjects:
             record = self._make_record(command, manifest.head, snapshot, changed, source, issue)
             to_name = snapshot.project.name if command.type == 'project.rename' and changed else path.name
             return self._publish(CommitIntent(fromName=path.name, toName=to_name,
-                                beforeFingerprint=digest(before), record=record))
+                                beforeFingerprint=digest(before), record=record, files=files if changed and issue is None else ()))
 
     @staticmethod
     def _make_record(command, head, snapshot, changed, source, issue=None):
@@ -481,6 +502,9 @@ class CreationProjects:
             elif manifest.name != record.snapshot.project.name:
                 raise ProjectError('已发布清单被外部修改，已阻止覆盖。', 409, code='storage_unavailable')
         self._checkpoint('directory_ready')
+        install_files(path, record.command.projectId, intent.files, self.state_dir, self._checkpoint)
+        if intent.files:
+            self._checkpoint('files_installed')
         commits = directory(child(path, 'commits'))
         commits.mkdir(exist_ok=True)
         sync_directory(path)
@@ -515,6 +539,12 @@ class CreationProjects:
         self._journal(record.command.projectId).unlink()
         sync_directory(self.intents)
         self._checkpoint('finished')
+        try:
+            cleanup_staging(record.command.projectId, intent.files, self.state_dir)
+        except (OSError, ProjectError):
+            # Publication is already durable. Retained staging can be cleaned
+            # by explicit upload cancellation without resubmitting the command.
+            pass
 
     def _recover(self):
         self._blocked, self._warnings = {}, []

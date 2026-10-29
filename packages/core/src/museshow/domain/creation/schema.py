@@ -1,5 +1,6 @@
 """Export authoritative input/output schemas for HTTP, Agent and TypeScript."""
 from .base import Contract
+from .assets import UploadInfo
 from .canvas import CanvasItem, CanvasItemBase, MediaRole, NodeCapabilities, RoleAction
 from .commands import Command, CommandReceipt, ProjectEvent, Query
 from .editors import EditorDocument
@@ -27,6 +28,7 @@ class CreationContracts(Contract):
     writeModel: ModelConfigWrite
     capabilities: NodeCapabilities
     viewState: ViewState
+    upload: UploadInfo
 
 
 ALIASES = {

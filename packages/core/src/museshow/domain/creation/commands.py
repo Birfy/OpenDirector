@@ -28,6 +28,7 @@ class AssetImport(Contract):
 class AssetWriteText(Contract):
     name: str = Field(min_length=1, max_length=255)
     text: str = Field(max_length=1024 * 1024)
+    previousAsset: AssetRef | None = None
     # Manual/Agent provenance is supplied by the trusted application context.
 
 
@@ -149,6 +150,8 @@ class CommandBase(Contract):
             required = [('canvas_item', item.itemId) for item in payload.items]
         elif self.type == 'asset.updateMetadata':
             required = [('asset', payload.assetId)]
+        elif self.type == 'asset.writeText' and payload.previousAsset:
+            required = [('asset', payload.previousAsset.assetId)]
         elif self.type == 'asset.delete':
             required = [('asset', asset_id) for asset_id in payload.assetIds]
             if self.expectedPreview is None:

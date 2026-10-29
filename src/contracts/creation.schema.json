@@ -477,6 +477,17 @@
             "maxLength": 1048576,
             "title": "Text",
             "type": "string"
+          },
+          "previousAsset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2057,6 +2068,9 @@
           },
           "viewState": {
             "$ref": "#/$defs/ViewState"
+          },
+          "upload": {
+            "$ref": "#/$defs/UploadInfo"
           }
         },
         "required": [
@@ -2077,7 +2091,8 @@
           "publicModel",
           "writeModel",
           "capabilities",
-          "viewState"
+          "viewState",
+          "upload"
         ],
         "title": "CreationContracts",
         "type": "object"
@@ -8368,6 +8383,99 @@
         "title": "TransformFrame",
         "type": "object"
       },
+      "UploadInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "ready",
+              "registered",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "image",
+                  "video",
+                  "audio",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kind"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fingerprint"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MediaMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Assetid"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "status"
+        ],
+        "title": "UploadInfo",
+        "type": "object"
+      },
       "Vector3": {
         "additionalProperties": false,
         "properties": {
@@ -9314,6 +9422,9 @@
       },
       "viewState": {
         "$ref": "#/$defs/ViewState"
+      },
+      "upload": {
+        "$ref": "#/$defs/UploadInfo"
       }
     },
     "required": [
@@ -9334,7 +9445,8 @@
       "publicModel",
       "writeModel",
       "capabilities",
-      "viewState"
+      "viewState",
+      "upload"
     ],
     "title": "CreationContracts",
     "type": "object"
@@ -9830,11 +9942,23 @@
             "maxLength": 1048576,
             "title": "Text",
             "type": "string"
+          },
+          "previousAsset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
           "name",
-          "text"
+          "text",
+          "previousAsset"
         ],
         "title": "AssetWriteText",
         "type": "object"
@@ -11471,6 +11595,9 @@
           },
           "viewState": {
             "$ref": "#/$defs/ViewState"
+          },
+          "upload": {
+            "$ref": "#/$defs/UploadInfo"
           }
         },
         "required": [
@@ -11491,7 +11618,8 @@
           "publicModel",
           "writeModel",
           "capabilities",
-          "viewState"
+          "viewState",
+          "upload"
         ],
         "title": "CreationContracts",
         "type": "object"
@@ -18106,6 +18234,103 @@
         "title": "TransformFrame",
         "type": "object"
       },
+      "UploadInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "ready",
+              "registered",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "image",
+                  "video",
+                  "audio",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kind"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fingerprint"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MediaMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "assetId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Assetid"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "status",
+          "kind",
+          "fingerprint",
+          "metadata",
+          "assetId"
+        ],
+        "title": "UploadInfo",
+        "type": "object"
+      },
       "Vector3": {
         "additionalProperties": false,
         "properties": {
@@ -19098,6 +19323,9 @@
       },
       "viewState": {
         "$ref": "#/$defs/ViewState"
+      },
+      "upload": {
+        "$ref": "#/$defs/UploadInfo"
       }
     },
     "required": [
@@ -19118,7 +19346,8 @@
       "publicModel",
       "writeModel",
       "capabilities",
-      "viewState"
+      "viewState",
+      "upload"
     ],
     "title": "CreationContracts",
     "type": "object"
