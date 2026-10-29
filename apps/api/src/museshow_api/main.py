@@ -17,6 +17,8 @@ from museshow.domain.assets import MAX_ASSET_BYTES, ProjectAsset
 from museshow.application.generation import Generation
 from museshow.application.chat_references import validate_chat_references
 from museshow.infrastructure.local_projects import LocalProjects
+from museshow.infrastructure.creation_projects import CreationProjects
+from museshow_api.creation import creation_routes
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow.infrastructure.model_configs import connection_fields, model_fields
 from museshow.domain.input_rules import input_rules
@@ -61,6 +63,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             await generation.close()
 
     app = FastAPI(title="MuseShow Local API", version="0.1.0", lifespan=lifespan)
+    app.include_router(creation_routes(CreationProjects(store)))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
