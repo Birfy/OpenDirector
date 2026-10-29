@@ -1,4 +1,4 @@
-import type { VideoCapabilities } from "../backend/rules.ts";
+import type { VideoAdapter, VideoCapabilities } from "../backend/rules.ts";
 import {
   videoOutputDrafts,
   type VideoOutputDraft,
@@ -27,11 +27,14 @@ export function capabilityDraft(
 
 export function VideoCapabilitiesEditor({
   value,
+  adapter = "auto",
   onChange,
 }: {
   value: VideoCapabilityDraft;
+  adapter?: VideoAdapter;
   onChange: (value: VideoCapabilityDraft) => void;
 }) {
+  const h3 = adapter === "fasth3" || adapter === "minimax_h3";
   const update = (patch: Partial<VideoCapabilityDraft>) =>
     onChange({ ...value, ...patch });
   const rowChange = (index: number, patch: Partial<VideoOutputDraft>) =>
@@ -51,8 +54,9 @@ export function VideoCapabilitiesEditor({
         自定义输出规格（关闭时跟随适配预设）
       </label>
       <p className="cw-capability-help">
-        填写服务实际支持的规格；时长可写
-        4-10,15。像素尺寸按横屏填写，竖屏交换宽高。服务要求明确宽高时填写；按分辨率档位确定尺寸时可留空。
+        {h3
+          ? "H3 适配固定 4–15 秒、32 像素对齐；仅 480P、768P 可留空宽高，其余档位需填写。像素尺寸按横屏填写，竖屏交换宽高。"
+          : "填写服务实际支持的规格；时长可写 4-10,15。像素尺寸按横屏填写，竖屏交换宽高，且须按像素对齐步长填写。"}
       </p>
       <fieldset disabled={!value.custom}>
         {value.outputs.map((row, index) => (

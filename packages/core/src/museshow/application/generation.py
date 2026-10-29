@@ -136,11 +136,14 @@ class Generation:
                 "text": {"thinking": "auto", "max_tokens": 8192}}[node["kind"]]
             rules = input_rules(config)
             capabilities = rules.get('videoCapabilities')
-            selected_duration = output.get('durationSeconds')
+            explicit_duration = output.get('durationSeconds')
+            selected_duration = explicit_duration
             if selected_duration is None and config.get('videoCapabilities'):
                 selected_duration = capabilities['defaultDuration']
             if node['kind'] == 'video' and rules['profile'] == 'fasth3-omni':
-                task['parameters'] = video_parameters(node, records, duration_seconds=selected_duration)
+                # Only an explicit selection may override the prompt and the source
+                # clip length; a declared default must not truncate an edit.
+                task['parameters'] = video_parameters(node, records, duration_seconds=explicit_duration)
             elif node['kind'] == 'video' and rules['profile'] == 'standard-video':
                 task['parameters'] = {}
             if node['kind'] == 'video' and selected_duration is not None:

@@ -84,7 +84,12 @@ def check_video_config(kind, protocol, adapter, capabilities):
             if any(not 4 <= second <= 15 for item in capabilities['outputs'] for second in item['durations']):
                 raise ProjectError('当前 H3 适配支持 4–15 秒，不能通过能力配置扩大此范围。')
             if capabilities['dimensionStep'] != 32:
-                raise ProjectError('H3 输出宽高必须按 32 像素对齐。')
+                raise ProjectError('H3 输出宽高必须按 32 像素对齐（像素对齐步长须为 32）。')
+        # The /videos resolver needs explicit pixels, except for the two H3 buckets
+        # it derives itself; saving an unusable declaration would only fail later.
+        derived = {'480P', '768P'} if adapter in {'fasth3', 'minimax_h3'} else set()
+        if any(item.get('width') is None and item['resolution'] not in derived for item in capabilities['outputs']):
+            raise ProjectError('该适配方式需要为每个输出规格填写像素宽高（H3 的 480P、768P 可按档位推算）。')
     return capabilities
 
 

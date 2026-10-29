@@ -1,4 +1,4 @@
-import type { VideoCapabilities } from "./rules.ts";
+import type { VideoAdapter, VideoCapabilities } from "./rules.ts";
 
 export interface VideoOutputDraft {
   resolution: string;
@@ -39,6 +39,7 @@ export function createVideoCapabilities(
   defaultResolution: string,
   defaultDuration: number,
   dimensionStep: VideoCapabilities["dimensionStep"],
+  adapter: VideoAdapter = "auto",
 ): VideoCapabilities {
   if (!rows.length || rows.length > 20)
     throw new Error("请配置 1–20 个输出规格。");
@@ -52,7 +53,18 @@ export function createVideoCapabilities(
     const durations = parseVideoSeconds(row.seconds);
     if (Boolean(row.width.trim()) !== Boolean(row.height.trim()))
       throw new Error("像素宽高须同时填写或留空。");
-    if (!row.width.trim()) return { resolution, durations };
+    if (!row.width.trim()) {
+      // The /videos resolver needs pixels except for the two H3 buckets it
+      // derives itself; saving anything else would only fail at generation.
+      const derived =
+        (adapter === "fasth3" || adapter === "minimax_h3") &&
+        (resolution === "480P" || resolution === "768P");
+      if (!derived)
+        throw new Error(
+          "该适配方式需要填写像素宽高（仅 H3 的 480P、768P 可按档位推算）。",
+        );
+      return { resolution, durations };
+    }
     const width = Number(row.width),
       height = Number(row.height);
     if (

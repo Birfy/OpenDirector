@@ -82,6 +82,7 @@ function ModelForm({
             outputDraft.defaultResolution,
             Number(outputDraft.defaultDuration),
             outputDraft.dimensionStep,
+            value.videoAdapter,
           )
         : null;
       await catalog.save(
@@ -258,6 +259,7 @@ function ModelForm({
             </p>
             <VideoCapabilitiesEditor
               value={outputDraft}
+              adapter={value.videoAdapter}
               onChange={setOutputDraft}
             />
           </details>

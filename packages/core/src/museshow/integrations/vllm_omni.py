@@ -86,7 +86,11 @@ class VllmOmniGeneration:
                 files.append(('input_reference', _upload(prepared['images'][0], 'first_frame')))
                 prepared = {**prepared, 'images': []}
             else:
-                extra.update(task='t2va', aspect_ratio=ratio if ratio in RATIOS else '16:9')
+                extra['task'] = 't2va'
+                # An explicit size already fixes the frame; sending a conflicting
+                # aspect_ratio would contradict it.
+                if 'size' not in fields:
+                    extra['aspect_ratio'] = ratio if ratio in RATIOS else '16:9'
         files.extend(('input_references', _upload(image, f'image_{index}')) for index, image in enumerate(prepared['images'], 1))
         files.extend(('input_references', _upload(audio, f'audio_{index}')) for index, audio in enumerate(prepared['audios'], 1))
         fields['extra_params'] = json.dumps(extra)

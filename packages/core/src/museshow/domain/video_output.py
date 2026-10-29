@@ -31,17 +31,21 @@ def h3_output_size(resolution, ratio):
 def apply_video_resolution(parameters, node, records, config, output):
     rules = input_rules(config)
     capabilities = rules.get('videoCapabilities')
-    resolution = output.get('resolution', None if node.get('videoMode') == 'continuation' else (capabilities or {}).get('defaultResolution'))
-    seconds = parameters.get('duration')
-    if resolution is None or resolution in {'', '自动', 'auto'}:
-        if seconds is not None: validate_video_duration(config, seconds, resolution)
+    chosen = output.get('resolution')
+    resolution = chosen if chosen is not None else (None if node.get('videoMode') == 'continuation'
+                                                    else (capabilities or {}).get('defaultResolution'))
+    # Only a user selection is checked against the declared duration grid: an
+    # adapter may infer fractional seconds from the prompt or the source clip.
+    seconds = output.get('durationSeconds')
+    if resolution is None or str(resolution).strip().upper() in {'', 'AUTO', '自动'}:
+        if seconds is not None: validate_video_duration(config, seconds, None)
         return  # Preserve the adapter's existing automatic sizing and recovery.
-    resolution = resolution.upper()
+    resolution = str(resolution).strip().upper()
+    if node.get('videoMode') == 'continuation':
+        raise ProjectError('接续沿用上一段视频的尺寸，请将分辨率设为自动；未提交生成。')
     if resolution not in rules.get('outputResolutions', []):
         raise ProjectError('当前模型不支持所选分辨率，请重新选择；未提交生成。')
     if seconds is not None: validate_video_duration(config, seconds, resolution)
-    if node.get('videoMode') == 'continuation':
-        raise ProjectError('接续沿用上一段视频的尺寸，请将分辨率设为自动；未提交生成。')
     sources = [records[key] for key in node['referenceIds'] if key in records]
     if (node.get('videoMode') == 'reference' and any(item['kind'] == 'image' for item in sources)
             and resolution not in rules.get('referenceImageResolutions', rules['outputResolutions'])):

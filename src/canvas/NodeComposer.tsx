@@ -22,7 +22,6 @@ import {
   serviceVideoSettings,
   backendReferenceIssue,
   modelLabel,
-  serviceVoice,
   type ModelConfig,
 } from "../backend/rules.ts";
 import "./nodes.css";
@@ -464,7 +463,7 @@ export function NodeComposer({
             <span>音色</span>
             <input
               aria-label="服务音色"
-              value={serviceVoice(settings) ?? ""}
+              value={settings.voiceName ?? ""}
               placeholder="default · 模型默认音色"
               disabled={running}
               spellCheck={false}
@@ -621,6 +620,9 @@ export function NodeComposer({
           ).map(([field, label], index) => {
             const id = settings[field];
             const node = frameCandidates.find((item) => item.id === id);
+            // The local service accepts a first frame only; offering a tail frame
+            // here would permanently block submission.
+            const blocked = backend && field === "lastFrameNodeId";
             const unavailable = Boolean(
               id && (!node?.data.src || node.data.assetState === "missing"),
             );
@@ -644,7 +646,11 @@ export function NodeComposer({
                   <strong>
                     {label}{" "}
                     <small>
-                      {index ? "可选，需先选择首帧" : "可选，可直接文生视频"}
+                      {blocked
+                        ? "本地服务只支持首帧"
+                        : index
+                          ? "可选，需先选择首帧"
+                          : "可选，可直接文生视频"}
                     </small>
                   </strong>
                   <select
@@ -666,7 +672,9 @@ export function NodeComposer({
                         key={item.id}
                         value={item.id}
                         disabled={
-                          !item.data.src || item.data.assetState === "missing"
+                          blocked ||
+                          !item.data.src ||
+                          item.data.assetState === "missing"
                         }
                       >
                         {item.data.title}
