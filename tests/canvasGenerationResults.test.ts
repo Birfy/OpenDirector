@@ -28,7 +28,6 @@ function fixture(kind: "image" | "video" | "audio" = "video") {
         title: "自定义名称",
         prompt: "山间日出",
         settings: { ...generationDefaults(kind), prompt: "山间日出" },
-        tags: ["default-tag-2"],
       },
     ),
     parentId: group.id,
@@ -73,7 +72,6 @@ for (const kind of ["image", "video", "audio"] as const)
     assert.deepEqual({ ...updated, data: source.data }, source);
     assert.equal(updated.data.title, source.data.title);
     assert.deepEqual(updated.data.settings, source.data.settings);
-    assert.deepEqual(updated.data.tags, source.data.tags);
     assert.equal(updated.data.src, output.src);
     assert.deepEqual(updated.data.media, output.media);
     const serialized = serializeDocument(result.document);

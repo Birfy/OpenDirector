@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { EditorModal } from "./EditorModal";
 import { errorMessage } from "../backend/api.ts";
 import {
   MODEL_KINDS,
@@ -282,13 +281,7 @@ function ModelForm({
   );
 }
 
-export function ModelSettingsDialog({
-  catalog,
-  onClose,
-}: {
-  catalog: BackendModels;
-  onClose: () => void;
-}) {
+export function ModelSettings({ catalog }: { catalog: BackendModels }) {
   const [editing, setEditing] = useState<{
     kind: ModelKind;
     model?: ModelConfig;
@@ -303,31 +296,20 @@ export function ModelSettingsDialog({
     }
   };
   return (
-    <EditorModal
-      title="模型接入"
-      subtitle="由本地 API 保存和调用；密钥只保存在本机后端，不进入画布文件。"
-      onClose={onClose}
-      className="cw-model-settings"
-      error={error || (catalog.connected ? undefined : catalog.error)}
-      actions={
-        !catalog.connected && (
-          <button onClick={() => void catalog.refresh()}>重新连接</button>
-        )
-      }
-    >
-      {catalog.connected && catalog.settings && (
-        <label className="cw-domain-checkbox cw-model-watermark">
-          <input
-            type="checkbox"
-            checked={catalog.settings.removeWatermark}
-            onChange={(event) =>
-              void catalog
-                .updateSettings({ removeWatermark: event.target.checked })
-                .catch((failure) => setError(errorMessage(failure)))
-            }
-          />
-          去除服务商“AI 生成”可见水印（仅对之后提交的任务生效）
-        </label>
+    <div className="cw-model-settings">
+      {(error || !catalog.connected) && (
+        <div className="cw-settings-notice" role="alert">
+          <span>{error || catalog.error}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              void catalog.refresh();
+            }}
+          >
+            重新读取模型列表
+          </button>
+        </div>
       )}
       {catalog.connected &&
         MODEL_KINDS.map((kind) => {
@@ -386,6 +368,6 @@ export function ModelSettingsDialog({
             </section>
           );
         })}
-    </EditorModal>
+    </div>
   );
 }

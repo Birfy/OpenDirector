@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type CSSProperties,
 } from "react";
 import {
   ReactFlow,
@@ -54,8 +55,6 @@ import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
 import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
-import { CanvasTagsPanel } from "./CanvasTagsPanel";
-import { CANVAS_TAGS, setNodeTag, type CanvasTagId } from "./nodeTags";
 import {
   connectedCreationKinds,
   referenceIssue,
@@ -118,7 +117,9 @@ import {
   type ServiceResult,
 } from "./linkedResults";
 import { AssistantPanel } from "./AssistantPanel";
-import { ModelSettingsDialog } from "./ModelSettingsDialog";
+import { useAssistantLayout } from "./useAssistantLayout";
+import { SettingsDialog } from "./SettingsDialog";
+import { useTheme } from "./theme";
 import { errorMessage } from "../backend/api.ts";
 import {
   cancelGeneration,
@@ -176,7 +177,7 @@ import {
   type CanvasHistory,
 } from "./history";
 import { absolutePosition, arrangeNodes } from "./geometry";
-import { parseDocument, serializeDocument } from "./storage";
+import { serializeDocument } from "./storage";
 import {
   copySelection,
   cutSelection,
@@ -198,16 +199,11 @@ import {
 } from "./assets";
 import "@xyflow/react/dist/style.css";
 import "./workspace.css";
+import "./settings.css";
+import "./themes.css";
 
 type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
-type Panel =
-  | "assets"
-  | "search"
-  | "tags"
-  | "history"
-  | "assistant"
-  | "director"
-  | null;
+type Panel = "assets" | "search" | "history" | null;
 type Menu = {
   x: number;
   y: number;
@@ -380,14 +376,10 @@ function Workspace() {
     null,
   );
   const [panel, setPanel] = useState<Panel>(null);
-  const [moreMenu, setMoreMenu] = useState(false);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
   const [minimap, setMinimap] = useState(false);
   const [showEdges, setShowEdges] = useState(true);
-  const [showDots, setShowDots] = useState(true);
-  const [objectSnapping, setObjectSnapping] = useState(true);
-  const [gridSnapping, setGridSnapping] = useState(false);
   const [guides, setGuides] = useState<SnapGuide[]>([]);
   const snapGuides = useRef<SnapGuide[]>([]);
   const dragging = useRef(false);
@@ -396,7 +388,6 @@ function Workspace() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const [toast, setToast] = useState("");
-  const [activeTag, setActiveTag] = useState<CanvasTagId | null>(null);
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("default");
@@ -432,7 +423,11 @@ function Workspace() {
   const [help, setHelp] = useState(false);
   const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
-  const [modelSettings, setModelSettings] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<
+    "general" | "models"
+  >("general");
+  const theme = useTheme();
   const serviceRuns = useRef(new Map<string, ServiceRun>());
   const [activeGenerations, setActiveGenerations] = useState<
     ActiveGeneration[]
@@ -451,15 +446,22 @@ function Workspace() {
   }, [arrivingNodes]);
   const syncing = useRef(new Set<string>());
   const following = useRef(new Set<string>());
-  const [chat, setChat] = useState("");
-  const [chatLog, setChatLog] = useState<string[]>([]);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantSelectionRequest, setAssistantSelectionRequest] = useState(0);
   const clipboard = useRef<CanvasFragment | null>(null);
   const pasteCount = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  const jsonInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const assistantLayout = useAssistantLayout(root, assistantOpen, () => {
+    setAssistantOpen(false);
+    requestAnimationFrame(() =>
+      root.current
+        ?.querySelector<HTMLButtonElement>(".cw-chat-button")
+        ?.focus(),
+    );
+  });
   const toolbarElement = useRef<HTMLDivElement>(null);
   const composerElement = useRef<HTMLDivElement>(null);
   const [presentationFocus, setPresentationFocus] = useState(0);
@@ -562,7 +564,13 @@ function Workspace() {
     };
   }, [cancelDrag]);
   const notify = useCallback((message: string) => setToast(message), []);
+  const showAssistant = () => {
+    setPanel(null);
+    setAssistantOpen(true);
+    if (selected.length) setAssistantSelectionRequest((n) => n + 1);
+  };
   const togglePanel = (value: Panel) => {
+    setAssistantOpen(false);
     referenceTarget.current = null;
     setPanel((p) => (p === value ? null : value));
     setMenu(null);
@@ -608,9 +616,10 @@ function Workspace() {
       pointerGesture.current.cancel();
       setSelectedEdges([]);
       setPanel(null);
+      setAssistantOpen(false);
+      setAssistantSelectionRequest(0);
       setMenu(null);
       setRename(null);
-      setMoreMenu(false);
       setZoomMenu(false);
       setHand(false);
       window.history.replaceState(
@@ -1040,8 +1049,8 @@ function Workspace() {
           positions,
           {
             zoom: flow.getZoom(),
-            objects: objectSnapping,
-            grid: gridSnapping,
+            objects: true,
+            grid: false,
             bypass: bypassSnapping.current,
             previous: snapGuides.current,
           },
@@ -1054,7 +1063,7 @@ function Workspace() {
         patches.push({ type: "update-node", id, patch: { position } });
       if (patches.length) command({ type: "batch", commands: patches });
     },
-    [command, flow, objectSnapping, gridSnapping],
+    [command, flow],
   );
   const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
   const selectionControls = Boolean(
@@ -1259,7 +1268,6 @@ function Workspace() {
       new Blob([result.value], { type: "application/json" }),
       `${doc.title}.canvas.json`,
     );
-    setMoreMenu(false);
   };
   const openFilePicker = (id: string | null = null) => {
     if (id && lockedIds.has(id)) {
@@ -2143,7 +2151,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel",
       )
     )
       return;
@@ -2173,7 +2181,6 @@ function Workspace() {
       closeGeneration();
       setRename(null);
       setHelp(false);
-      setMoreMenu(false);
       setZoomMenu(false);
       if (!editingText) setSelected([]);
       return;
@@ -2186,7 +2193,7 @@ function Workspace() {
       editing ||
       help ||
       generationTarget ||
-      modelSettings ||
+      settingsOpen ||
       el.closest("button,a,video,audio,[role=dialog]") ||
       (el !== root.current && !el.closest(".react-flow"))
     )
@@ -2338,10 +2345,6 @@ function Workspace() {
         setSelected([id]);
         focusSelection(id);
       }
-    },
-    editTags: (id: string) => {
-      if (!selected.includes(id)) setSelected([id]);
-      setPanel("tags");
     },
     update: (id: string, data: Partial<CanvasNodeData>) =>
       command({ type: "update-node", id, patch: { data } }),
@@ -2498,6 +2501,15 @@ function Workspace() {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
+      data-assistant-open={assistantOpen}
+      data-assistant-resizing={assistantLayout.dragging}
+      style={
+        {
+          "--assistant-width": `${assistantLayout.width}px`,
+          "--assistant-toolbar-offset": `${assistantLayout.toolbarOffset}px`,
+          "--assistant-top": assistantLayout.belowHeader ? "78px" : "14px",
+        } as CSSProperties
+      }
       tabIndex={-1}
       onPointerDownCapture={(event) => {
         selectionAtPointerDown.current = selectedRef.current;
@@ -2663,7 +2675,6 @@ function Workspace() {
             setSelected([]);
             setDismissedComposer(null);
             setSelectedEdges([]);
-            setMoreMenu(false);
             setZoomMenu(false);
           }}
           onPaneContextMenu={(event) => {
@@ -2702,15 +2713,13 @@ function Workspace() {
           colorMode="dark"
           aria-label="无限创作画布"
         >
-          {showDots && (
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
-              size={Math.max(1, 1 / zoom)}
-              color="#55565d"
-              bgColor="#0d0d0d"
-            />
-          )}
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
+            size={Math.max(1, 1 / zoom)}
+            color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
+            bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
+          />
           <CanvasInteractionOverlay
             guides={guides}
             pending={pendingConnection}
@@ -2720,7 +2729,7 @@ function Workspace() {
               pannable
               zoomable
               nodeColor={(n) => (n.type === "text" ? "#8b887f" : "#59656c")}
-              maskColor="#080809bb"
+              maskColor={theme.theme === "dark" ? "#080809bb" : "#f7f8fabb"}
               position="bottom-left"
               style={{ bottom: 66, left: 12 }}
             />
@@ -2771,138 +2780,17 @@ function Workspace() {
             active={panel === "history"}
             onClick={() => togglePanel("history")}
           />
-          <button
-            className="cw-local-badge"
-            title={
-              backendCatalog.connected
-                ? "本地服务已连接，点击管理模型接入"
-                : `本地服务未连接：${backendCatalog.error}`
-            }
-            onClick={() => setModelSettings(true)}
-          >
-            {backendCatalog.connected
-              ? `模型接入 · ${backendCatalog.models.length}`
-              : "本地学习版"}
-          </button>
           <button className="cw-export-button" onClick={exportDocument}>
             导出画布
           </button>
-          <IconButton
-            name="more"
-            label="更多操作"
-            tooltipSide="bottom"
-            active={moreMenu}
-            onClick={() => setMoreMenu(!moreMenu)}
-          />
-          <span className="cw-avatar">M</span>
         </div>
       </header>
-      {moreMenu && (
-        <div className="cw-more-menu cw-menu-popover">
-          <button
-            role="menuitemcheckbox"
-            aria-checked={showDots}
-            onClick={() => setShowDots(!showDots)}
-          >
-            背景点阵 <span>{showDots ? "✓" : ""}</span>
-          </button>
-          <button
-            role="menuitemcheckbox"
-            aria-checked={objectSnapping}
-            onClick={() => {
-              setObjectSnapping(!objectSnapping);
-              clearGuides();
-            }}
-          >
-            对齐吸附与辅助线 <span>{objectSnapping ? "✓" : ""}</span>
-          </button>
-          <button
-            role="menuitemcheckbox"
-            aria-checked={gridSnapping}
-            onClick={() => setGridSnapping(!gridSnapping)}
-          >
-            吸附到网格 <span>{gridSnapping ? "✓" : ""}</span>
-          </button>
-          <small className="cw-snap-hint">
-            拖动时按住 ⌘ / Ctrl 暂时取消吸附
-          </small>
-          <hr />
-          <button
-            onClick={() => {
-              setHistory(undo);
-              setMoreMenu(false);
-            }}
-          >
-            撤销 <kbd>⌘ Z</kbd>
-          </button>
-          <button
-            onClick={() => {
-              setHistory(redo);
-              setMoreMenu(false);
-            }}
-          >
-            重做 <kbd>⌘ ⇧ Z</kbd>
-          </button>
-          <button
-            onClick={() => {
-              jsonInput.current?.click();
-              setMoreMenu(false);
-            }}
-          >
-            导入画布 JSON
-          </button>
-          <button
-            onClick={() => {
-              exportDocument();
-              setMoreMenu(false);
-            }}
-          >
-            导出画布 JSON
-          </button>
-          <hr />
-          <button
-            onClick={() => {
-              setModelSettings(true);
-              setMoreMenu(false);
-            }}
-          >
-            模型接入
-          </button>
-          <button
-            onClick={() => {
-              void syncServiceResults(true);
-              setMoreMenu(false);
-            }}
-          >
-            同步本地服务结果
-          </button>
-          <button
-            onClick={() => {
-              setHelp(true);
-              setMoreMenu(false);
-            }}
-          >
-            快捷键与使用说明
-          </button>
-          <button
-            onClick={() => {
-              void switchDocument(
-                () => importWorkspaceDocument(exampleDocument()),
-                true,
-              );
-              setMoreMenu(false);
-            }}
-          >
-            打开示例画布
-          </button>
-        </div>
-      )}
-
       <CanvasToolRail
         holdCollapsed={false}
         items={[
           {
             name: "text",
+            icon: "rail-text",
             label: "文本",
             actionLabel: "添加文本",
             shortcut: "T",
@@ -2910,48 +2798,54 @@ function Workspace() {
           },
           {
             name: "image",
+            icon: "rail-image",
             label: "图片",
             actionLabel: "添加图片",
             onClick: () => addNode("image"),
           },
           {
             name: "video",
+            icon: "rail-video",
             label: "视频",
             actionLabel: "添加视频",
             onClick: () => addNode("video"),
           },
           {
             name: "audio",
+            icon: "rail-audio",
             label: "音频",
             actionLabel: "添加音频",
             onClick: () => addNode("audio"),
           },
           {
             name: "timeline",
+            icon: "rail-timeline",
             label: "时间线",
             actionLabel: "添加时间线",
             onClick: () => addNode("timeline"),
           },
           {
             name: "subject",
+            icon: "rail-subject",
             label: "主体",
             actionLabel: "添加主体",
             onClick: () => addNode("subject"),
           },
           {
             name: "tool",
-            label: "导演参数",
-            active: panel === "director",
-            onClick: () => togglePanel("director"),
+            label: "导演工具箱",
+            icon: "rail-tool",
+            unavailable: true,
           },
           {
             name: "external",
             label: "导演台",
-            actionLabel: "添加导演台",
-            onClick: () => addNode("external"),
+            icon: "rail-stage",
+            unavailable: true,
           },
           {
             name: "folder",
+            icon: "rail-folder",
             label: "资产库",
             preserveCollapsedOnFocusRestore: true,
             separatorBefore: true,
@@ -2959,13 +2853,8 @@ function Workspace() {
             onClick: () => togglePanel("assets"),
           },
           {
-            name: "tag",
-            label: "节点标签",
-            active: panel === "tags",
-            onClick: () => togglePanel("tags"),
-          },
-          {
             name: "upload",
+            icon: "rail-upload",
             label: "上传",
             preserveCollapsedOnFocusRestore: true,
             actionLabel: "上传本地素材",
@@ -3003,58 +2892,72 @@ function Workspace() {
       )}
       {!ready && <div className="cw-loading">正在打开画布…</div>}
 
-      <div className="cw-bottom-controls">
-        <IconButton
-          name={hand ? "hand" : "pointer"}
-          label={hand ? "切换到选择工具" : "切换到抓手工具"}
-          shortcut={hand ? "V" : "H"}
-          tooltipDelay={0}
-          active={hand}
-          onClick={() => setHand(!hand)}
-        />
-        <span className="cw-vline" />
-        <IconButton
-          name="map"
-          label={minimap ? "隐藏小地图" : "显示小地图"}
-          tooltipDelay={0}
-          active={minimap}
-          onClick={() => setMinimap(!minimap)}
-        />
-        <IconButton
-          name="link"
-          label={showEdges ? "隐藏连线" : "显示连线"}
-          tooltipDelay={0}
-          active={showEdges}
-          onClick={() => setShowEdges(!showEdges)}
-        />
-        <TooltipButton
-          className="cw-zoom-button"
-          label="缩放选项"
-          tooltipDelay={0}
-          onClick={() => setZoomMenu(!zoomMenu)}
-        >
-          {Math.round(zoom * 100)}%<CanvasIcon name="chevron" size={11} />
-        </TooltipButton>
-      </div>
-      <div className="cw-undo-controls">
-        <IconButton
-          name="undo"
-          label="撤销"
-          shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
-          tooltipDelay={0}
-          disabled={!history.past.length && !history.transaction}
-          onClick={() => setHistory(undo)}
-        />
-        <IconButton
-          name="redo"
-          label="重做"
-          shortcut={
-            navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
-          }
-          tooltipDelay={0}
-          disabled={!history.future.length}
-          onClick={() => setHistory(redo)}
-        />
+      <div className="cw-bottom-left">
+        <div className="cw-settings-control">
+          <IconButton
+            name="settings"
+            label="设置"
+            active={settingsOpen}
+            onClick={() => {
+              setZoomMenu(false);
+              setSettingsCategory("general");
+              setSettingsOpen(true);
+            }}
+          />
+        </div>
+        <div className="cw-bottom-controls">
+          <IconButton
+            name={hand ? "hand" : "pointer"}
+            label={hand ? "切换到选择工具" : "切换到抓手工具"}
+            shortcut={hand ? "V" : "H"}
+            tooltipDelay={0}
+            active={hand}
+            onClick={() => setHand(!hand)}
+          />
+          <span className="cw-vline" />
+          <IconButton
+            name="map"
+            label={minimap ? "隐藏小地图" : "显示小地图"}
+            tooltipDelay={0}
+            active={minimap}
+            onClick={() => setMinimap(!minimap)}
+          />
+          <IconButton
+            name="link"
+            label={showEdges ? "隐藏连线" : "显示连线"}
+            tooltipDelay={0}
+            active={showEdges}
+            onClick={() => setShowEdges(!showEdges)}
+          />
+          <TooltipButton
+            className="cw-zoom-button"
+            label="缩放选项"
+            tooltipDelay={0}
+            onClick={() => setZoomMenu(!zoomMenu)}
+          >
+            {Math.round(zoom * 100)}%<CanvasIcon name="chevron" size={11} />
+          </TooltipButton>
+        </div>
+        <div className="cw-undo-controls">
+          <IconButton
+            name="undo"
+            label="撤销"
+            shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
+            tooltipDelay={0}
+            disabled={!history.past.length && !history.transaction}
+            onClick={() => setHistory(undo)}
+          />
+          <IconButton
+            name="redo"
+            label="重做"
+            shortcut={
+              navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
+            }
+            tooltipDelay={0}
+            disabled={!history.future.length}
+            onClick={() => setHistory(redo)}
+          />
+        </div>
       </div>
       {zoomMenu && (
         <div className="cw-zoom-menu cw-menu-popover">
@@ -3130,14 +3033,13 @@ function Workspace() {
         />
         <button
           className="cw-chat-button"
-          onClick={() => togglePanel("assistant")}
+          aria-controls="canvas-assistant"
+          aria-expanded={assistantOpen}
+          onClick={() =>
+            assistantOpen ? setAssistantOpen(false) : showAssistant()
+          }
         >
           <CanvasIcon name="star" size={18} />与 AI 对话
-          <span className="cw-tiny-tag">
-            {backendCatalog.models.some((model) => model.kind === "agent")
-              ? "Agent"
-              : "本地"}
-          </span>
         </button>
       </div>
       {selected.length > 1 && !interacting && !panning && (
@@ -3174,10 +3076,6 @@ function Workspace() {
           <button onClick={group}>
             <CanvasIcon name="group" size={16} />
             编组
-          </button>
-          <button onClick={() => setPanel("tags")}>
-            <CanvasIcon name="tag" size={16} />
-            标签
           </button>
           <button onClick={stack}>
             <CanvasIcon name="stack" size={16} />
@@ -3255,7 +3153,7 @@ function Workspace() {
             }}
             onPreview={() => setPreview(single)}
             onDownload={() => downloadNode(single)}
-            onAssistant={() => togglePanel("assistant")}
+            onAssistant={showAssistant}
             onDuplicate={() => paste(true)}
           />
         </div>
@@ -3440,7 +3338,6 @@ function Workspace() {
                   });
                 },
               )}
-              {menuButton("设置标签", "tag", () => setPanel("tags"))}
               {single?.type === "stack" &&
                 menuButton("解散堆叠", "stack", () =>
                   change((d) => unstackSelection(d, selected)),
@@ -3551,15 +3448,12 @@ function Workspace() {
 
       {panel && (
         <aside
-          className={`cw-side-panel ${panel === "assets" || panel === "director" ? "from-left" : ""}`}
+          className={`cw-side-panel ${panel === "assets" ? "from-left" : ""}`}
           aria-label={
             {
               assets: "资产库",
               search: "搜索节点",
-              tags: "节点标签",
               history: "生成历史",
-              assistant: "AI 对话",
-              director: "导演参数",
             }[panel]
           }
         >
@@ -3569,10 +3463,7 @@ function Workspace() {
                 {
                   assets: "资产库",
                   search: "搜索节点",
-                  tags: "节点标签",
                   history: "生成历史",
-                  assistant: "与 AI 对话",
-                  director: "导演参数",
                 }[panel]
               }
             </h2>
@@ -3585,29 +3476,6 @@ function Workspace() {
               }}
             />
           </div>
-          {panel === "tags" && (
-            <CanvasTagsPanel
-              nodes={doc.nodes}
-              selectedIds={selected}
-              activeTag={activeTag}
-              onActiveTagChange={setActiveTag}
-              onChange={(tag, enabled) =>
-                change((d) => setNodeTag(d, selected, tag, enabled))
-              }
-              onClear={() =>
-                change((d) =>
-                  CANVAS_TAGS.reduce(
-                    (next, tag) => setNodeTag(next, selected, tag.id, false),
-                    d,
-                  ),
-                )
-              }
-              onLocate={(id) => {
-                const node = doc.nodes.find((n) => n.id === id);
-                if (node) selectAndFocus(node);
-              }}
-            />
-          )}
           {panel === "search" && (
             <CanvasSearchPanel nodes={doc.nodes} onSelect={selectAndFocus} />
           )}
@@ -3828,126 +3696,34 @@ function Workspace() {
               }}
             />
           )}
-          {panel === "director" && (
-            <div className="cw-director-parameters">
-              <p>添加参数节点，连接到图片或视频作为创作参考。</p>
-              {(
-                [
-                  ["camera", "相机参数"],
-                  ["palette", "配色"],
-                  ["style", "风格"],
-                  ["camera_motion", "运镜"],
-                ] as const
-              ).map(([kind, title]) => (
-                <button
-                  key={kind}
-                  onClick={() => {
-                    addNode("tool", undefined, {
-                      title,
-                      tool: { kind, fields: [] },
-                    });
-                    setPanel(null);
-                  }}
-                >
-                  {title}
-                  <CanvasIcon name="plus" size={16} />
-                </button>
-              ))}
-            </div>
-          )}
-          {panel === "assistant" && backendCatalog.connected && (
-            <AssistantPanel
-              key={doc.id}
-              documentId={doc.id}
-              documentTitle={doc.title}
-              catalog={backendCatalog}
-              selectedNodes={doc.nodes.filter((node) =>
-                selected.includes(node.id),
-              )}
-              onTurnEnd={() => void followServiceTasks()}
-              onOpenSettings={() => setModelSettings(true)}
-            />
-          )}
-          {panel === "assistant" && !backendCatalog.connected && (
-            <>
-              <div className="cw-assistant-intro">
-                <span>✦</span>
-                <h3>从想法开始，串联你的创作</h3>
-                <p>
-                  本地编排助手会把每一行描述转为一个图片节点，并连接为参考链。用
-                  scripts/museshow.py 启动本地服务并接入对话模型后，可与 AI
-                  助手对话并生成素材。
-                </p>
-              </div>
-              <div className="cw-chat-log">
-                {chatLog.map((line, i) => (
-                  <p key={i}>{line}</p>
-                ))}
-              </div>
-              <form
-                className="cw-chat-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const prompts = chat
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  if (!prompts.length) return;
-                  const p = center();
-                  const nodes = prompts.map((prompt, i) =>
-                    createNode(
-                      "image",
-                      { x: p.x + i * 440, y: p.y },
-                      { title: `画面 ${i + 1}`, prompt },
-                    ),
-                  );
-                  command({
-                    type: "batch",
-                    commands: [
-                      { type: "add-nodes", nodes },
-                      ...nodes.slice(1).map(
-                        (n, i): CanvasCommand => ({
-                          type: "add-edge",
-                          edge: {
-                            id: crypto.randomUUID(),
-                            source: nodes[i]!.id,
-                            target: n.id,
-                          },
-                        }),
-                      ),
-                    ],
-                  });
-                  setChatLog((log) => [
-                    ...log,
-                    chat,
-                    `已创建 ${nodes.length} 个可编辑节点，连线表示参考关系。`,
-                  ]);
-                  setChat("");
-                  selectionPresentation.userNavigation();
-                  setSelected([]);
-                  requestAnimationFrame(
-                    () =>
-                      void flow.fitView({
-                        padding: 0.3,
-                        maxZoom: 1,
-                        duration: 200,
-                      }),
-                  );
-                }}
-              >
-                <textarea
-                  placeholder={"描述你的画面，每行一个镜头…"}
-                  aria-label="编排描述"
-                  value={chat}
-                  onChange={(e) => setChat(e.target.value)}
-                />
-                <button type="submit" disabled={!chat.trim()}>
-                  添加到画布 <CanvasIcon name="arrow" size={16} />
-                </button>
-              </form>
-            </>
-          )}
         </aside>
+      )}
+
+      {ready && (
+        <AssistantPanel
+          key={doc.id}
+          documentId={doc.id}
+          documentTitle={doc.title}
+          catalog={backendCatalog}
+          nodes={doc.nodes}
+          selectedNodes={doc.nodes.filter((node) => selected.includes(node.id))}
+          open={assistantOpen}
+          layout={assistantLayout}
+          selectionRequest={assistantSelectionRequest}
+          onClose={() => {
+            setAssistantOpen(false);
+            requestAnimationFrame(() =>
+              root.current
+                ?.querySelector<HTMLButtonElement>(".cw-chat-button")
+                ?.focus(),
+            );
+          }}
+          onTurnEnd={() => void followServiceTasks()}
+          onOpenSettings={() => {
+            setSettingsCategory("models");
+            setSettingsOpen(true);
+          }}
+        />
       )}
 
       <input
@@ -3971,23 +3747,6 @@ function Workspace() {
           if (event.target.files?.length)
             void importGenerationResults([...event.target.files]);
           event.target.value = "";
-        }}
-      />
-      <input
-        ref={jsonInput}
-        className="sr-only"
-        type="file"
-        accept=".json,application/json"
-        aria-label="导入画布文件"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f)
-            void switchDocument(async () => {
-              const r = parseDocument(await f.text());
-              if (!r.ok) throw new Error(r.error.message);
-              return importWorkspaceDocument(r.value);
-            }, true);
-          e.target.value = "";
         }}
       />
       {toast && (
@@ -4244,10 +4003,12 @@ function Workspace() {
             onClose={closeEditor}
           />
         )}
-      {modelSettings && (
-        <ModelSettingsDialog
+      {settingsOpen && (
+        <SettingsDialog
           catalog={backendCatalog}
-          onClose={() => setModelSettings(false)}
+          theme={theme}
+          initialCategory={settingsCategory}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
       {generationNode && generationSettings && generationDraft && (
@@ -4354,7 +4115,8 @@ function Workspace() {
             <p className="cw-panel-note">
               项目与画布保存在本地 projects 目录，导出 JSON
               可备份或交换。图像裁剪与调色在本机实际执行；AI
-              生成和助手通过本地服务调用“模型接入”中的模型，云分享和云端资产尚未接入。
+              生成和助手通过本地服务调用“设置 →
+              模型接入”中的模型，云分享和云端资产尚未接入。
             </p>
           </section>
         </div>

@@ -3,7 +3,6 @@ import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
 import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
-import type { CanvasTagId } from "./nodeTags.ts";
 import { referenceIssue } from "./connectionPolicy.ts";
 /** Authored local canvas model, compatible with React Flow's node/edge shape. */
 export type CanvasNodeKind =
@@ -128,7 +127,6 @@ export interface CanvasNodeData extends Record<string, unknown> {
   title: string;
   prompt: string;
   src?: string;
-  tags?: CanvasTagId[];
   mimeType?: string;
   text?: string;
   assetState?: "ready" | "missing";
@@ -435,7 +433,6 @@ export function applyCommand(
           kind: type,
           title: node.data.title,
           prompt: node.data.prompt,
-          ...(node.data.tags ? { tags: [...node.data.tags] } : {}),
         };
       } else if (
         command.patch.data &&

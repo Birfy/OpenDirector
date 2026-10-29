@@ -1,18 +1,21 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ButtonHTMLAttributes } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { TooltipButton } from "./TooltipButton";
 
 export type CanvasToolRailItem = {
   name: string;
+  icon?: string;
   label: string;
   actionLabel?: string;
   shortcut?: string;
   active?: boolean;
   separatorBefore?: boolean;
   preserveCollapsedOnFocusRestore?: boolean;
-  onClick: () => void;
+  unavailable?: boolean;
+  onClick?: () => void;
 };
 
-/** The creation rail reveals all labels together, rather than individual tooltips. */
+/** Reveal tool labels together and explain unavailable entries on hover or focus. */
 export function CanvasToolRail({
   items,
   holdCollapsed,
@@ -105,36 +108,57 @@ export function CanvasToolRail({
             }
           }}
         >
-          {items.map((item, index) => (
-            <div className="cw-rail-item" key={item.name}>
-              {item.separatorBefore && <span className="cw-divider" />}
-              <button
-                type="button"
-                className={`cw-rail-button ${item.active ? "is-active" : ""}`}
-                aria-label={item.actionLabel ?? item.label}
-                aria-keyshortcuts={item.shortcut}
-                aria-pressed={item.active}
-                tabIndex={index === activeIndex ? 0 : -1}
-                onFocus={() => setActiveIndex(index)}
-                onClick={(event) => {
-                  focusRestoreTarget.current =
-                    item.preserveCollapsedOnFocusRestore
-                      ? event.currentTarget
-                      : null;
-                  setRestoreSuppressed(false);
-                  setDismissed(true);
-                  item.onClick();
-                }}
-              >
+          {items.map((item, index) => {
+            const props: ButtonHTMLAttributes<HTMLButtonElement> = {
+              type: "button",
+              className: `cw-rail-button ${item.active ? "is-active" : ""}`,
+              "aria-label": item.actionLabel ?? item.label,
+              "aria-keyshortcuts": item.shortcut,
+              "aria-pressed": item.active,
+              "aria-disabled": item.unavailable || undefined,
+              tabIndex: index === activeIndex ? 0 : -1,
+              onFocus: () => setActiveIndex(index),
+              onClick: (event) => {
+                if (item.unavailable) {
+                  event.preventDefault();
+                  return;
+                }
+                focusRestoreTarget.current =
+                  item.preserveCollapsedOnFocusRestore
+                    ? event.currentTarget
+                    : null;
+                setRestoreSuppressed(false);
+                setDismissed(true);
+                item.onClick?.();
+              },
+            };
+            const content = (
+              <>
                 <span className="cw-rail-icon">
-                  <CanvasIcon name={item.name} />
+                  <CanvasIcon name={item.icon ?? item.name} size={20} />
                 </span>
                 <span className="cw-rail-label" aria-hidden="true">
                   {item.label}
                 </span>
-              </button>
-            </div>
-          ))}
+              </>
+            );
+            return (
+              <div className="cw-rail-item" key={item.name}>
+                {item.separatorBefore && <span className="cw-divider" />}
+                {item.unavailable ? (
+                  <TooltipButton
+                    {...props}
+                    label="暂未开放"
+                    tooltipSide="right"
+                  >
+                    {content}
+                  </TooltipButton>
+                ) : (
+                  <button {...props}>{content}</button>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </div>
     </div>

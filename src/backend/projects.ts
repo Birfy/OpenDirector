@@ -1,4 +1,5 @@
 import { ApiError, headers, json, request, sessionId } from "./api.ts";
+import { currentChat, flushChatDraft } from "./chatDrafts.ts";
 
 /** Canvas documents use the stable identity of an existing filesystem project. */
 
@@ -24,12 +25,19 @@ function keepAlive() {
       ).catch(() => {});
   }, 15000);
   window.addEventListener("pagehide", () => {
-    if (active)
-      void fetch(`/api/sessions/${sessionId}`, {
-        method: "DELETE",
-        headers,
-        keepalive: true,
-      }).catch(() => {});
+    if (!active) return;
+    const value = currentChat(active);
+    // Save the latest draft and release the lease atomically, as MuseShow does.
+    void fetch(`/api/sessions/${sessionId}${value ? "/close" : ""}`, {
+      ...(value
+        ? json("POST", { projectId: active, conversation: value })
+        : { method: "DELETE" }),
+      headers: {
+        ...headers,
+        ...(value ? { "Content-Type": "application/json" } : {}),
+      },
+      keepalive: true,
+    }).catch(() => {});
   });
 }
 
@@ -38,6 +46,7 @@ export async function openBackendProject(documentId: string, _title: string) {
   const id = backendProjectId(documentId);
   if (opening) await opening.catch(() => {});
   const task = (async () => {
+    if (active && active !== id) await flushChatDraft(active);
     await request(`/projects/${id}/open`, { method: "POST" });
     active = id;
     keepAlive();
@@ -54,6 +63,7 @@ export async function openBackendProject(documentId: string, _title: string) {
 /** Pause lease renewal while the current project directory is renamed. */
 export async function releaseBackendProject() {
   if (opening) await opening.catch(() => {});
+  if (active) await flushChatDraft(active);
   active = null;
   await request(`/sessions/${sessionId}`, { method: "DELETE" });
 }

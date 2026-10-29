@@ -7,9 +7,30 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   status: "complete" | "streaming" | "stopped" | "interrupted";
+  assets?: ChatAsset[];
+  model?: string;
+  thinking?: Thinking;
+  source?: "preview" | "model";
 }
 
-export interface Conversation {
+export type Thinking = "auto" | "low" | "medium" | "high";
+export type ModelSelections = Partial<
+  Record<"agent" | "image" | "video" | "audio", string | null>
+>;
+export interface ChatAsset {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  fingerprint: string;
+}
+export interface ChatDraft {
+  draft: string;
+  assets: ChatAsset[];
+  thinking: Thinking;
+  modelSelections: ModelSelections;
+}
+export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
 }
 
@@ -32,8 +53,8 @@ export interface ChatRequest {
   modelId: string;
   text: string;
   assets: string[];
-  thinking: "auto";
-  modelSelections: Partial<Record<"image" | "video" | "audio", string | null>>;
+  thinking: Thinking;
+  modelSelections: ModelSelections;
 }
 
 export const conversation = (projectId: string) =>

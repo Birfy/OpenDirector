@@ -1,0 +1,192 @@
+/* Default dark values preserve the existing OpenDesign canvas palette. */
+:root {
+  --settings-background: #202022;
+  --settings-surface: #262627;
+  --settings-text: #ededee;
+  --settings-muted: #9b9ba0;
+  --settings-border: #ffffff20;
+  --settings-hover: #ffffff08;
+  --settings-active: #ffffff12;
+  --settings-input: #19191b;
+  --settings-warning: #f3b7a6;
+  --settings-warning-background: #45332c;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #30343c;
+  background: #f7f8fa;
+  --settings-background: #eeeef1;
+  --settings-surface: #fff;
+  --settings-text: #30343c;
+  --settings-muted: #757b86;
+  --settings-border: #dfe2e7;
+  --settings-hover: #f3f4f6;
+  --settings-active: #e4e7ed;
+  --settings-input: #fafbfc;
+  --settings-warning: #9a4d36;
+  --settings-warning-background: #fff1e9;
+}
+:root[data-theme="light"] .cw-workspace {
+  background: #f7f8fa;
+  color: #30343c;
+  --cw-surface: #fff;
+  --cw-border: #dfe2e7;
+}
+:root[data-theme="light"] .canvas-loading-screen {
+  background: #f7f8fa;
+  color: #69717d;
+}
+:root[data-theme="light"] .cw-topbar {
+  background: linear-gradient(#f7f8faf5, #f7f8fa00);
+}
+:root[data-theme="light"] .cw-rail-mask {
+  background: linear-gradient(90deg, #f7f8faf5 20%, #f7f8fad9 55%, #f7f8fa00);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-rail,
+    .cw-settings-control,
+    .cw-bottom-controls,
+    .cw-undo-controls,
+    .cw-chat-button,
+    .cw-export-button,
+    .cw-project-dropdown,
+    .cw-side-panel,
+    .cw-context-menu,
+    .cw-menu-popover,
+    .cw-selection-bar,
+    .cw-selection-toolbar,
+    .cw-selection-menu,
+    .cw-composer,
+    .cw-modal,
+    .cw-project-dialog,
+    .cw-toast
+  ) {
+  background: #fff;
+  color: #30343c;
+  border-color: #dfe2e7;
+  box-shadow: 0 4px 20px #30374414;
+}
+:root[data-theme="light"]
+  :is(.cw-domain-dialog, .cw-domain-header, .cw-domain-footer) {
+  background: #fff;
+  color: #30343c;
+  border-color: #dfe2e7;
+}
+:root[data-theme="light"]
+  :is(.cw-domain-section-heading h3, .cw-domain-field, .cw-domain-checkbox) {
+  color: #58616e;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-project-name:hover,
+    .cw-project-chevron:hover,
+    .cw-project-chevron[aria-expanded="true"]
+  ) {
+  background: transparent;
+  color: #14171d;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-project-option:hover,
+    .cw-project-option[aria-checked="true"],
+    .cw-rail-button:hover,
+    .cw-icon-button:hover,
+    .cw-selection-toolbar button:hover
+  ) {
+  background: #edf0f5;
+  color: #30343c;
+}
+:root[data-theme="light"]
+  :is(.cw-project-name-editor input, .cw-project-name-measure) {
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-project-name-editor input {
+  background: transparent;
+}
+:root[data-theme="light"] .cw-project-create:hover {
+  color: #11141b;
+}
+:root[data-theme="light"]
+  :is(.cw-node, .cw-node-stack::before, .cw-node-stack::after) {
+  background: #fff;
+  color: #30343c;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"] .cw-node-selected {
+  border-color: #697b9d;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-node-title,
+    .cw-node-heading,
+    .cw-node-heading-actions button,
+    .cw-rail-label,
+    .cw-empty h1,
+    .cw-zoom-button,
+    .cw-side-panel h3
+  ) {
+  color: #404957;
+}
+:root[data-theme="light"] :is(.cw-node-body, .cw-text-content, .cw-node-empty) {
+  background: #f0f2f6;
+  color: #757d8a;
+}
+:root[data-theme="light"] .cw-empty p,
+:root[data-theme="light"] .cw-empty small {
+  color: #77808e;
+}
+:root[data-theme="light"] .cw-empty button {
+  background: #fff;
+  color: #404957;
+  border-color: #dfe2e7;
+}
+:root[data-theme="light"] .cw-aurora {
+  opacity: 0.35;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-composer,
+    .cw-domain-dialog,
+    .cw-modal,
+    .cw-project-dialog,
+    .cw-side-panel
+  )
+  :is(
+    input:not([type="range"], [type="checkbox"], [type="color"], [type="file"]),
+    textarea,
+    select
+  ) {
+  background: #f5f6f9;
+  color: #30343c;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"]
+  :is(.cw-composer, .cw-domain-dialog, .cw-modal, .cw-side-panel)
+  button {
+  color: #404957;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"]
+  :is(.cw-composer, .cw-domain-dialog, .cw-modal, .cw-side-panel)
+  button:hover:not(:disabled) {
+  background: #e9edf4;
+}
+:root[data-theme="light"] .cw-domain-dialog .cw-domain-primary {
+  background: #596c8b;
+  color: #fff;
+}
+:root[data-theme="light"] .cw-vline,
+:root[data-theme="light"] .cw-divider {
+  background: #dfe2e7;
+}
+:root[data-theme="light"] .cw-connection-preview {
+  stroke: #597db6;
+}
+:root[data-theme="light"] .cw-reference-edge .react-flow__edge-path {
+  stroke: #8998b1;
+}
+:root[data-theme="light"] ::selection {
+  background: #c3d7f5;
+  color: #172c4e;
+}

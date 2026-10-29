@@ -10,7 +10,6 @@ import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
-import { isTaggable } from "./nodeTags";
 import type { CanvasToolId } from "./toolCatalog";
 import "./node-selection-toolbar.css";
 
@@ -35,7 +34,6 @@ export interface NodeSelectionToolbarProps {
   onDownload?: () => void;
   onAssistant?: () => void;
   onRename?: () => void;
-  onTags?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
 }
@@ -106,7 +104,6 @@ export function NodeSelectionToolbar({
   onDownload,
   onAssistant,
   onRename,
-  onTags,
   onDuplicate,
   onDelete,
 }: NodeSelectionToolbarProps) {
@@ -284,15 +281,6 @@ export function NodeSelectionToolbar({
       label: "重命名",
       icon: "pencil",
       run: onRename,
-      iconOnly: true,
-      disabled: locked,
-    });
-  if (onTags && isTaggable(node.type))
-    organization.push({
-      id: "tags",
-      label: "节点标签",
-      icon: "tag",
-      run: onTags,
       iconOnly: true,
       disabled: locked,
     });

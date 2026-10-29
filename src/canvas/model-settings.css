@@ -1,11 +1,6 @@
 .cw-model-settings {
   width: min(680px, 100%);
 }
-.cw-model-watermark {
-  margin: 0 0 18px;
-  color: #b89dca;
-  font-size: 11px;
-}
 .cw-model-section {
   padding: 14px 0;
   border-top: 1px solid #ffffff12;

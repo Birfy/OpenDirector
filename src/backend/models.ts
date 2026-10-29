@@ -80,10 +80,22 @@ export function useBackendModels() {
     await request(`/model-configs/${id}`, { method: "DELETE" });
     setModels((current) => current.filter((item) => item.id !== id));
   };
-  const updateSettings = async (patch: GeneralSettings) =>
-    setSettings(
-      await request<GeneralSettings>("/settings", json("PATCH", patch)),
-    );
+  const updateSettings = async (patch: GeneralSettings) => {
+    try {
+      setSettings(
+        await request<GeneralSettings>("/settings", json("PATCH", patch)),
+      );
+    } catch (failure) {
+      // Reconcile a lost response before displaying a previous value as truth.
+      setSettings(null);
+      try {
+        setSettings(await request<GeneralSettings>("/settings"));
+      } catch {
+        /* Await a successful refresh. */
+      }
+      throw failure;
+    }
+  };
   return {
     models,
     settings,

@@ -14,7 +14,6 @@ import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { nodePorts } from "./connectionPolicy";
-import { CANVAS_TAGS, isTaggable } from "./nodeTags";
 import "./nodes.css";
 import {
   CanvasActionsContext,
@@ -92,22 +91,6 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           {data.title || names[kind]}
         </span>
         {locked && <CanvasIcon name="lock" size={12} />}
-        {!!data.tags?.length && (
-          <span
-            className="cw-tag-dots"
-            aria-label={`标签：${CANVAS_TAGS.filter((tag) =>
-              data.tags?.includes(tag.id),
-            )
-              .map((tag) => tag.label)
-              .join("、")}`}
-          >
-            {CANVAS_TAGS.filter((tag) => data.tags?.includes(tag.id)).map(
-              (tag) => (
-                <i key={tag.id} style={{ background: tag.color }} />
-              ),
-            )}
-          </span>
-        )}
         <div className="cw-node-heading-actions nodrag nopan">
           <TooltipButton
             aria-label={`重命名${data.title}`}
@@ -116,15 +99,6 @@ export const CanvasNodeView = memo(function CanvasNodeView({
           >
             <CanvasIcon name="pencil" size={13} />
           </TooltipButton>
-          {isTaggable(kind) && (
-            <TooltipButton
-              aria-label="节点标签"
-              label="节点标签"
-              onClick={() => actions?.editTags?.(id)}
-            >
-              <CanvasIcon name="tag" size={13} />
-            </TooltipButton>
-          )}
           <TooltipButton aria-label="节点选项" label="节点选项" onClick={menu}>
             <CanvasIcon name="more" size={13} />
           </TooltipButton>

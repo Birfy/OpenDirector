@@ -1,6 +1,5 @@
 import { parseCanvasToolTaskValue, sameCanvasToolTask } from "./toolCatalog.ts";
 import { parseLocalStageValue, sameLocalStage } from "./stageDocument.ts";
-import { isCanvasTagId } from "./nodeTags.ts";
 import type {
   CanvasNodeData,
   CanvasNodeKind,
@@ -478,15 +477,6 @@ export function parseNodeData(
     title: value.title,
     prompt: value.prompt,
   };
-  if (value.tags !== undefined) {
-    if (
-      !Array.isArray(value.tags) ||
-      !value.tags.every(isCanvasTagId) ||
-      new Set(value.tags).size !== value.tags.length
-    )
-      return { ok: false, error: "节点标签必须是五色标签中的不重复 ID。" };
-    result.tags = [...value.tags];
-  }
   for (const key of ["src", "mimeType", "text"] as const)
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
@@ -650,7 +640,6 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
       a.text === b.text &&
       a.assetState === b.assetState &&
       a.mediaRole === b.mediaRole &&
-      sameArray(a.tags ?? [], b.tags ?? [], (a, b) => a === b) &&
       sameGenerationSettings(a.settings, b.settings) &&
       sameOptional(
         a.timeline,

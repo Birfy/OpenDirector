@@ -14,11 +14,6 @@ import {
   connectedCreationKinds,
 } from "../src/canvas/connectionPolicy.ts";
 import {
-  CANVAS_TAGS,
-  setNodeTag,
-  tagSelectionState,
-} from "../src/canvas/nodeTags.ts";
-import {
   copySelection,
   pasteFragment,
   stackSelection,
@@ -185,47 +180,6 @@ test("result provenance supports external and cross-media origins, survives JSON
   );
 });
 
-test("five-color tags use none/partial/all, skip locks, and undo as one batch", () => {
-  const a = createNode("image"),
-    b = createNode("text"),
-    locked = { ...createNode("video"), locked: true };
-  const doc = { ...createDocument(), nodes: [a, b, locked] },
-    tag = CANVAS_TAGS[0].id;
-  const first = setNodeTag(doc, [a.id], tag, true);
-  assert.equal(tagSelectionState(first.nodes, [a.id, b.id], tag), "partial");
-  const all = setNodeTag(first, [a.id, b.id, locked.id], tag, true);
-  assert.equal(tagSelectionState(all.nodes, [a.id, b.id], tag), "all");
-  assert.equal(all.nodes[2], locked);
-  const history = recordChange(createHistory(first), all);
-  assert.deepEqual(undo(history).present, first);
-  assert.deepEqual(redo(undo(history)).present, all);
-  assert.equal(setNodeTag(all, [a.id, b.id], tag, true), all);
-});
-
-test("tag memberships survive JSON and deep copied selections; invalid/duplicate tags fail closed", () => {
-  const node = createNode(
-    "image",
-    { x: 1, y: 2 },
-    { tags: [CANVAS_TAGS[0].id, CANVAS_TAGS[4].id] },
-  );
-  const doc = { ...createDocument(), nodes: [node] };
-  const parsed = parseDocument(doc);
-  assert.equal(parsed.ok, true);
-  if (parsed.ok)
-    assert.deepEqual(parsed.value.nodes[0]!.data.tags, node.data.tags);
-  const copy = pasteFragment(doc, copySelection(doc, [node.id]));
-  copy.document.nodes[1]!.data.tags!.pop();
-  assert.equal(node.data.tags!.length, 2);
-  for (const tags of [["unknown"], [CANVAS_TAGS[0].id, CANVAS_TAGS[0].id]])
-    assert.equal(
-      parseDocument({
-        ...doc,
-        nodes: [{ ...node, data: { ...node.data, tags } }],
-      }).ok,
-      false,
-    );
-});
-
 function stackedFixture() {
   const a = createNode("image", { x: 0, y: 0 }),
     b = createNode("image", { x: 400, y: 0 }),
@@ -290,7 +244,7 @@ test("removing one of two stack members dissolves only wrapper and preserves con
   assert.deepEqual(undo(history).present, doc);
 });
 
-test("unstack preserves locked member coordinates and copy remaps membership with tags and provenance", () => {
+test("unstack preserves locked member coordinates and copy remaps membership and provenance", () => {
   const { a, b, doc, stack } = stackedFixture();
   a.locked = true;
   const released = unstackSelection(doc, [stack.id]);
@@ -298,8 +252,7 @@ test("unstack preserves locked member coordinates and copy remaps membership wit
     released.nodes.find((n) => n.id === a.id),
     a,
   );
-  const tagged = setNodeTag(doc, [b.id], CANVAS_TAGS[2].id, true);
-  const pasted = pasteFragment(tagged, copySelection(tagged, [stack.id]));
+  const pasted = pasteFragment(doc, copySelection(doc, [stack.id]));
   const newStack = pasted.document.nodes.find(
     (n) => pasted.ids.includes(n.id) && n.type === "stack",
   )!;
