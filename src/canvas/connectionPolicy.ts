@@ -1,20 +1,70 @@
-import type { CanvasDocument, CanvasNodeKind, CanvasEdge } from "./model.ts";
+import type {
+  CanvasDocument,
+  CanvasNodeKind,
+  CanvasEdge,
+  CanvasNode,
+} from "./model.ts";
 
 /** Static product capabilities from canvas-data module 79421. Model-specific limits remain separate. */
 export function nodePorts(kind: CanvasNodeKind) {
   return {
     source: !["group", "stack", "timeline"].includes(kind),
-    target: !["group", "stack", "tool", "external"].includes(kind),
+    target: ![
+      "group",
+      "stack",
+      "tool",
+      "external",
+      "timeline",
+      "subject",
+    ].includes(kind),
   };
 }
-const sources: Partial<Record<CanvasNodeKind, readonly CanvasNodeKind[]>> = {
-  text: ["text", "image", "video", "audio"],
-  image: ["text", "image", "subject", "tool"],
-  video: ["text", "image", "video", "audio", "subject", "tool"],
-  audio: ["image", "video", "audio", "subject"],
-  timeline: ["image", "video", "audio"],
+/** Source → downstream matrix shared by menus, gestures and commands. */
+export const downstreamKinds: Partial<
+  Record<CanvasNodeKind, readonly CanvasNodeKind[]>
+> = {
+  text: ["text", "image", "video"],
+  image: ["text", "image", "video", "audio"],
+  video: ["text", "video"],
+  audio: ["text", "video", "audio"],
   subject: ["image", "video", "audio"],
 };
+
+export function referenceMaterial(node: CanvasNode): string | null {
+  if (node.data.assetState === "missing") return null;
+  if (node.type === "text")
+    return node.data.text?.trim() ? node.data.text : null;
+  if (["image", "video", "audio"].includes(node.type))
+    return node.data.src || null;
+  if (node.type === "subject") {
+    const subject = node.data.subject;
+    if (
+      !subject ||
+      ![subject.main, ...subject.auxiliaries, subject.voice].some(
+        (resource) => resource?.src,
+      )
+    )
+      return null;
+    return JSON.stringify([
+      subject.main?.src,
+      ...subject.auxiliaries.map((r) => r.src),
+      subject.voice?.src,
+    ]);
+  }
+  return null;
+}
+
+export function canSourceReference(node: CanvasNode): boolean {
+  return Boolean(downstreamKinds[node.type]?.length && referenceMaterial(node));
+}
+
+/** A prospective target may be empty; a prospective source cannot provide material. */
+export function referenceTypeAllowed(
+  source: CanvasNodeKind,
+  target: CanvasNodeKind,
+) {
+  return downstreamKinds[source]?.includes(target) ?? false;
+}
 const capacity: Partial<Record<CanvasNodeKind, number>> = {
   text: 128,
   image: 999,
@@ -24,6 +74,9 @@ const capacity: Partial<Record<CanvasNodeKind, number>> = {
 };
 export type ReferenceIssue =
   | "endpoint_missing"
+  | "source_empty"
+  | "target_material"
+  | "locked"
   | "self_connection"
   | "duplicate_relation"
   | "source_type_unsupported"
@@ -32,6 +85,9 @@ export type ReferenceIssue =
 
 export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
   endpoint_missing: "节点已不存在",
+  source_empty: "请先上传素材或生成并采用结果，再添加下游节点",
+  target_material: "素材节点不能接收生成参考，请连接生成节点",
+  locked: "请先解锁节点或所属分组",
   self_connection: "节点不能引用自身",
   duplicate_relation: "已经连接过",
   source_type_unsupported: "目标节点不接收这类素材",
@@ -81,6 +137,17 @@ export function referenceIssue(
   const a = document.nodes.find((n) => n.id === source),
     b = document.nodes.find((n) => n.id === target);
   if (!a || !b) return "endpoint_missing";
+  const isLocked = (node: CanvasNode): boolean => {
+    const seen = new Set<string>();
+    let current: CanvasNode | undefined = node;
+    while (current && !seen.has(current.id)) {
+      if (current.locked) return true;
+      seen.add(current.id);
+      current = document.nodes.find((n) => n.id === current!.parentId);
+    }
+    return false;
+  };
+  if (isLocked(a) || isLocked(b)) return "locked";
   if (
     document.edges.some(
       (e) =>
@@ -99,9 +166,10 @@ export function referenceIssue(
   }
   if (!nodePorts(a.type).source || a.type === "external")
     return "source_type_unsupported";
-  if (!nodePorts(b.type).target || !sources[b.type])
-    return "target_type_unsupported";
-  if (!sources[b.type]!.includes(a.type)) return "source_type_unsupported";
+  if (!nodePorts(b.type).target) return "target_type_unsupported";
+  if (!referenceTypeAllowed(a.type, b.type)) return "source_type_unsupported";
+  if (!referenceMaterial(a)) return "source_empty";
+  if (b.data.mediaRole === "asset") return "target_material";
   const references = document.edges.filter(
     (e) => e.intent !== "post_edit_result",
   );

@@ -1,11 +1,6 @@
-import { memo, useContext, useCallback, type MouseEvent } from "react";
-import {
-  Handle,
-  NodeResizer,
-  Position,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react";
+import { memo, useContext, type MouseEvent } from "react";
+import type { Node, NodeProps } from "@xyflow/react";
+import { NodeFrame } from "./NodeFrame";
 import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
@@ -13,7 +8,7 @@ import { timelineDuration } from "./timeline";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
-import { nodePorts } from "./connectionPolicy";
+import { CanvasVideoPreview } from "./CanvasMediaPreview";
 import "./nodes.css";
 import {
   CanvasActionsContext,
@@ -40,26 +35,14 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   id,
   data,
   selected,
-  isConnectable,
-  draggable,
 }: NodeProps<CanvasFlowNode>) {
   const actions = useContext(CanvasActionsContext);
-  const beginEdit = actions?.beginResize;
-  const endEdit = actions?.endResize;
-  const resizeStart = useCallback(() => beginEdit?.(id), [beginEdit, id]);
-  const resizeEnd = useCallback(() => endEdit?.(id), [endEdit, id]);
   const kind = data.kind;
-  const ports = nodePorts(kind);
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
   const locked = Boolean(actions?.isLocked(id));
-  const activity = ["image", "video", "audio"].includes(kind)
+  const activity = ["text", "image", "video", "audio"].includes(kind)
     ? actions?.generationActivity(id)
     : undefined;
-  const menu = (event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    actions?.contextMenu(id, event);
-  };
   const selectMedia = (event: MouseEvent) => {
     event.stopPropagation();
     // Media controls keep their native playback behavior. Their nodrag surface
@@ -68,43 +51,14 @@ export const CanvasNodeView = memo(function CanvasNodeView({
   };
 
   return (
-    <div
-      className={`cw-node cw-node-${kind}${selected ? " cw-node-selected" : ""}${locked ? " cw-node-locked" : ""}${activity ? " cw-node-generating" : ""}${actions?.isArriving(id) ? " cw-node-result-arrival" : ""}`}
-      onContextMenu={menu}
-      aria-busy={Boolean(activity)}
+    <NodeFrame
+      id={id}
+      kind={kind}
+      title={data.title || names[kind]}
+      selected={selected}
+      empty={!hasAsset && !data.text}
+      busy={Boolean(activity)}
     >
-      <NodeResizer
-        isVisible={selected && draggable}
-        minWidth={kind === "group" ? 200 : 160}
-        minHeight={kind === "group" ? 160 : kind === "audio" ? 100 : 120}
-        color="#e7e7ec"
-        handleClassName="cw-resize-handle"
-        lineClassName="cw-resize-line"
-        onResizeStart={resizeStart}
-        onResizeEnd={resizeEnd}
-      />
-      <div className="cw-node-heading">
-        <span className="cw-node-type">
-          <CanvasIcon name={kind} size={15} />
-        </span>
-        <span className="cw-node-title" title={data.title}>
-          {data.title || names[kind]}
-        </span>
-        {locked && <CanvasIcon name="lock" size={12} />}
-        <div className="cw-node-heading-actions nodrag nopan">
-          <TooltipButton
-            aria-label={`重命名${data.title}`}
-            label="重命名"
-            onClick={() => actions?.rename(id)}
-          >
-            <CanvasIcon name="pencil" size={13} />
-          </TooltipButton>
-          <TooltipButton aria-label="节点选项" label="节点选项" onClick={menu}>
-            <CanvasIcon name="more" size={13} />
-          </TooltipButton>
-        </div>
-      </div>
-
       {kind === "group" ? (
         <div className="cw-group-interior" />
       ) : ["timeline", "subject", "stack", "tool", "external"].includes(
@@ -131,9 +85,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
         ) : (
           <div className="cw-text-display" aria-label={`${data.title}内容`}>
             {data.text || (
-              <span className="cw-text-placeholder">
-                双击或按 Enter 输入想法…
-              </span>
+              <span className="cw-text-placeholder">双击编辑文本</span>
             )}
           </div>
         )
@@ -154,10 +106,9 @@ export const CanvasNodeView = memo(function CanvasNodeView({
             />
           )}
           {kind === "video" && (
-            <video
-              className="cw-video-preview nodrag nopan"
+            <CanvasVideoPreview
+              className="cw-video-preview"
               src={data.src}
-              controls
               playsInline
               preload="metadata"
               onClick={selectMedia}
@@ -226,7 +177,7 @@ export const CanvasNodeView = memo(function CanvasNodeView({
       ) : (
         <div className="cw-node-placeholder">
           <span className="cw-placeholder-symbol">
-            <CanvasIcon name={kind} size={42} />
+            <CanvasIcon name={kind} size={20} />
           </span>
           <span className="cw-placeholder-label">
             {data.assetState === "missing"
@@ -250,50 +201,12 @@ export const CanvasNodeView = memo(function CanvasNodeView({
       )}
 
       {activity && (
-        <GeneratingOverlay activity={activity} hasAsset={hasAsset} />
+        <GeneratingOverlay
+          activity={activity}
+          hasAsset={hasAsset || Boolean(data.text)}
+        />
       )}
-
-      {(ports.source || ports.target || kind === "stack") && (
-        <>
-          {(ports.target || kind === "stack") && (
-            <Handle
-              id="in"
-              type="target"
-              position={Position.Left}
-              isConnectable={isConnectable && ports.target}
-              className={`cw-port cw-port-left ${kind === "stack" ? "cw-proxy-port" : ""}`}
-              title="连接参考素材，或点击创建上游节点"
-              onClick={(event) => {
-                event.stopPropagation();
-                if (isConnectable && ports.target)
-                  actions?.newConnected(id, "target");
-              }}
-            >
-              <span>+</span>
-            </Handle>
-          )}
-          {(ports.source || kind === "stack" || kind === "timeline") && (
-            <Handle
-              id="out"
-              type="source"
-              position={Position.Right}
-              isConnectable={
-                isConnectable && ports.source && kind !== "external"
-              }
-              className={`cw-port cw-port-right ${!ports.source || kind === "external" ? "cw-proxy-port" : ""}`}
-              title="连接到新节点，或点击创建下游节点"
-              onClick={(event) => {
-                event.stopPropagation();
-                if (isConnectable && ports.source && kind !== "external")
-                  actions?.newConnected(id, "source");
-              }}
-            >
-              <span>+</span>
-            </Handle>
-          )}
-        </>
-      )}
-    </div>
+    </NodeFrame>
   );
 });
 
@@ -326,6 +239,42 @@ function DomainCard({
           : data.src
             ? { id, kind: "image", title: data.title, src: data.src }
             : undefined;
+  if (kind === "subject" && !data.subject?.main?.src)
+    return (
+      <div className="cw-subject-empty">
+        <header>
+          <CanvasIcon name="subject" size={14} />
+          <strong>{data.title}</strong>
+          <button
+            className="nodrag nopan"
+            aria-label="编辑主体"
+            onClick={() => actions?.edit(id)}
+          >
+            <CanvasIcon name="pencil" size={12} />
+          </button>
+        </header>
+        <small>{data.subject?.description || "添加描述…"}</small>
+        <div className="cw-subject-empty-material nodrag nopan">
+          {(
+            [
+              ["import", "导入主体", "subject"],
+              ["canvas", "从画布选择", "link"],
+              ["assets", "从资产库选择", "folder"],
+              ["file", "本地添加", "upload"],
+            ] as const
+          ).map(([source, label, icon]) => (
+            <button
+              key={source}
+              disabled={actions?.isLocked(id)}
+              onClick={() => actions?.pickSubject?.(id, source)}
+            >
+              <CanvasIcon name={icon} size={13} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   return (
     <div className={`cw-domain-card cw-domain-card-${kind}`}>
       {(kind === "subject" ||

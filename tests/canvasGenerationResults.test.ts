@@ -54,7 +54,7 @@ function fixture(kind: "image" | "video" | "audio" = "video") {
 }
 
 for (const kind of ["image", "video", "audio"] as const)
-  test(`${kind} generation fills its node without changing graph, layout or request`, () => {
+  test(`${kind} generation preserves graph, position and request while adopting media dimensions`, () => {
     const { document, source, origin, output } = fixture(kind);
     const result = applyGenerationResults(document, origin, [output]);
     assert.equal(
@@ -69,7 +69,11 @@ for (const kind of ["image", "video", "audio"] as const)
     const updated = result.document.nodes.find(
       (node) => node.id === source.id,
     )!;
-    assert.deepEqual({ ...updated, data: source.data }, source);
+    assert.deepEqual(updated.position, source.position);
+    assert.equal(updated.parentId, source.parentId);
+    assert.equal(updated.locked, source.locked);
+    if (kind !== "audio")
+      assert.ok(Math.abs(updated.width / updated.height - 1280 / 720) < 0.01);
     assert.equal(updated.data.title, source.data.title);
     assert.deepEqual(updated.data.settings, source.data.settings);
     assert.equal(updated.data.src, output.src);

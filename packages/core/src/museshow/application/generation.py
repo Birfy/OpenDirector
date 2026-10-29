@@ -92,7 +92,8 @@ class Generation:
                 raise ProjectError("该节点正在生成，请等待或取消当前任务。", 409)
             updates = dict(value.get("inputs") or {})
             # Output length and canvas belong to the task, not to the node inputs.
-            output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'resolution', 'voice') if updates.get(key) is not None}
+            output = {key: updates.pop(key) for key in ('durationSeconds', 'aspectRatio', 'resolution', 'voice', 'thinking', 'maxTokens') if key in updates}
+            output = {key: value for key, value in output.items() if value is not None}
             try:
                 candidate = CanvasNode.model_validate(replace_inputs(node, {**updates, **({"modelConfigId": str(value["modelConfigId"])} if value.get("inputs") is not None else {})}, records)).model_dump(mode="json")
             except ValidationError:
@@ -134,6 +135,11 @@ class Generation:
                 "video": {"duration": 5, "ratio": "adaptive", "generate_audio": True},
                 "audio": {"speaker": "zh_female_vv_uranus_bigtts", "audio_params": {"format": "mp3", "sample_rate": 24000}},
                 "text": {"thinking": "auto", "max_tokens": 8192}}[node["kind"]]
+            if node['kind'] == 'text':
+                thinking, tokens = output.get('thinking', 'auto'), output.get('maxTokens', 8192)
+                if thinking not in {'auto', 'low', 'medium', 'high'} or isinstance(tokens, bool) or not isinstance(tokens, int) or not 1 <= tokens <= 32768:
+                    raise ProjectError('Agent 思考程度或最大输出长度无效。')
+                task['parameters'].update(thinking=thinking, max_tokens=tokens)
             rules = input_rules(config)
             capabilities = rules.get('videoCapabilities')
             explicit_duration = output.get('durationSeconds')

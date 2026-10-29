@@ -250,6 +250,8 @@ class GenerationInputs(Model):
     aspectRatio: str | None = Field(default=None, pattern=r'^\d{1,2}:\d{1,2}$')
     resolution: str | None = Field(default=None, pattern=r'^(?:自动|[A-Za-z0-9][A-Za-z0-9_.-]{0,23})$')
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
+    thinking: Literal['auto', 'low', 'medium', 'high'] | None = None
+    maxTokens: int | None = Field(default=None, ge=1, le=32768, strict=True)
 
 
 class GenerateNode(Model):

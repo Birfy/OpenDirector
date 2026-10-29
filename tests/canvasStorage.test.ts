@@ -22,9 +22,6 @@ test("serialization round trips embedded assets, groups, edges and node generati
         settings: {
           ...document.settings,
           count: 8,
-          camera: "close-up",
-          palette: "warm",
-          style: "watercolor",
           audioEnabled: false,
         },
       },

@@ -37,9 +37,6 @@ export interface GenerationSettings {
   resolution: string;
   prompt: string;
   count?: number;
-  camera?: string;
-  palette?: string;
-  style?: string;
   audioEnabled?: boolean;
   videoMode?: "reference" | "first-last" | "continuation";
   firstFrameNodeId?: string;
@@ -122,6 +119,12 @@ export interface ExternalData {
   current?: { versionId: string };
 }
 
+export interface AgentNodeSettings {
+  modelConfigId?: string;
+  thinking: "auto" | "low" | "medium" | "high";
+  maxTokens: number;
+}
+
 export interface CanvasNodeData extends Record<string, unknown> {
   kind: CanvasNodeKind;
   title: string;
@@ -134,6 +137,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
    * Omitted in older documents; keep their existing generator behavior. */
   mediaRole?: "asset" | "generation";
   settings?: GenerationSettings;
+  agentSettings?: AgentNodeSettings;
+  generationEvidence?: { output: string; references: Record<string, string> };
   timeline?: TimelineData;
   subject?: SubjectData;
   stack?: StackData;
@@ -214,7 +219,7 @@ export function mediaNodeSize(
   const long = Math.max(box.width, box.height);
   const ratio = media.width / media.height;
   return {
-    // The node resizer's minimum stays valid; extreme panoramas letterbox instead.
+    // Keep media cards readable; extreme panoramas letterbox inside these minimum dimensions.
     width: Math.max(160, Math.round(ratio >= 1 ? long : long * ratio)),
     height: Math.max(120, Math.round(ratio >= 1 ? long / ratio : long)),
   };
@@ -226,11 +231,11 @@ export function createNode(
   data: Partial<Omit<CanvasNodeData, "kind">> = {},
 ): CanvasNode {
   const sizes: Record<CanvasNodeKind, [number, number]> = {
-    image: [PREVIEW_SIZE.width, PREVIEW_SIZE.height],
-    video: [PREVIEW_SIZE.width, PREVIEW_SIZE.height],
-    audio: [300, 110],
+    image: [300, 300],
+    video: [540, 300],
+    audio: [300, 300],
     file: [260, 110],
-    text: [280, 160],
+    text: [300, 300],
     group: [640, 480],
     timeline: [600, 280],
     subject: [320, 320],

@@ -59,7 +59,9 @@ export interface GenerationRequest {
   documentId: string;
   documentTitle: string;
   config: ModelConfig;
-  kind: "image" | "video" | "audio";
+  kind: "text" | "image" | "video" | "audio";
+  thinking?: "auto" | "low" | "medium" | "high";
+  maxTokens?: number;
   prompt: string;
   title: string;
   videoMode: BackendVideoMode;
@@ -143,6 +145,17 @@ export async function uploadReferences(
   for (const reference of references) {
     signal.throwIfAborted();
     if (reference.kind === "text") {
+      const print = await fingerprint(new Blob([reference.text ?? ""]));
+      const existing = current.find(
+        (asset) =>
+          asset.kind === "text" &&
+          (asset.fingerprint === print ||
+            asset.fingerprintAliases?.includes(print)),
+      );
+      if (existing) {
+        if (!ids.includes(existing.id)) ids.push(existing.id);
+        continue;
+      }
       const asset = await request<BackendAsset>(
         `/projects/${projectId}/assets/text`,
         {
@@ -155,6 +168,7 @@ export async function uploadReferences(
         },
       );
       await placeOnCanvas(projectId, "text", asset.id, signal);
+      current.push(asset);
       ids.push(asset.id);
       continue;
     }
@@ -243,6 +257,12 @@ export async function submitGeneration(
                 : {}),
             }
           : {}),
+        ...(value.kind === "text"
+          ? {
+              thinking: value.thinking ?? "auto",
+              maxTokens: value.maxTokens ?? 8192,
+            }
+          : {}),
         ...(value.kind === "audio" && value.voice
           ? { voice: value.voice }
           : {}),
@@ -305,23 +325,21 @@ const wait = (ms: number, signal: AbortSignal) =>
 
 const FAILED = new Set(["failed", "cancelled", "interrupted"]);
 
-export async function waitForResult(
+async function waitForTaskAsset(
   projectId: string,
   taskId: string,
   signal: AbortSignal,
   onProgress?: (task: BackendTask) => void,
-): Promise<BackendResult> {
+): Promise<BackendAsset> {
   for (;;) {
     const snapshot = await projectSnapshot(projectId, signal);
     const task = snapshot.tasks.find((item) => item.id === taskId);
     if (!task) throw new Error("生成任务不存在，可能已被项目外的操作移除。");
+    onProgress?.(task);
     if (task.status === "succeeded") {
-      if (!task.assetId) throw new Error("任务已完成但未返回结果文件。");
-      onProgress?.(task);
       const asset = snapshot.assets.find((item) => item.id === task.assetId);
-      const result = asset && (await downloadAsset(projectId, asset, signal));
-      if (!result) throw new Error("生成结果不是图片、视频或音频文件。");
-      return result;
+      if (!asset) throw new Error("任务已完成但未返回结果文件。");
+      return asset;
     }
     if (FAILED.has(task.status))
       throw new Error(
@@ -330,4 +348,26 @@ export async function waitForResult(
       );
     await wait(3000, signal);
   }
+}
+export async function waitForResult(
+  projectId: string,
+  taskId: string,
+  signal: AbortSignal,
+  onProgress?: (task: BackendTask) => void,
+): Promise<BackendResult> {
+  const asset = await waitForTaskAsset(projectId, taskId, signal, onProgress);
+  const result = await downloadAsset(projectId, asset, signal);
+  if (!result) throw new Error("生成结果不是图片、视频或音频文件。");
+  return result;
+}
+export async function waitForTextResult(
+  projectId: string,
+  taskId: string,
+  signal: AbortSignal,
+  onProgress?: (task: BackendTask) => void,
+) {
+  const asset = await waitForTaskAsset(projectId, taskId, signal, onProgress);
+  if (asset.kind !== "text") throw new Error("Agent 返回了非文本结果。");
+  const blob = await assetBlob(projectId, asset.id, signal);
+  return { kind: "text" as const, title: asset.name, text: await blob.text() };
 }

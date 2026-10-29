@@ -120,7 +120,6 @@
   :is(
     .cw-node-title,
     .cw-node-heading,
-    .cw-node-heading-actions button,
     .cw-rail-label,
     .cw-empty h1,
     .cw-zoom-button,
@@ -166,6 +165,11 @@
   button {
   color: #404957;
   border-color: #d7dbe3;
+}
+:root[data-theme="light"] .cw-workspace .cw-composer .cw-prompt-input {
+  background: transparent;
+  border: 0;
+  color: #30343c;
 }
 :root[data-theme="light"]
   :is(.cw-composer, .cw-domain-dialog, .cw-modal, .cw-side-panel)

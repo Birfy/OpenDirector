@@ -33,9 +33,6 @@ export function createVideoExtensionDraft(
           aspectRatio: inherited.aspectRatio,
           resolution: inherited.resolution,
           audioEnabled: inherited.audioEnabled,
-          camera: inherited.camera,
-          palette: inherited.palette,
-          style: inherited.style,
         }
       : {}),
     videoMode: "reference" as const,

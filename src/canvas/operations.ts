@@ -257,6 +257,12 @@ export function pasteFragment(
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
     copy.data = remapDataReferences(copy.data, remapped);
+    if (copy.data.generationEvidence)
+      copy.data.generationEvidence.references = Object.fromEntries(
+        Object.entries(copy.data.generationEvidence.references).map(
+          ([id, value]) => [remapped.get(id) ?? id, value],
+        ),
+      );
     if (node.parentId) copy.parentId = remapped.get(node.parentId)!;
     else
       copy.position = {

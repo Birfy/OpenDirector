@@ -39,10 +39,15 @@ test("interactive reference policy enforces ports and source capabilities while 
     "tool",
     "external",
   ] as const;
-  const nodes = kinds.map((kind) => createNode(kind));
+  const nodes = kinds.map((kind) =>
+    createNode(kind, undefined, {
+      src: `data:${kind}/fixture`,
+      text: kind === "text" ? "saved text" : undefined,
+    }),
+  );
   const [image, video, text, stack, timeline, tool, external] = nodes;
   let doc: CanvasDocument = { ...createDocument(), nodes };
-  assert.deepEqual(nodePorts("timeline"), { source: false, target: true });
+  assert.deepEqual(nodePorts("timeline"), { source: false, target: false });
   assert.deepEqual(nodePorts("tool"), { source: true, target: false });
   assert.deepEqual(nodePorts("stack"), { source: false, target: false });
   for (const [a, b] of [
@@ -69,7 +74,9 @@ test("interactive reference policy enforces ports and source capabilities while 
 });
 
 test("reference capacity counts inputs but never charges provenance against the target", () => {
-  const sources = Array.from({ length: 8 }, () => createNode("image")),
+  const sources = Array.from({ length: 8 }, () =>
+      createNode("image", undefined, { src: "data:image/fixture" }),
+    ),
     target = createNode("audio");
   let doc: CanvasDocument = {
     ...createDocument(),
@@ -107,7 +114,7 @@ test("connected creation menu and frame disconnection consume only generation-in
       "tool",
       "video",
     ]),
-    ["image", "video"],
+    [], // Creating an empty upstream node cannot manufacture a usable reference.
   );
   video.data.settings = {
     ...doc.settings,

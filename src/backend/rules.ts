@@ -51,7 +51,32 @@ const LABELS: Record<string, string> = {
   video: "视频",
   audio: "音频",
   text: "文本",
+  subject: "主体",
 };
+
+/** Transient model inputs retain the subject's canvas ID for provenance. */
+export function subjectReferenceNodes(node: CanvasNode): CanvasNode[] {
+  if (node.type !== "subject" || node.data.assetState === "missing") return [];
+  const subject = node.data.subject;
+  if (!subject) return [];
+  return [subject.main, ...subject.auxiliaries, subject.voice].flatMap(
+    (resource) => {
+      if (!resource?.src || resource.kind === "file") return [];
+      return [
+        {
+          ...node,
+          type: resource.kind,
+          data: {
+            ...node.data,
+            kind: resource.kind,
+            src: resource.src,
+            title: `${node.data.title} / ${resource.title}`,
+          },
+        },
+      ];
+    },
+  );
+}
 
 /** Speaker names a speech service accepts; others fall back to its default voice. */
 export function serviceVoice(settings: Pick<GenerationSettings, "voiceName">) {
@@ -80,6 +105,19 @@ export function backendReferenceIssue(
 ): string | null {
   const kind = node.data.kind;
   const rules = config.inputRules;
+  if (kind === "subject") {
+    if (settings.mode === "video" && settings.videoMode === "first-last")
+      return "首尾帧模式请使用图片节点选择帧素材";
+    const resources = subjectReferenceNodes(node);
+    if (!resources.length) return "主体尚未添加可用素材";
+    return resources.some(
+      (resource) =>
+        !(resource.type === "video" && settings.videoMode === "continuation") &&
+        !backendReferenceIssue(resource, settings, config),
+    )
+      ? null
+      : "当前模型或模式不接收主体中的素材";
+  }
   if (!["image", "video", "audio", "text"].includes(kind))
     return "本地服务暂不接收此类节点";
   if (kind === "text")
@@ -107,9 +145,19 @@ export function backendReferences(
   incoming: readonly CanvasNode[],
   config: ModelConfig,
 ): BackendReference[] {
-  const usable = incoming.filter(
-    (node) => !backendReferenceIssue(node, settings, config),
-  );
+  const usable = incoming
+    .filter((node) => !backendReferenceIssue(node, settings, config))
+    .flatMap((node) =>
+      node.type === "subject"
+        ? subjectReferenceNodes(node).filter(
+            (resource) =>
+              !(
+                resource.type === "video" &&
+                settings.videoMode === "continuation"
+              ) && !backendReferenceIssue(resource, settings, config),
+          )
+        : [node],
+    );
   if (settings.mode === "video" && settings.videoMode === "first-last") {
     const frame = usable.find(
       (node) =>
@@ -155,7 +203,13 @@ export function backendResolutions(
   const rules = config?.inputRules;
   const choices =
     settings.videoMode === "reference" &&
-    incoming.some((node) => node.data.kind === "image")
+    incoming.some(
+      (node) =>
+        node.data.kind === "image" ||
+        subjectReferenceNodes(node).some(
+          (resource) => resource.type === "image",
+        ),
+    )
       ? (rules?.referenceImageResolutions ?? rules?.outputResolutions)
       : rules?.outputResolutions;
   const outputs = rules?.videoCapabilities?.outputs;

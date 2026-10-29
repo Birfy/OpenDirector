@@ -24,6 +24,7 @@ import {
   type NodeChange,
   type Connection,
   type OnConnectEnd,
+  ViewportPortal,
 } from "@xyflow/react";
 import {
   CanvasReferenceEdge,
@@ -37,6 +38,16 @@ import {
   type Alignment,
 } from "./snapping";
 import { CanvasContextMenu } from "./CanvasContextMenu";
+import {
+  useCanvasReferences,
+  portPoint,
+  type PortSide,
+} from "./useCanvasReferences";
+import { referencePortMetrics, REFERENCE_PORT_SIZE } from "./connectionPorts";
+import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
+import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
+import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
+import { CANVAS_CREATION_TOOLS } from "./creationTools";
 import { CanvasNodeView } from "./CanvasNodeView";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasPointerGesture } from "./pointerGesture";
@@ -47,6 +58,13 @@ import {
   type ActiveGeneration,
   type GenerationPhase,
 } from "./generationActivity";
+import { TextNodeComposer } from "./TextNodeComposer";
+import {
+  agentNodeSettings,
+  agentGenerationBlocker,
+  applyTextGenerationResult,
+} from "./textGeneration";
+import { assistantReferences } from "./assistantReferences";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
 import { useSelectionPresentation } from "./useSelectionPresentation";
@@ -59,6 +77,7 @@ import {
   connectedCreationKinds,
   referenceIssue,
   REFERENCE_ISSUE_TEXT,
+  canSourceReference,
 } from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
 import { persistCurrentDocument } from "./projectManagement";
@@ -126,6 +145,7 @@ import {
   recoverGeneration,
   submitGeneration,
   waitForResult,
+  waitForTextResult,
   type BackendResult,
   type BackendTask,
   type GenerationRequest,
@@ -161,6 +181,7 @@ import {
   type CanvasDocument,
   type CanvasNode,
   type CanvasNodeData,
+  type CanvasResource,
   type CanvasNodeKind,
   type CanvasCommand,
   type Point,
@@ -205,12 +226,18 @@ import "./themes.css";
 type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 type Panel = "assets" | "search" | "history" | null;
 type Menu = {
+  mode?: "create" | "context";
   x: number;
   y: number;
   world: Point;
   nodeId?: string;
   parentId?: string;
-  connected?: { id: string; direction: "source" | "target" };
+  connected?: {
+    id: string;
+    direction: "source" | "target";
+    side?: PortSide;
+    anchor?: Point;
+  };
 };
 /** A generation submitted to the local API from this page. */
 type ServiceRun = ActiveGeneration & {
@@ -351,6 +378,7 @@ function Workspace() {
   historyRef.current = history;
   const doc = history.present;
   const [ready, setReady] = useState(false);
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden);
   const [initializationError, setInitializationError] = useState("");
   const [projectDialog, setProjectDialog] = useState<{
     id: string;
@@ -360,6 +388,7 @@ function Workspace() {
   const [switching, setSwitching] = useState(false);
   const switchPending = useRef(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
   // React Flow's measured geometry is UI state, independent of authored dimensions.
   const [measurements, setMeasurements] = useState<
@@ -530,6 +559,8 @@ function Workspace() {
     end();
   }, [clearGuides, end]);
   const cancelDrag = useCallback(() => {
+    if (pointerGesture.current.active)
+      setSelected(selectionAtPointerDown.current);
     pointerGesture.current.cancel();
     connectionStarted.current = null;
     if (dragging.current) setHistory(cancelTransaction);
@@ -604,6 +635,7 @@ function Workspace() {
       setPreview(null);
       editorOrigin.current = null;
       referenceTarget.current = null;
+      subjectTarget.current = null;
       uploadTarget.current = null;
       setArrivingNodes(new Set());
       setHistory(createHistory(next));
@@ -793,6 +825,7 @@ function Workspace() {
   }, [toast]);
   useEffect(() => {
     const flush = () => {
+      setPageVisible(!document.hidden);
       if (document.visibilityState === "hidden" && ready)
         void persist(historyRef.current.present);
     };
@@ -829,7 +862,6 @@ function Workspace() {
       title: `${labels[kind]} ${count}`,
       ...extra,
     });
-    if (kind === "text") node.height = 220;
     if (kind === "timeline") node.width = 720;
     node.position = {
       x: where.x - node.width / 2,
@@ -841,6 +873,18 @@ function Workspace() {
         x: where.x - (connected.direction === "target" ? node.width : 0),
         y: where.y - node.height / 2,
       };
+      if (connected.side === "left")
+        node.position = {
+          x: where.x - node.width,
+          y: where.y - node.height / 2,
+        };
+      if (connected.side === "top")
+        node.position = {
+          x: where.x - node.width / 2,
+          y: where.y - node.height,
+        };
+      if (connected.side === "bottom")
+        node.position = { x: where.x - node.width / 2, y: where.y };
     }
     if (menu?.parentId) {
       const parent = doc.nodes.find(
@@ -1066,6 +1110,60 @@ function Workspace() {
     [command, flow],
   );
   const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
+  const references = useCanvasReferences({
+    nodes: doc.nodes.filter(
+      (n) =>
+        !doc.nodes.some(
+          (s) => s.type === "stack" && s.data.stack?.nodeIds.includes(n.id),
+        ),
+    ),
+    zoom,
+    locked: lockedIds,
+    disabled:
+      panning ||
+      switching ||
+      !ready ||
+      Boolean(editing || preview || activeAction || textEditingId) ||
+      dragging.current,
+    world: (point) => flow.screenToFlowPosition(point),
+    connect: (source, target) => {
+      const current = historyRef.current.present;
+      const issue = referenceIssue(current, source, target);
+      if (issue) {
+        if (issue !== "duplicate_relation") notify(REFERENCE_ISSUE_TEXT[issue]);
+        return;
+      }
+      command({
+        type: "add-edge",
+        edge: {
+          id: crypto.randomUUID(),
+          source,
+          target,
+          sourceHandle: "out",
+          targetHandle: "in",
+        },
+      });
+      setSelected([target]);
+      setSelectedEdges([]);
+      setDismissedComposer(null);
+    },
+    create: (source, side, client, world, anchor) => {
+      const id = document
+        .elementFromPoint(client.x, client.y)
+        ?.closest(".react-flow__node")
+        ?.getAttribute("data-id");
+      const parent = doc.nodes.find(
+        (n) => n.id === id && n.type === "group" && !lockedIds.has(n.id),
+      );
+      setMenu({
+        x: client.x + 12,
+        y: client.y + 12,
+        world,
+        connected: { id: source, direction: "source", side, anchor },
+        parentId: parent?.id,
+      });
+    },
+  });
   const selectionControls = Boolean(
     single && !editing && !preview && !generationTarget,
   );
@@ -1074,8 +1172,8 @@ function Workspace() {
     !activeAction &&
     composerNode &&
     single?.id === composerNode.id &&
-    ["image", "video", "audio"].includes(composerNode.type) &&
-    composerNode.data.mediaRole !== "asset" &&
+    ["text", "image", "video", "audio"].includes(composerNode.type) &&
+    (composerNode.type === "text" || composerNode.data.mediaRole !== "asset") &&
     composerNode.id !== dismissedComposer &&
     !lockedIds.has(composerNode.id),
   );
@@ -1124,6 +1222,7 @@ function Workspace() {
     focusRequest: presentationFocus,
     blocked:
       interacting ||
+      references.connecting ||
       panning ||
       pointerGesture.current.moved ||
       !selectionControls,
@@ -1163,18 +1262,68 @@ function Workspace() {
           emphasized:
             selectedEdges.includes(e.id) ||
             selected.includes(e.source) ||
-            selected.includes(e.target),
-          running: generationByNode.has(e.target),
+            selected.includes(e.target) ||
+            hoveredNode === e.source ||
+            hoveredNode === e.target,
+          ...referencePresentation(doc, e),
+          sourceBounds: (() => {
+            const n = doc.nodes.find((n) => n.id === e.source)!;
+            return {
+              ...absolutePosition(n, doc.nodes),
+              width: n.width,
+              height: n.height,
+            };
+          })(),
+          targetBounds: (() => {
+            const n = doc.nodes.find((n) => n.id === e.target)!;
+            return {
+              ...absolutePosition(n, doc.nodes),
+              width: n.width,
+              height: n.height,
+            };
+          })(),
+          bidirectional:
+            e.source !== e.target &&
+            doc.edges.some(
+              (other) => other.source === e.target && other.target === e.source,
+            ),
         },
         ariaLabel: "参考连线",
       })),
-    [doc.edges, selectedEdges, selected, showEdges, generationByNode],
+    [doc.edges, doc.nodes, selectedEdges, selected, hoveredNode, showEdges],
   );
 
-  const projected = useMemo(
-    () => projectCanvasStacks(flowNodes, flowEdges),
-    [flowNodes, flowEdges],
-  );
+  const projected = useMemo(() => {
+    const projection = projectCanvasStacks(flowNodes, flowEdges);
+    return {
+      ...projection,
+      edges: projection.edges.map((edge) => {
+        const bounds = (id: string) => {
+          const node = doc.nodes.find((n) => n.id === id)!;
+          return {
+            ...absolutePosition(node, doc.nodes),
+            width: node.width,
+            height: node.height,
+          };
+        };
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            sourceBounds: bounds(edge.source),
+            targetBounds: bounds(edge.target),
+            emphasized: Boolean(
+              edge.data?.emphasized ||
+              selected.includes(edge.source) ||
+              selected.includes(edge.target) ||
+              hoveredNode === edge.source ||
+              hoveredNode === edge.target,
+            ),
+          },
+        };
+      }),
+    };
+  }, [flowNodes, flowEdges, doc.nodes, selected, hoveredNode]);
 
   const removeSelected = () => {
     command({
@@ -1269,6 +1418,39 @@ function Workspace() {
       `${doc.title}.canvas.json`,
     );
   };
+  const subjectTarget = useRef<string | null>(null);
+  const applySubjectResource = (id: string, resource: CanvasResource) => {
+    const target = historyRef.current.present.nodes.find(
+      (n) => n.id === id && n.type === "subject",
+    );
+    if (!target || lockedIds.has(id)) {
+      notify("主体已移除或锁定。");
+      return;
+    }
+    if (!["image", "video", "audio"].includes(resource.kind)) {
+      notify("主体需要图片、视频或音频素材。");
+      return;
+    }
+    command({
+      type: "update-node",
+      id,
+      patch: {
+        data: {
+          subject: {
+            description: "",
+            category: "character",
+            auxiliaries: [],
+            ...target.data.subject,
+            ...(resource.kind === "audio"
+              ? { voice: resource }
+              : { main: resource }),
+          },
+        },
+      },
+    });
+    subjectTarget.current = null;
+    setPanel(null);
+  };
   const openFilePicker = (id: string | null = null) => {
     if (id && lockedIds.has(id)) {
       notify("请先解锁节点或所属分组。");
@@ -1299,6 +1481,31 @@ function Workspace() {
         const kind = resource.kind;
         const data = resourceNodeData(resource);
         if (target && i === 0) {
+          const currentTarget = historyRef.current.present.nodes.find(
+            (n) => n.id === target,
+          );
+          if (currentTarget?.type === "subject") {
+            if (!["image", "video", "audio"].includes(resource.kind))
+              throw new Error("主体需要图片、视频或音频素材。");
+            commands.push({
+              type: "update-node",
+              id: target,
+              patch: {
+                data: {
+                  subject: {
+                    description: "",
+                    category: "character",
+                    auxiliaries: [],
+                    ...currentTarget.data.subject,
+                    ...(resource.kind === "audio"
+                      ? { voice: resource }
+                      : { main: resource }),
+                  },
+                },
+              },
+            });
+            continue;
+          }
           commands.push({
             type: "update-node",
             id: target,
@@ -1774,16 +1981,19 @@ function Workspace() {
         status: "running",
         time: jobTime(),
         message: GENERATION_LABELS[run.phase],
-        request: {
-          kind: request.kind,
-          title: request.title,
-          prompt: request.prompt,
-          settings: getNodeGenerationSettings(
-            historyRef.current.present.nodes.find(
-              (node) => node.id === origin.nodeId,
-            )!,
-          ),
-        },
+        request:
+          request.kind === "text"
+            ? undefined
+            : {
+                kind: request.kind,
+                title: request.title,
+                prompt: request.prompt,
+                settings: getNodeGenerationSettings(
+                  historyRef.current.present.nodes.find(
+                    (node) => node.id === origin.nodeId,
+                  )!,
+                ),
+              },
       },
       ...current,
     ]);
@@ -1804,30 +2014,48 @@ function Workspace() {
         throw signal.reason;
       }
       setPhase("submitting");
-      const result = await waitForResult(
-        submitted.projectId,
-        submitted.taskId,
-        signal,
-        (task: BackendTask) => {
-          const phase = generationPhase(task);
-          if (phase) setPhase(phase);
-          else if (task.status === "succeeded") setPhase("finishing");
-          setJobs((current) => reconcileGenerationJobs(current, [task]));
-        },
-      );
+      const progress = (task: BackendTask) => {
+        const phase = generationPhase(task);
+        if (phase) setPhase(phase);
+        else if (task.status === "succeeded") setPhase("finishing");
+        setJobs((current) => reconcileGenerationJobs(current, [task]));
+      };
+      const output: ServiceResult =
+        request.kind === "text"
+          ? await waitForTextResult(
+              submitted.projectId,
+              submitted.taskId,
+              signal,
+              progress,
+            )
+          : await mediaOutput(
+              await waitForResult(
+                submitted.projectId,
+                submitted.taskId,
+                signal,
+                progress,
+              ),
+              signal,
+            );
       setPhase("finishing");
-      const output = await mediaOutput(result, signal);
       updateJob(id, {
         status: "succeeded",
         outputs: [output],
         message: "结果已保存到历史",
       });
-      const appended = applyGenerationResults(
-        historyRef.current.present,
-        origin,
-        [output],
-        resultMode,
-      );
+      const appended =
+        output.kind === "text"
+          ? applyTextGenerationResult(
+              historyRef.current.present,
+              origin,
+              output,
+            )
+          : applyGenerationResults(
+              historyRef.current.present,
+              origin,
+              [output],
+              resultMode,
+            );
       if (appended.error || !appended.ids.length) {
         const sameDocument =
           historyRef.current.present.id === origin.documentId;
@@ -1897,6 +2125,12 @@ function Workspace() {
       nodeId: node.id,
       kind: node.type,
       src: node.data.src,
+      referenceInputs: referenceSnapshot(
+        references.map(
+          (item) =>
+            document.nodes.find((n) => n.id === item.node.id) ?? item.node,
+        ),
+      ),
     };
     const count = settings.mode === "audio" ? 1 : (settings.count ?? 1);
     for (let index = 0; index < count; index++)
@@ -1934,6 +2168,44 @@ function Workspace() {
     )
       return;
     const incoming = incomingNodes(current, nodeId);
+    if (node.type === "text") {
+      const settings = agentNodeSettings(node);
+      const agents = backendCatalog.models.filter(
+        (model) => model.kind === "agent",
+      );
+      const config = agents.find(
+        (model) => model.id === (settings.modelConfigId ?? agents[0]?.id),
+      );
+      const blocker = agentGenerationBlocker(node, incoming, config);
+      if (blocker || !config) {
+        notify(blocker ?? "Agent 配置不可用。");
+        return;
+      }
+      void runServiceTask(
+        {
+          documentId: current.id,
+          documentTitle: current.title,
+          config,
+          kind: "text",
+          prompt: node.data.prompt,
+          title: node.data.title,
+          videoMode: "first_frame",
+          thinking: settings.thinking,
+          maxTokens: settings.maxTokens,
+          references: assistantReferences(incoming),
+        },
+        {
+          documentId: current.id,
+          nodeId: node.id,
+          kind: "text",
+          text: node.data.text,
+          referenceInputs: referenceSnapshot(incoming),
+        },
+        node.data.title,
+      );
+      return;
+    }
+
     const settings = getNodeGenerationSettings(node);
     if (settings.modelConfigId) {
       runServiceGeneration(node, incoming);
@@ -2151,7 +2423,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-canvas-menu,.cw-node-title-input",
       )
     )
       return;
@@ -2172,8 +2444,10 @@ function Workspace() {
         root.current?.focus({ preventScroll: true });
         return;
       }
+      const cancellingGesture = pointerGesture.current.active;
       clearGuides();
       cancelDrag();
+      references.cancel();
       setSelectedEdges([]);
       setMenu(null);
       setPreview(null);
@@ -2182,7 +2456,7 @@ function Workspace() {
       setRename(null);
       setHelp(false);
       setZoomMenu(false);
-      if (!editingText) setSelected([]);
+      if (!editingText && !cancellingGesture) setSelected([]);
       return;
     }
     if (
@@ -2332,6 +2606,34 @@ function Workspace() {
   });
 
   const actions = {
+    referenceTargetState: (id: string): "valid" | "invalid" | null => {
+      if (
+        !references.connecting ||
+        references.targetId !== id ||
+        !references.port
+      )
+        return null;
+      const issue = referenceIssue(doc, references.port.nodeId, id);
+      return !issue || issue === "duplicate_relation" ? "valid" : "invalid";
+    },
+    pickSubject: (
+      id: string,
+      source: "file" | "canvas" | "assets" | "import",
+    ) => {
+      if (lockedIds.has(id)) return;
+      if (source === "file") {
+        openFilePicker(id);
+        return;
+      }
+      if (source === "import") {
+        const node = doc.nodes.find((n) => n.id === id);
+        if (node) openEditor(node);
+        return;
+      }
+      referenceTarget.current = null;
+      subjectTarget.current = id;
+      setPanel("assets");
+    },
     select: (id: string, event: React.MouseEvent) => {
       if (panning || pointerGesture.current.blocksClick(event.detail)) return;
       setMenu(null);
@@ -2348,6 +2650,29 @@ function Workspace() {
     },
     update: (id: string, data: Partial<CanvasNodeData>) =>
       command({ type: "update-node", id, patch: { data } }),
+    nameEdit: rename,
+    changeNameDraft: (value: string) =>
+      setRename((current) => (current ? { ...current, value } : null)),
+    finishNameEdit: (save: boolean) => {
+      if (!rename) return;
+      const node = historyRef.current.present.nodes.find(
+        (n) => n.id === rename.id,
+      );
+      const title = rename.value.trim();
+      if (
+        save &&
+        node &&
+        title &&
+        title !== node.data.title &&
+        !lockedIds.has(node.id)
+      )
+        command({
+          type: "update-node",
+          id: node.id,
+          patch: { data: { title } },
+        });
+      setRename(null);
+    },
     rename: (id: string) => {
       const n = doc.nodes.find((n) => n.id === id);
       if (lockedIds.has(id)) notify("请先解锁节点或所属分组。");
@@ -2360,7 +2685,12 @@ function Workspace() {
     },
     newConnected: (id: string, direction: "source" | "target") => {
       const n = doc.nodes.find((n) => n.id === id);
-      if (!n || lockedIds.has(id)) return;
+      if (
+        !n ||
+        lockedIds.has(id) ||
+        (direction === "source" && !canSourceReference(n))
+      )
+        return;
       const p = absolutePosition(n, doc.nodes);
       const world = {
         x: p.x + (direction === "source" ? n.width + 140 : -140),
@@ -2445,8 +2775,6 @@ function Workspace() {
     },
     beginEdit: begin,
     endEdit: end,
-    beginResize: beginDrag,
-    endResize: endDrag,
     isTextEditing: (id: string) => textEditingId === id,
     finishTextEdit: () => {
       end();
@@ -2454,7 +2782,35 @@ function Workspace() {
     },
   };
   const contextItems = (children: ReactNode) => (
-    <CanvasContextMenu x={menu!.x} y={menu!.y}>
+    <CanvasContextMenu
+      x={menu!.x}
+      y={menu!.y}
+      className={menu?.connected ? "cw-canvas-menu" : undefined}
+      onKeyDown={(event) => {
+        if (!menu?.connected) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setMenu(null);
+          return;
+        }
+        if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+          event.preventDefault();
+          const buttons = [
+            ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+              'button:not(:disabled):not([aria-disabled="true"])',
+            ),
+          ];
+          const index = buttons.indexOf(
+            document.activeElement as HTMLButtonElement,
+          );
+          buttons[
+            (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+              buttons.length
+          ]?.focus();
+        }
+      }}
+    >
       {children}
     </CanvasContextMenu>
   );
@@ -2476,21 +2832,38 @@ function Workspace() {
       {shortcut && <kbd>{shortcut}</kbd>}
     </button>
   );
+  useEffect(() => {
+    if (!menu?.connected) return;
+    const element = root.current?.querySelector<HTMLElement>(".cw-canvas-menu");
+    element
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus({ preventScroll: true });
+    const close = (event: PointerEvent) => {
+      if (!(event.target as Element).closest(".cw-context-menu")) setMenu(null);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menu?.connected]);
+  const portMetrics = referencePortMetrics(zoom);
   const pendingSource =
     menu?.connected && doc.nodes.find((node) => node.id === menu.connected!.id);
   const pendingConnection =
     pendingSource && menu?.connected
       ? {
-          from: {
-            x:
-              absolutePosition(pendingSource, doc.nodes).x +
-              (menu.connected.direction === "source" ? pendingSource.width : 0),
-            y:
-              absolutePosition(pendingSource, doc.nodes).y +
-              pendingSource.height / 2,
-          },
+          from:
+            menu.connected.anchor ??
+            portPoint(
+              {
+                ...absolutePosition(pendingSource, doc.nodes),
+                width: pendingSource.width,
+                height: pendingSource.height,
+              },
+              menu.connected.side ??
+                (menu.connected.direction === "source" ? "right" : "left"),
+            ),
           to: menu.world,
           direction: menu.connected.direction,
+          side: menu.connected.side,
         }
       : undefined;
 
@@ -2501,6 +2874,7 @@ function Workspace() {
       className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
+      data-edge-motion={pageVisible}
       data-assistant-open={assistantOpen}
       data-assistant-resizing={assistantLayout.dragging}
       style={
@@ -2511,6 +2885,21 @@ function Workspace() {
         } as CSSProperties
       }
       tabIndex={-1}
+      onPointerMove={references.hover}
+      onPointerLeave={() => {
+        references.hide();
+        setHoveredNode(null);
+      }}
+      onContextMenuCapture={(event) => {
+        // React Flow may open our menu from mouseup. Cancel the actual native
+        // contextmenu as well, including repeated right clicks on that menu.
+        if (
+          event.target instanceof Element &&
+          !event.target.closest(".cw-node-title-input") &&
+          event.target.closest(".react-flow,.cw-context-menu")
+        )
+          event.preventDefault();
+      }}
       onPointerDownCapture={(event) => {
         selectionAtPointerDown.current = selectedRef.current;
         bypassSnapping.current = event.metaKey || event.ctrlKey;
@@ -2545,6 +2934,7 @@ function Workspace() {
           // In selection mode onPaneClick receives pointerup (detail=0).
           // Read native click count here; the pan/zoom layer can consume dblclick.
           setMenu({
+            mode: "create",
             x: event.clientX,
             y: event.clientY,
             world: flow.screenToFlowPosition({
@@ -2587,162 +2977,213 @@ function Workspace() {
         }
       }}
     >
-      <CanvasActionsContext.Provider value={actions}>
-        <ReactFlow<FlowNode, Edge>
-          nodes={projected.nodes}
-          edges={projected.edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={(changes) => {
-            for (const c of changes)
-              if (c.type === "select")
-                setSelectedEdges((ids) =>
-                  c.selected
-                    ? [...new Set([...ids, c.id])]
-                    : ids.filter((id) => id !== c.id),
-                );
-          }}
-          onConnect={connect}
-          connectionLineComponent={CanvasConnectionLine}
-          onConnectStart={(event) => {
-            setMenu(null);
-            const point = "touches" in event ? event.touches[0] : event;
-            connectionStarted.current = point
-              ? { x: point.clientX, y: point.clientY }
-              : null;
-          }}
-          onConnectEnd={onConnectEnd}
-          connectOnClick={false}
-          elementsSelectable={!panning}
-          nodesConnectable={!panning}
-          isValidConnection={(c) =>
-            !lockedIds.has(c.source) &&
-            !lockedIds.has(c.target) &&
-            canAddReference(doc, c.source, c.target)
-          }
-          onNodeClick={(event, node) => {
-            if (
-              panning ||
-              (event.target as HTMLElement).closest(
-                "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
-              )
-            )
-              return;
-            setMenu(null);
-            setDismissedComposer(null);
-            // Read modifiers from the gesture itself, including focus changes between clicks.
-            if (event.shiftKey || event.metaKey || event.ctrlKey) {
-              const ids = new Set(selectionAtPointerDown.current);
-              if (ids.has(node.id)) ids.delete(node.id);
-              else ids.add(node.id);
-              setSelected([...ids]);
-              return;
+      <CanvasPlaybackProvider
+        blocked={
+          interacting ||
+          panning ||
+          references.connecting ||
+          Boolean(editing || preview || activeAction || menu)
+        }
+      >
+        <CanvasActionsContext.Provider value={actions}>
+          <ReactFlow<FlowNode, Edge>
+            nodes={projected.nodes}
+            edges={projected.edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={(changes) => {
+              for (const c of changes)
+                if (c.type === "select")
+                  setSelectedEdges((ids) =>
+                    c.selected
+                      ? [...new Set([...ids, c.id])]
+                      : ids.filter((id) => id !== c.id),
+                  );
+            }}
+            onConnect={connect}
+            connectionLineComponent={CanvasConnectionLine}
+            onConnectStart={(event) => {
+              setMenu(null);
+              const point = "touches" in event ? event.touches[0] : event;
+              connectionStarted.current = point
+                ? { x: point.clientX, y: point.clientY }
+                : null;
+            }}
+            onConnectEnd={onConnectEnd}
+            connectOnClick={false}
+            elementsSelectable={!panning && !references.connecting}
+            nodesConnectable={!panning}
+            isValidConnection={(c) =>
+              !lockedIds.has(c.source) &&
+              !lockedIds.has(c.target) &&
+              canAddReference(doc, c.source, c.target)
             }
-            setSelected([node.id]);
-            focusSelection(node.id);
-            if (
-              node.type === "text" &&
-              !lockedIds.has(node.id) &&
-              selectionAtPointerDown.current.length === 1 &&
-              selectionAtPointerDown.current[0] === node.id
-            )
-              setTextEditingId(node.id);
-          }}
-          onNodeDoubleClick={(event, node) => {
-            if (
-              panning ||
-              (event.target as HTMLElement).closest(
-                "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
+            onEdgeClick={(_, edge) => {
+              setSelected([]);
+              setSelectedEdges([edge.id]);
+              setMenu(null);
+            }}
+            onNodeClick={(event, node) => {
+              if (
+                panning ||
+                (event.target as HTMLElement).closest(
+                  "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
+                )
               )
-            )
-              return;
-            setSelected([node.id]);
-            if (node.type === "text" && !lockedIds.has(node.id)) {
-              setTextEditingId(node.id);
-              return;
-            }
-            focusSelection(node.id);
-          }}
-          onNodeDragStart={beginDrag}
-          onNodeDragStop={endDrag}
-          onSelectionDragStart={beginDrag}
-          onSelectionDragStop={endDrag}
-          onPaneClick={(event) => {
-            if (panning || pointerGesture.current.blocksClick(1)) return;
-            root.current?.focus({ preventScroll: true });
-            setMenu(null);
-            setSelected([]);
-            setDismissedComposer(null);
-            setSelectedEdges([]);
-            setZoomMenu(false);
-          }}
-          onPaneContextMenu={(event) => {
-            event.preventDefault();
-            root.current?.focus({ preventScroll: true });
-            setMenu({
-              x: event.clientX,
-              y: event.clientY,
-              world: flow.screenToFlowPosition({
+                return;
+              setMenu(null);
+              setSelectedEdges([]);
+              setDismissedComposer(null);
+              // Read modifiers from the gesture itself, including focus changes between clicks.
+              if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                const ids = new Set(selectionAtPointerDown.current);
+                if (ids.has(node.id)) ids.delete(node.id);
+                else ids.add(node.id);
+                setSelected([...ids]);
+                return;
+              }
+              setSelected([node.id]);
+              focusSelection(node.id);
+              if (
+                node.type === "text" &&
+                !lockedIds.has(node.id) &&
+                selectionAtPointerDown.current.length === 1 &&
+                selectionAtPointerDown.current[0] === node.id
+              )
+                setTextEditingId(node.id);
+            }}
+            onNodeDoubleClick={(event, node) => {
+              if (
+                panning ||
+                (event.target as HTMLElement).closest(
+                  "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
+                )
+              )
+                return;
+              setSelected([node.id]);
+              if (node.type === "text" && !lockedIds.has(node.id)) {
+                setTextEditingId(node.id);
+                return;
+              }
+              focusSelection(node.id);
+            }}
+            onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
+            onNodeMouseLeave={() => setHoveredNode(null)}
+            onNodeDragStart={beginDrag}
+            onNodeDragStop={endDrag}
+            onSelectionDragStart={beginDrag}
+            onSelectionDragStop={endDrag}
+            onPaneClick={(event) => {
+              if (panning || pointerGesture.current.blocksClick(1)) return;
+              root.current?.focus({ preventScroll: true });
+              setMenu(null);
+              setSelected([]);
+              setDismissedComposer(null);
+              setSelectedEdges([]);
+              setZoomMenu(false);
+            }}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              root.current?.focus({ preventScroll: true });
+              setMenu({
                 x: event.clientX,
                 y: event.clientY,
-              }),
-            });
-          }}
-          onMoveStart={(event) => {
-            if (event) selectionPresentation.userNavigation();
-          }}
-          onMove={(_, view) => setZoom(view.zoom)}
-          onMoveEnd={(_, viewport) => command({ type: "viewport", viewport })}
-          minZoom={MIN_ZOOM}
-          maxZoom={MAX_ZOOM}
-          nodeDragThreshold={0}
-          nodeClickDistance={4}
-          selectionMode={SelectionMode.Partial}
-          selectionOnDrag={!panning}
-          panOnDrag={panning ? [0, 1, 2] : [1, 2]}
-          panOnScroll
-          zoomOnScroll={false}
-          zoomOnPinch
-          zoomActivationKeyCode={["Meta", "Control"]}
-          panActivationKeyCode="Space"
-          multiSelectionKeyCode={["Meta", "Control", "Shift"]}
-          selectionKeyCode="Shift"
-          deleteKeyCode={null}
-          zoomOnDoubleClick={false}
-          colorMode="dark"
-          aria-label="无限创作画布"
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
-            size={Math.max(1, 1 / zoom)}
-            color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
-            bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
-          />
-          <CanvasInteractionOverlay
-            guides={guides}
-            pending={pendingConnection}
-          />
-          {minimap && (
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(n) => (n.type === "text" ? "#8b887f" : "#59656c")}
-              maskColor={theme.theme === "dark" ? "#080809bb" : "#f7f8fabb"}
-              position="bottom-left"
-              style={{ bottom: 66, left: 12 }}
+                world: flow.screenToFlowPosition({
+                  x: event.clientX,
+                  y: event.clientY,
+                }),
+              });
+            }}
+            onMoveStart={(event) => {
+              if (event) selectionPresentation.userNavigation();
+            }}
+            onMove={(_, view) => setZoom(view.zoom)}
+            onMoveEnd={(_, viewport) => command({ type: "viewport", viewport })}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            nodeDragThreshold={0}
+            nodeClickDistance={4}
+            selectionMode={SelectionMode.Partial}
+            selectionOnDrag={!panning}
+            panOnDrag={
+              references.connecting ? false : panning ? [0, 1, 2] : [1, 2]
+            }
+            panOnScroll
+            zoomOnScroll={false}
+            zoomOnPinch
+            zoomActivationKeyCode={["Meta", "Control"]}
+            panActivationKeyCode="Space"
+            multiSelectionKeyCode={["Meta", "Control", "Shift"]}
+            selectionKeyCode="Shift"
+            deleteKeyCode={null}
+            zoomOnDoubleClick={false}
+            colorMode="dark"
+            aria-label="无限创作画布"
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={18 * Math.max(1, 2 ** Math.ceil(Math.log2(0.65 / zoom)))}
+              size={Math.max(1, 1 / zoom)}
+              color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
+              bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
-          )}
-        </ReactFlow>
-      </CanvasActionsContext.Provider>
+            <CanvasInteractionOverlay
+              guides={guides}
+              pending={pendingConnection}
+            />
+            <ViewportPortal>
+              {references.preview && (
+                <svg className="cw-interaction-overlay">
+                  <path
+                    className={`cw-connection-preview ${references.targetId && actions.referenceTargetState(references.targetId) === "invalid" ? "is-invalid" : ""}`}
+                    d={references.preview}
+                  />
+                </svg>
+              )}
+              {references.port && !menu && (
+                <button
+                  type="button"
+                  className="cw-reference-port"
+                  aria-label="添加下游参考节点"
+                  data-reference-source={references.port.nodeId}
+                  data-side={references.port.side}
+                  style={{
+                    left: references.port.point.x,
+                    top: references.port.point.y,
+                    transform: `translate(-50%, -50%) scale(${portMetrics.scale})`,
+                    opacity: references.connecting ? 0 : 1,
+                  }}
+                  onPointerDown={references.start}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  <CanvasIcon name="plus" size={REFERENCE_PORT_SIZE * 0.75} />
+                </button>
+              )}
+            </ViewportPortal>
+            {minimap && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={(n) => (n.type === "text" ? "#8b887f" : "#59656c")}
+                maskColor={theme.theme === "dark" ? "#080809bb" : "#f7f8fabb"}
+                position="bottom-left"
+                style={{ bottom: 66, left: 12 }}
+              />
+            )}
+          </ReactFlow>
+        </CanvasActionsContext.Provider>
+      </CanvasPlaybackProvider>
 
       <header className="cw-topbar">
         <div className="cw-project-heading">
           <img
             className="cw-brand"
             src={museshowLogo}
-            alt="MuseShow"
+            alt="OpenDesign"
             draggable={false}
           />
           <ProjectSelector
@@ -2788,61 +3229,15 @@ function Workspace() {
       <CanvasToolRail
         holdCollapsed={false}
         items={[
-          {
-            name: "text",
-            icon: "rail-text",
-            label: "文本",
-            actionLabel: "添加文本",
-            shortcut: "T",
-            onClick: () => addNode("text"),
-          },
-          {
-            name: "image",
-            icon: "rail-image",
-            label: "图片",
-            actionLabel: "添加图片",
-            onClick: () => addNode("image"),
-          },
-          {
-            name: "video",
-            icon: "rail-video",
-            label: "视频",
-            actionLabel: "添加视频",
-            onClick: () => addNode("video"),
-          },
-          {
-            name: "audio",
-            icon: "rail-audio",
-            label: "音频",
-            actionLabel: "添加音频",
-            onClick: () => addNode("audio"),
-          },
-          {
-            name: "timeline",
-            icon: "rail-timeline",
-            label: "时间线",
-            actionLabel: "添加时间线",
-            onClick: () => addNode("timeline"),
-          },
-          {
-            name: "subject",
-            icon: "rail-subject",
-            label: "主体",
-            actionLabel: "添加主体",
-            onClick: () => addNode("subject"),
-          },
-          {
-            name: "tool",
-            label: "导演工具箱",
-            icon: "rail-tool",
-            unavailable: true,
-          },
-          {
-            name: "external",
-            label: "导演台",
-            icon: "rail-stage",
-            unavailable: true,
-          },
+          ...CANVAS_CREATION_TOOLS.map((tool) => ({
+            name: tool.kind,
+            icon: tool.icon,
+            label: tool.label,
+            actionLabel: tool.unavailable ? tool.label : `添加${tool.label}`,
+            shortcut: tool.kind === "text" ? "T" : undefined,
+            unavailable: tool.unavailable,
+            onClick: tool.unavailable ? undefined : () => addNode(tool.kind),
+          })),
           {
             name: "folder",
             icon: "rail-folder",
@@ -3042,6 +3437,24 @@ function Workspace() {
           <CanvasIcon name="star" size={18} />与 AI 对话
         </button>
       </div>
+      {selectedEdges.length > 0 && selected.length === 0 && (
+        <div
+          className="cw-selection-bar"
+          role="toolbar"
+          aria-label="参考连线操作"
+        >
+          <span>已选 {selectedEdges.length} 条连线</span>
+          <button
+            onClick={() => {
+              command({ type: "remove-edges", ids: selectedEdges });
+              setSelectedEdges([]);
+            }}
+          >
+            断开参考
+          </button>
+          <button onClick={() => setSelectedEdges([])}>取消选择</button>
+        </div>
+      )}
       {selected.length > 1 && !interacting && !panning && (
         <div className="cw-selection-bar">
           <span>已选 {selected.length} 个节点</span>
@@ -3108,10 +3521,23 @@ function Workspace() {
             maxWidth: selectionPresentation.toolbarMaxWidth,
           }}
           data-interacting={
-            interacting || panning || !selectionPresentation.visible
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
           }
-          aria-hidden={interacting || panning || !selectionPresentation.visible}
-          inert={interacting || panning || !selectionPresentation.visible}
+          aria-hidden={
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
+          }
+          inert={
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
+          }
         >
           <NodeSelectionToolbar
             node={single}
@@ -3165,7 +3591,10 @@ function Workspace() {
             className="cw-action-media-host"
             style={selectionPresentation.mediaRect ?? undefined}
             data-hidden={
-              interacting || panning || !selectionPresentation.visible
+              interacting ||
+              references.connecting ||
+              panning ||
+              !selectionPresentation.visible
             }
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
@@ -3189,9 +3618,17 @@ function Workspace() {
               border: "1px solid #ffffff20",
             }}
             data-interacting={
-              interacting || panning || !selectionPresentation.visible
+              interacting ||
+              references.connecting ||
+              panning ||
+              !selectionPresentation.visible
             }
-            inert={interacting || panning || !selectionPresentation.visible}
+            inert={
+              interacting ||
+              references.connecting ||
+              panning ||
+              !selectionPresentation.visible
+            }
           >
             {isImageActionTool(activeAction.tool) ? (
               <ImageActionEditor
@@ -3254,10 +3691,23 @@ function Workspace() {
             maxHeight: selectionPresentation.composerMaxHeight,
           }}
           data-interacting={
-            interacting || panning || !selectionPresentation.visible
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
           }
-          aria-hidden={interacting || panning || !selectionPresentation.visible}
-          inert={interacting || panning || !selectionPresentation.visible}
+          aria-hidden={
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
+          }
+          inert={
+            interacting ||
+            references.connecting ||
+            panning ||
+            !selectionPresentation.visible
+          }
         >
           <TooltipButton
             className="cw-composer-dismiss"
@@ -3269,36 +3719,96 @@ function Workspace() {
           >
             <CanvasIcon name="close" size={14} />
           </TooltipButton>
-          <NodeComposer
-            selectedNode={composerNode}
-            incomingNodes={composerIncoming}
-            onUpdate={(patch) =>
-              command({
-                type: "update-node",
-                id: composerNode.id,
-                patch: { data: patch },
-              })
-            }
-            onRun={() => prepareGeneration(composerNode.id)}
-            onCancel={() => {
-              setGenerationTarget(null);
-              cancelServiceRuns(composerNode.id);
-            }}
-            onPickReference={() => {
-              referenceTarget.current = composerNode.id;
-              setPanel("assets");
-            }}
-            running={generationByNode.has(composerNode.id)}
-            backendModels={backendCatalog.models}
-          />
+          {composerNode.type === "text" ? (
+            <TextNodeComposer
+              node={composerNode}
+              incoming={composerIncoming}
+              models={backendCatalog.models}
+              onUpdate={(patch) =>
+                command({
+                  type: "update-node",
+                  id: composerNode.id,
+                  patch: { data: patch },
+                })
+              }
+              onRun={() => prepareGeneration(composerNode.id)}
+              onCancel={() => cancelServiceRuns(composerNode.id)}
+              onPickReference={() => {
+                referenceTarget.current = composerNode.id;
+                setPanel("assets");
+              }}
+              running={generationByNode.has(composerNode.id)}
+            />
+          ) : (
+            <NodeComposer
+              selectedNode={composerNode}
+              incomingNodes={composerIncoming}
+              onUpdate={(patch) =>
+                command({
+                  type: "update-node",
+                  id: composerNode.id,
+                  patch: { data: patch },
+                })
+              }
+              onRun={() => prepareGeneration(composerNode.id)}
+              onCancel={() => {
+                setGenerationTarget(null);
+                cancelServiceRuns(composerNode.id);
+              }}
+              onPickReference={() => {
+                referenceTarget.current = composerNode.id;
+                setPanel("assets");
+              }}
+              running={generationByNode.has(composerNode.id)}
+              backendModels={backendCatalog.models}
+            />
+          )}
         </div>
       )}
 
+      {menu && !menu.nodeId && !menu.connected && (
+        <CanvasCreationMenu
+          key={`${menu.x}:${menu.y}:${menu.mode ?? "context"}`}
+          x={menu.x}
+          y={menu.y}
+          mode={menu.mode ?? "context"}
+          canPaste={Boolean(clipboard.current?.nodes.length)}
+          canUndo={Boolean(history.past.length || history.transaction)}
+          canRedo={Boolean(history.future.length)}
+          onCreate={(kind) => addNode(kind, menu.world)}
+          onAssets={() => {
+            referenceTarget.current = null;
+            setAssistantOpen(false);
+            setPanel("assets");
+          }}
+          onUpload={() => openFilePicker()}
+          onPaste={() => paste()}
+          onUndo={() => setHistory(undo)}
+          onRedo={() => setHistory(redo)}
+          onClose={() => setMenu(null)}
+        />
+      )}
       {menu &&
+        (menu.nodeId || menu.connected) &&
         contextItems(
           menu.nodeId ? (
             <>
               {menuButton("重命名", "text", () => actions.rename(menu.nodeId!))}
+              <button
+                role="menuitem"
+                disabled={
+                  !doc.nodes.some(
+                    (n) =>
+                      n.id === menu.nodeId &&
+                      canSourceReference(n) &&
+                      !lockedIds.has(n.id),
+                  )
+                }
+                onClick={() => actions.newConnected(menu.nodeId!, "source")}
+              >
+                <CanvasIcon name="plus" size={16} />
+                <span>添加下游节点</span>
+              </button>
               {menuButton("复制", "copy", copy, "⌘ C")}
               {menuButton("剪切", "copy", cut, "⌘ X")}
               {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
@@ -3416,33 +3926,23 @@ function Workspace() {
               {menuButton("删除", "trash", removeSelected, "⌫")}
             </>
           ) : (
-            <>
-              <div className="cw-menu-caption">
-                {menu.connected ? "创建参考关联节点" : "添加节点"}
-              </div>
-              {(menu.connected
-                ? connectedCreationKinds(
-                    doc,
-                    menu.connected.id,
-                    menu.connected.direction,
-                    kinds,
-                  )
-                : kinds
-              ).map((kind) => (
-                <div key={kind}>
-                  {menuButton(labels[kind], kind, () =>
-                    addNode(kind, menu.world),
-                  )}
-                </div>
-              ))}
-              {!menu.connected && (
-                <>
-                  <hr />
-                  {menuButton("上传素材", "upload", () => openFilePicker())}
-                  {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
-                </>
-              )}
-            </>
+            <CreationMenuContent
+              allowedKinds={
+                menu.connected
+                  ? connectedCreationKinds(
+                      doc,
+                      menu.connected.id,
+                      menu.connected.direction,
+                      CANVAS_CREATION_TOOLS.filter((t) => !t.unavailable).map(
+                        (t) => t.kind,
+                      ),
+                    )
+                  : undefined
+              }
+              onCreate={(kind) => addNode(kind, menu.world)}
+              onAssets={() => setPanel("assets")}
+              onUpload={() => openFilePicker()}
+            />
           ),
         )}
 
@@ -3473,6 +3973,7 @@ function Workspace() {
               onClick={() => {
                 setPanel(null);
                 referenceTarget.current = null;
+                subjectTarget.current = null;
               }}
             />
           </div>
@@ -3488,7 +3989,7 @@ function Workspace() {
               </p>
               <button
                 className="cw-wide-button"
-                onClick={() => openFilePicker()}
+                onClick={() => openFilePicker(subjectTarget.current)}
               >
                 <CanvasIcon name="upload" />
                 上传本地素材
@@ -3501,6 +4002,15 @@ function Workspace() {
                     <button
                       key={n.id}
                       onClick={() => {
+                        if (subjectTarget.current) {
+                          const resource = resourceFromNode(n);
+                          if (resource)
+                            applySubjectResource(
+                              subjectTarget.current,
+                              resource,
+                            );
+                          return;
+                        }
                         if (
                           referenceTarget.current &&
                           referenceTarget.current !== n.id &&
@@ -3535,6 +4045,10 @@ function Workspace() {
                 key={doc.id}
                 currentId={doc.id}
                 onImport={(resource) => {
+                  if (subjectTarget.current) {
+                    applySubjectResource(subjectTarget.current, resource);
+                    return;
+                  }
                   const target = referenceTarget.current;
                   const where = center();
                   const node = createNode(
@@ -3565,6 +4079,16 @@ function Workspace() {
                   <button
                     key={title}
                     onClick={() => {
+                      if (subjectTarget.current) {
+                        applySubjectResource(subjectTarget.current, {
+                          id: crypto.randomUUID(),
+                          kind: "image",
+                          title,
+                          src: studyImage(i, title),
+                          mimeType: "image/svg+xml",
+                        });
+                        return;
+                      }
                       const target = referenceTarget.current;
                       const n = addNode("image", undefined, {
                         title,
@@ -3753,40 +4277,6 @@ function Workspace() {
         <div className="cw-toast" role="status">
           <CanvasIcon name="check" size={16} />
           {toast}
-        </div>
-      )}
-      {rename && (
-        <div className="cw-modal-backdrop" onClick={() => setRename(null)}>
-          <form
-            className="cw-modal cw-rename"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!rename.value.trim()) return;
-              command({
-                type: "update-node",
-                id: rename.id,
-                patch: { data: { title: rename.value.trim() } },
-              });
-              setRename(null);
-            }}
-          >
-            <h2>重命名节点</h2>
-            <input
-              autoFocus
-              aria-label="新名称"
-              value={rename.value}
-              onChange={(e) => setRename({ ...rename, value: e.target.value })}
-            />
-            <div>
-              <button type="button" onClick={() => setRename(null)}>
-                取消
-              </button>
-              <button className="cw-light-button" type="submit">
-                保存
-              </button>
-            </div>
-          </form>
         </div>
       )}
       {preview && (

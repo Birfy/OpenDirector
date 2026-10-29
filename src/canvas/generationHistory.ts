@@ -1,3 +1,4 @@
+import { applyTextGenerationResult } from "./textGeneration.ts";
 import { isGenerationSettings } from "./dataBoundary.ts";
 import type { CanvasDocument, GenerationSettings } from "./model.ts";
 import {
@@ -90,9 +91,18 @@ export function parseGenerationJob(value: unknown): GenerationJob {
       (!raw.resultSource ||
         typeof raw.resultSource.documentId !== "string" ||
         raw.resultSource.nodeId !== raw.nodeId ||
-        !["image", "video", "audio"].includes(raw.resultSource.kind) ||
+        !["text", "image", "video", "audio"].includes(raw.resultSource.kind) ||
         (raw.resultSource.src !== undefined &&
-          typeof raw.resultSource.src !== "string")))
+          typeof raw.resultSource.src !== "string") ||
+        (raw.resultSource.text !== undefined &&
+          typeof raw.resultSource.text !== "string") ||
+        (raw.resultSource.referenceInputs !== undefined &&
+          (!raw.resultSource.referenceInputs ||
+            typeof raw.resultSource.referenceInputs !== "object" ||
+            Array.isArray(raw.resultSource.referenceInputs) ||
+            !Object.entries(raw.resultSource.referenceInputs).every(
+              ([id, value]) => id.length > 0 && typeof value === "string",
+            )))))
   )
     throw new Error("生成历史的结果归属无效。");
   if (
@@ -306,11 +316,7 @@ export function applyRecoveredGenerationResults(
     const result: { document: CanvasDocument; ids: string[]; error?: string } =
       job?.resultSource
         ? output.kind === "text"
-          ? {
-              document: next,
-              ids: [],
-              error: "媒体节点收到文本结果，结果未写入画布。",
-            }
+          ? applyTextGenerationResult(next, job.resultSource, output)
           : applyGenerationResults(
               next,
               job.resultSource,

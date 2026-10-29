@@ -14,6 +14,8 @@ export interface ResultSource {
   nodeId: string;
   kind: CanvasNodeKind;
   src?: string;
+  text?: string;
+  referenceInputs?: Record<string, string>;
 }
 export interface LinkedMediaResult {
   kind: "image" | "video" | "audio";
@@ -111,6 +113,9 @@ export function applyGenerationResults(
           mimeType: first.mimeType,
           assetState: "ready",
           mediaRole: "generation",
+          generationEvidence: source.referenceInputs
+            ? { output: first.src, references: { ...source.referenceInputs } }
+            : undefined,
           ...(first.media ? { media: { ...first.media } } : {}),
         },
       },
@@ -128,6 +133,13 @@ export function applyGenerationResults(
       data: {
         ...node.data,
         mediaRole: "generation" as const,
+        generationEvidence:
+          source.referenceInputs && node.data.src
+            ? {
+                output: node.data.src,
+                references: { ...source.referenceInputs },
+              }
+            : undefined,
         prompt: target.data.prompt,
         ...(target.data.settings
           ? { settings: structuredClone(target.data.settings) }

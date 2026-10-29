@@ -58,35 +58,79 @@
   stroke-width: 1.5;
   transition: stroke 160ms;
 }
-.cw-reference-edge.is-emphasized .react-flow__edge-path,
-.cw-reference-edge.is-running .react-flow__edge-path,
-.react-flow__edge:hover .cw-reference-edge .react-flow__edge-path {
+.cw-reference-edge.is-emphasized .react-flow__edge-path {
   stroke: #6995ff;
 }
-.cw-edge-flow {
-  fill: none;
-  stroke: #c2e8ff;
+.react-flow__edge.selected .cw-reference-edge .react-flow__edge-path {
   stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-dasharray: 70 930;
+}
+.cw-workspace {
+  --cw-edge-flow-color: #23c5f5;
+  --cw-edge-flow-head: #d2fbff;
+}
+:root[data-theme="light"] .cw-workspace {
+  --cw-edge-flow-color: #0799cd;
+  --cw-edge-flow-head: #007cba;
+}
+.cw-edge-motion {
   pointer-events: none;
-  opacity: 0;
 }
-.cw-reference-edge.is-emphasized .cw-edge-flow,
-.cw-reference-edge.is-running .cw-edge-flow,
-.react-flow__edge:hover .cw-edge-flow {
-  opacity: 0.9;
-  animation: cw-edge-travel 2.8s linear infinite;
+.cw-edge-motion path {
+  fill: none;
+  stroke: var(--cw-edge-flow-color);
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
-.cw-reference-edge.is-running .cw-edge-flow {
-  animation-duration: 1.5s;
+/* All three layers share one leading edge and a normalized 120-unit cycle. */
+.cw-edge-glow {
+  --cw-beam-animation: cw-edge-glow-flow;
+  stroke-dasharray: 20 100;
+  stroke-dashoffset: 20;
+  stroke-width: 9;
+  opacity: 0.16;
 }
-@keyframes cw-edge-travel {
+.cw-edge-trail {
+  --cw-beam-animation: cw-edge-trail-flow;
+  stroke-dasharray: 12 108;
+  stroke-dashoffset: 12;
+  stroke-width: 4.5;
+  opacity: 0.7;
+}
+.cw-edge-motion .cw-edge-head {
+  --cw-beam-animation: cw-edge-head-flow;
+  stroke: var(--cw-edge-flow-head);
+  stroke-dasharray: 4 116;
+  stroke-dashoffset: 4;
+  stroke-width: 2.5;
+}
+.cw-workspace[data-edge-motion="true"] .cw-edge-motion path {
+  animation: var(--cw-beam-animation) 2s linear infinite;
+}
+.cw-workspace[data-edge-motion="false"] .cw-edge-motion {
+  display: none;
+}
+@keyframes cw-edge-glow-flow {
   from {
-    stroke-dashoffset: 1000;
+    stroke-dashoffset: 20;
   }
   to {
-    stroke-dashoffset: 0;
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes cw-edge-trail-flow {
+  from {
+    stroke-dashoffset: 12;
+  }
+  to {
+    stroke-dashoffset: -108;
+  }
+}
+@keyframes cw-edge-head-flow {
+  from {
+    stroke-dashoffset: 4;
+  }
+  to {
+    stroke-dashoffset: -116;
   }
 }
 .cw-interaction-overlay {
@@ -130,9 +174,11 @@
   font: inherit;
 }
 @media (prefers-reduced-motion: reduce) {
-  .cw-edge-flow {
-    animation: none !important;
+  .cw-edge-motion {
     display: none;
+  }
+  .cw-workspace[data-edge-motion="true"] .cw-edge-motion path {
+    animation: none;
   }
   .cw-reference-edge .react-flow__edge-path {
     transition: none;
@@ -955,7 +1001,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  border-radius: 15px;
+  border-radius: 24px;
   filter: drop-shadow(0 14px 35px #0005);
 }
 .cw-node-toolbar-anchor {
@@ -985,9 +1031,7 @@
   background: #45454d;
   color: white;
 }
-.cw-composer-dock .cw-creation-mode-row {
-  padding-right: 38px;
-}
+
 .cw-composer-dock .cw-composer {
   width: 100%;
   max-width: none;
@@ -1270,22 +1314,7 @@
   font-size: 17px;
   font-weight: 500;
 }
-.cw-rename {
-  width: 360px;
-}
-.cw-rename input {
-  width: 100%;
-  margin: 8px 0 18px;
-}
-.cw-rename > div {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.cw-rename button {
-  padding: 8px 16px;
-  border-radius: 7px;
-}
+
 .cw-light-button {
   background: #d3ddd5;
   color: #242b26;
@@ -1643,4 +1672,42 @@
   border-radius: 5px;
   padding: 7px;
   font-size: 11px;
+}
+
+/* Business reference state is independent of hover, selection and running jobs. */
+.cw-reference-edge.is-pending .react-flow__edge-path {
+  stroke-dasharray: 7 5;
+}
+.cw-reference-edge {
+  color: #6995ff;
+}
+.cw-reference-port {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid #fff;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+.cw-connection-preview {
+  stroke-dasharray: 7 5;
+}
+.cw-reference-port {
+  pointer-events: all;
+}
+
+.cw-reference-port > svg {
+  display: block;
+  pointer-events: none;
 }

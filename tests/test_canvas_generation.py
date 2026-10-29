@@ -475,3 +475,36 @@ def test_cancel_waits_for_inflight_running_receipt(project, monkeypatch):
             release.set()
             await manager.close()
     asyncio.run(run())
+
+
+def test_text_generation_parameters_are_frozen_without_becoming_node_fields(project):
+    store, value, session, canvas = project
+    item = node(canvas, value, session, 'text')
+    configs = ModelConfigs(store.repository)
+    config = configs.save('agent', 'https://ark.test/api/plan/v3', 'agent-model', 'private')
+    manager = Generation(store, configs)
+    request = {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': item['revision'],
+               'inputs': {'prompt': '写一个故事', 'referenceIds': [], 'thinking': 'high', 'maxTokens': 1024}}
+    task, _, _ = manager._prepare(value['id'], item['id'], request, session)
+    assert task['parameters']['thinking'] == 'high'
+    assert task['parameters']['max_tokens'] == 1024
+    current = canvas.snapshot(value['id'])['canvas']['nodes'][0]
+    assert current['prompt'] == '写一个故事'
+    assert 'thinking' not in current and 'maxTokens' not in current
+    repeated, _, _ = manager._prepare(value['id'], item['id'], {**request, 'inputs': {**request['inputs'], 'thinking': 'low', 'maxTokens': 2048}}, session)
+    assert repeated['parameters']['thinking'] == 'high'
+    assert repeated['parameters']['max_tokens'] == 1024
+
+
+@pytest.mark.parametrize('thinking,tokens', [('invalid', 1024), ('auto', 0), ('auto', 32769), ('auto', True)])
+def test_invalid_text_parameters_do_not_write_a_task(project, thinking, tokens):
+    store, value, session, canvas = project
+    item = node(canvas, value, session, 'text')
+    configs = ModelConfigs(store.repository)
+    config = configs.save('agent', 'https://ark.test/api/plan/v3', 'agent-model', 'private')
+    manager = Generation(store, configs)
+    with pytest.raises(ProjectError, match='Agent'):
+        manager._prepare(value['id'], item['id'], {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': item['revision'],
+                        'inputs': {'prompt': '写一个故事', 'thinking': thinking, 'maxTokens': tokens}}, session)
+    assert canvas.snapshot(value['id'])['tasks'] == []
+    assert canvas.snapshot(value['id'])['canvas']['nodes'][0]['role'] == 'empty'

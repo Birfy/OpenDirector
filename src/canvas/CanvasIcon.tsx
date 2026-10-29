@@ -159,6 +159,7 @@ export function CanvasIcon({ name, size = 18, ...props }: CanvasIconProps) {
     arrowUp: <path d="M12 20V4m-6 6 6-6 6 6" />,
     arrowRight: <path d="M4 12h16m-6-6 6 6-6 6" />,
     arrowLeft: <path d="M20 12H4m6-6-6 6 6 6" />,
+    swapHorizontal: <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />,
     chevronDown: <path d="m6 9 6 6 6-6" />,
     chevronRight: <path d="m9 6 6 6-6 6" />,
     camera: (

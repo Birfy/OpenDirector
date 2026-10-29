@@ -7,18 +7,62 @@ import {
   type Edge,
   type ConnectionLineComponentProps,
 } from "@xyflow/react";
-import type { Point } from "./model";
+import { referencePreviewPath, type PortSide } from "./connectionPorts";
+import { edgePath } from "./edgeGeometry";
+import type { Point, Rect } from "./model";
 import type { SnapGuide } from "./snapping";
 
-export type ReferenceEdge = Edge<{ emphasized: boolean; running: boolean }>;
+export type ReferenceEdge = Edge<{
+  emphasized: boolean;
+  state?: "current" | "pending" | "provenance";
+  description?: string;
+  sourceBounds?: Rect;
+  targetBounds?: Rect;
+  bidirectional?: boolean;
+}>;
 export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
-  const [path] = getBezierPath(props);
+  const path =
+    props.data?.sourceBounds && props.data.targetBounds
+      ? edgePath(
+          props.data.sourceBounds,
+          props.data.targetBounds,
+          props.data.bidirectional,
+        )
+      : getBezierPath(props)[0];
+  const emphasized = Boolean(props.data?.emphasized || props.selected);
   return (
     <g
-      className={`cw-reference-edge ${props.data?.emphasized ? "is-emphasized" : ""} ${props.data?.running ? "is-running" : ""}`}
+      data-reference-state={props.data?.state ?? "pending"}
+      className={`cw-reference-edge is-${props.data?.state ?? "pending"} ${emphasized ? "is-emphasized" : ""}`}
     >
-      <BaseEdge id={props.id} path={path} interactionWidth={24} />
-      <path className="cw-edge-flow" d={path} pathLength={1000} />
+      <title>{props.data?.description ?? "参考连线"}</title>
+      <defs>
+        <marker
+          id={`arrow-${props.id}`}
+          viewBox="0 0 8 8"
+          refX="8"
+          refY="4"
+          markerWidth="8"
+          markerHeight="8"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M0,0 L8,4 L0,8 Z" fill="currentColor" />
+        </marker>
+      </defs>
+      <BaseEdge
+        id={props.id}
+        path={path}
+        interactionWidth={24}
+        markerEnd={`url(#arrow-${props.id})`}
+      />
+      {emphasized && (
+        <g className="cw-edge-motion" aria-hidden="true">
+          <path className="cw-edge-glow" d={path} pathLength={100} />
+          <path className="cw-edge-trail" d={path} pathLength={100} />
+          <path className="cw-edge-head" d={path} pathLength={100} />
+        </g>
+      )}
     </g>
   );
 }
@@ -45,20 +89,27 @@ export function CanvasInteractionOverlay({
   pending,
 }: {
   guides: readonly SnapGuide[];
-  pending?: { from: Point; to: Point; direction: "source" | "target" };
+  pending?: {
+    from: Point;
+    to: Point;
+    direction: "source" | "target";
+    side?: PortSide;
+  };
 }) {
   const path =
     pending &&
-    getBezierPath({
-      sourceX: pending.from.x,
-      sourceY: pending.from.y,
-      sourcePosition:
-        pending.direction === "source" ? Position.Right : Position.Left,
-      targetX: pending.to.x,
-      targetY: pending.to.y,
-      targetPosition:
-        pending.direction === "source" ? Position.Left : Position.Right,
-    })[0];
+    (pending.side
+      ? referencePreviewPath(pending.from, pending.side, pending.to)
+      : getBezierPath({
+          sourceX: pending.from.x,
+          sourceY: pending.from.y,
+          sourcePosition:
+            pending.direction === "source" ? Position.Right : Position.Left,
+          targetX: pending.to.x,
+          targetY: pending.to.y,
+          targetPosition:
+            pending.direction === "source" ? Position.Left : Position.Right,
+        })[0]);
   return (
     <ViewportPortal>
       <svg className="cw-interaction-overlay" aria-hidden="true">

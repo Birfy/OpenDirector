@@ -67,6 +67,69 @@ test("text-only reference requests become text-to-video", () => {
   assert.equal(backendBlocker(settings, [image], [h3]), null);
 });
 
+test("subjects supply compatible real resources and retain source identity for evidence", () => {
+  const subject = createNode("subject", undefined, {
+    title: "角色",
+    subject: {
+      description: "人物描述",
+      category: "person",
+      auxiliaries: [],
+      main: {
+        id: "portrait",
+        kind: "image",
+        title: "肖像",
+        src: "data:image/png;base64,AA==",
+      },
+      voice: {
+        id: "voice",
+        kind: "audio",
+        title: "声音",
+        src: "data:audio/wav;base64,AA==",
+      },
+    },
+  });
+  const settings = video({ videoMode: "reference" });
+  assert.equal(backendReferenceIssue(subject, settings, h3), null);
+  const references = backendReferences(settings, [subject], h3);
+  assert.deepEqual(
+    references.map((item) => item.node.type),
+    ["image", "audio"],
+  );
+  assert.ok(references.every((item) => item.node.id === subject.id));
+  assert.deepEqual(
+    references.map((item) => item.node.data.src),
+    [subject.data.subject!.main!.src, subject.data.subject!.voice!.src],
+  );
+  assert.match(backendReferenceIssue(subject, settings, zimage)!, /不接收主体/);
+  assert.match(
+    backendReferenceIssue(subject, video({ videoMode: "first-last" }), h3)!,
+    /图片节点/,
+  );
+  assert.equal(
+    backendReferences(
+      settings,
+      [{ ...subject, data: { ...subject.data, assetState: "missing" } }],
+      h3,
+    ).length,
+    0,
+  );
+  const onlyImages = {
+    ...h3,
+    inputRules: { ...h3.inputRules, allowedKinds: ["image"], maxImages: 1 },
+  };
+  assert.deepEqual(
+    backendReferences(settings, [subject], onlyImages).map(
+      (item) => item.node.type,
+    ),
+    ["image"],
+  );
+  assert.match(
+    backendBlocker(settings, [subject, media("image")], [onlyImages])!,
+    /上限/,
+  );
+  assert.equal(subject.type, "subject");
+});
+
 test("continuation needs exactly one previous clip and keeps it out of video references", () => {
   const settings = video({ videoMode: "continuation" });
   assert.match(backendBlocker(settings, [], [h3])!, /接续需要/);

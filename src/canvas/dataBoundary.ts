@@ -32,9 +32,6 @@ const SETTINGS_KEYS = [
   "resolution",
   "prompt",
   "count",
-  "camera",
-  "palette",
-  "style",
   "audioEnabled",
   "videoMode",
   "firstFrameNodeId",
@@ -63,9 +60,6 @@ export function isGenerationSettings(
       (Number.isInteger(value.count) &&
         Number(value.count) >= 1 &&
         Number(value.count) <= 8)) &&
-    optionalString(value.camera) &&
-    optionalString(value.palette) &&
-    optionalString(value.style) &&
     (value.audioEnabled === undefined ||
       typeof value.audioEnabled === "boolean") &&
     (value.videoMode === undefined ||
@@ -481,6 +475,42 @@ export function parseNodeData(
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
   if (value.mediaRole) result.mediaRole = value.mediaRole;
+  if (value.agentSettings !== undefined) {
+    const agent = value.agentSettings;
+    if (
+      kind !== "text" ||
+      !record(agent) ||
+      !optionalString(agent.modelConfigId) ||
+      !["auto", "low", "medium", "high"].includes(String(agent.thinking)) ||
+      !Number.isInteger(agent.maxTokens) ||
+      Number(agent.maxTokens) < 1 ||
+      Number(agent.maxTokens) > 32768
+    )
+      return { ok: false, error: "Agent 参数无效。" };
+    result.agentSettings = {
+      ...(agent.modelConfigId
+        ? { modelConfigId: agent.modelConfigId as string }
+        : {}),
+      thinking: agent.thinking as "auto" | "low" | "medium" | "high",
+      maxTokens: Number(agent.maxTokens),
+    };
+  }
+  if (value.generationEvidence !== undefined) {
+    const evidence = value.generationEvidence;
+    if (
+      !record(evidence) ||
+      !nonempty(evidence.output) ||
+      !record(evidence.references) ||
+      !Object.entries(evidence.references).every(
+        ([id, material]) => nonempty(id) && typeof material === "string",
+      )
+    )
+      return { ok: false, error: "生成输入记录无效。" };
+    result.generationEvidence = {
+      output: evidence.output,
+      references: { ...evidence.references } as Record<string, string>,
+    };
+  }
   if (value.settings)
     result.settings = copyGenerationSettings(
       value.settings as unknown as GenerationSettings,
@@ -640,6 +670,25 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
       a.text === b.text &&
       a.assetState === b.assetState &&
       a.mediaRole === b.mediaRole &&
+      sameOptional(
+        a.agentSettings,
+        b.agentSettings,
+        (a, b) =>
+          a.modelConfigId === b.modelConfigId &&
+          a.thinking === b.thinking &&
+          a.maxTokens === b.maxTokens,
+      ) &&
+      sameOptional(
+        a.generationEvidence,
+        b.generationEvidence,
+        (a, b) =>
+          a.output === b.output &&
+          Object.keys(a.references).length ===
+            Object.keys(b.references).length &&
+          Object.entries(a.references).every(
+            ([id, value]) => b.references[id] === value,
+          ),
+      ) &&
       sameGenerationSettings(a.settings, b.settings) &&
       sameOptional(
         a.timeline,

@@ -146,21 +146,41 @@ export function useAssistantChat(
       ].slice(0, 64),
     }));
   };
-  const add = async (read: (signal: AbortSignal) => Promise<ChatAsset[]>) => {
-    if (!loaded || uploading.current || submitting.current) return;
+  const add = async (
+    read: (signal: AbortSignal) => Promise<ChatAsset[]>,
+    externalSignal?: AbortSignal,
+  ) => {
+    if (
+      !loaded ||
+      uploading.current ||
+      submitting.current ||
+      externalSignal?.aborted
+    )
+      return false;
     uploading.current = true;
     const abort = new AbortController();
+    const cancel = () => abort.abort();
+    externalSignal?.addEventListener("abort", cancel, { once: true });
     uploadController.current = abort;
     setAdding(true);
     setError("");
     try {
       const assets = await read(abort.signal);
       abort.signal.throwIfAborted();
-      if (alive.current) addAssets(assets);
+      if (!alive.current) return false;
+      if (
+        new Set([...current.current.assets, ...assets].map((asset) => asset.id))
+          .size > 64
+      )
+        throw new Error("每次最多添加 64 份参考素材。");
+      addAssets(assets);
+      return true;
     } catch (reason) {
       if (alive.current && !abort.signal.aborted)
         setError(errorMessage(reason));
+      return false;
     } finally {
+      externalSignal?.removeEventListener("abort", cancel);
       uploading.current = false;
       if (uploadController.current === abort) uploadController.current = null;
       if (alive.current) setAdding(false);
@@ -213,13 +233,11 @@ export function useAssistantChat(
       }
       return assets;
     });
-  const addNodes = (nodes: CanvasNode[]) =>
+  const addNodes = (nodes: CanvasNode[], signal?: AbortSignal) =>
     add(async (signal) => {
       const references = assistantReferences(nodes);
       if (!references.length)
         throw new Error("所选节点没有可用素材，请先添加文本或上传素材。");
-      if (current.current.assets.length + references.length > 64)
-        throw new Error("每次最多添加 64 份参考素材。");
       const ids = await uploadReferences(projectId, references, signal);
       const assets = await request<ProjectChatAsset[]>(
         `/projects/${projectId}/assets?current_only=true`,
@@ -230,7 +248,7 @@ export function useAssistantChat(
         if (!asset) throw new Error("参考素材已不可用，请重新选择。");
         return attachment(asset);
       });
-    });
+    }, signal);
 
   const send = async () => {
     const draft = current.current;

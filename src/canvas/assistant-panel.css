@@ -108,8 +108,11 @@
   scrollbar-color: var(--chat-border) transparent;
   overscroll-behavior: contain;
 }
+.cw-assistant-log:has(> .cw-assistant-welcome) {
+  padding-top: 6px;
+}
 .cw-assistant-welcome {
-  padding: 12px 4px 24px;
+  padding: 0 4px 24px;
 }
 .cw-assistant-avatar {
   display: flex;
@@ -374,8 +377,7 @@
   width: 10px;
   height: 10px;
 }
-.cw-assistant-panel :is(.chat-picker-menu, .model-picker-panel),
-.cw-chat-reference-picker {
+.cw-assistant-panel :is(.chat-picker-menu, .model-picker-panel) {
   position: absolute;
   z-index: 5;
   bottom: calc(100% + 10px);
@@ -578,78 +580,6 @@
   border-radius: 6px;
   padding: 6px 10px;
   color: var(--chat-text);
-}
-.cw-chat-reference-picker {
-  left: 8px;
-  right: 8px;
-  padding: 12px;
-}
-.cw-chat-reference-picker header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.cw-chat-reference-picker header button {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-}
-.cw-assistant-panel .cw-chat-reference-picker input {
-  width: 100%;
-  padding: 9px 10px;
-  border: 1px solid var(--chat-border);
-  border-radius: 7px;
-  background: var(--chat-composer);
-  color: var(--chat-text);
-  font-size: 12px;
-}
-.cw-chat-reference-selection {
-  width: 100%;
-  padding: 10px;
-  margin-top: 8px;
-  border-radius: 7px;
-  background: var(--chat-surface);
-  text-align: left;
-}
-.cw-chat-reference-options {
-  max-height: min(310px, 40dvh);
-  overflow: auto;
-  margin-top: 8px;
-}
-.cw-chat-reference-options > small {
-  display: block;
-  margin: 10px 8px;
-  color: var(--chat-muted);
-  font-size: 10px;
-}
-.cw-chat-reference-options > button {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 8px;
-  border-radius: 7px;
-  text-align: left;
-}
-.cw-chat-reference-options > button:hover {
-  background: var(--chat-hover);
-}
-.cw-chat-reference-options > button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cw-chat-reference-options p {
-  margin: 10px 8px;
-  color: var(--chat-muted);
-  font-size: 11px;
-  line-height: 1.6;
-}
-.cw-chat-reference-options p button {
-  padding: 0;
-  text-decoration: underline;
 }
 .cw-assistant-drop {
   position: absolute;

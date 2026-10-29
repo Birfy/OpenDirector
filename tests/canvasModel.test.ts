@@ -242,7 +242,7 @@ test("arrangement honors variable heights, locks, and existing group coordinates
 });
 
 test("reference commands allow self references and keep duplicate relationships unchanged", () => {
-  const a = createNode("image"),
+  const a = createNode("image", undefined, { src: "data:image/fixture" }),
     b = createNode("video");
   const doc = { ...createDocument(), nodes: [a, b] };
   const connected = applyCommand(doc, {
@@ -282,7 +282,9 @@ test("reference commands allow self references and keep duplicate relationships 
 });
 
 test("reference commands and port previews allow direct and transitive cycles", () => {
-  const [a, b, c, d] = Array.from({ length: 4 }, () => createNode("image"));
+  const [a, b, c, d] = Array.from({ length: 4 }, () =>
+    createNode("image", undefined, { src: "data:image/fixture" }),
+  );
   const initial = { ...createDocument(), nodes: [a!, b!, c!, d!] };
   const chain = applyCommand(initial, {
     type: "batch",
@@ -309,7 +311,9 @@ test("reference commands and port previews allow direct and transitive cycles", 
 });
 
 test("cyclic documents accept further references without deleting retained edges", () => {
-  const [a, b, c] = Array.from({ length: 3 }, () => createNode("image"));
+  const [a, b, c] = Array.from({ length: 3 }, () =>
+    createNode("image", undefined, { src: "data:image/fixture" }),
+  );
   const old = {
     ...createDocument(),
     nodes: [a!, b!, c!],
@@ -462,18 +466,18 @@ test("replacing media drops old pixel edits and metadata but allows atomic layer
   assert.equal(parseDocument(audio).ok, true);
 });
 
-test("media blocks start at 16:9 and take the file's aspect once its size is known", () => {
+test("empty media cards use the agreed shapes and adopt the file aspect once known", () => {
   const blank = createNode("video");
-  assert.deepEqual([blank.width, blank.height], [352, 198]);
+  assert.deepEqual([blank.width, blank.height], [540, 300]);
   assert.deepEqual(
     [createNode("image").width, createNode("image").height],
-    [352, 198],
+    [300, 300],
   );
   const portrait = createNode("image", undefined, {
     src: "data:image/png;base64,a",
     media: { width: 1080, height: 1920 },
   });
-  assert.deepEqual([portrait.width, portrait.height], [198, 352]);
+  assert.deepEqual([portrait.width, portrait.height], [169, 300]);
 
   const before = { ...createDocument(), nodes: [blank] };
   const decoded = applyCommand(before, {
@@ -483,7 +487,7 @@ test("media blocks start at 16:9 and take the file's aspect once its size is kno
   });
   assert.deepEqual(
     [decoded.nodes[0]!.width, decoded.nodes[0]!.height],
-    [352, 352],
+    [540, 540],
   );
   // A duration update or an unchanged size keeps a block the user resized.
   const resized = { ...decoded.nodes[0]!, width: 500, height: 200 };

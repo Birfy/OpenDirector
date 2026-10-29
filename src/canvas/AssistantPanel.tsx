@@ -2,17 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import museshowLogo from "../assets/museshow-logo.png";
 import type { AssistantLayout } from "./useAssistantLayout";
-import { errorMessage, request } from "../backend/api";
 import type { BackendModels } from "../backend/models";
 import type { ChatAsset, Thinking } from "../backend/chat";
 import type { CanvasNode } from "./model";
-import { assistantReferences } from "./assistantReferences";
 import { ChoicePicker, ModelPicker } from "./AssistantPickers";
+import { attachment, useAssistantChat } from "./useAssistantChat";
 import {
-  attachment,
-  useAssistantChat,
-  type ProjectChatAsset,
-} from "./useAssistantChat";
+  ReferenceMentionInput,
+  type ReferenceMentionHandle,
+} from "./ReferenceMentionInput";
+import {
+  nodeMentionOptions,
+  type MentionOption,
+  type ReferenceKind,
+} from "./referenceMentions";
+import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import "./assistant-panel.css";
 
 const THINKING = [
@@ -30,136 +34,6 @@ function kindOf(asset: ChatAsset) {
       : asset.type.startsWith("audio/")
         ? "audio"
         : "text";
-}
-
-function ReferencePicker({
-  projectId,
-  nodes,
-  selectedNodes,
-  onAsset,
-  onNodes,
-  onClose,
-}: {
-  projectId: string;
-  nodes: CanvasNode[];
-  selectedNodes: CanvasNode[];
-  onAsset: (asset: ChatAsset) => void;
-  onNodes: (nodes: CanvasNode[]) => void;
-  onClose: () => void;
-}) {
-  const [assets, setAssets] = useState<ProjectChatAsset[]>([]);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [attempt, setAttempt] = useState(0);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const abort = new AbortController();
-    setLoading(true);
-    setError("");
-    void request<ProjectChatAsset[]>(
-      `/projects/${projectId}/assets?current_only=true`,
-      { signal: abort.signal },
-    )
-      .then((value) =>
-        setAssets(
-          value.filter((asset) =>
-            ["text", "image", "video", "audio"].includes(asset.kind),
-          ),
-        ),
-      )
-      .catch((reason) => {
-        if (!abort.signal.aborted) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) setLoading(false);
-      });
-    return () => abort.abort();
-  }, [projectId, attempt]);
-  useEffect(() => {
-    const dismiss = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) onClose();
-    };
-    document.addEventListener("pointerdown", dismiss);
-    return () => document.removeEventListener("pointerdown", dismiss);
-  }, [onClose]);
-  const matches = (name: string) =>
-    name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-  const canvasNodes = nodes.filter(
-    (node) => matches(node.data.title) && assistantReferences([node]).length,
-  );
-  const filteredAssets = assets.filter((asset) => matches(asset.name));
-  return (
-    <div
-      className="cw-chat-reference-picker"
-      ref={root}
-      role="dialog"
-      aria-label="引用项目素材"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          onClose();
-        }
-      }}
-    >
-      <header>
-        <strong>引用项目素材</strong>
-        <button type="button" aria-label="关闭素材选择" onClick={onClose}>
-          <CanvasIcon name="close" size={16} />
-        </button>
-      </header>
-      <input
-        autoFocus
-        aria-label="搜索参考素材"
-        placeholder="搜索画布节点或项目素材"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {!!selectedNodes.length && (
-        <button
-          type="button"
-          className="cw-chat-reference-selection"
-          onClick={() => onNodes(selectedNodes)}
-        >
-          引用当前选择（{selectedNodes.length}）
-        </button>
-      )}
-      <div className="cw-chat-reference-options">
-        {!!canvasNodes.length && <small>画布节点</small>}
-        {canvasNodes.map((node) => (
-          <button type="button" key={node.id} onClick={() => onNodes([node])}>
-            <CanvasIcon name={node.type} size={16} />
-            <span>{node.data.title}</span>
-          </button>
-        ))}
-        {!!filteredAssets.length && <small>项目素材</small>}
-        {filteredAssets.map((asset) => (
-          <button
-            type="button"
-            key={asset.id}
-            onClick={() => onAsset(attachment(asset))}
-          >
-            <CanvasIcon name={asset.kind} size={16} />
-            <span>{asset.name}</span>
-          </button>
-        ))}
-        {loading && <p role="status">正在读取素材…</p>}
-        {error && (
-          <p role="alert">
-            {error}{" "}
-            <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-              重新读取
-            </button>
-          </p>
-        )}
-        {!loading &&
-          !error &&
-          !canvasNodes.length &&
-          !filteredAssets.length && <p>没有可引用的素材，可通过 + 上传。</p>}
-      </div>
-    </div>
-  );
 }
 
 /** MuseShow conversation tools in an OpenDesign floating canvas window. */
@@ -190,20 +64,19 @@ export function AssistantPanel({
 }) {
   const chat = useAssistantChat(documentId, catalog, onTurnEnd);
   const { value, setValue } = chat;
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const projectReferences = useProjectMentionAssets(documentId);
+  const mentions = useRef<ReferenceMentionHandle>(null);
   const [dragOver, setDragOver] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const nearBottom = useRef(true);
   const lastSelectionRequest = useRef(0);
-  const mention = useRef<{ start: number; end: number } | null>(null);
   const locked = !chat.loaded || chat.adding || (chat.sending && !chat.started);
   const referenceDisabled = !chat.loaded || chat.adding || chat.sending;
 
   useEffect(() => {
     if (open && chat.loaded) input.current?.focus({ preventScroll: true });
-    if (!open) setPickerOpen(false);
   }, [open, chat.loaded]);
   useEffect(() => {
     if (nearBottom.current && log.current)
@@ -220,33 +93,40 @@ export function AssistantPanel({
     if (selectedNodes.length) void chat.addNodes(selectedNodes);
   }, [chat.loaded, selectionRequest]);
 
-  const closePicker = () => {
-    setPickerOpen(false);
-    input.current?.focus();
-  };
-  const finishMention = () => {
-    const range = mention.current;
-    if (range)
-      setValue((previous) => ({
-        ...previous,
-        draft:
-          previous.draft.slice(0, range.start) +
-          previous.draft.slice(range.end),
-      }));
-    mention.current = null;
-    closePicker();
-  };
-  const useAsset = (asset: ChatAsset) => {
-    if (value.assets.length >= 64) {
-      chat.setError("每次最多添加 64 份参考素材。");
-      return;
+  const mentionOptions: MentionOption[] = [
+    ...nodeMentionOptions(nodes, () => null, "画布节点").map((option) => ({
+      ...option,
+      id: `node:${option.id}`,
+    })),
+    ...projectReferences.assets.map((asset) => ({
+      id: `asset:${asset.id}`,
+      kind: asset.kind as ReferenceKind,
+      title: asset.name,
+      detail: `${{ image: "图片", video: "视频", audio: "音频", text: "文本" }[asset.kind] ?? "素材"} · ${value.assets.some((item) => item.id === asset.id) ? "已引用，可再次提及" : "项目素材"}`,
+      thumbnail:
+        asset.kind === "image"
+          ? `/api/data/${documentId}/assets/${asset.id}`
+          : undefined,
+      disabledReason:
+        asset.size > (asset.kind === "image" ? 32 : 50) * 1024 * 1024
+          ? "文件超过参考大小限制"
+          : value.assets.length >= 64 &&
+              !value.assets.some((item) => item.id === asset.id)
+            ? "已达数量限制"
+            : null,
+    })),
+  ];
+  const chooseMention = async (option: MentionOption, signal: AbortSignal) => {
+    if (option.id.startsWith("node:")) {
+      const node = nodes.find((item) => `node:${item.id}` === option.id);
+      return node ? chat.addNodes([node], signal) : false;
     }
-    chat.addAssets([asset]);
-    finishMention();
-  };
-  const useNodes = (chosen: CanvasNode[]) => {
-    void chat.addNodes(chosen);
-    finishMention();
+    const asset = projectReferences.assets.find(
+      (item) => `asset:${item.id}` === option.id,
+    );
+    if (!asset) return false;
+    chat.addAssets([attachment(asset)]);
+    return true;
   };
 
   return (
@@ -317,7 +197,7 @@ export function AssistantPanel({
             </div>
             <h1>从一个想法开始</h1>
             <p>
-              和 MuseShow 一起构思你的下一部作品。
+              和 OpenDesign 一起构思你的下一部作品。
               <br />
               描述故事，或输入 @ 添加图片、视频、音频与文本参考。
             </p>
@@ -329,7 +209,7 @@ export function AssistantPanel({
             className={`cw-assistant-message is-${message.role}`}
           >
             <div className="cw-assistant-message-heading">
-              {message.role === "user" ? "你" : "MuseShow"}
+              {message.role === "user" ? "你" : "OpenDesign"}
               {message.role === "assistant" && message.model && (
                 <small>{message.model}</small>
               )}
@@ -448,22 +328,24 @@ export function AssistantPanel({
               ))}
             </div>
           )}
-          <textarea
-            ref={input}
+          <ReferenceMentionInput
+            key={documentId}
+            inputRef={input}
+            pickerRef={mentions}
+            options={mentionOptions}
+            referencesDisabled={!open || referenceDisabled}
+            onChoose={chooseMention}
+            onOpen={projectReferences.load}
+            loading={projectReferences.loading}
+            loadError={projectReferences.error}
             aria-label="消息内容"
             placeholder="输入想法、剧本或上传参考，输入 @ 引用项目素材，和 Agent 一起创作"
             value={value.draft}
             maxLength={20000}
             disabled={locked}
-            onChange={(event) => {
-              const draft = event.target.value;
-              setValue((previous) => ({ ...previous, draft }));
-              const caret = event.target.selectionStart;
-              if (!referenceDisabled && draft[caret - 1] === "@") {
-                mention.current = { start: caret - 1, end: caret };
-                setPickerOpen(true);
-              }
-            }}
+            onChangeText={(draft) =>
+              setValue((previous) => ({ ...previous, draft }))
+            }
             onPaste={(event) => {
               if (event.clipboardData.files.length) {
                 event.preventDefault();
@@ -498,12 +380,9 @@ export function AssistantPanel({
               className="cw-assistant-icon-button"
               aria-label="引用项目素材"
               title="引用项目素材（@）"
-              aria-expanded={pickerOpen}
               disabled={referenceDisabled}
-              onClick={() => {
-                mention.current = null;
-                setPickerOpen(!pickerOpen);
-              }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => mentions.current?.openPicker()}
             >
               @
             </button>
@@ -561,16 +440,6 @@ export function AssistantPanel({
               </button>
             )}
           </div>
-          {pickerOpen && !referenceDisabled && (
-            <ReferencePicker
-              projectId={documentId}
-              nodes={nodes}
-              selectedNodes={selectedNodes}
-              onAsset={useAsset}
-              onNodes={useNodes}
-              onClose={closePicker}
-            />
-          )}
         </form>
         <p className="cw-assistant-footnote">
           {chat.adding ? (
