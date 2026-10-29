@@ -96,7 +96,7 @@ class VllmOmniGeneration:
         base = endpoint(config['url'], '/videos')
         stage = 'submit'
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(240, connect=15),
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15),
                                          follow_redirects=False) as client:
                 external_id = task.get('externalTaskId')
                 if not external_id:
@@ -124,8 +124,8 @@ class VllmOmniGeneration:
                         if result_ready:
                             await result_ready('mp4', url + '/content')
                         return 'mp4', await self._download(client, config, url + '/content')
-                    if status == 'failed':
-                        if _missing_latents(value):
+                    if status in {'failed', 'cancelled', 'expired'}:
+                        if status == 'failed' and _missing_latents(value):
                             raise _continuation_failure(stage)
                         raise provider_failure(value, stage=stage, http_status=response.status_code, secrets=secrets)
                     if status not in {'queued', 'in_progress'}:
@@ -147,7 +147,7 @@ class VllmOmniGeneration:
 
     async def resume_result(self, config, suffix, url):
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(240, connect=15)) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15)) as client:
                 return suffix, await self._download(client, config, url)
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None
@@ -156,7 +156,7 @@ class VllmOmniGeneration:
 
     async def cancel(self, config, external_id):
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=15) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''),
                                          headers=auth_headers(config)) as response:
                     await checked(response, stage='cancel', secrets=(config.get('apiKey', ''),))

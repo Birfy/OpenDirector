@@ -39,7 +39,7 @@ class VllmOmniImageGeneration:
                    'response_format': 'b64_json', 'output_format': 'png'}
         secrets = (config.get('apiKey', ''),)
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
                 async with client.stream('POST', endpoint(config['url'], '/images/generations'),
                                          headers=auth_headers(config), json=payload) as response:
                     value = json.loads(await bounded(response, stage='submit', secrets=secrets))

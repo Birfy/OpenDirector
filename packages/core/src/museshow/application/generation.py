@@ -1,6 +1,7 @@
 """Shared manual/Agent generation operations with durable task receipts."""
 
 import asyncio
+from contextlib import nullcontext
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,15 @@ from museshow.integrations.generation_errors import transport_failure
 ACTIVE = {"queued", "running"}
 
 
+def _self_hosted_video(task):
+    profile = (task.get('referenceInputs') or {}).get('profile', '')
+    return task['kind'] == 'video' and (task.get('protocol') == 'vllm_omni' or profile.startswith('vllm-omni-h3'))
+
+
+def _execution_timeout(task):
+    return 4 * 3600 if _self_hosted_video(task) else 1800
+
+
 @dataclass
 class GenerationJob:
     future: asyncio.Task
@@ -54,6 +64,7 @@ class Generation:
         self.cancelled = set()
         self.committing = set()
         self.limit = asyncio.Semaphore(2)
+        self.remote_limits: dict[str, asyncio.Lock] = {}
 
     def _prepare(self, project_id, node_id, value, session, *, create=None, production=None, adoption_policy='if_current'):
         identifier(project_id)
@@ -390,7 +401,11 @@ class Generation:
             stage = 'download'
 
         try:
-            async with self.limit, asyncio.timeout(1800):
+            remote_limit = (self.remote_limits.setdefault(task['baseURL'].rstrip('/'), asyncio.Lock())
+                            if _self_hosted_video(task) else nullcontext())
+            # Wait outside the global worker limit and execution timeout. A
+            # queued task remains a proven checkpoint before remote submission.
+            async with remote_limit, self.limit, asyncio.timeout(_execution_timeout(task)):
                 task.update(status="running", resumeAllowed=False, error=None, errorDetails=None)
                 await save()
                 asset = await asyncio.to_thread(self._result_asset, task, pinned)
@@ -469,7 +484,10 @@ class Generation:
                         suggestion='请在控制台核对原任务、取消状态及费用。')).model_dump(mode='json')
         except (ProjectError, OSError, TimeoutError) as failure:
             task["status"] = "interrupted" if isinstance(failure, TimeoutError) or getattr(failure, "status", None) in {503, 504} else "failed"
-            task["error"] = str(failure) if isinstance(failure, ProjectError) else "生成或本地保存失败，请检查服务和磁盘；不会自动重新提交。"
+            task["error"] = (str(failure) if isinstance(failure, ProjectError) else
+                "等待超过允许时长，本地已停止查询；已提交的云端任务未自动取消，请恢复原任务继续查询，或取消云端任务。"
+                if isinstance(failure, TimeoutError) and task.get('externalTaskId') and stage not in {'save', 'adopt'} else
+                "生成或本地保存失败，请检查服务和磁盘；不会自动重新提交。")
             if isinstance(failure, GenerationError):
                 details = failure.details
                 if details.stage == 'check':
@@ -512,7 +530,21 @@ class Generation:
             if not path.is_file():
                 raise ProjectError("生成任务不存在。", 404)
             task = read_generation_task(path)
-        if task["status"] in ACTIVE:
+        if (task['status'] in {'interrupted', 'failed'} and task.get('externalTaskId')
+                and _self_hosted_video(task) and self.recovery(task, directory) == 'remote'):
+            config = self.configs.resolve(task['modelConfigId'], task['kind'])
+            if config['url'] != task['baseURL'] or config['modelId'] != task['model'] or config.get('protocol') != task.get('protocol'):
+                raise ProjectError('原模型配置已变化，云端取消未确认。', 409)
+            await self.provider.cancel(config, task['externalTaskId'])
+            with self.store.transaction():
+                current = read_generation_task(path)
+                if current['status'] in {'interrupted', 'failed'} and current.get('externalTaskId') == task['externalTaskId']:
+                    current.update(status='cancelled', recovery='retry', resumeAllowed=False,
+                        error='已请求取消云端任务；执行中的计算会在安全边界停止。',
+                        errorDetails=GenerationFailure(category='provider', stage='cancel', providerStatus='cancelled',
+                            message='已请求取消云端视频任务。', suggestion='需要再次生成时，请提交新的任务。').model_dump(mode='json'))
+                    self.canvas.task_write(project_id, current, str(directory))
+        elif task["status"] in ACTIVE:
             self.cancelled.add(task_id)
             job = self.jobs.get(task_id)
             if job:

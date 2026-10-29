@@ -55,7 +55,7 @@ class VolcengineGeneration:
     async def resume_result(self, config, suffix, url):
         secrets = (config['apiKey'],) if config else ()
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(url if config is None else config['url']), timeout=httpx.Timeout(240, connect=15)) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
                 return suffix, await self._download(client, url, secrets=secrets)
         except httpx.TimeoutException:
             raise transport_failure('download', timeout=True) from None
@@ -103,7 +103,7 @@ class VolcengineGeneration:
         secrets = (config['apiKey'],)
         stage = 'submit'
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
                 if kind == "image":
                     payload = {"model": config["modelId"], "prompt": prompt, **task["parameters"]}
                     if refs:
@@ -197,7 +197,7 @@ class VolcengineGeneration:
 
     async def cancel(self, config, external_id):
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=15) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config["url"], "/contents/generations/tasks") + "/" + quote(external_id, safe=""), headers={"Authorization": f"Bearer {config['apiKey']}"}) as response:
                     await checked(response, stage='cancel', secrets=(config['apiKey'],))
         except httpx.TimeoutException:

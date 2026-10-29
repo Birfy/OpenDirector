@@ -68,7 +68,7 @@ class GenerationProviders(VolcengineGeneration):
         base, target = urlsplit(config['url']), urlsplit(url)
         headers = auth_headers(config) if (base.scheme, base.netloc) == (target.scheme, target.netloc) else {}
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(url), timeout=httpx.Timeout(240, connect=15)) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(url, config=config), timeout=httpx.Timeout(240, connect=15)) as client:
                 async with client.stream('GET', url, headers=headers, follow_redirects=False) as response:
                     return suffix, await bounded(response, stage='download', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:
@@ -85,7 +85,7 @@ class GenerationProviders(VolcengineGeneration):
         kind, stage = task['kind'], 'submit'
         secrets = (config.get('apiKey', ''),)
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(240, connect=15), follow_redirects=False) as client:
                 if kind == 'video':
                     url = endpoint(config['url'], '/videos')
                     external_id = task.get('externalTaskId')
@@ -118,7 +118,7 @@ class GenerationProviders(VolcengineGeneration):
                                 await result_ready('mp4', content_url)
                             return await self.resume_result(config, 'mp4', content_url)
                         if value.get('status') in {'failed', 'cancelled', 'expired'}:
-                            raise provider_failure(value, stage='poll', secrets=secrets)
+                            raise provider_failure(value, stage='poll', http_status=200, secrets=secrets)
                         if value.get('status') not in {'queued', 'in_progress', 'running'}:
                             raise protocol_failure('poll')
                         await asyncio.sleep(self.poll_interval)
@@ -163,7 +163,7 @@ class GenerationProviders(VolcengineGeneration):
         if config.get('protocol') != 'vllm_omni':
             return await super().cancel(config, external_id)
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=15) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''), headers=auth_headers(config)) as response:
                     await checked(response, stage='cancel', secrets=(config.get('apiKey', ''),))
         except httpx.TimeoutException:

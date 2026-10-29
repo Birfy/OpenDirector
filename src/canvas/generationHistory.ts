@@ -24,6 +24,12 @@ export interface GenerationJob {
   createdAt?: number;
   message?: string;
   taskId?: string;
+  serviceTask?: {
+    protocol?: string | null;
+    externalTaskId?: string | null;
+    recovery?: string | null;
+    resumeAllowed?: boolean;
+  };
   /** Frozen placement owner, retained so a reopened canvas fills the same node. */
   resultSource?: ResultSource;
   resultMode?: GenerationResultMode;
@@ -64,6 +70,19 @@ export function parseGenerationJob(value: unknown): GenerationJob {
     )
   )
     throw new Error("生成历史字段无效。");
+  if (
+    raw.serviceTask !== undefined &&
+    (!raw.serviceTask ||
+      typeof raw.serviceTask !== "object" ||
+      [
+        raw.serviceTask.protocol,
+        raw.serviceTask.externalTaskId,
+        raw.serviceTask.recovery,
+      ].some((v) => v != null && typeof v !== "string") ||
+      (raw.serviceTask.resumeAllowed !== undefined &&
+        typeof raw.serviceTask.resumeAllowed !== "boolean"))
+  )
+    throw new Error("历史任务恢复信息无效。");
   if (
     (raw.resultMode !== undefined &&
       !["replace", "additional"].includes(raw.resultMode)) ||
@@ -193,13 +212,39 @@ export function saveGenerationJob(
 /** A persisted interrupted run is reconciled without creating jobs for unrelated server tasks. */
 export function reconcileGenerationJobs(
   jobs: GenerationJob[],
-  tasks: { id: string; status: string; error: string | null }[],
+  tasks: ({
+    id: string;
+    status: string;
+    error: string | null;
+  } & GenerationJob["serviceTask"])[],
 ): GenerationJob[] {
   const byId = new Map(tasks.map((task) => [task.id, task]));
   return jobs.map((job) => {
     const task = job.taskId ? byId.get(job.taskId) : undefined;
-    if (!task || !["failed", "cancelled", "interrupted"].includes(task.status))
-      return job;
+    if (!task) return job;
+    const serviceTask = {
+      protocol: task.protocol,
+      externalTaskId: task.externalTaskId,
+      recovery: task.recovery,
+      resumeAllowed: task.resumeAllowed,
+    };
+    const updated =
+      JSON.stringify(job.serviceTask) === JSON.stringify(serviceTask)
+        ? job
+        : { ...job, serviceTask };
+    if (
+      ["queued", "running"].includes(task.status) &&
+      !job.outputs?.length &&
+      job.status !== "succeeded"
+    ) {
+      const message =
+        task.status === "queued"
+          ? "等待同一服务的前序任务完成。"
+          : "正在查询原任务进度。";
+      return { ...updated, status: "running", message };
+    }
+    if (!["failed", "cancelled", "interrupted"].includes(task.status))
+      return updated;
     const status = task.status as "failed" | "cancelled" | "interrupted";
     const message =
       task.error ||
@@ -209,9 +254,25 @@ export function reconcileGenerationJobs(
           ? "服务任务已中断。"
           : "生成失败，请检查服务日志。");
     return job.status === status && job.message === message
-      ? job
-      : { ...job, status, message };
+      ? updated
+      : { ...updated, status, message };
   });
+}
+
+/** These actions continue or stop existing jobs; they never repeat submission. */
+export function generationTaskActions(job: GenerationJob) {
+  const remote =
+    !!job.taskId &&
+    ["interrupted", "failed"].includes(job.status) &&
+    job.serviceTask?.protocol === "vllm_omni" &&
+    !!job.serviceTask.externalTaskId;
+  return {
+    recover:
+      remote &&
+      job.serviceTask?.resumeAllowed === true &&
+      ["remote", "download", "local"].includes(job.serviceTask.recovery ?? ""),
+    cancel: remote && job.serviceTask?.recovery === "remote",
+  };
 }
 
 /** Current in-memory changes win over a persisted snapshot read earlier. */

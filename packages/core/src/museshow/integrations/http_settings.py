@@ -1,10 +1,18 @@
-"""Keep explicit local model connections out of system HTTP proxies."""
+"""Connect directly to configured self-hosted origins; retain API/CDN proxies."""
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
 
-def trust_environment(url):
-    host = (urlsplit(url).hostname or '').rstrip('.').lower()
+def trust_environment(url, *, config=None):
+    target = urlsplit(url)
+    if config and config.get('connectionType') == 'self_hosted':
+        base = urlsplit(config.get('url', ''))
+        def origin(parts):
+            return (parts.scheme, parts.hostname,
+                    parts.port or {'http': 80, 'https': 443}.get(parts.scheme))
+        if origin(target) == origin(base):
+            return False
+    host = (target.hostname or '').rstrip('.').lower()
     if host == 'localhost':
         return False
     try:

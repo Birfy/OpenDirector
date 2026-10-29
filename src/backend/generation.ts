@@ -33,6 +33,10 @@ export interface BackendTask {
     | "cancelled"
     | "interrupted";
   phase?: string | null;
+  protocol?: string | null;
+  externalTaskId?: string | null;
+  recovery?: string | null;
+  resumeAllowed?: boolean;
   assetId: string | null;
   error: string | null;
   title?: string;
@@ -246,6 +250,16 @@ export async function cancelGeneration(projectId: string, taskId: string) {
   });
 }
 
+/** Resume the saved task; this endpoint never creates a new generation ID. */
+export function recoverGeneration(projectId: string, taskId: string) {
+  return request<BackendTask>(
+    `/projects/${projectId}/tasks/${taskId}/recover`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export function projectSnapshot(projectId: string, signal?: AbortSignal) {
   return request<CanvasSnapshot>(`/projects/${projectId}/canvas`, { signal });
 }
@@ -293,8 +307,8 @@ export async function waitForResult(
     const snapshot = await projectSnapshot(projectId, signal);
     const task = snapshot.tasks.find((item) => item.id === taskId);
     if (!task) throw new Error("生成任务不存在，可能已被项目外的操作移除。");
+    onProgress?.(task);
     if (task.status === "succeeded" && task.assetId) {
-      onProgress?.(task);
       const asset = snapshot.assets.find((item) => item.id === task.assetId);
       const result = asset && (await downloadAsset(projectId, asset, signal));
       if (!result) throw new Error("生成结果不是图片、视频或音频文件。");
@@ -305,7 +319,6 @@ export async function waitForResult(
         task.error ??
           (task.status === "cancelled" ? "任务已取消。" : "生成未完成。"),
       );
-    onProgress?.(task);
     await wait(3000, signal);
   }
 }

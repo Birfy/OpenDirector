@@ -53,7 +53,7 @@ export async function unsyncedResults(
 ): Promise<{
   results: SyncedResult[];
   active: number;
-  tasks: Pick<BackendTask, "id" | "status" | "error">[];
+  tasks: BackendTask[];
 }> {
   let snapshot;
   try {
@@ -108,11 +108,7 @@ export async function unsyncedResults(
   }
   return {
     results,
-    tasks: snapshot.tasks.map(({ id, status, error }) => ({
-      id,
-      status,
-      error,
-    })),
+    tasks: snapshot.tasks,
     active: active.filter((task) => !running.has(task.id)).length,
   };
 }

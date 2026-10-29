@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { GenerationJob } from "./generationHistory";
+import { generationTaskActions, type GenerationJob } from "./generationHistory";
 import { CanvasIcon } from "./CanvasIcon";
 
 export function GenerationHistoryPanel({
@@ -7,14 +7,31 @@ export function GenerationHistoryPanel({
   onRestore,
   onLocate,
   onSync,
+  onTaskAction,
 }: {
   jobs: GenerationJob[];
   onRestore: (jobs: GenerationJob[], request?: boolean) => void;
   onLocate: (id: string) => void;
   onSync?: () => void;
+  onTaskAction?: (
+    job: GenerationJob,
+    action: "recover" | "cancel",
+  ) => Promise<void>;
 }) {
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
+  const [pending, setPending] = useState<string[]>([]);
+  const taskAction = async (
+    job: GenerationJob,
+    action: "recover" | "cancel",
+  ) => {
+    setPending((ids) => [...ids, job.id]);
+    try {
+      await onTaskAction?.(job, action);
+    } finally {
+      setPending((ids) => ids.filter((id) => id !== job.id));
+    }
+  };
   const rows = jobs.filter(
     (job) =>
       filter === "all" ||
@@ -110,6 +127,22 @@ export function GenerationHistoryPanel({
             )}
           </div>
           <div className="cw-history-actions">
+            {onTaskAction && generationTaskActions(job).recover && (
+              <button
+                disabled={pending.includes(job.id)}
+                onClick={() => void taskAction(job, "recover")}
+              >
+                继续查询原任务
+              </button>
+            )}
+            {onTaskAction && generationTaskActions(job).cancel && (
+              <button
+                disabled={pending.includes(job.id)}
+                onClick={() => void taskAction(job, "cancel")}
+              >
+                取消云端任务
+              </button>
+            )}
             <button onClick={() => onLocate(job.nodeId)}>定位来源</button>
             {!!job.outputs?.length && (
               <button onClick={() => onRestore([job])}>重新放置结果</button>

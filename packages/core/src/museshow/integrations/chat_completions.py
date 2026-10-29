@@ -33,7 +33,7 @@ class ChatCompletions:
         url = config["url"].rstrip("/") + "/chat/completions"
         # No automatic retry: retrying a paid request after a timeout can duplicate it.
         try:
-            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url']), timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
+            async with httpx.AsyncClient(transport=self.transport, trust_env=trust_environment(config['url'], config=config), timeout=httpx.Timeout(120, connect=15), follow_redirects=False) as client:
                 async with client.stream("POST", url, headers=({"Authorization": f"Bearer {config['apiKey']}"} if config.get("apiKey") and config.get("authMode") != "none" else {}), json=payload) as response:
                     if response.status_code != 200:
                         await checked(response, stage='submit', secrets=(config['apiKey'],))

@@ -114,6 +114,7 @@ import { ModelSettingsDialog } from "./ModelSettingsDialog";
 import { errorMessage } from "../backend/api.ts";
 import {
   cancelGeneration,
+  recoverGeneration,
   submitGeneration,
   waitForResult,
   type BackendResult,
@@ -121,7 +122,7 @@ import {
   type GenerationRequest,
 } from "../backend/generation.ts";
 import { useBackendModels } from "../backend/models.ts";
-import { backendProjectId } from "../backend/projects.ts";
+import { backendProjectId, openBackendProject } from "../backend/projects.ts";
 import {
   backendBlocker,
   backendModel,
@@ -340,6 +341,13 @@ function incomingNodes(
 }
 
 function Workspace() {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const flow = useReactFlow<FlowNode, Edge>();
   const [history, setHistory] = useState<CanvasHistory>(() =>
     createHistory(createDocument()),
@@ -1574,6 +1582,7 @@ function Workspace() {
   const syncServiceResults = async (announce = false) => {
     const documentId = doc.id;
     if (
+      !mounted.current ||
       !backendCatalog.connected ||
       historyRef.current.present.id !== documentId
     )
@@ -1620,7 +1629,8 @@ function Workspace() {
         });
       }
       const currentJobs = await readJobs();
-      if (historyRef.current.present.id !== documentId) return active;
+      if (!mounted.current || historyRef.current.present.id !== documentId)
+        return active;
       if (awaitingTaskIdentity()) return Math.max(active, 1);
       // A live task can finish during media decoding; it alone owns that completion.
       const pending = received.filter((item) => !isClaimed(item.taskId));
@@ -1686,14 +1696,16 @@ function Workspace() {
   const followServiceTasks = async () => {
     const documentId = doc.id;
     if (
+      !mounted.current ||
       historyRef.current.present.id !== documentId ||
       following.current.has(documentId)
     )
       return;
     following.current.add(documentId);
     try {
-      for (let round = 0; round < 720; round++) {
+      for (;;) {
         if (
+          !mounted.current ||
           historyRef.current.present.id !== documentId ||
           !(await syncServiceResults())
         )
@@ -1768,6 +1780,7 @@ function Workspace() {
           const phase = generationPhase(task);
           if (phase) setPhase(phase);
           else if (task.status === "succeeded") setPhase("finishing");
+          setJobs((current) => reconcileGenerationJobs(current, [task]));
         },
       );
       setPhase("finishing");
@@ -1812,6 +1825,8 @@ function Workspace() {
     } finally {
       serviceRuns.current.delete(id);
       refreshRunning();
+      if (historyRef.current.present.id === origin.documentId)
+        void followServiceTasks();
     }
   };
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
@@ -3778,6 +3793,37 @@ function Workspace() {
               onSync={
                 backendCatalog.connected
                   ? () => void syncServiceResults(true)
+                  : undefined
+              }
+              onTaskAction={
+                backendCatalog.connected
+                  ? async (job, action) => {
+                      if (!job.taskId) return;
+                      try {
+                        const projectId = await openBackendProject(
+                          doc.id,
+                          doc.title,
+                        );
+                        let message = "已请求取消云端任务。";
+                        if (action === "recover") {
+                          const receipt = await recoverGeneration(
+                            projectId,
+                            job.taskId,
+                          );
+                          message = ["queued", "running", "succeeded"].includes(
+                            receipt.status,
+                          )
+                            ? "已恢复查询原任务。"
+                            : receipt.error ||
+                              "原任务仍需核对，请查看生成历史。";
+                        } else await cancelGeneration(projectId, job.taskId);
+                        await syncServiceResults();
+                        void followServiceTasks();
+                        notify(message);
+                      } catch (error) {
+                        notify(errorMessage(error));
+                      }
+                    }
                   : undefined
               }
               onLocate={(id) => {

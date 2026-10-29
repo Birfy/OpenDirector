@@ -2,6 +2,7 @@
 
 import json
 import re
+from urllib.parse import unquote
 
 from museshow.domain.generation import GenerationError, GenerationFailure
 
@@ -28,7 +29,7 @@ def _identifier(value, limit, secrets):
     return value
 
 
-def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()):
+def provider_failure(value, *, stage, headers=None, http_status=None, secrets=(), expected_task_id=None):
     value = value if isinstance(value, dict) else {}
     error = value.get('error')
     error = error if isinstance(error, dict) else value
@@ -82,9 +83,19 @@ def provider_failure(value, *, stage, headers=None, http_status=None, secrets=()
     if stage == 'download':
         category, message = 'temporary', '生成结果下载失败。'
         suggestion = '请核对原任务和结果链接，恢复下载前不要直接重新生成。'
+    terminal_status = None
+    if stage == 'poll' and value.get('status') in {'failed', 'cancelled', 'expired'}:
+        # vLLM can return a failed Video object with HTTP 500. A gateway error
+        # is not terminal evidence: require the queried job's exact identity.
+        if http_status == 200 or (http_status == 500 and expected_task_id
+                and value.get('object') == 'video' and value.get('id') == expected_task_id):
+            terminal_status = value['status']
+    if terminal_status == 'failed' and category == 'temporary':
+        category, message = 'provider', '生成服务任务已失败。'
+        suggestion = '请排查任务失败原因，确认后可重新生成。'
     return GenerationError(GenerationFailure(category=category, stage=stage, message=message,
         suggestion=suggestion, providerCode=code, requestId=request_id, httpStatus=http_status,
-        providerStatus=value['status'] if stage == 'poll' and http_status == 200 and value.get('status') in {'failed', 'cancelled', 'expired'} else None))
+        providerStatus=terminal_status))
 
 
 async def checked(response, *, stage, secrets=()):
@@ -101,8 +112,16 @@ async def checked(response, *, stage, secrets=()):
         value = json.loads(body)
     except (ValueError, UnicodeError):
         value = None
+    expected_task_id = None
+    if stage == 'poll' and response.status_code == 500:
+        try:
+            match = re.search(r'/videos/([^/]+)$', response.request.url.path)
+        except RuntimeError:  # Detached responses cannot prove task identity.
+            match = None
+        if match:
+            expected_task_id = _identifier(unquote(match[1]), 200, secrets)
     raise provider_failure(value, stage=stage, headers=response.headers,
-        http_status=response.status_code, secrets=secrets)
+        http_status=response.status_code, secrets=secrets, expected_task_id=expected_task_id)
 
 
 def transport_failure(stage, *, timeout=False, status=None):
