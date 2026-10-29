@@ -71,6 +71,8 @@ npm run build
 
 清理范围与验证见 [旧运行链路清理记录](docs/RUNTIME-CLEANUP.md)，后续工作见 [重构需求](OPENDESIGN_REFACTOR_REQUIREMENTS.md) 与 [实施计划](OPENDESIGN_REFACTOR_COMMIT_PLAN.md)。
 
+C02 已定义新工程的共享节点、角色、素材、模型、任务和命令契约，并从 Python 自动生成 JSON Schema 与前端类型。当前运行入口尚未切换，使用方法和后续边界见 [统一创作契约](docs/CREATION-CONTRACTS.md)。
+
 自部署连接与长视频任务：
 
 - FastH3 视频时长优先采用面板选定的 4–15 秒，并同时写入任务回执和服务请求的 `seconds`、`extra_params.duration`。只有未提供面板/API 时长的旧调用，才沿用提示词推断、编辑时保留原片长度或默认 5 秒的行为。显式选择时长的视频编辑不会再按原片长度裁剪；模型输出按自身帧数网格取整，可能存在少量时长差异。

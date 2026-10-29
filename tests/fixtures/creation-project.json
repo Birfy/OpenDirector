@@ -1,0 +1,1018 @@
+{
+  "format": "opendesign-project",
+  "formatVersion": 2,
+  "project": {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "revision": 1,
+    "name": "Contract example"
+  },
+  "assets": [
+    {
+      "id": "00000000-0000-0000-0000-00000000000a",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "text",
+      "name": "text source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
+      "path": "assets/00000000-0000-0000-0000-00000000000a",
+      "metadata": {
+        "mimeType": "text/plain",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": null,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "upload",
+        "jobId": null,
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": null,
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000000b",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "image",
+      "name": "image source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+      "path": "assets/00000000-0000-0000-0000-00000000000b",
+      "metadata": {
+        "mimeType": "image/png",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": null,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "upload",
+        "jobId": null,
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": null,
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000000c",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "video",
+      "name": "video source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+      "path": "assets/00000000-0000-0000-0000-00000000000c",
+      "metadata": {
+        "mimeType": "video/mp4",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": 4.0,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "upload",
+        "jobId": null,
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": null,
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000000d",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "audio",
+      "name": "audio source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+      "path": "assets/00000000-0000-0000-0000-00000000000d",
+      "metadata": {
+        "mimeType": "audio/wav",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": 4.0,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "upload",
+        "jobId": null,
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": null,
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000000e",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "file",
+      "name": "file source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
+      "path": "assets/00000000-0000-0000-0000-00000000000e",
+      "metadata": {
+        "mimeType": "application/pdf",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": null,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "upload",
+        "jobId": null,
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": null,
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000000f",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "image",
+      "name": "image source",
+      "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+      "path": "assets/00000000-0000-0000-0000-00000000000f",
+      "metadata": {
+        "mimeType": "image/png",
+        "size": 100,
+        "width": null,
+        "height": null,
+        "durationSeconds": null,
+        "frameRate": null,
+        "hasAudio": null,
+        "sampleRate": null,
+        "channels": null
+      },
+      "provenance": {
+        "source": "generated",
+        "jobId": "00000000-0000-0000-0000-000000000046",
+        "editorDocumentId": null,
+        "editorRevision": null,
+        "sources": [],
+        "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748",
+        "agentRunId": null,
+        "modelSnapshot": null,
+        "prompt": null
+      }
+    }
+  ],
+  "generationSpecs": [
+    {
+      "id": "00000000-0000-0000-0000-00000000003c",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "purpose": "generation",
+      "modelConfigId": "00000000-0000-0000-0000-000000000014",
+      "prompt": "A mountain",
+      "promptContent": null,
+      "currentResultId": "00000000-0000-0000-0000-000000000047",
+      "kind": "image",
+      "parameters": {
+        "size": "2K",
+        "responseFormat": "url",
+        "outputFormat": "png"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000003d",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "purpose": "draft",
+      "modelConfigId": null,
+      "prompt": "Configured but still empty",
+      "promptContent": null,
+      "currentResultId": null,
+      "kind": "text",
+      "parameters": {
+        "thinking": "auto",
+        "maxTokens": 8192
+      }
+    }
+  ],
+  "references": [],
+  "canvasItems": [
+    {
+      "id": "00000000-0000-0000-0000-000000000028",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "text",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "material",
+        "objectRef": {
+          "assetId": "00000000-0000-0000-0000-00000000000a",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
+          "kind": "text"
+        }
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000029",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "image",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "material",
+        "objectRef": {
+          "assetId": "00000000-0000-0000-0000-00000000000b",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "kind": "image"
+        }
+      },
+      "editors": [
+        {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-000000000023",
+          "kind": "layers"
+        },
+        {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-000000000024",
+          "kind": "media_edit"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002a",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "video",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "material",
+        "objectRef": {
+          "assetId": "00000000-0000-0000-0000-00000000000c",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+          "kind": "video"
+        }
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002b",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "audio",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "material",
+        "objectRef": {
+          "assetId": "00000000-0000-0000-0000-00000000000d",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "kind": "audio"
+        }
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002c",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "file",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "material",
+        "objectRef": {
+          "assetId": "00000000-0000-0000-0000-00000000000e",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
+          "kind": "file"
+        }
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002d",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "subject",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "editor",
+        "objectRef": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-00000000001e",
+          "kind": "subject"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002e",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "timeline",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "editor",
+        "objectRef": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-00000000001f",
+          "kind": "timeline"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000002f",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "stack",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "editor",
+        "objectRef": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-000000000020",
+          "kind": "stack"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000030",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "tool",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "editor",
+        "objectRef": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-000000000021",
+          "kind": "tool"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000031",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "external",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "editor",
+        "objectRef": {
+          "objectType": "editor_document",
+          "id": "00000000-0000-0000-0000-000000000022",
+          "kind": "director"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000032",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "group",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "container"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000033",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "image",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "generation",
+        "objectRef": {
+          "objectType": "generation_spec",
+          "id": "00000000-0000-0000-0000-00000000003c"
+        }
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000034",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "text",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "empty",
+        "draftSpec": {
+          "objectType": "generation_spec",
+          "id": "00000000-0000-0000-0000-00000000003d"
+        },
+        "manualText": null
+      },
+      "editors": []
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000035",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "kind": "image",
+      "title": "",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "width": 352.0,
+      "height": 198.0,
+      "zIndex": 0,
+      "locked": false,
+      "visible": true,
+      "parentId": null,
+      "tags": [],
+      "binding": {
+        "role": "empty",
+        "draftSpec": null,
+        "manualText": null
+      },
+      "editors": []
+    }
+  ],
+  "editorDocuments": [
+    {
+      "id": "00000000-0000-0000-0000-00000000001e",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "subject",
+      "data": {
+        "description": "actor",
+        "category": "",
+        "main": {
+          "assetId": "00000000-0000-0000-0000-00000000000b",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "kind": "image"
+        },
+        "auxiliaries": [],
+        "voice": {
+          "assetId": "00000000-0000-0000-0000-00000000000d",
+          "revision": 1,
+          "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "kind": "audio"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-00000000001f",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "timeline",
+      "data": {
+        "fps": 30,
+        "width": 1920,
+        "height": 1080,
+        "tracks": [
+          {
+            "id": "visual",
+            "kind": "visual",
+            "title": "Visual",
+            "muted": false,
+            "clips": [
+              {
+                "id": "shot",
+                "resource": {
+                  "asset": {
+                    "assetId": "00000000-0000-0000-0000-00000000000c",
+                    "revision": 1,
+                    "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+                    "kind": "video"
+                  },
+                  "title": "video",
+                  "durationSeconds": 4.0
+                },
+                "start": null,
+                "inPoint": 0.0,
+                "outPoint": 2.0,
+                "speed": 1.0,
+                "volume": 1.0,
+                "muted": false
+              }
+            ]
+          },
+          {
+            "id": "audio",
+            "kind": "audio",
+            "title": "Audio",
+            "muted": false,
+            "clips": [
+              {
+                "id": "music",
+                "resource": {
+                  "asset": {
+                    "assetId": "00000000-0000-0000-0000-00000000000d",
+                    "revision": 1,
+                    "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+                    "kind": "audio"
+                  },
+                  "title": "audio",
+                  "durationSeconds": 4.0
+                },
+                "start": 1.0,
+                "inPoint": 0.0,
+                "outPoint": 4.0,
+                "speed": 1.0,
+                "volume": 1.0,
+                "muted": false
+              }
+            ]
+          }
+        ],
+        "importedAssets": [
+          {
+            "asset": {
+              "assetId": "00000000-0000-0000-0000-00000000000b",
+              "revision": 1,
+              "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+              "kind": "image"
+            },
+            "title": "image",
+            "durationSeconds": 4.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000020",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "stack",
+      "data": {
+        "nodeIds": [
+          "00000000-0000-0000-0000-000000000028"
+        ],
+        "activeIndex": 0
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000021",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "tool",
+      "data": {
+        "kind": "palette",
+        "fields": [
+          {
+            "name": "color",
+            "values": [
+              "#ffffff"
+            ]
+          }
+        ],
+        "provenance": null,
+        "palette": {
+          "name": null,
+          "sourceImage": {
+            "assetId": "00000000-0000-0000-0000-00000000000b",
+            "revision": 1,
+            "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+            "kind": "image"
+          }
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000022",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "director",
+      "data": {
+        "background": "#ffffff",
+        "grid": true,
+        "duration": 5.0,
+        "aspectRatio": "16:9",
+        "cameras": [
+          {
+            "id": "camera",
+            "name": "Camera",
+            "pose": {
+              "position": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 5.0
+              },
+              "target": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "fov": 50.0
+            },
+            "keyframes": [
+              {
+                "id": "key",
+                "time": 0.0,
+                "value": {
+                  "position": {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 5.0
+                  },
+                  "target": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "fov": 50.0
+                }
+              }
+            ]
+          }
+        ],
+        "activeCameraId": "camera",
+        "cameraSource": "storyboard",
+        "shots": [
+          {
+            "id": "cut",
+            "cameraId": "camera",
+            "start": 0.0,
+            "duration": 5.0
+          }
+        ],
+        "objects": [
+          {
+            "position": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "rotation": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "scale": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 1.0
+            },
+            "id": "actor",
+            "kind": "person",
+            "name": "Actor",
+            "color": "#ff0000",
+            "keyframes": [],
+            "motionClips": [
+              {
+                "id": "walk",
+                "start": 0.0,
+                "duration": 4.0,
+                "motion": {
+                  "preset": "walk",
+                  "speed": 1.0,
+                  "amount": 1.0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000023",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "layers",
+      "data": {
+        "width": 128,
+        "height": 128,
+        "background": "transparent",
+        "layers": [
+          {
+            "id": "layer",
+            "name": "Original",
+            "visible": true,
+            "locked": false,
+            "opacity": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "width": 128.0,
+            "height": 128.0,
+            "rotation": 0.0,
+            "flipX": false,
+            "flipY": false,
+            "content": {
+              "width": 128,
+              "height": 128,
+              "kind": "image",
+              "asset": {
+                "assetId": "00000000-0000-0000-0000-00000000000b",
+                "revision": 1,
+                "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+                "kind": "image"
+              }
+            },
+            "mask": [
+              {
+                "mode": "erase",
+                "size": 10.0,
+                "points": [
+                  {
+                    "x": 1.0,
+                    "y": 2.0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000024",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "kind": "media_edit",
+      "data": {
+        "tool": "crop",
+        "sources": [
+          {
+            "assetId": "00000000-0000-0000-0000-00000000000b",
+            "revision": 1,
+            "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+            "kind": "image"
+          }
+        ],
+        "parameters": {
+          "ratio": "1:1"
+        },
+        "selection": {
+          "source": {
+            "assetId": "00000000-0000-0000-0000-00000000000b",
+            "revision": 1,
+            "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+            "kind": "image"
+          },
+          "width": 128,
+          "height": 128,
+          "mask": null,
+          "boxes": []
+        }
+      }
+    }
+  ],
+  "jobs": [
+    {
+      "id": "00000000-0000-0000-0000-000000000046",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "schemaVersion": 1,
+      "inputSnapshot": {
+        "spec": {
+          "id": "00000000-0000-0000-0000-00000000003c",
+          "projectId": "00000000-0000-0000-0000-000000000001",
+          "revision": 1,
+          "purpose": "generation",
+          "modelConfigId": "00000000-0000-0000-0000-000000000014",
+          "prompt": "A mountain",
+          "promptContent": null,
+          "currentResultId": null,
+          "kind": "image",
+          "parameters": {
+            "size": "2K",
+            "responseFormat": "url",
+            "outputFormat": "png"
+          }
+        },
+        "model": {
+          "modelConfigId": "00000000-0000-0000-0000-000000000014",
+          "kind": "image",
+          "modelId": "example",
+          "url": "https://models.example/v1",
+          "protocol": "openai",
+          "connectionType": "api",
+          "videoAdapter": "auto"
+        },
+        "references": []
+      },
+      "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748",
+      "execution": {
+        "kind": "image",
+        "size": "2K",
+        "responseFormat": "url",
+        "outputFormat": "png",
+        "watermark": null
+      },
+      "status": "succeeded",
+      "phase": "complete",
+      "externalTaskId": null,
+      "asset": {
+        "assetId": "00000000-0000-0000-0000-00000000000f",
+        "revision": 1,
+        "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+        "kind": "image"
+      },
+      "errorDetails": null,
+      "recovery": "done",
+      "resumeAllowed": false,
+      "cancelRequested": false,
+      "remoteCancellation": "not_requested",
+      "originItemId": null,
+      "previousJobId": null,
+      "technicalCheck": null
+    }
+  ],
+  "results": [
+    {
+      "id": "00000000-0000-0000-0000-000000000047",
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "specId": "00000000-0000-0000-0000-00000000003c",
+      "jobId": "00000000-0000-0000-0000-000000000046",
+      "asset": {
+        "assetId": "00000000-0000-0000-0000-00000000000f",
+        "revision": 1,
+        "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+        "kind": "image"
+      },
+      "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748"
+    }
+  ],
+  "eventCursor": 0
+}

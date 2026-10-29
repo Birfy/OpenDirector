@@ -1,0 +1,203 @@
+"""New-format aggregate validation; no filesystem reads or legacy migration."""
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field, model_validator
+
+from .assets import Asset, AssetRef
+from .base import Contract, NonNegative, ObjectVersion, Point, ProjectEntity, Revision, unique
+from .canvas import CanvasItem, EditorBinding, GenerationBinding, MaterialBinding, MediaCanvasItem
+from .editors import EditorDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
+from .generation import FollowingReference, GenerationSpec, Job, PromptReference, Reference, ResultVersion
+
+
+class Project(Contract):
+    id: UUID
+    revision: Revision = 1
+    name: str = Field(min_length=1, max_length=100, pattern=r'\S')
+
+
+def asset_references(value):
+    if isinstance(value, AssetRef):
+        yield value
+    elif isinstance(value, BaseModel):
+        for name in type(value).model_fields:
+            yield from asset_references(getattr(value, name))
+    elif isinstance(value, (tuple, list)):
+        for item in value:
+            yield from asset_references(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from asset_references(item)
+
+
+def acyclic(edges, label):
+    visiting, visited = set(), set()
+    def visit(key):
+        if key in visiting:
+            raise ValueError(f'Cyclic {label}')
+        if key in visited:
+            return
+        visiting.add(key)
+        for source in edges.get(key, ()):
+            visit(source)
+        visiting.remove(key)
+        visited.add(key)
+    for key in edges:
+        visit(key)
+
+
+class ProjectSnapshot(Contract):
+    format: Literal['opendesign-project'] = 'opendesign-project'
+    formatVersion: Literal[2] = 2
+    project: Project
+    assets: tuple[Asset, ...] = ()
+    generationSpecs: tuple[GenerationSpec, ...] = ()
+    references: tuple[Reference, ...] = ()
+    canvasItems: tuple[CanvasItem, ...] = ()
+    editorDocuments: tuple[EditorDocument, ...] = ()
+    jobs: tuple[Job, ...] = ()
+    results: tuple[ResultVersion, ...] = ()
+    eventCursor: int = Field(default=0, strict=True, ge=0)
+
+    @model_validator(mode='after')
+    def project_relations(self):
+        collections = (self.assets, self.generationSpecs, self.references, self.canvasItems,
+                       self.editorDocuments, self.jobs, self.results)
+        objects = [obj for collection in collections for obj in collection]
+        unique([self.project.id, *(obj.id for obj in objects)], 'project object IDs')
+        if any(obj.projectId != self.project.id for obj in objects):
+            raise ValueError('Cross-project objects are forbidden')
+        assets = {asset.id: asset for asset in self.assets}
+        specs = {spec.id: spec for spec in self.generationSpecs}
+        items = {item.id: item for item in self.canvasItems}
+        documents = {doc.id: doc for doc in self.editorDocuments}
+        jobs = {job.id: job for job in self.jobs}
+        results = {result.id: result for result in self.results}
+        for ref in asset_references(objects):
+            asset = assets.get(ref.assetId)
+            if asset is None or ref.revision > asset.revision or ref.fingerprint != asset.fingerprint or ref.kind != asset.kind:
+                raise ValueError('Missing or inconsistent pinned asset reference')
+        parents = {}
+        for item in self.canvasItems:
+            if item.parentId:
+                if item.parentId not in items or items[item.parentId].kind != 'group':
+                    raise ValueError('Parent must be a group in the same project')
+                parents[item.id] = [item.parentId]
+            if isinstance(item.binding, GenerationBinding):
+                spec = specs.get(item.binding.objectRef.id)
+                if spec is None or spec.kind != item.kind or spec.purpose != 'generation':
+                    raise ValueError('Generation node points to a missing or wrong-kind spec')
+            elif item.binding.role == 'empty' and item.binding.draftSpec:
+                spec_id = item.binding.draftSpec.id
+                spec = specs.get(spec_id)
+                if spec is None or spec.kind != item.kind or spec.purpose != 'draft':
+                    raise ValueError('Empty node draft points to a missing or wrong-kind spec')
+                if spec.currentResultId or any(job.inputSnapshot.spec.id == spec_id for job in self.jobs) or any(ref.targetSpecId == spec_id for ref in self.references):
+                    raise ValueError('An empty node cannot own accepted tasks, references or results')
+            if isinstance(item.binding, EditorBinding):
+                ref = item.binding.objectRef
+                if ref.id not in documents or documents[ref.id].kind != ref.kind:
+                    raise ValueError('Editor node points to a missing or wrong-kind document')
+            if isinstance(item, MediaCanvasItem):
+                for ref in item.editors:
+                    if ref.id not in documents or documents[ref.id].kind != ref.kind:
+                        raise ValueError('Missing or wrong-kind attached media editor')
+        acyclic(parents, 'canvas group hierarchy')
+        dependencies = {}
+        reference_ids = {reference.id: reference for reference in self.references}
+        target_orders = set()
+        for reference in self.references:
+            if reference.targetSpecId not in specs:
+                raise ValueError('Reference target spec does not exist')
+            if specs[reference.targetSpecId].purpose != 'generation':
+                raise ValueError('Accepted references lock a spec to generation purpose')
+            key = (reference.targetSpecId, reference.order)
+            if key in target_orders:
+                raise ValueError('Reference order is duplicated for its target')
+            target_orders.add(key)
+            if isinstance(reference, FollowingReference):
+                source = items.get(reference.source.id)
+                if source is None or source.kind not in {'text', 'image', 'video', 'audio'}:
+                    raise ValueError('Following reference needs a stable logical media source')
+                if reference.role == 'first_frame' and source.kind != 'image' or reference.role == 'continuation' and source.kind != 'video':
+                    raise ValueError('Reference source kind does not match its role')
+                if isinstance(source.binding, GenerationBinding):
+                    dependencies.setdefault(reference.targetSpecId, []).append(source.binding.objectRef.id)
+            elif ((reference.role == 'first_frame' and reference.source.kind != 'image')
+                  or (reference.role == 'continuation' and reference.source.kind != 'video')):
+                raise ValueError('Reference source kind does not match its role')
+        acyclic(dependencies, 'following generation references')
+        for spec in self.generationSpecs:
+            if spec.promptContent:
+                for part in spec.promptContent:
+                    if isinstance(part, PromptReference) and (part.referenceId not in reference_ids or reference_ids[part.referenceId].targetSpecId != spec.id):
+                        raise ValueError('Prompt references must belong to the same generation spec')
+            if spec.currentResultId and (spec.currentResultId not in results or results[spec.currentResultId].specId != spec.id):
+                raise ValueError('Current result must belong to its generation spec')
+        for job in self.jobs:
+            spec = specs.get(job.inputSnapshot.spec.id)
+            if spec is None or job.inputSnapshot.spec.revision > spec.revision:
+                raise ValueError('Task snapshot references a missing or future spec version')
+            if job.previousJobId and job.previousJobId not in jobs:
+                raise ValueError('Previous attempt must be a job in the same project')
+            for ref in job.inputSnapshot.references:
+                if ref.metadata != assets[ref.asset.assetId].metadata:
+                    raise ValueError('Snapshot media facts must match the pinned asset')
+        acyclic({job.id: [job.previousJobId] for job in self.jobs if job.previousJobId}, 'job attempts')
+        for result in self.results:
+            job = jobs.get(result.jobId)
+            if job is None or job.status != 'succeeded' or job.inputSnapshot.spec.id != result.specId or job.asset != result.asset or job.inputFingerprint != result.inputFingerprint:
+                raise ValueError('Result version must match the completed job and output')
+        for asset in self.assets:
+            provenance = asset.provenance
+            if provenance.source == 'generated':
+                job = jobs.get(provenance.jobId)
+                if job is None or job.asset is None or job.asset.assetId != asset.id or job.inputFingerprint != provenance.inputFingerprint:
+                    raise ValueError('Generated asset provenance does not match its job')
+            if provenance.editorDocumentId:
+                doc = documents.get(provenance.editorDocumentId)
+                if doc is None or provenance.editorRevision > doc.revision:
+                    raise ValueError('Edited asset references a missing or future document')
+        for doc in self.editorDocuments:
+            if isinstance(doc, StackDocument):
+                if any(item_id not in items for item_id in doc.data.nodeIds):
+                    raise ValueError('Stack refers to a missing logical node')
+                if any(item.kind == 'stack' and item.binding.objectRef.id == doc.id and item.id in doc.data.nodeIds for item in items.values()):
+                    raise ValueError('A stack cannot contain itself')
+            if isinstance(doc, SubjectDocument):
+                data = doc.data
+                if data.main and data.main.kind == 'video':
+                    seconds = assets[data.main.assetId].metadata.durationSeconds
+                    if seconds is not None and seconds > 15:
+                        raise ValueError('Subject video exceeds 15 seconds')
+                if data.voice:
+                    seconds = assets[data.voice.assetId].metadata.durationSeconds
+                    if seconds is not None and not 2 <= seconds <= 5:
+                        raise ValueError('Subject voice must be 2 to 5 seconds')
+            if isinstance(doc, TimelineDocument):
+                for track in doc.data.tracks:
+                    for clip in track.clips:
+                        asset = assets[clip.resource.asset.assetId]
+                        duration = asset.metadata.durationSeconds
+                        if asset.kind != 'image' and duration is not None and clip.outPoint > duration + 1e-6:
+                            raise ValueError('Timeline clip exceeds its actual asset duration')
+        return self
+
+
+class Viewport(Point):
+    zoom: float = Field(default=1, strict=True, ge=0.08, le=8)
+
+
+class Playhead(Contract):
+    editorDocumentId: UUID
+    seconds: NonNegative = 0
+
+
+class ViewState(Contract):
+    projectId: UUID
+    clientId: UUID
+    viewport: Viewport = Field(default_factory=Viewport)
+    selectedItemIds: tuple[UUID, ...] = ()
+    activeEditorId: UUID | None = None
+    playheads: tuple[Playhead, ...] = ()
