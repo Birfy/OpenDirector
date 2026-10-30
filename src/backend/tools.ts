@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { assetBlob, errorMessage, json, request } from "./api.ts";
+import { ApiError, assetBlob, errorMessage, json, request } from "./api.ts";
 import {
   EXTENSIONS,
   fileName,
@@ -197,17 +197,47 @@ const wait = (ms: number, signal: AbortSignal) =>
     );
   });
 
+/**
+ * One read that cannot hang the follow loop. A request stalled in transit (for
+ * example in a port-forwarding tunnel) never reaches the API and never fails,
+ * so each attempt has a timeout and transport failures are retried.
+ */
+async function resilient<T>(
+  read: (signal: AbortSignal) => Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number,
+  attempts = 5,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await read(
+        AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+      );
+    } catch (failure) {
+      const rejected =
+        failure instanceof ApiError && failure.code !== "network_error";
+      if (signal.aborted || rejected || attempt >= attempts) throw failure;
+      await wait(2000, signal);
+    }
+  }
+}
+
 /** Polls until the task ends; resolves with downloadable result files. */
 export async function waitForToolTask(
   projectId: string,
   taskId: string,
   signal: AbortSignal,
   onProgress?: (task: ToolTask) => void,
+  timeouts = { status: 15_000, download: 120_000 },
 ) {
   for (;;) {
-    const task = await request<ToolTask>(
-      `/projects/${projectId}/tool-tasks/${taskId}`,
-      { signal },
+    const task = await resilient(
+      (attempt) =>
+        request<ToolTask>(`/projects/${projectId}/tool-tasks/${taskId}`, {
+          signal: attempt,
+        }),
+      signal,
+      timeouts.status,
     );
     onProgress?.(task);
     if (task.status === "succeeded")
@@ -215,7 +245,14 @@ export async function waitForToolTask(
         task.outputs.map(async (output) => ({
           output,
           file: new File(
-            [await assetBlob(projectId, output.id, signal)],
+            [
+              await resilient(
+                (attempt) => assetBlob(projectId, output.id, attempt),
+                signal,
+                timeouts.download,
+                3,
+              ),
+            ],
             output.name,
             { type: output.type },
           ),
