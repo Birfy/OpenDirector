@@ -517,30 +517,6 @@
   outline: 2px solid #9b93f4;
   outline-offset: 2px;
 }
-.cw-composer-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-  padding: 0;
-  min-height: 112px;
-}
-.cw-video-composer-body > :is(.cw-frame-slots, .cw-reference-strip) {
-  flex: 0 0 48px;
-  height: 48px;
-  box-sizing: border-box;
-}
-.cw-reference-strip {
-  display: flex;
-  gap: 6px;
-  max-width: 100%;
-  width: 100%;
-  overflow: auto;
-  flex-shrink: 0;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: #555 transparent;
-}
 .cw-add-reference {
   display: flex;
   flex-direction: column;
@@ -598,14 +574,6 @@
   background: linear-gradient(transparent, #000c);
 }
 .cw-workspace .cw-composer .cw-prompt-input {
-  display: block;
-  flex: 0 0 auto;
-  width: 100%;
-  min-width: 0;
-  min-height: 112px;
-  height: 112px;
-  max-height: 240px;
-  resize: none;
   box-sizing: border-box;
   padding: 2px 18px 2px 1px;
   border: 0;
@@ -619,14 +587,6 @@
 }
 .cw-prompt-input::placeholder {
   color: #7f828d;
-}
-.cw-composer-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  padding: 8px 0 0;
-  min-height: 32px;
 }
 .cw-composer-options {
   display: flex;

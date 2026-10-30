@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from "react";
+import "./generation-composer.css";
 
-/** Shared prompt-and-bottom-controls layout for Agent and media generation. */
+/** Owns bounded height and scrolling for Agent and all media generators. */
 export function GenerationComposerShell({
   composerRef,
   label,

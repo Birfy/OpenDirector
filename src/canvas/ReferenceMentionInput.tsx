@@ -104,8 +104,15 @@ export function ReferenceMentionInput({
     const input = inputRef.current;
     if (!input || !autoGrow) return;
     const scrollTop = input.scrollTop;
+    // A bounded flex container can shrink below its preferred empty height.
+    // Keep that preferred size when content shrinks, without a rigid min-height.
+    const style = getComputedStyle(input);
+    const minimum =
+      Number.parseFloat(style.getPropertyValue("--input-min-height")) ||
+      Number.parseFloat(style.minHeight) ||
+      0;
     input.style.height = "auto";
-    input.style.height = `${input.scrollHeight}px`;
+    input.style.height = `${Math.max(minimum, input.scrollHeight)}px`;
     input.scrollTop = scrollTop;
   };
   useLayoutEffect(fitHeight, [value, autoGrow]);

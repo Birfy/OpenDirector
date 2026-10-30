@@ -248,9 +248,7 @@ export function NodeComposer({
       running={running}
       onEscape={() => setPanel(null)}
     >
-      <div
-        className={`cw-composer-body${mode === "video" ? " cw-video-composer-body" : ""}`}
-      >
+      <div className="cw-composer-body">
         {firstLast && (
           <div className="cw-frame-slots" aria-label="首尾帧参考">
             {(

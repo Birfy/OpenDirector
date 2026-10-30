@@ -265,6 +265,8 @@
   border: 1px solid #a2b2aa90;
 }
 .cw-workspace .react-flow__minimap {
+  /* Rendered outside ReactFlow's stacking context, above canvas toolbars. */
+  z-index: 20;
   border: 1px solid #ffffff1a;
   border-radius: 12px;
   overflow: hidden;

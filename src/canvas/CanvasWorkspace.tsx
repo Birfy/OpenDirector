@@ -3899,19 +3899,20 @@ function Workspace() {
                 </button>
               )}
             </ViewportPortal>
-            {minimap && (
-              <MiniMap
-                pannable
-                zoomable
-                nodeColor={(n) => (n.type === "text" ? "#8b887f" : "#59656c")}
-                maskColor={theme.theme === "dark" ? "#080809bb" : "#f7f8fabb"}
-                position="bottom-left"
-                style={{ bottom: 66, left: 12 }}
-              />
-            )}
           </CanvasFlowSurface>
         </CanvasActionsContext.Provider>
       </CanvasPlaybackProvider>
+
+      {minimap && (
+        <MiniMap
+          pannable
+          zoomable
+          nodeColor={(n) => (n.type === "text" ? "#8b887f" : "#59656c")}
+          maskColor={theme.theme === "dark" ? "#080809bb" : "#f7f8fabb"}
+          position="bottom-left"
+          style={{ bottom: 66, left: 12 }}
+        />
+      )}
 
       <header className="cw-topbar">
         <div className="cw-project-heading">
