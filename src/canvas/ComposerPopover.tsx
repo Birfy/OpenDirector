@@ -30,12 +30,18 @@ export function ComposerPopover({
       const visual = window.visualViewport;
       const left = visual?.offsetLeft ?? 0;
       const top = visual?.offsetTop ?? 0;
+      const composerRect = composer.getBoundingClientRect();
+      const scale = composer.offsetWidth
+        ? composerRect.width / composer.offsetWidth
+        : 1;
       const placement = composerPopoverPlacement(
         anchor.getBoundingClientRect(),
-        composer.getBoundingClientRect(),
+        composerRect,
         {
-          width: panel.offsetWidth,
-          height: panel.scrollHeight + panel.offsetHeight - panel.clientHeight,
+          width: panel.offsetWidth * scale,
+          height:
+            (panel.scrollHeight + panel.offsetHeight - panel.clientHeight) *
+            scale,
         },
         {
           left,
@@ -44,13 +50,15 @@ export function ComposerPopover({
           bottom: top + (visual?.height ?? window.innerHeight),
         },
       );
-      const next = JSON.stringify(placement);
+      const next = JSON.stringify({ ...placement, scale });
       if (next !== previous) {
         Object.assign(panel.style, {
           left: `${placement.left}px`,
           top: `${placement.top}px`,
-          maxWidth: `${placement.maxWidth}px`,
-          maxHeight: `${placement.maxHeight}px`,
+          maxWidth: `${placement.maxWidth / scale}px`,
+          maxHeight: `${placement.maxHeight / scale}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
           visibility: "visible",
         });
         previous = next;

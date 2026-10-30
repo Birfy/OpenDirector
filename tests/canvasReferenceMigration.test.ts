@@ -10,6 +10,8 @@ import {
   referenceIssue,
   connectedCreationKinds,
   canSourceReference,
+  canStartReference,
+  REFERENCE_ISSUE_TEXT,
 } from "../src/canvas/connectionPolicy.ts";
 import { applyGenerationResults } from "../src/canvas/linkedResults.ts";
 import {
@@ -138,6 +140,59 @@ test("blank, missing and prompt-only nodes cannot create downstream references t
       target.id,
     ),
     "locked",
+  );
+});
+
+test("empty nodes expose reference gestures and type menus while writes still require content", () => {
+  for (const kind of kinds) {
+    const source = createNode(kind, undefined, {
+      prompt: "unsaved generation input",
+    });
+    const doc = { ...createDocument(), nodes: [source] };
+    assert.equal(canStartReference(source), allowed[kind].length > 0);
+    assert.equal(canSourceReference(source), false);
+    assert.deepEqual(
+      connectedCreationKinds(doc, source.id, "source", kinds, {
+        allowEmptySource: true,
+      }),
+      allowed[kind],
+    );
+    assert.deepEqual(
+      connectedCreationKinds(doc, source.id, "source", kinds),
+      [],
+    );
+    for (const downstream of allowed[kind]) {
+      const target = createNode(downstream);
+      const present = { ...doc, nodes: [source, target] };
+      assert.equal(
+        referenceIssue(present, source.id, target.id),
+        "source_empty",
+      );
+      assert.equal(
+        applyCommand(present, {
+          type: "add-edge",
+          edge: { id: "empty", source: source.id, target: target.id },
+        }),
+        present,
+      );
+    }
+    const group = createNode("group");
+    group.locked = true;
+    source.parentId = group.id;
+    assert.deepEqual(
+      connectedCreationKinds(
+        { ...doc, nodes: [group, source] },
+        source.id,
+        "source",
+        kinds,
+        { allowEmptySource: true },
+      ),
+      [],
+    );
+  }
+  assert.equal(
+    REFERENCE_ISSUE_TEXT.source_empty,
+    "当前节点内容为空，请先上传或生成节点内容",
   );
 });
 
@@ -270,13 +325,17 @@ test("edge paths choose vertical sides, offset reverse pairs and keep self refer
   assert.match(edgePath(source, source), /^M300,75 C430,75/);
 });
 
-test("floating ports freely follow outside pointers, hide inside and cap their maximum screen distance", async () => {
-  const { floatingReferencePort, REFERENCE_PORT_MAX_DISTANCE } =
-    await import("../src/canvas/connectionPorts.ts");
+test("floating ports activate near edge midpoints, follow locally and cap screen distance", async () => {
+  const {
+    floatingReferencePort,
+    REFERENCE_PORT_MAX_DISTANCE,
+    REFERENCE_PORT_MIDPOINT_RADIUS,
+    portPoint,
+  } = await import("../src/canvas/connectionPorts.ts");
   const bounds = { x: 100, y: 100, width: 300, height: 300 };
-  for (const zoom of [0.5, 1, 2]) {
-    for (const offset of [2, 12, 28]) {
-      const pointer = { x: 400 + offset / zoom, y: 220 };
+  for (const zoom of [0.5, 1, 2, 4]) {
+    for (const offset of [2, 6, 12]) {
+      const pointer = { x: 400 + offset / zoom, y: 250 };
       assert.deepEqual(
         floatingReferencePort(bounds, pointer, zoom)!.point,
         pointer,
@@ -284,46 +343,77 @@ test("floating ports freely follow outside pointers, hide inside and cap their m
     }
     const capped = floatingReferencePort(
       bounds,
-      { x: 400 + 55 / zoom, y: 220 },
+      { x: 400 + 32 / zoom, y: 250 },
       zoom,
     )!;
-    assert.equal((capped.point.x - 400) * zoom, REFERENCE_PORT_MAX_DISTANCE);
+    assert.ok(
+      Math.abs((capped.point.x - 400) * zoom - REFERENCE_PORT_MAX_DISTANCE) <
+        1e-9,
+    );
     const moved = floatingReferencePort(
       bounds,
-      { x: 400 + 12 / zoom, y: 280 },
+      { x: 400 + 12 / zoom, y: 250 + 10 / zoom },
       zoom,
       "right",
     )!;
-    assert.equal(moved.point.y, 280);
-    assert.equal(floatingReferencePort(bounds, { x: 399, y: 220 }, zoom), null);
+    assert.equal(moved.point.y, 250 + 10 / zoom);
+    assert.equal(floatingReferencePort(bounds, { x: 399, y: 250 }, zoom), null);
     assert.equal(floatingReferencePort(bounds, { x: 250, y: 250 }, zoom), null);
     assert.equal(
-      floatingReferencePort(bounds, { x: 400 + 80 / zoom, y: 220 }, zoom),
+      floatingReferencePort(
+        bounds,
+        { x: 400 + (REFERENCE_PORT_MIDPOINT_RADIUS + 1) / zoom, y: 250 },
+        zoom,
+        "right",
+      ),
       null,
     );
-    const top = { x: 240, y: 100 - 20 / zoom };
-    assert.deepEqual(floatingReferencePort(bounds, top, zoom)!.point, top);
+    for (const side of ["top", "right", "bottom", "left"] as const) {
+      const midpoint = portPoint(bounds, side);
+      const point = {
+        x:
+          midpoint.x +
+          (side === "right" ? 12 : side === "left" ? -12 : 0) / zoom,
+        y:
+          midpoint.y +
+          (side === "bottom" ? 12 : side === "top" ? -12 : 0) / zoom,
+      };
+      assert.equal(floatingReferencePort(bounds, point, zoom)!.side, side);
+    }
+    assert.equal(
+      floatingReferencePort(
+        bounds,
+        { x: 400 + 8 / zoom, y: 135 },
+        zoom,
+        "right",
+      ),
+      null,
+    );
   }
 });
 
-test("floating port corner padding and preview use the actual grab point", async () => {
+test("ports hide near ordinary corners and preview retains the actual grab point", async () => {
   const { floatingReferencePort, referencePreviewPath } =
     await import("../src/canvas/connectionPorts.ts");
-  const corner = floatingReferencePort(
-    { x: 0, y: 0, width: 300, height: 300 },
-    { x: 300, y: 0 },
-    1,
-    "right",
-  )!;
-  assert.equal(corner.side, "right");
-  assert.equal(corner.anchor.y, 16);
+  const bounds = { x: 0, y: 0, width: 300, height: 300 };
+  assert.equal(
+    floatingReferencePort(bounds, { x: 300, y: 0 }, 1, "right"),
+    null,
+  );
+  for (const zoom of [0.08, 0.25])
+    assert.equal(
+      floatingReferencePort(bounds, { x: 300, y: 0 }, zoom, "right"),
+      null,
+    );
+  const port = floatingReferencePort(bounds, { x: 320, y: 142 }, 1, "right")!;
+  assert.equal(port.anchor.y, 142);
   assert.match(
-    referencePreviewPath(corner.anchor, corner.side, { x: 500, y: 80 }),
-    /^M300,16 C/,
+    referencePreviewPath(port.anchor, port.side, { x: 500, y: 80 }),
+    /^M300,142 C/,
   );
   const small = floatingReferencePort(
     { x: 0, y: 0, width: 12, height: 12 },
-    { x: 12, y: 2 },
+    { x: 12, y: 5 },
     1,
     "right",
   )!;

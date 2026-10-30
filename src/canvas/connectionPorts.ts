@@ -17,8 +17,8 @@ export function referencePortMetrics(zoom: number) {
     borderWidth: scale,
   };
 }
-export const REFERENCE_PORT_MAX_DISTANCE = 40;
-const REFERENCE_PORT_HOVER_DISTANCE = 64;
+export const REFERENCE_PORT_MAX_DISTANCE = 12;
+export const REFERENCE_PORT_MIDPOINT_RADIUS = 36;
 const sides: readonly PortSide[] = ["top", "right", "bottom", "left"];
 const normal = (side: PortSide) => ({
   x: side === "left" ? -1 : side === "right" ? 1 : 0,
@@ -53,7 +53,7 @@ export function insideNode(bounds: Rect, pointer: Point) {
   );
 }
 
-/** Follow the outside pointer freely, with only a maximum screen-space offset. */
+/** Activate near edge midpoints; follow the outside pointer within a screen-space cap. */
 export function floatingReferencePort(
   bounds: Rect,
   pointer: Point,
@@ -67,34 +67,48 @@ export function floatingReferencePort(
       start + Math.min(size / 2, inset),
       Math.min(start + size - Math.min(size / 2, inset), value),
     );
-  const candidates = sides.map((side) => {
-    const vertical = side === "left" || side === "right";
-    const anchor = portPoint(bounds, side);
-    if (vertical) anchor.y = clamp(pointer.y, bounds.y, bounds.height);
-    else anchor.x = clamp(pointer.x, bounds.x, bounds.width);
-    const distance = Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y);
-    const scale = distance
-      ? Math.min(1, REFERENCE_PORT_MAX_DISTANCE / zoom / distance)
-      : 1;
-    return {
-      side,
-      anchor,
-      point: {
-        x: anchor.x + (pointer.x - anchor.x) * scale,
-        y: anchor.y + (pointer.y - anchor.y) * scale,
-      },
-      distance,
-    };
-  });
+  const candidates = sides
+    .filter((side) => {
+      const midpoint = portPoint(bounds, side);
+      const vertical = side === "left" || side === "right";
+      const alongEdge = vertical
+        ? Math.abs(pointer.y - midpoint.y)
+        : Math.abs(pointer.x - midpoint.x);
+      // Keep corner regions inactive even when a zoomed-out node is small.
+      if (alongEdge > (vertical ? bounds.height : bounds.width) / 4)
+        return false;
+      return (
+        Math.hypot(pointer.x - midpoint.x, pointer.y - midpoint.y) * zoom <=
+        REFERENCE_PORT_MIDPOINT_RADIUS
+      );
+    })
+    .map((side) => {
+      const vertical = side === "left" || side === "right";
+      const anchor = portPoint(bounds, side);
+      if (vertical) anchor.y = clamp(pointer.y, bounds.y, bounds.height);
+      else anchor.x = clamp(pointer.x, bounds.x, bounds.width);
+      const distance = Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y);
+      const scale = distance
+        ? Math.min(1, REFERENCE_PORT_MAX_DISTANCE / zoom / distance)
+        : 1;
+      return {
+        side,
+        anchor,
+        point: {
+          x: anchor.x + (pointer.x - anchor.x) * scale,
+          y: anchor.y + (pointer.y - anchor.y) * scale,
+        },
+        distance,
+      };
+    });
+  if (!candidates.length) return null;
   const nearest = candidates.reduce((best, item) =>
     item.distance < best.distance ? item : best,
   );
   const old = candidates.find((item) => item.side === previous);
   const result =
     old && old.distance <= nearest.distance + 6 / zoom ? old : nearest;
-  return result.distance <= REFERENCE_PORT_HOVER_DISTANCE / zoom
-    ? result
-    : null;
+  return result;
 }
 
 /** Freeze the actual grab point while dragging and while the creation menu is open. */

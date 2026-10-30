@@ -254,18 +254,24 @@ export function ReferenceMentionInput({
     let frame = 0;
     const place = () => {
       const rect = input.getBoundingClientRect();
+      const scale = input.offsetWidth ? rect.width / input.offsetWidth : 1;
       const width = Math.min(
         440,
-        window.innerWidth - 24,
-        Math.max(280, rect.width),
+        (window.innerWidth - 24) / scale,
+        Math.max(280, input.offsetWidth),
       );
       const above = rect.top - 18,
         below = window.innerHeight - rect.bottom - 18;
-      const maxHeight = Math.min(360, Math.max(100, Math.max(above, below)));
+      const maxHeight = Math.min(
+        360 * scale,
+        Math.max(100 * scale, above, below),
+      );
       element.style.width = `${width}px`;
-      element.style.maxHeight = `${maxHeight}px`;
-      const height = element.offsetHeight;
-      element.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+      element.style.maxHeight = `${maxHeight / scale}px`;
+      element.style.transform = `scale(${scale})`;
+      element.style.transformOrigin = "top left";
+      const height = element.offsetHeight * scale;
+      element.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width * scale - 12))}px`;
       element.style.top = `${Math.max(12, above >= below ? rect.top - height - 6 : Math.min(rect.bottom + 6, window.innerHeight - height - 12))}px`;
       element.style.visibility = "visible";
       frame = requestAnimationFrame(place);

@@ -6,7 +6,7 @@ import {
 } from "react";
 import type { CanvasNode, Point } from "./model";
 import { absolutePosition } from "./geometry";
-import { canSourceReference } from "./connectionPolicy";
+import { canStartReference } from "./connectionPolicy";
 import {
   floatingReferencePort,
   insideNode,
@@ -104,7 +104,7 @@ export function useCanvasReferences(options: {
       return;
     }
     for (const node of nodes) {
-      if (locked.has(node.id) || !canSourceReference(node)) continue;
+      if (locked.has(node.id) || !canStartReference(node)) continue;
       if (hoveredPort && port && node.id !== port.nodeId) continue;
       const bounds = {
         ...absolutePosition(node, nodes),
@@ -159,7 +159,7 @@ export function useCanvasReferences(options: {
       d.moved ||= Math.hypot(event.clientX - d.x, event.clientY - d.y) > 4;
       const { nodes, world } = current.current;
       const source = nodes.find((n) => n.id === d.source);
-      if (!source || !canSourceReference(source)) {
+      if (!source || !canStartReference(source)) {
         cancel();
         return;
       }
@@ -177,7 +177,7 @@ export function useCanvasReferences(options: {
       const source = nodes.find((n) => n.id === d.source);
       const hit = document.elementFromPoint(event.clientX, event.clientY);
       cancel();
-      if (!source || locked.has(source.id) || !canSourceReference(source))
+      if (!source || locked.has(source.id) || !canStartReference(source))
         return;
       if (d.moved && (!hit?.closest(".react-flow") || hit.closest(blocked)))
         return;

@@ -82,3 +82,63 @@ test("fitting a distant node preserves its screen center while reducing zoom", (
   assert.ok(fitted.zoom < 1);
   assert.equal((node.x + node.width / 2) * fitted.zoom + fitted.x, 640);
 });
+
+test("canvas-sized composer participates in fitting at the same zoom as its node", () => {
+  const node = { x: 10000, y: 8000, width: 300, height: 300 };
+  const before = { ...node };
+  const chrome: SelectionChrome = {
+    safe: { x: 80, y: 72, width: 500, height: 430 },
+    toolbar: { width: 480, height: 44 },
+    composer: { width: 680, height: 250 },
+    scaleComposer: true,
+  };
+  const fitted = selectionViewport(node, { x: 0, y: 0, zoom: 1.2 }, chrome);
+  const placed = selectionPlacement(node, fitted, chrome);
+  assert.ok(fitted.zoom < 1.2);
+  assert.ok(placed.toolbar.top >= chrome.safe.y - 1e-6);
+  assert.ok(placed.composer.left >= chrome.safe.x - 1e-6);
+  assert.ok(
+    placed.composer.left + chrome.composer.width * fitted.zoom <=
+      chrome.safe.x + chrome.safe.width + 1e-6,
+  );
+  assert.ok(
+    placed.composer.top + chrome.composer.height * fitted.zoom <=
+      chrome.safe.y + chrome.safe.height + 1e-6,
+  );
+  const repeated = selectionViewport(node, fitted, chrome);
+  assert.ok(Math.abs(repeated.zoom - fitted.zoom) < 1e-9);
+  assert.ok(Math.abs(repeated.x - fitted.x) < 1e-6);
+  assert.ok(Math.abs(repeated.y - fitted.y) < 1e-6);
+  assert.deepEqual(node, before);
+});
+
+test("manual zoom and pan preserve the composer's canvas anchor and scaled gap", () => {
+  const node = { x: 200, y: 100, width: 300, height: 300 };
+  const chrome: SelectionChrome = {
+    safe: { x: 80, y: 72, width: 1100, height: 700 },
+    toolbar: { width: 450, height: 44 },
+    composer: { width: 680, height: 250 },
+    scaleComposer: true,
+  };
+  for (const zoom of [0.08, 0.5, 1, 2, 8]) {
+    const view = { x: 300, y: 100, zoom };
+    const placed = selectionPlacement(node, view, chrome);
+    const center = (node.x + node.width / 2) * zoom + view.x;
+    const bottom = (node.y + node.height) * zoom + view.y;
+    assert.equal(
+      placed.composer.left + (chrome.composer.width * zoom) / 2,
+      center,
+    );
+    assert.ok(Math.abs(placed.composer.top - bottom - 16 * zoom) < 1e-6);
+    const panned = selectionPlacement(
+      node,
+      { ...view, x: view.x - 400, y: view.y + 150 },
+      chrome,
+    );
+    assert.ok(
+      Math.abs(panned.composer.left - placed.composer.left + 400) < 1e-6,
+    );
+    assert.ok(Math.abs(panned.composer.top - placed.composer.top - 150) < 1e-6);
+    assert.deepEqual(view, { x: 300, y: 100, zoom });
+  }
+});

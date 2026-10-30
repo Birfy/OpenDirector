@@ -77,7 +77,8 @@ import {
   connectedCreationKinds,
   referenceIssue,
   REFERENCE_ISSUE_TEXT,
-  canSourceReference,
+  canStartReference,
+  referenceMaterial,
 } from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
 import { persistCurrentDocument } from "./projectManagement";
@@ -958,6 +959,17 @@ function Workspace() {
     extra: Partial<CanvasNodeData> = {},
   ) => {
     const connected = position ? menu?.connected : undefined;
+    const source =
+      connected?.direction === "source"
+        ? historyRef.current.present.nodes.find(
+            (node) => node.id === connected.id,
+          )
+        : undefined;
+    if (source && canStartReference(source) && !referenceMaterial(source)) {
+      setMenu(null);
+      notify(REFERENCE_ISSUE_TEXT.source_empty);
+      return;
+    }
     if (
       connected &&
       !connectedCreationKinds(
@@ -967,6 +979,7 @@ function Workspace() {
         [kind],
       ).length
     ) {
+      setMenu(null);
       notify("该类型不能与当前节点建立参考关系。");
       return;
     }
@@ -1242,6 +1255,11 @@ function Workspace() {
     world: (point) => flow.screenToFlowPosition(point),
     connect: (source, target) => {
       const current = historyRef.current.present;
+      const node = current.nodes.find((node) => node.id === source);
+      if (node && canStartReference(node) && !referenceMaterial(node)) {
+        notify(REFERENCE_ISSUE_TEXT.source_empty);
+        return;
+      }
       const issue = referenceIssue(current, source, target);
       if (issue) {
         if (issue !== "duplicate_relation") notify(REFERENCE_ISSUE_TEXT[issue]);
@@ -1328,6 +1346,7 @@ function Workspace() {
     root,
     toolbar: toolbarElement,
     composer: composerElement,
+    scaleComposer: hasComposer,
     bounds: presentationBounds,
     mediaBounds,
     preferredZoom: activeAction ? 1.5 : undefined,
@@ -2876,7 +2895,7 @@ function Workspace() {
       if (
         !n ||
         lockedIds.has(id) ||
-        (direction === "source" && !canSourceReference(n))
+        (direction === "source" && !canStartReference(n))
       )
         return;
       const p = absolutePosition(n, doc.nodes);
@@ -3846,6 +3865,7 @@ function Workspace() {
               ...selectionPresentation.placement?.composer,
               width: selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
+              transform: selectionPresentation.composerTransform,
               background: "#1e2028",
               border: "1px solid #ffffff20",
             }}
@@ -3921,6 +3941,7 @@ function Workspace() {
             ...selectionPresentation.placement?.composer,
             width: selectionPresentation.composerWidth,
             maxHeight: selectionPresentation.composerMaxHeight,
+            transform: selectionPresentation.composerTransform,
           }}
           data-interacting={
             interacting ||
@@ -4040,7 +4061,7 @@ function Workspace() {
                   !doc.nodes.some(
                     (n) =>
                       n.id === menu.nodeId &&
-                      canSourceReference(n) &&
+                      canStartReference(n) &&
                       !lockedIds.has(n.id),
                   )
                 }
@@ -4176,6 +4197,7 @@ function Workspace() {
                       CANVAS_CREATION_TOOLS.filter((t) => !t.unavailable).map(
                         (t) => t.kind,
                       ),
+                      { allowEmptySource: true },
                     )
                   : undefined
               }
@@ -4704,7 +4726,6 @@ function Workspace() {
       />
       {toast && (
         <div className="cw-toast" role="status">
-          <CanvasIcon name="check" size={16} />
           {toast}
         </div>
       )}

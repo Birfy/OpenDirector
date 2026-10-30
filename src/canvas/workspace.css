@@ -990,6 +990,7 @@
 }
 .cw-composer-dock {
   position: absolute;
+  transform-origin: top left;
   z-index: 15;
   overflow: auto;
   overscroll-behavior: contain;

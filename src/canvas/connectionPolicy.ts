@@ -58,8 +58,13 @@ export function referenceMaterial(node: CanvasNode): string | null {
   return null;
 }
 
+/** Ports and creation menus are discoverable before the source has content. */
+export function canStartReference(node: CanvasNode): boolean {
+  return Boolean(downstreamKinds[node.type]?.length);
+}
+
 export function canSourceReference(node: CanvasNode): boolean {
-  return Boolean(downstreamKinds[node.type]?.length && referenceMaterial(node));
+  return canStartReference(node) && Boolean(referenceMaterial(node));
 }
 
 /** A prospective target may be empty; a prospective source cannot provide material. */
@@ -90,7 +95,7 @@ export type ReferenceIssue =
 
 export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
   endpoint_missing: "节点已不存在",
-  source_empty: "请先上传素材或生成并采用结果，再添加下游节点",
+  source_empty: "当前节点内容为空，请先上传或生成节点内容",
   target_material: "素材节点不能接收生成参考，请连接生成节点",
   locked: "请先解锁节点或所属分组",
   self_connection: "节点不能引用自身",
@@ -101,37 +106,45 @@ export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
   frame_capacity_exceeded: FRAME_IMAGE_LIMIT_MESSAGE,
 };
 
-/** The blank-space creation menu uses the same policy as a completed connection. */
+/** Preview available types without permitting empty-source writes. */
 export function connectedCreationKinds(
   document: Pick<CanvasDocument, "nodes" | "edges">,
   id: string,
   direction: "source" | "target",
   candidates: readonly CanvasNodeKind[],
+  options: { allowEmptySource?: boolean } = {},
 ): CanvasNodeKind[] {
   let prospectiveId = "__connected_creation__";
   while (document.nodes.some((node) => node.id === prospectiveId))
     prospectiveId += "_";
-  return candidates.filter(
-    (kind) =>
-      referenceIssue(
-        {
-          ...document,
-          nodes: [
-            ...document.nodes,
-            {
-              id: prospectiveId,
-              type: kind,
-              data: { kind, title: "", prompt: "" },
-              position: { x: 0, y: 0 },
-              width: 1,
-              height: 1,
-            },
-          ],
-        },
-        direction === "source" ? id : prospectiveId,
-        direction === "source" ? prospectiveId : id,
-      ) === null,
-  );
+  return candidates.filter((kind) => {
+    const issue = referenceIssue(
+      {
+        ...document,
+        nodes: [
+          ...document.nodes,
+          {
+            id: prospectiveId,
+            type: kind,
+            data: { kind, title: "", prompt: "" },
+            position: { x: 0, y: 0 },
+            width: 1,
+            height: 1,
+          },
+        ],
+      },
+      direction === "source" ? id : prospectiveId,
+      direction === "source" ? prospectiveId : id,
+    );
+    return (
+      issue === null ||
+      Boolean(
+        options.allowEmptySource &&
+        direction === "source" &&
+        issue === "source_empty",
+      )
+    );
+  });
 }
 
 export function referenceIssue(

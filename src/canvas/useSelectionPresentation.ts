@@ -26,6 +26,7 @@ export function useSelectionPresentation({
   blocked,
   controlsKey,
   preferredZoom,
+  scaleComposer = false,
 }: {
   root: RefObject<HTMLDivElement | null>;
   toolbar: RefObject<HTMLDivElement | null>;
@@ -39,6 +40,7 @@ export function useSelectionPresentation({
   controlsKey: string;
   /** Dedicated media editing may enlarge its source; ordinary selection preserves zoom. */
   preferredZoom?: number;
+  scaleComposer?: boolean;
 }) {
   const flow = useReactFlow();
   const viewport = useViewport();
@@ -47,6 +49,7 @@ export function useSelectionPresentation({
     panel,
     focusRequest,
     controlsKey,
+    scaleComposer,
   ]);
   const [measurement, setMeasurement] = useState<{
     key: string;
@@ -89,11 +92,15 @@ export function useSelectionPresentation({
         width: Math.max(1, right - left),
         height: Math.max(1, rect.height - 150),
       };
-      const size = (element: HTMLDivElement | null) => {
+      const size = (element: HTMLDivElement | null, canvasUnits = false) => {
         const box = element?.getBoundingClientRect();
         return {
-          width: Math.min(safe.width, box?.width ?? 0),
-          height: box?.height ?? 0,
+          width: canvasUnits
+            ? (element?.offsetWidth ?? 0)
+            : Math.min(safe.width, box?.width ?? 0),
+          height: canvasUnits
+            ? (element?.offsetHeight ?? 0)
+            : (box?.height ?? 0),
         };
       };
       const next = {
@@ -102,7 +109,8 @@ export function useSelectionPresentation({
         chrome: {
           safe,
           toolbar: size(toolbar.current),
-          composer: size(composer.current),
+          composer: size(composer.current, scaleComposer),
+          scaleComposer,
         },
       };
       setMeasurement((previous) =>
@@ -117,7 +125,7 @@ export function useSelectionPresentation({
     if (sidebar) observer.observe(sidebar);
     measure();
     return () => observer.disconnect();
-  }, [root, toolbar, composer, measurementKey]);
+  }, [root, toolbar, composer, measurementKey, scaleComposer]);
 
   const lastLayout = useRef("");
   const origin = useRef<{ key: string; viewport: Viewport } | null>(null);
@@ -231,10 +239,15 @@ export function useSelectionPresentation({
         }
       : null,
     visible: Boolean(placement?.visible) && !obscured,
-    composerWidth: chrome.safe.width ? Math.min(680, chrome.safe.width) : 680,
+    composerWidth:
+      !scaleComposer && chrome.safe.width
+        ? Math.min(680, chrome.safe.width)
+        : 680,
+    composerTransform: scaleComposer ? `scale(${viewport.zoom})` : undefined,
     toolbarMaxWidth: chrome.safe.width || undefined,
-    composerMaxHeight: chrome.safe.height
-      ? Math.max(120, Math.min(360, chrome.safe.height * 0.58))
-      : 360,
+    composerMaxHeight:
+      !scaleComposer && chrome.safe.height
+        ? Math.max(120, Math.min(360, chrome.safe.height * 0.58))
+        : 360,
   };
 }
