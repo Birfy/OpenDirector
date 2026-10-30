@@ -114,6 +114,23 @@ def resolved_inputs(snapshot, spec_id, rules=None):
         selected_frame=any(ref.role == 'first_frame' for ref in refs))
 
 
+def validate_frame_reference_limit(snapshot):
+    items = {item.id: item for item in snapshot.canvasItems}
+    for spec in snapshot.generationSpecs:
+        if spec.kind != 'video' or spec.parameters.videoMode != 'first_frame':
+            continue
+        images = set()
+        for ref in snapshot.references:
+            if not ref.active or ref.targetSpecId != spec.id:
+                continue
+            if ref.binding == 'pinned' and ref.source.kind == 'image':
+                images.add(('asset', ref.source.assetId))
+            elif ref.binding == 'follow_current' and items[ref.source.id].kind == 'image':
+                images.add(('node', ref.source.id))
+        if len(images) > 2:
+            raise ContractError('reference_invalid', '首尾帧模式最多连接 2 个图片节点，请先断开多余连线。', spec.id)
+
+
 def reference_evidence(snapshot, spec, reference):
     result = next((r for r in snapshot.results if r.id == spec.currentResultId), None)
     if result is None:
@@ -159,7 +176,9 @@ class CreationCanvas:
                 obj['revision'] = previous['revision'] if previous else 1
                 if previous and obj != previous:
                     obj['revision'] += 1
-        return ProjectSnapshot.model_validate(data)
+        result = ProjectSnapshot.model_validate(data)
+        validate_frame_reference_limit(result)
+        return result
 
     @staticmethod
     def _get(data, kind, object_id):

@@ -4,6 +4,10 @@ import type {
   CanvasEdge,
   CanvasNode,
 } from "./model.ts";
+import {
+  FRAME_IMAGE_LIMIT,
+  FRAME_IMAGE_LIMIT_MESSAGE,
+} from "./frameReferences.ts";
 
 /** Static product capabilities from canvas-data module 79421. Model-specific limits remain separate. */
 export function nodePorts(kind: CanvasNodeKind) {
@@ -81,6 +85,7 @@ export type ReferenceIssue =
   | "duplicate_relation"
   | "source_type_unsupported"
   | "target_type_unsupported"
+  | "frame_capacity_exceeded"
   | "capacity_exceeded";
 
 export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
@@ -93,6 +98,7 @@ export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
   source_type_unsupported: "目标节点不接收这类素材",
   target_type_unsupported: "该节点不接收参考",
   capacity_exceeded: "参考数量已达上限",
+  frame_capacity_exceeded: FRAME_IMAGE_LIMIT_MESSAGE,
 };
 
 /** The blank-space creation menu uses the same policy as a completed connection. */
@@ -173,6 +179,25 @@ export function referenceIssue(
   const references = document.edges.filter(
     (e) => e.intent !== "post_edit_result",
   );
+  if (
+    a.type === "image" &&
+    b.type === "video" &&
+    b.data.settings?.videoMode === "first-last"
+  ) {
+    const imageIds = new Set(
+      document.nodes
+        .filter((node) => node.type === "image")
+        .map((node) => node.id),
+    );
+    if (
+      new Set(
+        references
+          .filter((edge) => edge.target === target && imageIds.has(edge.source))
+          .map((edge) => edge.source),
+      ).size >= FRAME_IMAGE_LIMIT
+    )
+      return "frame_capacity_exceeded";
+  }
   if (
     references.filter((e) => e.target === target).length >=
     (capacity[b.type] ?? Infinity)

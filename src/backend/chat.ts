@@ -1,5 +1,6 @@
 import { headers, request } from "./api.ts";
 import { creationEnabled } from "./creationClient.ts";
+import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 
 /** The local API's agent: it plans, writes and generates inside the canvas's project. */
 
@@ -7,6 +8,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  content?: ReferenceContent | null;
   status: "complete" | "streaming" | "stopped" | "interrupted";
   assets?: ChatAsset[];
   model?: string;
@@ -27,6 +29,7 @@ export interface ChatAsset {
 }
 export interface ChatDraft {
   draft: string;
+  draftContent?: ReferenceContent | null;
   assets: ChatAsset[];
   thinking: Thinking;
   modelSelections: ModelSelections;
@@ -53,6 +56,7 @@ export interface ChatRequest {
   id: string;
   modelId: string;
   text: string;
+  content?: ReferenceContent | null;
   assets: string[];
   thinking: Thinking;
   modelSelections: ModelSelections;

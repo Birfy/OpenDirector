@@ -1,4 +1,5 @@
 import type { CanvasNode, GenerationSettings } from "./model.ts";
+import { frameImageLimitIssue } from "./frameReferences.ts";
 
 /** Authored capability catalog, based on the 2026-10-26 original-site session.
  * Menu visibility is separate from a verified parameter combination. This is
@@ -256,6 +257,8 @@ export function generationBlocker(
   settings: GenerationSettings,
   incomingNodes: readonly CanvasNode[],
 ): string | null {
+  const frameLimit = frameImageLimitIssue(settings, incomingNodes);
+  if (frameLimit) return frameLimit;
   const model = generationModel(settings);
   if (!model) return "此模型不在已观察目录中，请重新选择模型。";
   if (

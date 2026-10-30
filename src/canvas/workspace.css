@@ -194,13 +194,6 @@
   overflow: hidden;
   background: #1d1d20 !important;
 }
-.cw-workspace .react-flow__attribution {
-  background: transparent;
-  color: #66666b;
-  font-size: 8px;
-  bottom: 0;
-  right: 14px;
-}
 .cw-icon-button {
   width: 36px;
   height: 36px;

@@ -1,4 +1,5 @@
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio";
@@ -274,6 +275,8 @@ export function backendBlocker(
   incoming: readonly CanvasNode[],
   models: readonly ModelConfig[],
 ): string | null {
+  const frameLimit = frameImageLimitIssue(settings, incoming);
+  if (frameLimit) return frameLimit;
   const config = backendModel(settings, models);
   if (!config) return "所选模型配置已删除或尚未读取，请在设置中重新选择。";
   if (config.kind !== settings.mode)

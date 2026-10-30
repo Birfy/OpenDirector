@@ -4,6 +4,10 @@ import type { CanvasToolTask } from "./toolCatalog.ts";
 import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
 import { referenceIssue } from "./connectionPolicy.ts";
+import {
+  fillConnectedFrames,
+  frameImageLimitIssue,
+} from "./frameReferences.ts";
 /** Authored local canvas model, compatible with React Flow's node/edge shape. */
 export type CanvasNodeKind =
   | "image"
@@ -41,6 +45,7 @@ export interface GenerationSettings {
   videoMode?: "reference" | "first-last" | "continuation";
   firstFrameNodeId?: string;
   lastFrameNodeId?: string;
+  frameSlotsInitialized?: boolean;
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;
@@ -432,7 +437,6 @@ export function applyCommand(
       // A child cannot override a parent lock. Only the explicit lock owner can unlock itself.
       if (ancestors(node, byId).some((parent) => parent.locked)) return node;
       if (node.locked && command.patch.locked !== false) return node;
-      changed = true;
       const type = command.patch.type ?? node.type;
       let base = node.data;
       if (type !== node.type) {
@@ -459,9 +463,35 @@ export function applyCommand(
         ] as const)
           delete base[key];
       }
-      const data = command.patch.data
-        ? { ...base, ...command.patch.data }
-        : base;
+      let data = command.patch.data ? { ...base, ...command.patch.data } : base;
+      if (data.settings) {
+        let settings = data.settings;
+        if (
+          command.patch.data?.settings &&
+          (Object.hasOwn(command.patch.data.settings, "firstFrameNodeId") ||
+            Object.hasOwn(command.patch.data.settings, "lastFrameNodeId"))
+        )
+          settings = { ...settings, frameSlotsInitialized: true };
+        const sources = new Set(
+          document.edges
+            .filter(
+              (edge) =>
+                edge.target === node.id && edge.intent !== "post_edit_result",
+            )
+            .map((edge) => edge.source),
+        );
+        const incoming = [...sources].flatMap(
+          (id) => document.nodes.find((item) => item.id === id) ?? [],
+        );
+        if (frameImageLimitIssue(settings, incoming)) return node;
+        if (
+          settings.videoMode === "first-last" &&
+          node.data.settings?.videoMode !== "first-last"
+        )
+          settings = fillConnectedFrames(settings, incoming);
+        if (settings !== data.settings) data = { ...data, settings };
+      }
+      changed = true;
       // New pixels (upload, generation, edit, or decoded metadata) reshape the block.
       const reshaped =
         MEDIA_KINDS.includes(type) &&
@@ -657,7 +687,45 @@ export function applyCommand(
       )
     )
       return document;
-    return { ...document, edges: [...document.edges, { ...command.edge }] };
+    const edges = [...document.edges, { ...command.edge }];
+    const target = document.nodes.find(
+      (node) => node.id === command.edge.target,
+    )!;
+    const source = document.nodes.find(
+      (node) => node.id === command.edge.source,
+    )!;
+    if (
+      command.edge.intent === "post_edit_result" ||
+      source.type !== "image" ||
+      !target.data.settings
+    )
+      return { ...document, edges };
+    const incomingIds = [
+      ...new Set(
+        edges
+          .filter(
+            (edge) =>
+              edge.target === target.id && edge.intent !== "post_edit_result",
+          )
+          .map((edge) => edge.source),
+      ),
+    ];
+    const incoming = incomingIds.flatMap(
+      (id) => document.nodes.find((node) => node.id === id) ?? [],
+    );
+    const settings = fillConnectedFrames(target.data.settings, incoming);
+    return {
+      ...document,
+      edges,
+      nodes:
+        settings === target.data.settings
+          ? document.nodes
+          : document.nodes.map((node) =>
+              node.id === target.id
+                ? { ...node, data: { ...node.data, settings } }
+                : node,
+            ),
+    };
   }
   const removed = new Set(command.ids);
   for (const edge of document.edges) {

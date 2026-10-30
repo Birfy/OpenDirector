@@ -27,6 +27,75 @@
 .cw-assistant-panel[hidden] {
   display: none;
 }
+.cw-pending-references {
+  margin: 0 0 10px;
+  padding: 12px;
+  border: 1px dashed #8daed4;
+  border-radius: 12px;
+  color: var(--chat-muted);
+  background: var(--chat-hover);
+}
+.cw-pending-reference-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cw-pending-reference-heading button {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+}
+.cw-pending-reference-heading button:hover {
+  background: var(--chat-hover);
+}
+.cw-pending-reference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 190px;
+  overflow: auto;
+}
+.cw-pending-reference {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px dashed var(--chat-border);
+  border-radius: 8px;
+  color: var(--chat-text);
+}
+.cw-pending-reference img {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.cw-pending-reference > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cw-pending-reference small {
+  color: var(--chat-muted);
+  font-size: 11px;
+}
+.cw-pending-reference.is-invalid,
+.cw-pending-reference .cw-pending-reference-error {
+  color: #d98b54;
+}
+.cw-pending-reference-error {
+  flex-basis: 100%;
+  line-height: 1.6;
+}
 .cw-assistant-resizer {
   position: absolute;
   z-index: 12;
@@ -242,13 +311,16 @@
   border-radius: 20px;
   background: var(--chat-composer);
 }
-.cw-assistant-panel .cw-assistant-composer textarea {
+.cw-assistant-panel .cw-assistant-composer .cw-chat-reference-editor {
   display: block;
   width: 100%;
   min-height: 100px;
   max-height: 180px;
   padding: 0 2px;
-  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -256,10 +328,12 @@
   font: inherit;
   line-height: 1.65;
 }
-.cw-assistant-composer textarea::placeholder {
+.cw-assistant-composer .cw-chat-reference-editor[data-empty="true"]::before {
+  content: attr(data-placeholder);
   color: #6f6f73;
+  pointer-events: none;
 }
-.cw-assistant-composer textarea:focus-visible {
+.cw-assistant-composer .cw-chat-reference-editor:focus-visible {
   outline: none;
 }
 .cw-assistant-composer:focus-within {
@@ -310,41 +384,40 @@
 .cw-assistant-footnote button:hover {
   text-decoration: underline;
 }
-.cw-chat-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 100px;
-  margin-bottom: 10px;
-  overflow: auto;
-}
-.cw-chat-attachment {
-  display: flex;
+.cw-chat-reference {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 180px;
-  padding: 5px 7px;
+  vertical-align: middle;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: min(240px, calc(100% - 6px));
+  margin: 2px 3px;
+  padding: 3px 7px;
   border: 1px solid var(--chat-border);
   border-radius: 8px;
   background: var(--chat-surface);
-  font-size: 11px;
+  color: var(--chat-text);
+  line-height: 1.5;
+  user-select: all;
 }
-.cw-chat-attachment img {
-  width: 30px;
-  height: 30px;
+.cw-chat-reference img {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   object-fit: cover;
   border-radius: 4px;
 }
-.cw-chat-attachment > span {
+.cw-chat-reference > span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cw-chat-attachment button {
-  display: grid;
-  place-items: center;
-  padding: 2px;
+.cw-chat-reference > [data-reference-icon] {
+  flex-shrink: 0;
+}
+.cw-chat-reference.is-unavailable {
+  border-color: #b9884e;
 }
 .cw-assistant-panel .chat-picker {
   position: relative;
@@ -641,7 +714,7 @@
   .cw-assistant-toolbar {
     gap: 3px;
   }
-  .cw-assistant-panel .cw-assistant-composer textarea {
+  .cw-assistant-panel .cw-assistant-composer .cw-chat-reference-editor {
     min-height: 90px;
   }
 }
@@ -653,7 +726,7 @@
   .cw-assistant-welcome h1 {
     font-size: 19px;
   }
-  .cw-assistant-panel .cw-assistant-composer textarea {
+  .cw-assistant-panel .cw-assistant-composer .cw-chat-reference-editor {
     min-height: 60px;
   }
 }

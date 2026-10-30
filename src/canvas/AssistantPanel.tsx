@@ -8,16 +8,25 @@ import type { CanvasNode } from "./model";
 import { ChoicePicker, ModelPicker } from "./AssistantPickers";
 import { attachment, useAssistantChat } from "./useAssistantChat";
 import {
-  ReferenceMentionInput,
-  type ReferenceMentionHandle,
-} from "./ReferenceMentionInput";
+  ChatReferenceEditor,
+  type ChatReferenceEditorHandle,
+} from "./ChatReferenceEditor";
 import {
   nodeMentionOptions,
   type MentionOption,
   type ReferenceKind,
 } from "./referenceMentions";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { creationEnabled, creationClient } from "../backend/creationClient.ts";
+import { assetBlob } from "../backend/api.ts";
 import "./assistant-panel.css";
+import { referenceContent } from "./chatReferenceContent.ts";
+import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
+import {
+  pendingCanvasReferences,
+  pendingReferenceInsertion,
+  samePendingReferences,
+} from "./pendingCanvasReferences.ts";
 
 const THINKING = [
   { id: "auto", label: "自动", description: "使用模型服务的默认思考程度" },
@@ -49,6 +58,7 @@ export function AssistantPanel({
   onClose,
   onTurnEnd,
   onOpenSettings,
+  onPrepareReferences,
 }: {
   documentId: string;
   documentTitle: string;
@@ -61,37 +71,134 @@ export function AssistantPanel({
   onClose: () => void;
   onTurnEnd: () => void;
   onOpenSettings: () => void;
+  onPrepareReferences: () => Promise<boolean>;
 }) {
   const chat = useAssistantChat(documentId, catalog, onTurnEnd);
   const { value, setValue } = chat;
   const projectReferences = useProjectMentionAssets(documentId);
-  const mentions = useRef<ReferenceMentionHandle>(null);
+  const editor = useRef<ChatReferenceEditorHandle>(null);
   const [dragOver, setDragOver] = useState(false);
   const log = useRef<HTMLDivElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>(
+    {},
+  );
   const nearBottom = useRef(true);
-  const lastSelectionRequest = useRef(0);
-  const locked = !chat.loaded || chat.adding || (chat.sending && !chat.started);
-  const referenceDisabled = !chat.loaded || chat.adding || chat.sending;
+  const pendingReferences = usePendingCanvasReferences(
+    documentId,
+    open,
+    selectedNodes,
+    selectionRequest,
+  );
+  const pending = pendingReferences.pending;
+  const [checkingReferences, setCheckingReferences] = useState(false);
+  const confirming = useRef<AbortController | null>(null);
+  const latest = useRef({ value, selectedNodes, open });
+  latest.current = { value, selectedNodes, open };
+  const locked =
+    !chat.loaded ||
+    chat.adding ||
+    checkingReferences ||
+    (chat.sending && !chat.started);
+  const referenceDisabled =
+    !chat.loaded || chat.adding || checkingReferences || chat.sending;
 
   useEffect(() => {
-    if (open && chat.loaded) input.current?.focus({ preventScroll: true });
+    if (open && chat.loaded) editor.current?.focus();
   }, [open, chat.loaded]);
+  const displayedAssets = [
+    ...new Map(
+      [
+        ...value.assets,
+        ...value.messages.flatMap((message) => message.assets ?? []),
+      ].map((asset) => [asset.id, asset]),
+    ).values(),
+  ];
+  const previewKey = displayedAssets
+    .filter((asset) => asset.type.startsWith("image/"))
+    .map((asset) => `${asset.id}:${asset.fingerprint}`)
+    .join("|");
+  useEffect(() => {
+    let active = true;
+    const owned: string[] = [];
+    void Promise.all(
+      displayedAssets
+        .filter((asset) => asset.type.startsWith("image/"))
+        .map(async (asset) => {
+          let url = "";
+          try {
+            if (creationEnabled())
+              url = await creationClient(documentId).mediaUrl(asset.id);
+            else {
+              url = URL.createObjectURL(await assetBlob(documentId, asset.id));
+              if (active) owned.push(url);
+              else {
+                URL.revokeObjectURL(url);
+                url = "";
+              }
+            }
+          } catch {
+            /* The attachment remains available for removal/retry. */
+          }
+          return [asset.id, url] as const;
+        }),
+    ).then((entries) => {
+      if (active) setAssetPreviews(Object.fromEntries(entries));
+    });
+    return () => {
+      active = false;
+      owned.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [documentId, previewKey]);
   useEffect(() => {
     if (nearBottom.current && log.current)
       log.current.scrollTop = log.current.scrollHeight;
   }, [value.messages, chat.tools, open]);
-  useEffect(() => {
-    if (
-      !chat.loaded ||
-      !selectionRequest ||
-      lastSelectionRequest.current === selectionRequest
-    )
-      return;
-    lastSelectionRequest.current = selectionRequest;
-    if (selectedNodes.length) void chat.addNodes(selectedNodes);
-  }, [chat.loaded, selectionRequest]);
+  useEffect(() => () => confirming.current?.abort(), [pending?.id]);
+  const confirmPending = async (end: number) => {
+    if (!pending || referenceDisabled || confirming.current) return;
+    const batch = pending,
+      before = latest.current.value;
+    const abort = new AbortController();
+    confirming.current = abort;
+    const unchanged = () =>
+      !abort.signal.aborted &&
+      latest.current.open &&
+      pendingReferences.isCurrent(batch.id) &&
+      latest.current.value.draft === before.draft &&
+      latest.current.value.draftContent === before.draftContent &&
+      samePendingReferences(
+        pendingCanvasReferences(latest.current.selectedNodes),
+        batch.items,
+      );
+    try {
+      pendingReferenceInsertion("", 0, batch.items);
+      setCheckingReferences(true);
+      chat.setError("");
+      if (!(await onPrepareReferences()) || !unchanged()) return;
+      await chat.addNodes(
+        batch.items.map((item) => item.node),
+        abort.signal,
+        (assets) => {
+          if (!unchanged()) return false;
+          if (!editor.current?.insert(assets, { start: end, end }, true))
+            return false;
+          pendingReferences.consume(batch.id);
+          return true;
+        },
+      );
+    } catch (error) {
+      if (!abort.signal.aborted && pendingReferences.isCurrent(batch.id))
+        chat.setError(
+          error instanceof Error ? error.message : "参考插入失败，请重试。",
+        );
+    } finally {
+      if (confirming.current === abort) {
+        confirming.current = null;
+        setCheckingReferences(false);
+      }
+    }
+  };
 
   const mentionOptions: MentionOption[] = [
     ...nodeMentionOptions(nodes, () => null, "画布节点").map((option) => ({
@@ -119,15 +226,23 @@ export function AssistantPanel({
   const chooseMention = async (option: MentionOption, signal: AbortSignal) => {
     if (option.id.startsWith("node:")) {
       const node = nodes.find((item) => `node:${item.id}` === option.id);
-      return node ? chat.addNodes([node], signal) : false;
+      if (!node || !(await onPrepareReferences()) || signal.aborted)
+        return null;
+      let prepared: ChatAsset[] | null = null;
+      await chat.addNodes([node], signal, (assets) => {
+        prepared = assets;
+        return true;
+      });
+      return prepared;
     }
     const asset = projectReferences.assets.find(
       (item) => `asset:${item.id}` === option.id,
     );
-    if (!asset) return false;
-    chat.addAssets([attachment(asset)]);
-    return true;
+    return asset ? [attachment(asset)] : null;
   };
+
+  const upload = (files: File[]) =>
+    chat.upload(files, (assets) => editor.current?.insert(assets) ?? false);
 
   return (
     <aside
@@ -158,7 +273,7 @@ export function AssistantPanel({
           event.preventDefault();
           event.stopPropagation();
           setDragOver(false);
-          void chat.upload([...event.dataTransfer.files]);
+          void upload([...event.dataTransfer.files]);
         }
       }}
     >
@@ -215,28 +330,45 @@ export function AssistantPanel({
               )}
             </div>
             <div className="cw-assistant-message-text">
-              {message.text ||
-                (message.status === "streaming"
-                  ? chat.thinkingNow
-                    ? "正在思考…"
-                    : "正在回复…"
-                  : "本次回复未生成内容。")}
+              {message.role === "user" &&
+              (message.content || message.assets?.length)
+                ? referenceContent(
+                    message.text,
+                    (message.assets ?? []).map((asset) => asset.id),
+                    message.assets ?? [],
+                    message.content,
+                  ).map((part, index) =>
+                    part.type === "text" ? (
+                      part.text
+                    ) : (
+                      <span
+                        key={index}
+                        className="cw-chat-reference"
+                        title={part.name}
+                      >
+                        {assetPreviews[part.assetId] ? (
+                          <img src={assetPreviews[part.assetId]} alt="" />
+                        ) : (
+                          <CanvasIcon
+                            name={kindOf(
+                              message.assets?.find(
+                                (asset) => asset.id === part.assetId,
+                              ) ?? ({ type: "text/plain" } as ChatAsset),
+                            )}
+                            size={18}
+                          />
+                        )}
+                        <span>{part.name}</span>
+                      </span>
+                    ),
+                  )
+                : message.text ||
+                  (message.status === "streaming"
+                    ? chat.thinkingNow
+                      ? "正在思考…"
+                      : "正在回复…"
+                    : "本次回复未生成内容。")}
             </div>
-            {!!message.assets?.length && (
-              <div className="cw-assistant-message-assets">
-                {message.assets.map((asset) => (
-                  <a
-                    key={asset.id}
-                    href={`/api/data/${documentId}/assets/${asset.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <CanvasIcon name={kindOf(asset)} size={14} />
-                    {asset.name}
-                  </a>
-                ))}
-              </div>
-            )}
             {(message.status === "stopped" ||
               message.status === "interrupted") && (
               <small className="cw-assistant-message-status">
@@ -292,76 +424,87 @@ export function AssistantPanel({
           aria-label="聊天输入框"
           onSubmit={(event) => {
             event.preventDefault();
+            pendingReferences.cancel();
             nearBottom.current = true;
             void chat.send();
           }}
         >
-          {!!value.assets.length && (
-            <div className="cw-chat-attachments" aria-label="消息参考素材">
-              {value.assets.map((asset) => (
-                <div key={asset.id} className="cw-chat-attachment">
-                  {asset.type.startsWith("image/") ? (
-                    <img
-                      src={`/api/data/${documentId}/assets/${asset.id}`}
-                      alt=""
-                    />
-                  ) : (
-                    <CanvasIcon name={kindOf(asset)} size={18} />
-                  )}
-                  <span title={asset.name}>{asset.name}</span>
-                  <button
-                    type="button"
-                    aria-label={`移除引用 ${asset.name}`}
-                    disabled={referenceDisabled}
-                    onClick={() =>
-                      setValue((previous) => ({
-                        ...previous,
-                        assets: previous.assets.filter(
-                          (item) => item.id !== asset.id,
-                        ),
-                      }))
-                    }
+          {pending && (
+            <div
+              className="cw-pending-references"
+              data-pending-references
+              aria-label="待插入参考"
+              aria-busy={checkingReferences || chat.adding}
+            >
+              <div className="cw-pending-reference-heading">
+                <span role="status">
+                  待插入 {pending.items.length} 项 ·{" "}
+                  {referenceDisabled
+                    ? "输入框暂不可用，请稍候"
+                    : "点击正文插入，点击外部或 Esc 取消"}
+                </span>
+                <button
+                  type="button"
+                  aria-label="取消待插入参考"
+                  onClick={pendingReferences.cancel}
+                >
+                  <CanvasIcon name="close" size={16} />
+                </button>
+              </div>
+              <div className="cw-pending-reference-list">
+                {pending.items.map((item) => (
+                  <div
+                    key={item.nodeId}
+                    className={`cw-pending-reference${item.error ? " is-invalid" : ""}`}
+                    title={item.error ?? item.title}
                   >
-                    <CanvasIcon name="close" size={12} />
-                  </button>
-                </div>
-              ))}
+                    {item.thumbnail && !item.error ? (
+                      <img src={item.thumbnail} alt="" />
+                    ) : (
+                      <CanvasIcon name={item.kind} size={20} />
+                    )}
+                    <span>{item.title}</span>
+                    {item.metadataOnly && !item.error && (
+                      <small>仅素材信息</small>
+                    )}
+                    {item.error && (
+                      <small className="cw-pending-reference-error">
+                        {item.error}
+                      </small>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-          <ReferenceMentionInput
+          <ChatReferenceEditor
             key={documentId}
-            inputRef={input}
-            pickerRef={mentions}
+            ref={editor}
+            scope={documentId}
+            value={referenceContent(
+              value.draft,
+              value.assets.map((asset) => asset.id),
+              value.assets,
+              value.draftContent,
+            )}
+            assets={chat.referenceAssets}
+            previews={assetPreviews}
             options={mentionOptions}
             referencesDisabled={!open || referenceDisabled}
+            disabled={locked}
             onChoose={chooseMention}
             onOpen={projectReferences.load}
             loading={projectReferences.loading}
             loadError={projectReferences.error}
-            aria-label="消息内容"
-            placeholder="输入想法、剧本或上传参考，输入 @ 引用项目素材，和 Agent 一起创作"
-            value={value.draft}
-            maxLength={20000}
-            disabled={locked}
-            onChangeText={(draft) =>
-              setValue((previous) => ({ ...previous, draft }))
+            onConfirmPending={
+              pending ? (at) => void confirmPending(at.end) : undefined
             }
-            onPaste={(event) => {
-              if (event.clipboardData.files.length) {
-                event.preventDefault();
-                void chat.upload([...event.clipboardData.files]);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                nearBottom.current = true;
-                void chat.send();
-              }
+            onChange={chat.setContent}
+            onPasteFiles={(files) => void upload(files)}
+            onSubmit={() => {
+              nearBottom.current = true;
+              pendingReferences.cancel();
+              void chat.send();
             }}
           />
           <div className="cw-assistant-toolbar">
@@ -382,7 +525,7 @@ export function AssistantPanel({
               title="引用项目素材（@）"
               disabled={referenceDisabled}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => mentions.current?.openPicker()}
+              onClick={() => editor.current?.openPicker()}
             >
               @
             </button>
@@ -476,8 +619,7 @@ export function AssistantPanel({
         accept="image/*,video/*,audio/*,text/*,.md,.markdown,.txt"
         aria-label="选择对话参考文件"
         onChange={(event) => {
-          if (event.target.files?.length)
-            void chat.upload([...event.target.files]);
+          if (event.target.files?.length) void upload([...event.target.files]);
           event.target.value = "";
         }}
       />

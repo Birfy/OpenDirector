@@ -2823,6 +2823,7 @@ function Workspace() {
     },
     select: (id: string, event: React.MouseEvent) => {
       if (panning || pointerGesture.current.blocksClick(event.detail)) return;
+      if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
       setMenu(null);
       setDismissedComposer(null);
       if (event.shiftKey || event.metaKey || event.ctrlKey) {
@@ -3064,6 +3065,7 @@ function Workspace() {
       data-edge-motion={pageVisible}
       data-assistant-open={assistantOpen}
       data-assistant-resizing={assistantLayout.dragging}
+      data-canvas-interacting={interacting}
       style={
         {
           "--assistant-width": `${assistantLayout.width}px`,
@@ -3174,6 +3176,7 @@ function Workspace() {
       >
         <CanvasActionsContext.Provider value={actions}>
           <ReactFlow<FlowNode, Edge>
+            proOptions={{ hideAttribution: true }}
             nodes={projected.nodes}
             edges={projected.edges}
             nodeTypes={nodeTypes}
@@ -3222,6 +3225,7 @@ function Workspace() {
               setMenu(null);
               setSelectedEdges([]);
               setDismissedComposer(null);
+              if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
               // Read modifiers from the gesture itself, including focus changes between clicks.
               if (event.shiftKey || event.metaKey || event.ctrlKey) {
                 const ids = new Set(selectionAtPointerDown.current);
@@ -3261,6 +3265,9 @@ function Workspace() {
             onNodeDragStop={endDrag}
             onSelectionDragStart={beginDrag}
             onSelectionDragStop={endDrag}
+            onSelectionEnd={() => {
+              if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
+            }}
             onPaneClick={(event) => {
               if (panning || pointerGesture.current.blocksClick(1)) return;
               root.current?.focus({ preventScroll: true });
@@ -4664,6 +4671,7 @@ function Workspace() {
             );
           }}
           onTurnEnd={() => void followServiceTasks()}
+          onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
             setSettingsCategory("models");
             setSettingsOpen(true);

@@ -32,6 +32,10 @@ import {
 } from "./ReferenceMentionInput";
 import { nodeMentionOptions } from "./referenceMentions";
 import "./nodes.css";
+import {
+  frameImageLimitIssue,
+  FRAME_IMAGE_LIMIT_MESSAGE,
+} from "./frameReferences.ts";
 
 export interface NodeComposerProps {
   selectedNode: CanvasNode | null;
@@ -162,17 +166,22 @@ export function NodeComposer({
       ? [["continuation", "接续"] as const]
       : []),
   ] as const;
-  const modeUnsupported = (
-    value: NonNullable<ComposerSettings["videoMode"]>,
-  ) =>
-    backend
+  const modeUnsupported = (value: NonNullable<ComposerSettings["videoMode"]>) =>
+    (value === "first-last" &&
+      Boolean(
+        frameImageLimitIssue(
+          { ...settings, videoMode: "first-last" },
+          incomingNodes,
+        ),
+      )) ||
+    (backend
       ? !(value === "continuation"
           ? serviceModes.includes("continuation")
           : value === "first-last"
             ? serviceModes.includes("first_frame")
             : serviceModes.includes("reference") ||
               serviceModes.includes("first_frame"))
-      : Boolean(model?.videoModes && !model.videoModes.includes(value));
+      : Boolean(model?.videoModes && !model.videoModes.includes(value)));
   const chooseModel = (value: string) => {
     const service = serviceModels.find((item) => `config:${item.id}` === value);
     if (!service) {
@@ -512,8 +521,23 @@ export function NodeComposer({
                   key={value}
                   value={value}
                   disabled={modeUnsupported(value)}
+                  title={
+                    value === "first-last" &&
+                    frameImageLimitIssue(
+                      { ...settings, videoMode: "first-last" },
+                      incomingNodes,
+                    )
+                      ? FRAME_IMAGE_LIMIT_MESSAGE
+                      : undefined
+                  }
                 >
-                  {label}
+                  {value === "first-last" &&
+                  frameImageLimitIssue(
+                    { ...settings, videoMode: "first-last" },
+                    incomingNodes,
+                  )
+                    ? `${label}（最多 2 张图片，请先断开多余连线）`
+                    : label}
                 </option>
               ))}
             </select>

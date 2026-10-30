@@ -59,7 +59,11 @@ test("first and last frames reject tail-only and broken references, then retain 
     firstFrameNodeId: first.id,
     lastFrameNodeId: last.id,
   };
-  assert.equal(generationBlocker(both, [unrelated, last, first]), null);
+  assert.equal(generationBlocker(both, [last, first]), null);
+  assert.match(
+    generationBlocker(both, [unrelated, last, first])!,
+    /最多连接 2/,
+  );
   assert.deepEqual(
     generationActiveReferences(both, [unrelated, last, first]).map((item) => [
       item.node.id,

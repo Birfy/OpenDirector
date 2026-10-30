@@ -9,6 +9,7 @@ import {
   objectVersion,
 } from "./creationClient.ts";
 import { CreationProjection } from "./creationProjection.ts";
+import { initializeConnectedFrames } from "../canvas/frameReferences.ts";
 
 const projections = new Map<string, CreationProjection>();
 export function workspaceProjection(id: string) {
@@ -54,7 +55,7 @@ export async function readWorkspaceDocument(project: WorkspaceProject) {
   const parsed = parseDocument(value.document);
   if (!parsed.ok) throw new Error(parsed.error.message);
   if (parsed.value.id !== project.id) throw new Error("画布文档不属于此项目。");
-  return { ...parsed.value, title: project.name };
+  return initializeConnectedFrames({ ...parsed.value, title: project.name });
 }
 
 export async function openWorkspaceProject(project: WorkspaceProject) {

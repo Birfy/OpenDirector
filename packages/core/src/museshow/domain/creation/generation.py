@@ -287,6 +287,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError('Frame and continuation roles require video generation')
         return
     params = spec.parameters
+    if params.videoMode == 'first_frame' and len({ref.referenceId for ref in references if ref.asset.kind == 'image' and ref.subjectRole is None}) > 2:
+        raise ValueError('首尾帧模式最多连接 2 个图片节点，请先断开多余连线。')
     if params.videoMode not in rules.videoModes:
         raise ValueError('Model does not support this video mode')
     if params.videoMode == 'continuation':

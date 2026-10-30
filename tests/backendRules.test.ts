@@ -157,6 +157,10 @@ test("first-frame mode submits only the chosen frame and rejects a last frame", 
     videoMode: "first-last",
     firstFrameNodeId: first.id,
   });
+  assert.match(
+    backendBlocker(settings, [first, other, media("image")], [h3])!,
+    /最多连接 2/,
+  );
   assert.deepEqual(
     backendReferences(settings, [first, other], h3).map((item) => item.node),
     [first],

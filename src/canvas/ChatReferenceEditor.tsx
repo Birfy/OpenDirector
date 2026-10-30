@@ -1,0 +1,780 @@
+import {
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
+import { createPortal } from "react-dom";
+import type { ChatAsset } from "../backend/chat.ts";
+import { CanvasIcon } from "./CanvasIcon";
+import {
+  assetKind,
+  contentText,
+  normalizeContent,
+  referenceIds,
+  validContent,
+  type ReferenceContent,
+} from "./chatReferenceContent.ts";
+import {
+  editContent,
+  editingText,
+  readDOM,
+  select,
+  selection,
+  type Caret,
+} from "./chatReferenceDOM.ts";
+import { referenceInsertion } from "./chatReferenceInsertion.ts";
+import {
+  mentionCategories,
+  mentionRange,
+  REFERENCE_CATEGORIES,
+  type MentionOption,
+  type ReferenceCategory,
+} from "./referenceMentions.ts";
+import "./reference-mentions.css";
+
+export interface ChatReferenceEditorHandle {
+  focus: () => void;
+  openPicker: () => void;
+  caret: () => Caret;
+  insert: (
+    assets: ChatAsset[],
+    range?: Caret,
+    deduplicate?: boolean,
+  ) => boolean;
+}
+interface Props {
+  scope: string;
+  value: ReferenceContent;
+  assets: ChatAsset[];
+  previews: Record<string, string>;
+  options: MentionOption[];
+  disabled: boolean;
+  referencesDisabled: boolean;
+  loading: boolean;
+  loadError: string;
+  onOpen: () => void;
+  onChoose: (
+    option: MentionOption,
+    signal: AbortSignal,
+  ) => Promise<ChatAsset[] | null>;
+  onChange: (content: ReferenceContent, added?: ChatAsset[]) => void;
+  onSubmit: () => void;
+  onPasteFiles: (files: File[]) => void;
+  onConfirmPending?: (caret: Caret) => void;
+  ref: Ref<ChatReferenceEditorHandle>;
+}
+type Snapshot = { content: ReferenceContent; caret: Caret };
+const CLIPBOARD = "application/x-opendesign-references";
+const rules = {
+  allowedKinds: ["image", "video", "audio", "text"],
+  maxImages: 64,
+  imageBytes: 32 * 1024 * 1024,
+};
+
+/** MuseShow's atomic content model: one reference is one editing position. */
+export function ChatReferenceEditor({
+  scope,
+  value,
+  assets,
+  previews,
+  options,
+  disabled,
+  referencesDisabled,
+  loading,
+  loadError,
+  onOpen,
+  onChoose,
+  onChange,
+  onSubmit,
+  onPasteFiles,
+  onConfirmPending,
+  ref,
+}: Props) {
+  const root = useRef<HTMLDivElement>(null),
+    panel = useRef<HTMLDivElement>(null);
+  const iconTemplates = useRef<HTMLSpanElement>(null);
+  const current = useRef(value),
+    saved = useRef<Caret>({ start: 0, end: 0 });
+  const past = useRef<Snapshot[]>([]),
+    future = useRef<Snapshot[]>([]),
+    lastEdit = useRef(0);
+  const composing = useRef(false),
+    choosing = useRef(false),
+    alive = useRef(true);
+  const preparation = useRef<AbortController | null>(null),
+    dismissed = useRef<number | null>(null);
+  const [range, setRange] = useState<Caret | null>(null),
+    rangeRef = useRef(range);
+  rangeRef.current = range;
+  const [category, setCategory] = useState<ReferenceCategory>("all"),
+    [active, setActive] = useState(0);
+  const [busy, setBusy] = useState(false),
+    [notice, setNotice] = useState("");
+  const latest = useRef({ onChange, onChoose, onOpen, assets, previews });
+  latest.current = { onChange, onChoose, onOpen, assets, previews };
+  const listId = useId();
+  const categories = mentionCategories(options);
+  const effectiveCategory = categories.includes(category) ? category : "all";
+  const shown = options.filter(
+    (option) =>
+      effectiveCategory === "all" || option.kind === effectiveCategory,
+  );
+  const selected = Math.min(active, Math.max(0, shown.length - 1));
+  const caret = () =>
+    (root.current && selection(root.current)) || saved.current;
+  function close() {
+    preparation.current?.abort();
+    dismissed.current = rangeRef.current?.start ?? null;
+    rangeRef.current = null;
+    setRange(null);
+  }
+  function decorate() {
+    root.current
+      ?.querySelectorAll<HTMLElement>("[data-reference]")
+      .forEach((chip) => {
+        const part = JSON.parse(chip.dataset.reference!);
+        const asset = latest.current.assets.find(
+          (asset) => asset.id === part.assetId,
+        );
+        const src = latest.current.previews[part.assetId];
+        chip.title = part.name;
+        chip.classList.toggle(
+          "is-unavailable",
+          !asset ||
+            !!(part.fingerprint && asset.fingerprint !== part.fingerprint),
+        );
+        chip.querySelector("img")?.remove();
+        if (src) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = "";
+          img.draggable = false;
+          chip.prepend(img);
+        }
+        const icon = chip.querySelector<HTMLElement>("[data-reference-icon]")!;
+        icon.hidden = !!src;
+        const template = iconTemplates.current?.querySelector(
+          `[data-kind="${asset ? assetKind(asset) : "text"}"]`,
+        );
+        if (template) icon.replaceChildren(template.cloneNode(true));
+      });
+  }
+  function paint(content: ReferenceContent, at?: Caret) {
+    if (!root.current) return;
+    const fragment = document.createDocumentFragment();
+    for (const part of content) {
+      if (part.type === "text")
+        fragment.append(document.createTextNode(part.text));
+      else {
+        const chip = document.createElement("span");
+        chip.contentEditable = "false";
+        chip.dataset.reference = JSON.stringify(part);
+        chip.className = "cw-chat-reference";
+        chip.setAttribute("aria-label", `参考：${part.name}`);
+        const icon = document.createElement("span");
+        icon.dataset.referenceIcon = "1";
+        icon.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.textContent = part.name;
+        chip.append(icon, label);
+        fragment.append(chip);
+      }
+    }
+    fragment.append(document.createTextNode("\u200b"));
+    root.current.replaceChildren(fragment);
+    root.current.dataset.empty = String(content.length === 0);
+    decorate();
+    if (at) {
+      select(root.current, at);
+      saved.current = at;
+    }
+  }
+  function focus(at = saved.current) {
+    if (!root.current) return;
+    root.current.focus({ preventScroll: true });
+    select(root.current, at);
+  }
+  function publish(
+    content: ReferenceContent,
+    at: Caret,
+    redraw = true,
+    typing = false,
+    added: ChatAsset[] = [],
+  ) {
+    const next = normalizeContent(content);
+    if (!validContent(next)) {
+      setNotice("正文最多 20000 字、64 份不同参考。");
+      paint(current.current, saved.current);
+      return false;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(current.current)) {
+      try {
+        latest.current.onChange(next, added);
+      } catch (error) {
+        setNotice((error as Error).message);
+        paint(current.current, saved.current);
+        return false;
+      }
+      if (!typing || Date.now() - lastEdit.current > 600) {
+        past.current.push({ content: current.current, caret: saved.current });
+        if (past.current.length > 100) past.current.shift();
+      }
+      future.current = [];
+      lastEdit.current = typing ? Date.now() : 0;
+      current.current = next;
+    }
+    saved.current = at;
+    if (redraw) paint(next, at);
+    else if (root.current)
+      root.current.dataset.empty = String(next.length === 0);
+    setNotice("");
+    return true;
+  }
+  function insert(
+    added: ChatAsset[],
+    at = rangeRef.current ?? caret(),
+    deduplicate = false,
+  ) {
+    try {
+      const next = referenceInsertion(
+        current.current,
+        at,
+        added,
+        latest.current.assets,
+        rules,
+        deduplicate,
+      );
+      if (!publish(next.content, next.caret, true, false, added)) return false;
+      rangeRef.current = null;
+      setRange(null);
+      dismissed.current = null;
+      // Preparing assets may disable editing until the next React commit.
+      requestAnimationFrame(() => {
+        if (alive.current) focus(next.caret);
+      });
+      return true;
+    } catch (error) {
+      setNotice((error as Error).message);
+      return false;
+    }
+  }
+  function open(at: Caret) {
+    if (disabled || referencesDisabled || choosing.current) return;
+    if (!rangeRef.current) {
+      setCategory("all");
+      setActive(0);
+      setNotice("");
+      latest.current.onOpen();
+    }
+    rangeRef.current = at;
+    setRange(at);
+  }
+  function updateMention() {
+    if (composing.current || choosing.current || disabled || referencesDisabled)
+      return;
+    const at = caret();
+    saved.current = at;
+    const next = mentionRange(editingText(current.current), at.start, at.end);
+    if (!next) {
+      dismissed.current = null;
+      rangeRef.current = null;
+      setRange(null);
+    } else if (dismissed.current !== next.start) open(next);
+  }
+  async function choose(option: MentionOption) {
+    if (
+      disabled ||
+      referencesDisabled ||
+      choosing.current ||
+      option.disabledReason ||
+      loading ||
+      loadError
+    )
+      return;
+    const before = current.current,
+      at = rangeRef.current ?? caret();
+    const abort = new AbortController();
+    preparation.current = abort;
+    choosing.current = true;
+    setBusy(true);
+    setNotice("");
+    try {
+      const added = await latest.current.onChoose(option, abort.signal);
+      if (
+        !added ||
+        !alive.current ||
+        abort.signal.aborted ||
+        current.current !== before
+      )
+        return;
+      insert(added, at);
+    } catch (error) {
+      if (!abort.signal.aborted && alive.current)
+        setNotice((error as Error).message);
+    } finally {
+      choosing.current = false;
+      if (preparation.current === abort) preparation.current = null;
+      if (alive.current) setBusy(false);
+    }
+  }
+  function undo(redo: boolean) {
+    const from = redo ? future : past,
+      to = redo ? past : future;
+    const snapshot = from.current.pop();
+    if (!snapshot) return;
+    to.current.push({ content: current.current, caret: caret() });
+    latest.current.onChange(snapshot.content);
+    current.current = snapshot.content;
+    paint(snapshot.content, snapshot.caret);
+    lastEdit.current = 0;
+    close();
+  }
+  function input() {
+    if (!root.current || composing.current || choosing.current) return;
+    publish(readDOM(root.current), caret(), false, true);
+    updateMention();
+  }
+  function removeReference(direction: "backward" | "forward") {
+    const at = caret(),
+      text = editingText(current.current);
+    const start =
+      at.start === at.end && direction === "backward"
+        ? Math.max(0, at.start - 1)
+        : at.start;
+    const end =
+      at.start === at.end && direction === "forward"
+        ? Math.min(text.length, at.end + 1)
+        : at.end;
+    if (!text.slice(start, end).includes("\ufffc")) return false;
+    publish(editContent(current.current, { start, end }, []), {
+      start,
+      end: start,
+    });
+    close();
+    return true;
+  }
+  useImperativeHandle(ref, () => ({
+    focus,
+    caret,
+    insert,
+    openPicker: () => {
+      if (rangeRef.current) {
+        close();
+        focus();
+      } else {
+        dismissed.current = null;
+        open(caret());
+        focus();
+      }
+    },
+  }));
+  useLayoutEffect(() => {
+    if (
+      JSON.stringify(value) !== JSON.stringify(current.current) ||
+      !root.current?.childNodes.length
+    ) {
+      const at =
+        root.current && document.activeElement === root.current
+          ? caret()
+          : undefined;
+      past.current = [];
+      future.current = [];
+      current.current = value;
+      paint(value, at);
+    }
+  }, [value]);
+  useEffect(decorate, [assets, previews]);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      preparation.current?.abort();
+    };
+  }, []);
+  useEffect(() => {
+    if ((disabled || referencesDisabled) && !choosing.current) close();
+  }, [disabled, referencesDisabled]);
+  useLayoutEffect(() => {
+    if (!range || !root.current || !panel.current) return;
+    const element = panel.current,
+      editor = root.current;
+    let frame = 0;
+    function place() {
+      const rect = editor.getBoundingClientRect(),
+        width = Math.min(
+          440,
+          window.innerWidth - 24,
+          Math.max(280, rect.width),
+        );
+      const above = rect.top - 18,
+        below = window.innerHeight - rect.bottom - 18;
+      element.style.width = `${width}px`;
+      element.style.maxHeight = `${Math.min(360, Math.max(100, above, below))}px`;
+      element.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+      element.style.top = `${Math.max(12, above >= below ? rect.top - element.offsetHeight - 6 : rect.bottom + 6)}px`;
+      element.style.visibility = "visible";
+      frame = requestAnimationFrame(place);
+    }
+    function outside(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !element.contains(event.target) &&
+        !editor.contains(event.target)
+      )
+        close();
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.isComposing) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        focus();
+      }
+    }
+    place();
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape, true);
+    };
+  }, [Boolean(range)]);
+  useEffect(() => {
+    panel.current
+      ?.querySelector('[aria-selected="true"][role="option"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selected, effectiveCategory, Boolean(range)]);
+  function clipboard(event: React.ClipboardEvent, cut: boolean) {
+    if (cut && (disabled || busy)) {
+      event.preventDefault();
+      return;
+    }
+    const at = caret();
+    if (at.start === at.end) return;
+    const selected = editContent(
+      editContent(
+        current.current,
+        { start: at.end, end: editingText(current.current).length },
+        [],
+      ),
+      { start: 0, end: at.start },
+      [],
+    );
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", contentText(selected));
+    event.clipboardData.setData(
+      CLIPBOARD,
+      JSON.stringify({ scope, content: selected }),
+    );
+    if (cut)
+      publish(editContent(current.current, at, []), {
+        start: at.start,
+        end: at.start,
+      });
+  }
+  return (
+    <>
+      <span ref={iconTemplates} hidden aria-hidden="true">
+        {["image", "video", "audio", "text"].map((kind) => (
+          <CanvasIcon key={kind} name={kind} data-kind={kind} size={20} />
+        ))}
+      </span>
+      <div
+        ref={root}
+        className="cw-chat-reference-editor"
+        contentEditable={!disabled && !busy}
+        suppressContentEditableWarning
+        role="textbox"
+        aria-label="消息内容"
+        aria-multiline="true"
+        aria-disabled={disabled || busy}
+        aria-busy={busy}
+        data-placeholder="输入想法、剧本或上传参考，输入 @ 引用项目素材，和 Agent 一起创作"
+        aria-expanded={Boolean(range)}
+        aria-controls={range ? listId : undefined}
+        aria-autocomplete="list"
+        aria-activedescendant={
+          range && shown[selected] ? `${listId}-${selected}` : undefined
+        }
+        onCompositionStart={() => {
+          composing.current = true;
+          close();
+        }}
+        onCompositionEnd={() => {
+          composing.current = false;
+          input();
+        }}
+        onInput={input}
+        onFocus={() => {
+          saved.current = caret();
+        }}
+        onPointerUp={() => {
+          saved.current = caret();
+        }}
+        onBlur={() => {
+          if (!choosing.current) close();
+        }}
+        onClick={() => {
+          if (onConfirmPending && !disabled && !busy && !composing.current)
+            onConfirmPending(caret());
+        }}
+        onBeforeInput={(event) => {
+          if (disabled || busy) {
+            event.preventDefault();
+            return;
+          }
+          const native = event.nativeEvent as InputEvent;
+          if (
+            native.inputType === "historyUndo" ||
+            native.inputType === "historyRedo"
+          ) {
+            event.preventDefault();
+            undo(native.inputType === "historyRedo");
+          } else if (
+            !native.isComposing &&
+            (native.inputType === "deleteContentBackward" ||
+              native.inputType === "deleteContentForward") &&
+            removeReference(
+              native.inputType === "deleteContentBackward"
+                ? "backward"
+                : "forward",
+            )
+          )
+            event.preventDefault();
+        }}
+        onKeyDown={(event) => {
+          if (
+            composing.current ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229
+          )
+            return;
+          if (event.key !== "Escape") event.stopPropagation();
+          if (disabled || busy) {
+            event.preventDefault();
+            return;
+          }
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            ["z", "y"].includes(event.key.toLowerCase())
+          ) {
+            event.preventDefault();
+            undo(event.shiftKey || event.key.toLowerCase() === "y");
+            return;
+          }
+          if (
+            range &&
+            [
+              "ArrowUp",
+              "ArrowDown",
+              "ArrowLeft",
+              "ArrowRight",
+              "Enter",
+              "Escape",
+            ].includes(event.key)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.key === "Escape") close();
+            else if (event.key === "Enter") {
+              if (shown[selected]) void choose(shown[selected]);
+            } else if (event.key === "ArrowUp" || event.key === "ArrowDown")
+              setActive(
+                shown.length
+                  ? (selected +
+                      (event.key === "ArrowDown" ? 1 : -1) +
+                      shown.length) %
+                      shown.length
+                  : 0,
+              );
+            else {
+              const index = categories.indexOf(effectiveCategory);
+              setCategory(
+                categories[
+                  (index +
+                    (event.key === "ArrowRight" ? 1 : -1) +
+                    categories.length) %
+                    categories.length
+                ],
+              );
+              setActive(0);
+            }
+            return;
+          }
+          if (
+            (event.key === "Backspace" || event.key === "Delete") &&
+            removeReference(event.key === "Backspace" ? "backward" : "forward")
+          ) {
+            event.preventDefault();
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (!event.shiftKey) onSubmit();
+            else {
+              const at = caret(),
+                end = at.start + 1;
+              publish(
+                editContent(current.current, at, [
+                  { type: "text", text: "\n" },
+                ]),
+                { start: end, end },
+              );
+            }
+          } else if (
+            event.key.startsWith("Arrow") ||
+            ["Home", "End"].includes(event.key)
+          )
+            queueMicrotask(updateMention);
+        }}
+        onCopy={(event) => clipboard(event, false)}
+        onCut={(event) => clipboard(event, true)}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) event.preventDefault();
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          if (disabled || busy) return;
+          if (event.clipboardData.files.length) {
+            saved.current = caret();
+            onPasteFiles([...event.clipboardData.files]);
+            return;
+          }
+          let inserted: ReferenceContent = [
+            { type: "text", text: event.clipboardData.getData("text/plain") },
+          ];
+          try {
+            const data = JSON.parse(event.clipboardData.getData(CLIPBOARD));
+            if (
+              data.scope === scope &&
+              Array.isArray(data.content) &&
+              data.content.every((part: ReferenceContent[number]) =>
+                part.type === "text"
+                  ? typeof part.text === "string"
+                  : part.type === "reference" &&
+                    typeof part.name === "string" &&
+                    part.name.length > 0 &&
+                    part.name.length <= 255 &&
+                    latest.current.assets.some(
+                      (asset) =>
+                        asset.id === part.assetId &&
+                        (!part.fingerprint ||
+                          asset.fingerprint === part.fingerprint),
+                    ),
+              )
+            )
+              inserted = normalizeContent(data.content);
+          } catch {
+            /* Foreign clipboard data is inserted as plain text. */
+          }
+          const at = caret(),
+            end = at.start + editingText(inserted).length;
+          publish(editContent(current.current, at, inserted), {
+            start: end,
+            end,
+          });
+          updateMention();
+        }}
+      />
+      {notice && (
+        <p className="cw-reference-mention-notice" role="alert">
+          {notice}
+        </p>
+      )}
+      {range &&
+        createPortal(
+          <div
+            ref={panel}
+            className="cw-reference-mention-picker nodrag nopan nowheel"
+            role="dialog"
+            aria-label="引用项目资产"
+            aria-busy={busy}
+            style={{ visibility: "hidden" }}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => event.preventDefault()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          >
+            <header>
+              <strong>引用项目资产</strong>
+              <small>↑↓ 选择 · ←→ 分类 · Enter 确认 · Esc 关闭</small>
+            </header>
+            <div role="tablist" aria-label="参考资产类型">
+              {REFERENCE_CATEGORIES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  tabIndex={-1}
+                  role="tab"
+                  aria-selected={effectiveCategory === item.id}
+                  disabled={!categories.includes(item.id) || busy}
+                  onClick={() => {
+                    setCategory(item.id);
+                    setActive(0);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div
+              role="listbox"
+              id={listId}
+              aria-label="可引用资产"
+              className="cw-reference-mention-list"
+            >
+              {loading ? (
+                <p role="status">正在读取资产…</p>
+              ) : loadError ? (
+                <p role="alert">
+                  {loadError}{" "}
+                  <button type="button" onClick={onOpen}>
+                    重新读取
+                  </button>
+                </p>
+              ) : !shown.length ? (
+                <p>暂无可引用的素材，请先上传或连接上游节点。</p>
+              ) : (
+                shown.map((option, index) => (
+                  <button
+                    key={option.id}
+                    id={`${listId}-${index}`}
+                    type="button"
+                    tabIndex={-1}
+                    role="option"
+                    aria-selected={selected === index}
+                    aria-disabled={!!option.disabledReason || busy}
+                    title={option.disabledReason ?? option.title}
+                    onMouseEnter={() => setActive(index)}
+                    onClick={() => void choose(option)}
+                  >
+                    <span className="cw-reference-mention-thumbnail">
+                      {option.thumbnail ? (
+                        <img src={option.thumbnail} alt="" draggable={false} />
+                      ) : (
+                        <CanvasIcon name={option.kind} size={22} />
+                      )}
+                    </span>
+                    <span>
+                      <strong>{option.title}</strong>
+                      <small>{option.disabledReason || option.detail}</small>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}

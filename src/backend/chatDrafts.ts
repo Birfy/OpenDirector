@@ -18,7 +18,7 @@ export function flushChatDraft(projectId: string): Promise<void> {
   if (creationEnabled()) return Promise.resolve();
   const value = latest.get(projectId);
   if (!value) return pending.get(projectId) ?? Promise.resolve();
-  const { draft, assets, thinking, modelSelections } = value;
+  const { draft, draftContent, assets, thinking, modelSelections } = value;
   const next = (pending.get(projectId) ?? Promise.resolve())
     .catch(() => {})
     .then(async () => {
@@ -26,7 +26,7 @@ export function flushChatDraft(projectId: string): Promise<void> {
         `/data/${projectId}/draft`,
         json("PATCH", {
           draft,
-          draftContent: null,
+          draftContent: draftContent ?? null,
           assets,
           thinking,
           modelSelections,

@@ -103,6 +103,53 @@ def test_concurrent_move_and_locked_parent_do_not_overwrite_newer_state(project)
     assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', locked)], itemId=locked.id).status == 'rejected'
 
 
+@pytest.mark.parametrize('binding', ['follow_current', 'pinned'])
+def test_frame_mode_limits_image_sources_even_when_hidden_and_rejects_over_limit_mode_switch(project, binding):
+    from io import BytesIO
+    from PIL import Image
+    from museshow.application.creation_assets import CreationAssets
+    store, pid, session = project
+    assets = CreationAssets(store)
+    sources = []
+    for index in range(3):
+        image = BytesIO()
+        Image.new('RGB', (8, 8), (index * 40, 50, 80)).save(image, 'PNG')
+        handle = uuid4()
+        writer = assets.uploads.begin(pid, handle, session, f'frame-{index}.png', expected_kind='image')
+        writer.write(image.getvalue()); writer.finish()
+        assert send(store, pid, 'asset.import', session=session, uploadHandle=handle, name=f'frame-{index}.png', expectedKind='image').status == 'applied'
+        asset = store.snapshot(pid).assets[-1]
+        node_id = uuid4()
+        assert send(store, pid, 'canvas.show', session=session,
+            item=dict(id=node_id, projectId=pid, kind='image', binding=dict(role='material', objectRef=asset_ref(asset)))).status == 'applied'
+        sources.append((node_id, asset))
+    target, spec = media(project, 'video')
+    def connect(index):
+        current = store.snapshot(pid)
+        node_id, asset = sources[index]
+        ref = dict(id=uuid4(), projectId=pid, targetSpecId=spec.id, binding=binding,
+            source=dict(id=node_id) if binding == 'follow_current' else asset_ref(asset), order=index)
+        return send(store, pid, 'reference.add', session=session, reference=ref,
+            versions=[ver('generation_spec', current.generationSpecs[-1]), ver('canvas_item', current.canvasItems[-1])])
+    assert connect(0).status == 'applied'
+    assert connect(1).status == 'applied'
+    source = store.snapshot(pid).canvasItems[0]
+    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
+    before = store.snapshot(pid)
+    rejected = connect(2)
+    assert rejected.status == 'rejected' and '最多连接 2' in rejected.issues[0].message
+    assert store.snapshot(pid) == before
+    spec = before.generationSpecs[-1]
+    reference_spec = spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': 'reference'})})
+    assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=reference_spec).status == 'applied'
+    assert connect(2).status == 'applied'
+    current = store.snapshot(pid).generationSpecs[-1]
+    rejected = send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', current)],
+        spec=current.model_copy(update={'parameters': current.parameters.model_copy(update={'videoMode': 'first_frame'})}))
+    assert rejected.status == 'rejected' and '最多连接 2' in rejected.issues[0].message
+    assert store.snapshot(pid).generationSpecs[-1].parameters.videoMode == 'reference'
+
+
 def test_subject_reference_freezes_document_and_expands_assets(project):
     store, pid, session = project
     # Subject main images are real inspected uploads, not a synthetic subject asset.

@@ -318,6 +318,17 @@ def test_video_capabilities_and_reference_rules_reuse_existing_profiles():
         validate_generation(video_spec(), config, (image,))
 
 
+def test_frame_mode_counts_retained_image_relations_before_transmission_filtering():
+    from museshow.domain.creation.generation import ResolvedReference
+    references = tuple(ResolvedReference(referenceId=uid(80 + index), role='reference',
+        asset=asset_ref(asset(18 + index, 'image')), metadata=asset(18 + index, 'image').metadata,
+        transmission='context_only') for index in range(3))
+    config = model('video', videoAdapter='minimax_h3')
+    validate_generation(video_spec(), config, references[:2])
+    with pytest.raises(ValueError, match='最多连接 2'):
+        validate_generation(video_spec(), config, references)
+
+
 def test_seedance_image_reference_resolution_and_audio_duration_constraints():
     from museshow.domain.creation.generation import ResolvedReference
     config = model('video', url='https://ark.cn-beijing.volces.com/api/plan/v3', protocol='volcengine', modelId='doubao-seedance-2.0')

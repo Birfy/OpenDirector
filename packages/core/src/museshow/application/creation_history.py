@@ -2,7 +2,7 @@
 from copy import deepcopy
 from uuid import UUID, uuid5
 
-from museshow.application.creation_canvas import CreationCanvas, current_asset, resolve_reference, visible_item_ids
+from museshow.application.creation_canvas import CreationCanvas, current_asset, resolve_reference, visible_item_ids, validate_frame_reference_limit
 from museshow.domain.creation.base import Contract, digest
 from museshow.domain.creation.project import ProjectSnapshot, asset_references
 from museshow.domain.creation.validation import ContractError
@@ -180,7 +180,9 @@ class CreationHistory:
                     obj['revision'] = previous['revision']
                     if obj != previous:
                         obj['revision'] += 1
-        return ProjectSnapshot.model_validate(data)
+        result = ProjectSnapshot.model_validate(data)
+        validate_frame_reference_limit(result)
+        return result
 
     def _restore(self, before, command):
         record = next((r for r in self.projects.history(command.projectId) if r.command.commandId == command.payload.commandId), None)
