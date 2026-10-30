@@ -11,7 +11,6 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  ReactFlow,
   ReactFlowProvider,
   Background,
   BackgroundVariant,
@@ -31,12 +30,11 @@ import {
   CanvasConnectionLine,
   CanvasInteractionOverlay,
 } from "./CanvasConnections";
+import { alignNodes, type Alignment } from "./snapping";
 import {
-  snapNodePositions,
-  alignNodes,
-  type SnapGuide,
-  type Alignment,
-} from "./snapping";
+  CanvasFlowSurface,
+  type CanvasFlowSurfaceHandle,
+} from "./CanvasFlowSurface";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import {
   useCanvasReferences,
@@ -202,7 +200,6 @@ import {
   recordChange,
   beginTransaction,
   commitTransaction,
-  cancelTransaction,
   undo,
   redo,
   type CanvasHistory,
@@ -419,8 +416,7 @@ function Workspace() {
   const [hand, setHand] = useState(false);
   const [minimap, setMinimap] = useState(false);
   const [showEdges, setShowEdges] = useState(true);
-  const [guides, setGuides] = useState<SnapGuide[]>([]);
-  const snapGuides = useRef<SnapGuide[]>([]);
+  const flowSurface = useRef<CanvasFlowSurfaceHandle>(null);
   const dragging = useRef(false);
   const bypassSnapping = useRef(false);
   const connectionStarted = useRef<Point | null>(null);
@@ -568,28 +564,25 @@ function Workspace() {
   const begin = useCallback(() => setHistory(beginTransaction), []);
   const end = useCallback(() => setHistory(commitTransaction), []);
   const clearGuides = useCallback(() => {
-    snapGuides.current = [];
-    setGuides([]);
+    flowSurface.current?.clearGuides();
   }, []);
   const beginDrag = () => {
     selectionPresentation.userNavigation();
     dragging.current = true;
     setInteracting(true);
     setMenu(null);
-    begin();
   };
   const endDrag = useCallback(() => {
     dragging.current = false;
     setInteracting(false);
     clearGuides();
-    end();
-  }, [clearGuides, end]);
+  }, [clearGuides]);
   const cancelDrag = useCallback(() => {
     if (pointerGesture.current.active)
       setSelected(selectionAtPointerDown.current);
     pointerGesture.current.cancel();
+    flowSurface.current?.cancel();
     connectionStarted.current = null;
-    if (dragging.current) setHistory(cancelTransaction);
     dragging.current = false;
     setInteracting(false);
     clearGuides();
@@ -682,6 +675,7 @@ function Workspace() {
       setDismissedComposer(null);
       setInteracting(false);
       pointerGesture.current.cancel();
+      flowSurface.current?.cancel();
       setSelectedEdges([]);
       setPanel(null);
       setAssistantOpen(false);
@@ -1209,27 +1203,11 @@ function Workspace() {
         });
         return;
       }
-      let positions = changes.flatMap((c) =>
+      const positions = changes.flatMap((c) =>
         c.type === "position" && c.position
           ? [{ id: c.id, position: c.position }]
           : [],
       );
-      if (positions.length && dragging.current) {
-        const snapped = snapNodePositions(
-          historyRef.current.present.nodes,
-          positions,
-          {
-            zoom: flow.getZoom(),
-            objects: true,
-            grid: false,
-            bypass: bypassSnapping.current,
-            previous: snapGuides.current,
-          },
-        );
-        positions = snapped.positions;
-        snapGuides.current = snapped.guides;
-        setGuides(snapped.guides);
-      }
       for (const { id, position } of positions)
         patches.push({ type: "update-node", id, patch: { position } });
       if (patches.length) command({ type: "batch", commands: patches });
@@ -3194,7 +3172,11 @@ function Workspace() {
         }
       >
         <CanvasActionsContext.Provider value={actions}>
-          <ReactFlow<FlowNode, Edge>
+          <CanvasFlowSurface
+            ref={flowSurface}
+            documentNodes={doc.nodes}
+            gesture={pointerGesture}
+            bypassSnapping={bypassSnapping}
             proOptions={{ hideAttribution: true }}
             nodes={projected.nodes}
             edges={projected.edges}
@@ -3341,10 +3323,7 @@ function Workspace() {
               color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
               bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
-            <CanvasInteractionOverlay
-              guides={guides}
-              pending={pendingConnection}
-            />
+            <CanvasInteractionOverlay guides={[]} pending={pendingConnection} />
             <ViewportPortal>
               {references.preview && (
                 <svg className="cw-interaction-overlay">
@@ -3387,7 +3366,7 @@ function Workspace() {
                 style={{ bottom: 66, left: 12 }}
               />
             )}
-          </ReactFlow>
+          </CanvasFlowSurface>
         </CanvasActionsContext.Provider>
       </CanvasPlaybackProvider>
 

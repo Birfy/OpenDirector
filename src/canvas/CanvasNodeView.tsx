@@ -31,11 +31,7 @@ const names: Record<CanvasNodeKind, string> = {
   external: "导演台",
 };
 
-export const CanvasNodeView = memo(function CanvasNodeView({
-  id,
-  data,
-  selected,
-}: NodeProps<CanvasFlowNode>) {
+function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const actions = useContext(CanvasActionsContext);
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
@@ -208,7 +204,16 @@ export const CanvasNodeView = memo(function CanvasNodeView({
       )}
     </NodeFrame>
   );
-});
+}
+
+// React Flow moves the wrapper; position-only props do not change card contents.
+export const CanvasNodeView = memo(
+  CanvasNodeContents,
+  (previous, next) =>
+    previous.id === next.id &&
+    previous.data === next.data &&
+    previous.selected === next.selected,
+);
 
 function DomainCard({
   id,

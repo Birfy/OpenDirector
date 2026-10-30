@@ -7,10 +7,10 @@ export function absolutePosition(
   node: CanvasNode,
   nodes: readonly CanvasNode[],
 ): Point {
-  return positionInDocument(node, indexNodes(nodes));
+  return absolutePositionFromIndex(node, indexNodes(nodes));
 }
 
-function positionInDocument(
+export function absolutePositionFromIndex(
   node: CanvasNode,
   byId: ReadonlyMap<string, CanvasNode>,
 ): Point {
@@ -35,7 +35,7 @@ export function boundsOfNodes(
     right = -Infinity,
     bottom = -Infinity;
   for (const node of nodes) {
-    const position = positionInDocument(node, byId);
+    const position = absolutePositionFromIndex(node, byId);
     left = Math.min(left, position.x);
     top = Math.min(top, position.y);
     right = Math.max(right, position.x + node.width);
