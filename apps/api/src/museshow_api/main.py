@@ -12,9 +12,11 @@ from filelock import Timeout
 from starlette.concurrency import run_in_threadpool
 
 from museshow.domain.projects import ProjectError, identifier
+from museshow.domain.creation.validation import ContractError
 from museshow.domain.settings import GeneralSettings, GeneralSettingsPatch
 from museshow.domain.assets import MAX_ASSET_BYTES, ProjectAsset
 from museshow.application.generation import Generation
+from museshow.application.creation_generation import CreationGeneration
 from museshow.application.chat_references import validate_chat_references
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.creation_projects import CreationProjects
@@ -50,6 +52,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         store = LocalProjects(repository)
     model_configs = ModelConfigs(store.repository)
     generation = Generation(store, model_configs, generation_provider)
+    creation_projects = CreationProjects(store)
+    creation_generation = CreationGeneration(creation_projects, model_configs, generation, generation_provider)
     canvas = generation.canvas
     assets = canvas.assets
     chat = Chat(store, model_configs, chat_provider, generation)
@@ -58,13 +62,15 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @asynccontextmanager
     async def lifespan(app):
         await generation.start()
+        await creation_generation.start()
         try:
             yield
         finally:
             await generation.close()
+            await creation_generation.close()
 
     app = FastAPI(title="MuseShow Local API", version="0.1.0", lifespan=lifespan)
-    app.include_router(creation_routes(CreationProjects(store)))
+    app.include_router(creation_routes(creation_projects, creation_generation))
     app.include_router(workspace_routes(store))
 
     @app.exception_handler(RequestValidationError)
@@ -75,6 +81,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.exception_handler(ProjectError)
     async def project_error(request, error):
         return JSONResponse({"detail": str(error), "code": error.code}, status_code=error.status)
+
+    @app.exception_handler(ContractError)
+    async def contract_error(request, error):
+        status = 404 if error.issue.code == 'missing_object' else 409 if error.issue.code in {'revision_conflict', 'preview_expired'} else 422
+        return JSONResponse({'detail': error.issue.message, 'code': error.issue.code}, status_code=status)
 
     @app.exception_handler(OSError)
     async def disk_error(request, error):

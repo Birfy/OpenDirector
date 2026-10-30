@@ -12,6 +12,7 @@ import {
   type ReferenceMentionHandle,
 } from "./ReferenceMentionInput";
 import { nodeMentionOptions } from "./referenceMentions";
+import { editPromptMentions } from "./promptMentions.ts";
 import "./nodes.css";
 
 export function TextNodeComposer({
@@ -113,7 +114,17 @@ export function TextNodeComposer({
           spellCheck={false}
           value={node.data.prompt}
           placeholder="输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本"
-          onChangeText={(prompt) => onUpdate({ prompt })}
+          onChangeText={(prompt, mention) =>
+            onUpdate({
+              prompt,
+              promptMentions: editPromptMentions(
+                node.data.prompt,
+                prompt,
+                node.data.promptMentions,
+                mention,
+              ),
+            })
+          }
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&

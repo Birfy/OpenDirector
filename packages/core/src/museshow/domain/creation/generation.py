@@ -1,18 +1,19 @@
 """Generation intent, references and fixed execution facts, independent of nodes."""
 from typing import Annotated, Literal
+from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, JsonValue, model_validator
 
 from museshow.domain.generation import GenerationFailure, ResultCheck
 from .assets import AssetRef, MediaMetadata
-from .base import Contract, Digest, GenerationKind, NonNegative, PositiveInt, ProjectEntity, Revision, digest, unique
+from .base import Contract, Digest, GenerationKind, NonNegative, ObjectVersion, PositiveInt, ProjectEntity, Revision, digest, unique
 from .models import ModelConfigPublic, ModelSnapshot, VideoMode
 
 
 class TextParameters(Contract):
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
-    maxTokens: PositiveInt = 8192
+    maxTokens: Annotated[int, Field(strict=True, ge=1, le=32768)] = 8192
 
 
 class ImageParameters(Contract):
@@ -86,6 +87,7 @@ class ReferenceBase(ProjectEntity):
     targetSpecId: UUID
     role: Literal['reference', 'first_frame', 'continuation'] = 'reference'
     order: int = Field(default=0, ge=0, strict=True)
+    active: bool = True  # Retained tombstone prevents revision ABA on undo.
 
 
 class PinnedReference(ReferenceBase):
@@ -108,6 +110,12 @@ class ResolvedReference(Contract):
     role: Literal['reference', 'first_frame', 'continuation']
     asset: AssetRef
     metadata: MediaMetadata
+    sourceVersion: ObjectVersion | None = None
+    documentVersion: ObjectVersion | None = None
+    subjectRole: Literal['main', 'auxiliary', 'voice'] | None = None
+    name: str = Field(default='', max_length=255)
+    sourceTitle: str = Field(default='', max_length=255)
+    transmission: Literal['content', 'metadata', 'context_only', 'latent'] = 'content'
 
 
 class InputSnapshot(Contract):
@@ -125,7 +133,12 @@ class InputSnapshot(Contract):
             raise ValueError('Accepted execution requires a committed generation purpose')
         if self.spec.currentResultId is not None:
             raise ValueError('Current display selection is not a generation input')
-        unique([ref.referenceId for ref in self.references], 'resolved reference IDs')
+        unique([(ref.referenceId, ref.asset.assetId) for ref in self.references], 'resolved reference assets')
+        for reference_id in {ref.referenceId for ref in self.references}:
+            expanded = [ref for ref in self.references if ref.referenceId == reference_id]
+            if len(expanded) > 1 and (any(ref.documentVersion is None or ref.subjectRole is None for ref in expanded)
+                    or len({(ref.documentVersion.id, ref.documentVersion.revision) for ref in expanded}) != 1):
+                raise ValueError('Multiple assets per reference require one frozen subject document')
         if any(ref.asset.kind == 'file' for ref in self.references):
             raise ValueError('File nodes are not generation media references')
         reference_ids = {ref.referenceId for ref in self.references}
@@ -137,7 +150,9 @@ class InputSnapshot(Contract):
     def fingerprint(self):
         # Retain exact source revisions for audit, but a display-selection edit
         # can increment the spec revision without changing creative inputs.
-        return digest(self, exclude={'spec': {'revision', 'currentResultId'}})
+        return digest(self, exclude={'spec': {'revision', 'currentResultId'},
+            'references': {'__all__': {'name': True, 'sourceTitle': True, 'asset': {'revision'},
+                'sourceVersion': {'revision'}, 'documentVersion': {'revision'}}}})
 
 
 class VideoExecution(Contract):
@@ -168,7 +183,7 @@ class AudioExecution(Contract):
     voice: str | None = None
     speaker: str | None = None
     format: Literal['mp3', 'wav']
-    sampleRate: PositiveInt
+    sampleRate: PositiveInt | None = None
 
 
 class TextExecution(TextParameters):
@@ -180,6 +195,7 @@ ExecutionParameters = Annotated[TextExecution | ImageExecution | VideoExecution 
 
 class Job(ProjectEntity):
     schemaVersion: Literal[1] = 1
+    createdAt: datetime | None = None
     inputSnapshot: InputSnapshot
     inputFingerprint: Digest
     execution: ExecutionParameters
@@ -195,9 +211,18 @@ class Job(ProjectEntity):
     originItemId: UUID | None = None  # Optional display provenance, not execution ownership.
     previousJobId: UUID | None = None
     technicalCheck: ResultCheck | None = None
+    adoptionPolicy: Literal['if_current', 'candidate_only'] = 'if_current'
+    batchId: UUID | None = None
+    showAdditionalResult: bool = False
+    adoptionResultId: UUID | None = None
+    adoptionMaterial: AssetRef | None = None
+    adopted: bool = False
+    adapterParameters: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def execution_identity(self):
+        if self.showAdditionalResult and (self.originItemId is None or self.adoptionPolicy != 'candidate_only'):
+            raise ValueError('Additional result display requires an origin and candidate-only adoption')
         if self.inputSnapshot.spec.projectId != self.projectId:
             raise ValueError('Job and generation snapshot belong to different projects')
         if self.inputFingerprint != self.inputSnapshot.fingerprint():
@@ -236,25 +261,27 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     rules = model.inputRules
     if len(references) > 64:
         raise ValueError('Too many references')
-    unique([ref.referenceId for ref in references], 'resolved reference IDs')
+    unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')
     if spec.promptContent and any(isinstance(part, PromptReference) and part.referenceId not in {ref.referenceId for ref in references} for part in spec.promptContent):
         raise ValueError('Prompt points to an unresolved reference')
-    transmitted = [ref for ref in references if ref.role != 'continuation']
+    transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only']
     if sum(ref.metadata.size for ref in transmitted) > rules.requestBytes:
         raise ValueError('Reference data exceeds the model request budget')
     for ref in transmitted:
         limit = rules.imageBytes if ref.asset.kind == 'image' else rules.videoBytes if ref.asset.kind == 'video' else rules.requestBytes
         if ref.metadata.size > limit:
             raise ValueError('Reference file exceeds the model byte limit')
-    kinds = [ref.asset.kind for ref in references]
+    kinds = [ref.asset.kind for ref in references if ref.transmission != 'context_only']
     if any(kind not in rules.allowedKinds for kind in kinds):
         raise ValueError('Model does not accept this reference kind')
     for kind, limit in [('image', rules.maxImages), ('video', rules.maxVideos), ('audio', rules.maxAudios)] if spec.kind != 'text' else []:
-        count = sum(ref.asset.kind == kind and ref.role != 'continuation' for ref in references)
+        count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
             raise ValueError(f'Too many {kind} references')
     if spec.kind == 'audio' and spec.parameters.voice and model.protocol != 'openai':
         raise ValueError('Voice selection is supported by the OpenAI speech adapter')
+    if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):
+        raise ValueError('Speech generation requires actual text, not reference labels')
     if spec.kind != 'video':
         if any(ref.role != 'reference' for ref in references):
             raise ValueError('Frame and continuation roles require video generation')

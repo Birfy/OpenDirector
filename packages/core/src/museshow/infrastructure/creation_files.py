@@ -24,6 +24,25 @@ class AssetFileWrite(Contract):
     size: int = Field(strict=True, ge=0, le=MAX_CREATION_ASSET_BYTES)
 
 
+class AssetFileDelete(Contract):
+    assetId: UUID
+    fingerprint: Fingerprint
+    size: int = Field(strict=True, ge=0, le=MAX_CREATION_ASSET_BYTES)
+
+
+def delete_files(path, deletes):
+    """Run only after manifest publication, retained in its recoverable intent."""
+    from .creation_projects import directory, sync_directory
+    assets = directory(child(path, 'assets'))
+    for deletion in deletes:
+        target = child(assets, str(deletion.assetId))
+        if target.exists() or target.is_symlink():
+            if file_identity(target) != (deletion.fingerprint, deletion.size):
+                raise ProjectError('待删除文件内容已变化，文件及恢复日志已保留。', 409, code='storage_unavailable')
+            target.unlink()
+            sync_directory(assets)
+
+
 def upload_directory(state_dir: Path, project_id: UUID, handle: UUID):
     from .creation_projects import directory
     parent = directory(child(state_dir, 'creation-uploads'))

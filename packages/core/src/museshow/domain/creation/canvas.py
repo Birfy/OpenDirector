@@ -38,6 +38,7 @@ class MaterialBinding(Contract):
 class GenerationBinding(Contract):
     role: Literal['generation']
     objectRef: GenerationSpecRef
+    materialOverride: AssetRef | None = None
 
 
 MediaBinding = Annotated[EmptyBinding | MaterialBinding | GenerationBinding, Field(discriminator='role')]
@@ -78,6 +79,8 @@ class MediaCanvasItem(CanvasItemBase):
 
     @model_validator(mode='after')
     def media_role(self):
+        if self.binding.role == 'generation' and self.binding.materialOverride is not None and (self.kind != 'text' or self.binding.materialOverride.kind != 'text'):
+            raise ValueError('Only text generation nodes can retain a handwritten output')
         if self.binding.role == 'material' and self.binding.objectRef.kind != self.kind:
             raise ValueError('Material asset kind differs from canvas item kind')
         if self.binding.role == 'empty' and self.binding.manualText is not None and self.kind != 'text':
@@ -191,7 +194,7 @@ def node_capabilities(item: CanvasItem, *, spec: GenerationSpec | None = None,
     """UI projection only; commands must still enforce roles and versions."""
     role = item.binding.role
     editable = not item.locked
-    configure = editable and item.kind in {'text', 'image', 'video', 'audio'} and role in {'empty', 'generation'}
+    configure = editable and item.kind in {'text', 'image', 'video', 'audio'} and (role in {'empty', 'generation'} or item.kind == 'text' and role == 'material')
     spec_ref = (item.binding.objectRef if role == 'generation' else item.binding.draftSpec if role == 'empty' else None)
     matching = spec is not None and spec_ref is not None and spec_ref.id == spec.id and spec.kind == item.kind
     generate = False
@@ -203,14 +206,14 @@ def node_capabilities(item: CanvasItem, *, spec: GenerationSpec | None = None,
             pass
     return NodeCapabilities(
         canEdit=editable and (role == 'editor' or role == 'material' and assetAvailable
-                             or item.kind == 'text' and role == 'empty'
+                             or item.kind == 'text'
                              or role == 'generation' and item.kind in {'image', 'video', 'audio'} and assetAvailable),
         canConfigureGeneration=configure,
         canGenerate=generate,
         canAcceptReferences=configure and matching and model is not None
             and spec.modelConfigId == model.id and model.kind == ('agent' if item.kind == 'text' else item.kind)
             and bool(model.inputRules.allowedKinds),
-        canUseAsReference=assetAvailable and item.kind in {'text', 'image', 'video', 'audio'} and role in {'material', 'generation'},
+        canUseAsReference=editable and assetAvailable and item.kind in {'text', 'image', 'video', 'audio'} and role in {'material', 'generation'},
         canPlay=assetAvailable and item.kind in {'video', 'audio'} or role == 'editor' and item.kind in {'timeline', 'external'},
         canExport=assetAvailable or role == 'editor',
         canReplaceMaterial=editable and role in {'empty', 'material'} and item.kind in {'text', 'image', 'video', 'audio', 'file'})

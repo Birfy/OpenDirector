@@ -714,15 +714,22 @@
             "type": "string"
           },
           "sampleRate": {
-            "minimum": 1,
-            "title": "Samplerate",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Samplerate"
           }
         },
         "required": [
           "kind",
-          "format",
-          "sampleRate"
+          "format"
         ],
         "title": "AudioExecution",
         "type": "object"
@@ -853,6 +860,147 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "BatchCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "creation.batch",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/BatchPayload"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "BatchCommand",
+        "type": "object"
+      },
+      "BatchPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommandOperation",
+                  "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
+                  "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
+                  "canvas.move": "#/$defs/CanvasMoveCommandOperation",
+                  "canvas.show": "#/$defs/CanvasShowCommandOperation",
+                  "canvas.update": "#/$defs/CanvasUpdateCommandOperation",
+                  "editor.create": "#/$defs/EditorCreateCommandOperation",
+                  "editor.save": "#/$defs/EditorSaveCommandOperation",
+                  "generationSpec.create": "#/$defs/SpecCreateCommandOperation",
+                  "generationSpec.setPrompt": "#/$defs/SpecPromptCommandOperation",
+                  "generationSpec.update": "#/$defs/SpecUpdateCommandOperation",
+                  "reference.add": "#/$defs/ReferenceAddCommandOperation",
+                  "reference.remove": "#/$defs/ReferenceRemoveCommandOperation",
+                  "reference.update": "#/$defs/ReferenceUpdateCommandOperation",
+                  "result.select": "#/$defs/ResultSelectCommandOperation"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CanvasShowCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasMoveCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasHideCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasMaterializeCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasConfigureCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasEditorAttachCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecCreateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecPromptCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceAddCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceRemoveCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ResultSelectCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/EditorCreateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/EditorSaveCommandOperation"
+                }
+              ]
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "title": "BatchPayload",
+        "type": "object"
+      },
       "CameraFrame": {
         "additionalProperties": false,
         "properties": {
@@ -913,6 +1061,195 @@
           "pose"
         ],
         "title": "CameraRig",
+        "type": "object"
+      },
+      "CanvasConfigure": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "preserveMaterial": {
+            "default": false,
+            "title": "Preservematerial",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "itemId",
+          "specId"
+        ],
+        "title": "CanvasConfigure",
+        "type": "object"
+      },
+      "CanvasConfigureCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.configure",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasConfigure"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasConfigureCommand",
+        "type": "object"
+      },
+      "CanvasConfigureCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.configure",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasConfigure"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasConfigureCommandOperation",
+        "type": "object"
+      },
+      "CanvasEditorAttach": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "editorId"
+        ],
+        "title": "CanvasEditorAttach",
+        "type": "object"
+      },
+      "CanvasEditorAttachCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.attachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorAttachCommand",
+        "type": "object"
+      },
+      "CanvasEditorAttachCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.attachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorAttachCommandOperation",
         "type": "object"
       },
       "CanvasHide": {
@@ -980,6 +1317,25 @@
           "payload"
         ],
         "title": "CanvasHideCommand",
+        "type": "object"
+      },
+      "CanvasHideCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.hide",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasHide"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasHideCommandOperation",
         "type": "object"
       },
       "CanvasItemBase": {
@@ -1163,6 +1519,25 @@
         "title": "CanvasMaterializeCommand",
         "type": "object"
       },
+      "CanvasMaterializeCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.materialize",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasMaterialize"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasMaterializeCommandOperation",
+        "type": "object"
+      },
       "CanvasMove": {
         "additionalProperties": false,
         "properties": {
@@ -1232,6 +1607,25 @@
           "payload"
         ],
         "title": "CanvasMoveCommand",
+        "type": "object"
+      },
+      "CanvasMoveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.move",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasMove"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasMoveCommandOperation",
         "type": "object"
       },
       "CanvasMoveItem": {
@@ -1460,6 +1854,25 @@
         "title": "CanvasShowCommand",
         "type": "object"
       },
+      "CanvasShowCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.show",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasShow"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasShowCommandOperation",
+        "type": "object"
+      },
       "CanvasUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -1510,6 +1923,25 @@
           "payload"
         ],
         "title": "CanvasUpdateCommand",
+        "type": "object"
+      },
+      "CanvasUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasPresentationUpdate"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
       "ChangedObject": {
@@ -1888,19 +2320,25 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
+                "canvas.configure": "#/$defs/CanvasConfigureCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.show": "#/$defs/CanvasShowCommand",
                 "canvas.update": "#/$defs/CanvasUpdateCommand",
+                "creation.batch": "#/$defs/BatchCommand",
                 "editor.create": "#/$defs/EditorCreateCommand",
                 "editor.save": "#/$defs/EditorSaveCommand",
                 "generation.submit": "#/$defs/GenerationSubmitCommand",
                 "generationSpec.create": "#/$defs/SpecCreateCommand",
+                "generationSpec.restore": "#/$defs/SpecRestoreCommand",
+                "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
+                "job.checkpoint": "#/$defs/JobCheckpointCommand",
                 "job.recover": "#/$defs/JobRecoverCommand",
                 "project.create": "#/$defs/ProjectCreateCommand",
                 "project.rename": "#/$defs/ProjectRenameCommand",
@@ -1954,10 +2392,22 @@
                 "$ref": "#/$defs/CanvasMaterializeCommand"
               },
               {
+                "$ref": "#/$defs/CanvasConfigureCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasEditorAttachCommand"
+              },
+              {
                 "$ref": "#/$defs/SpecCreateCommand"
               },
               {
                 "$ref": "#/$defs/SpecUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/SpecRestoreCommand"
+              },
+              {
+                "$ref": "#/$defs/SpecPromptCommand"
               },
               {
                 "$ref": "#/$defs/ReferenceAddCommand"
@@ -1978,6 +2428,9 @@
                 "$ref": "#/$defs/JobRecoverCommand"
               },
               {
+                "$ref": "#/$defs/JobCheckpointCommand"
+              },
+              {
                 "$ref": "#/$defs/ResultSelectCommand"
               },
               {
@@ -1991,6 +2444,9 @@
               },
               {
                 "$ref": "#/$defs/HistoryRedoCommand"
+              },
+              {
+                "$ref": "#/$defs/BatchCommand"
               }
             ],
             "title": "Command"
@@ -2497,6 +2953,25 @@
         "title": "EditorCreateCommand",
         "type": "object"
       },
+      "EditorCreateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "editor.create",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EditorWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "EditorCreateCommandOperation",
+        "type": "object"
+      },
       "EditorDocumentBase": {
         "additionalProperties": false,
         "properties": {
@@ -2615,6 +3090,25 @@
           "payload"
         ],
         "title": "EditorSaveCommand",
+        "type": "object"
+      },
+      "EditorSaveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "editor.save",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EditorWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "EditorSaveCommandOperation",
         "type": "object"
       },
       "EditorWrite": {
@@ -2874,6 +3368,11 @@
             "title": "Order",
             "type": "integer"
           },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
           "binding": {
             "const": "follow_current",
             "title": "Binding",
@@ -2924,6 +3423,17 @@
           },
           "objectRef": {
             "$ref": "#/$defs/GenerationSpecRef"
+          },
+          "materialOverride": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -3209,6 +3719,24 @@
             ],
             "title": "Adoptionpolicy",
             "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batchid"
+          },
+          "showAdditionalResult": {
+            "default": false,
+            "title": "Showadditionalresult",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4118,6 +4646,19 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "createdAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Createdat"
+          },
           "inputSnapshot": {
             "$ref": "#/$defs/InputSnapshot"
           },
@@ -4288,6 +4829,69 @@
               }
             ],
             "default": null
+          },
+          "adoptionPolicy": {
+            "default": "if_current",
+            "enum": [
+              "if_current",
+              "candidate_only"
+            ],
+            "title": "Adoptionpolicy",
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batchid"
+          },
+          "showAdditionalResult": {
+            "default": false,
+            "title": "Showadditionalresult",
+            "type": "boolean"
+          },
+          "adoptionResultId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Adoptionresultid"
+          },
+          "adoptionMaterial": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "adopted": {
+            "default": false,
+            "title": "Adopted",
+            "type": "boolean"
+          },
+          "adapterParameters": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "title": "Adapterparameters",
+            "type": "object"
           }
         },
         "required": [
@@ -4350,6 +4954,71 @@
           "payload"
         ],
         "title": "JobCancelCommand",
+        "type": "object"
+      },
+      "JobCheckpoint": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "$ref": "#/$defs/Job"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "JobCheckpoint",
+        "type": "object"
+      },
+      "JobCheckpointCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.checkpoint",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/JobCheckpoint"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "JobCheckpointCommand",
         "type": "object"
       },
       "JobControl": {
@@ -4419,6 +5088,7 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
         "properties": {
@@ -5300,6 +5970,17 @@
             ],
             "title": "Videoadapter",
             "type": "string"
+          },
+          "inputRules": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/InputRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -5524,6 +6205,11 @@
             "minimum": 0,
             "title": "Order",
             "type": "integer"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
           },
           "binding": {
             "const": "pinned",
@@ -6095,6 +6781,12 @@
             "minimum": 0,
             "title": "Eventcursor",
             "type": "integer"
+          },
+          "undoClearedThrough": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Undoclearedthrough",
+            "type": "integer"
           }
         },
         "required": [
@@ -6235,6 +6927,19 @@
             "default": null,
             "title": "Objectid"
           },
+          "revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
+          },
           "text": {
             "default": "",
             "maxLength": 1000,
@@ -6350,6 +7055,25 @@
         "title": "ReferenceAddCommand",
         "type": "object"
       },
+      "ReferenceAddCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.add",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceAddCommandOperation",
+        "type": "object"
+      },
       "ReferenceBase": {
         "additionalProperties": false,
         "properties": {
@@ -6389,6 +7113,11 @@
             "minimum": 0,
             "title": "Order",
             "type": "integer"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6466,6 +7195,25 @@
         "title": "ReferenceRemoveCommand",
         "type": "object"
       },
+      "ReferenceRemoveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.remove",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceRemove"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceRemoveCommandOperation",
+        "type": "object"
+      },
       "ReferenceUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -6518,6 +7266,25 @@
         "title": "ReferenceUpdateCommand",
         "type": "object"
       },
+      "ReferenceUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceUpdateCommandOperation",
+        "type": "object"
+      },
       "ReferenceWrite": {
         "additionalProperties": false,
         "properties": {
@@ -6568,6 +7335,68 @@
           },
           "metadata": {
             "$ref": "#/$defs/MediaMetadata"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "documentVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "subjectRole": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "auxiliary",
+                  "voice"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subjectrole"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "sourceTitle": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Sourcetitle",
+            "type": "string"
+          },
+          "transmission": {
+            "default": "content",
+            "enum": [
+              "content",
+              "metadata",
+              "context_only",
+              "latent"
+            ],
+            "title": "Transmission",
+            "type": "string"
           }
         },
         "required": [
@@ -6683,6 +7512,25 @@
           "payload"
         ],
         "title": "ResultSelectCommand",
+        "type": "object"
+      },
+      "ResultSelectCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "result.select",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ResultSelect"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ResultSelectCommandOperation",
         "type": "object"
       },
       "ResultVersion": {
@@ -6817,6 +7665,228 @@
         "title": "SpecCreateCommand",
         "type": "object"
       },
+      "SpecCreateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.create",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecCreateCommandOperation",
+        "type": "object"
+      },
+      "SpecPromptCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generationSpec.setPrompt",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecPromptWrite"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "SpecPromptCommand",
+        "type": "object"
+      },
+      "SpecPromptCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.setPrompt",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecPromptWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecPromptCommandOperation",
+        "type": "object"
+      },
+      "SpecPromptWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "promptContent": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "reference": "#/$defs/PromptReference",
+                      "text": "#/$defs/PromptText"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/PromptText"
+                    },
+                    {
+                      "$ref": "#/$defs/PromptReference"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Promptcontent"
+          }
+        },
+        "required": [
+          "specId",
+          "prompt"
+        ],
+        "title": "SpecPromptWrite",
+        "type": "object"
+      },
+      "SpecRestore": {
+        "additionalProperties": false,
+        "properties": {
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "referencePolicy": {
+            "default": "follow_current",
+            "enum": [
+              "follow_current",
+              "pinned"
+            ],
+            "title": "Referencepolicy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "specId",
+          "commandId"
+        ],
+        "title": "SpecRestore",
+        "type": "object"
+      },
+      "SpecRestoreCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generationSpec.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecRestore"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "SpecRestoreCommand",
+        "type": "object"
+      },
       "SpecUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -6867,6 +7937,25 @@
           "payload"
         ],
         "title": "SpecUpdateCommand",
+        "type": "object"
+      },
+      "SpecUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecUpdateCommandOperation",
         "type": "object"
       },
       "SpecWrite": {
@@ -7579,6 +8668,7 @@
           },
           "maxTokens": {
             "default": 8192,
+            "maximum": 32768,
             "minimum": 1,
             "title": "Maxtokens",
             "type": "integer"
@@ -7765,6 +8855,7 @@
           },
           "maxTokens": {
             "default": 8192,
+            "maximum": 32768,
             "minimum": 1,
             "title": "Maxtokens",
             "type": "integer"
@@ -9060,6 +10151,18 @@
             },
             "title": "Playheads",
             "type": "array"
+          },
+          "generationCounts": {
+            "additionalProperties": {
+              "maximum": 8,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Generationcounts",
+            "type": "object"
           }
         },
         "required": [
@@ -9242,19 +10345,25 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
+            "canvas.configure": "#/$defs/CanvasConfigureCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.show": "#/$defs/CanvasShowCommand",
             "canvas.update": "#/$defs/CanvasUpdateCommand",
+            "creation.batch": "#/$defs/BatchCommand",
             "editor.create": "#/$defs/EditorCreateCommand",
             "editor.save": "#/$defs/EditorSaveCommand",
             "generation.submit": "#/$defs/GenerationSubmitCommand",
             "generationSpec.create": "#/$defs/SpecCreateCommand",
+            "generationSpec.restore": "#/$defs/SpecRestoreCommand",
+            "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
+            "job.checkpoint": "#/$defs/JobCheckpointCommand",
             "job.recover": "#/$defs/JobRecoverCommand",
             "project.create": "#/$defs/ProjectCreateCommand",
             "project.rename": "#/$defs/ProjectRenameCommand",
@@ -9308,10 +10417,22 @@
             "$ref": "#/$defs/CanvasMaterializeCommand"
           },
           {
+            "$ref": "#/$defs/CanvasConfigureCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasEditorAttachCommand"
+          },
+          {
             "$ref": "#/$defs/SpecCreateCommand"
           },
           {
             "$ref": "#/$defs/SpecUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/SpecRestoreCommand"
+          },
+          {
+            "$ref": "#/$defs/SpecPromptCommand"
           },
           {
             "$ref": "#/$defs/ReferenceAddCommand"
@@ -9332,6 +10453,9 @@
             "$ref": "#/$defs/JobRecoverCommand"
           },
           {
+            "$ref": "#/$defs/JobCheckpointCommand"
+          },
+          {
             "$ref": "#/$defs/ResultSelectCommand"
           },
           {
@@ -9345,6 +10469,9 @@
           },
           {
             "$ref": "#/$defs/HistoryRedoCommand"
+          },
+          {
+            "$ref": "#/$defs/BatchCommand"
           }
         ],
         "title": "Command"
@@ -10193,9 +11320,17 @@
             "type": "string"
           },
           "sampleRate": {
-            "minimum": 1,
-            "title": "Samplerate",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Samplerate"
           }
         },
         "required": [
@@ -10344,6 +11479,149 @@
         "title": "AudioParameters",
         "type": "object"
       },
+      "BatchCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "creation.batch",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/BatchPayload"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "BatchCommand",
+        "type": "object"
+      },
+      "BatchPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommandOperation",
+                  "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
+                  "canvas.hide": "#/$defs/CanvasHideCommandOperation",
+                  "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
+                  "canvas.move": "#/$defs/CanvasMoveCommandOperation",
+                  "canvas.show": "#/$defs/CanvasShowCommandOperation",
+                  "canvas.update": "#/$defs/CanvasUpdateCommandOperation",
+                  "editor.create": "#/$defs/EditorCreateCommandOperation",
+                  "editor.save": "#/$defs/EditorSaveCommandOperation",
+                  "generationSpec.create": "#/$defs/SpecCreateCommandOperation",
+                  "generationSpec.setPrompt": "#/$defs/SpecPromptCommandOperation",
+                  "generationSpec.update": "#/$defs/SpecUpdateCommandOperation",
+                  "reference.add": "#/$defs/ReferenceAddCommandOperation",
+                  "reference.remove": "#/$defs/ReferenceRemoveCommandOperation",
+                  "reference.update": "#/$defs/ReferenceUpdateCommandOperation",
+                  "result.select": "#/$defs/ResultSelectCommandOperation"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/CanvasShowCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasMoveCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasHideCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasMaterializeCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasConfigureCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasEditorAttachCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecCreateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/SpecPromptCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceAddCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceRemoveCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ResultSelectCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/EditorCreateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/EditorSaveCommandOperation"
+                }
+              ]
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "title": "BatchPayload",
+        "type": "object"
+      },
       "CameraFrame": {
         "additionalProperties": false,
         "properties": {
@@ -10405,6 +11683,200 @@
           "keyframes"
         ],
         "title": "CameraRig",
+        "type": "object"
+      },
+      "CanvasConfigure": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "preserveMaterial": {
+            "default": false,
+            "title": "Preservematerial",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "itemId",
+          "specId",
+          "preserveMaterial"
+        ],
+        "title": "CanvasConfigure",
+        "type": "object"
+      },
+      "CanvasConfigureCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.configure",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasConfigure"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasConfigureCommand",
+        "type": "object"
+      },
+      "CanvasConfigureCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.configure",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasConfigure"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasConfigureCommandOperation",
+        "type": "object"
+      },
+      "CanvasEditorAttach": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "editorId"
+        ],
+        "title": "CanvasEditorAttach",
+        "type": "object"
+      },
+      "CanvasEditorAttachCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.attachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasEditorAttachCommand",
+        "type": "object"
+      },
+      "CanvasEditorAttachCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.attachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorAttachCommandOperation",
         "type": "object"
       },
       "CanvasHide": {
@@ -10474,6 +11946,25 @@
           "payload"
         ],
         "title": "CanvasHideCommand",
+        "type": "object"
+      },
+      "CanvasHideCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.hide",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasHide"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasHideCommandOperation",
         "type": "object"
       },
       "CanvasItemBase": {
@@ -10670,6 +12161,25 @@
         "title": "CanvasMaterializeCommand",
         "type": "object"
       },
+      "CanvasMaterializeCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.materialize",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasMaterialize"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasMaterializeCommandOperation",
+        "type": "object"
+      },
       "CanvasMove": {
         "additionalProperties": false,
         "properties": {
@@ -10741,6 +12251,25 @@
           "payload"
         ],
         "title": "CanvasMoveCommand",
+        "type": "object"
+      },
+      "CanvasMoveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.move",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasMove"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasMoveCommandOperation",
         "type": "object"
       },
       "CanvasMoveItem": {
@@ -10977,6 +12506,25 @@
         "title": "CanvasShowCommand",
         "type": "object"
       },
+      "CanvasShowCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.show",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasShow"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasShowCommandOperation",
+        "type": "object"
+      },
       "CanvasUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -11029,6 +12577,25 @@
           "payload"
         ],
         "title": "CanvasUpdateCommand",
+        "type": "object"
+      },
+      "CanvasUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasPresentationUpdate"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasUpdateCommandOperation",
         "type": "object"
       },
       "ChangedObject": {
@@ -11415,19 +12982,25 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
+                "canvas.configure": "#/$defs/CanvasConfigureCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
                 "canvas.show": "#/$defs/CanvasShowCommand",
                 "canvas.update": "#/$defs/CanvasUpdateCommand",
+                "creation.batch": "#/$defs/BatchCommand",
                 "editor.create": "#/$defs/EditorCreateCommand",
                 "editor.save": "#/$defs/EditorSaveCommand",
                 "generation.submit": "#/$defs/GenerationSubmitCommand",
                 "generationSpec.create": "#/$defs/SpecCreateCommand",
+                "generationSpec.restore": "#/$defs/SpecRestoreCommand",
+                "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
                 "generationSpec.update": "#/$defs/SpecUpdateCommand",
                 "history.redo": "#/$defs/HistoryRedoCommand",
                 "history.undo": "#/$defs/HistoryUndoCommand",
                 "job.cancel": "#/$defs/JobCancelCommand",
+                "job.checkpoint": "#/$defs/JobCheckpointCommand",
                 "job.recover": "#/$defs/JobRecoverCommand",
                 "project.create": "#/$defs/ProjectCreateCommand",
                 "project.rename": "#/$defs/ProjectRenameCommand",
@@ -11481,10 +13054,22 @@
                 "$ref": "#/$defs/CanvasMaterializeCommand"
               },
               {
+                "$ref": "#/$defs/CanvasConfigureCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasEditorAttachCommand"
+              },
+              {
                 "$ref": "#/$defs/SpecCreateCommand"
               },
               {
                 "$ref": "#/$defs/SpecUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/SpecRestoreCommand"
+              },
+              {
+                "$ref": "#/$defs/SpecPromptCommand"
               },
               {
                 "$ref": "#/$defs/ReferenceAddCommand"
@@ -11505,6 +13090,9 @@
                 "$ref": "#/$defs/JobRecoverCommand"
               },
               {
+                "$ref": "#/$defs/JobCheckpointCommand"
+              },
+              {
                 "$ref": "#/$defs/ResultSelectCommand"
               },
               {
@@ -11518,6 +13106,9 @@
               },
               {
                 "$ref": "#/$defs/HistoryRedoCommand"
+              },
+              {
+                "$ref": "#/$defs/BatchCommand"
               }
             ],
             "title": "Command"
@@ -12053,6 +13644,25 @@
         "title": "EditorCreateCommand",
         "type": "object"
       },
+      "EditorCreateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "editor.create",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EditorWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "EditorCreateCommandOperation",
+        "type": "object"
+      },
       "EditorDocumentBase": {
         "additionalProperties": false,
         "properties": {
@@ -12176,6 +13786,25 @@
           "payload"
         ],
         "title": "EditorSaveCommand",
+        "type": "object"
+      },
+      "EditorSaveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "editor.save",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/EditorWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "EditorSaveCommandOperation",
         "type": "object"
       },
       "EditorWrite": {
@@ -12448,6 +14077,11 @@
             "title": "Order",
             "type": "integer"
           },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
           "binding": {
             "const": "follow_current",
             "title": "Binding",
@@ -12464,6 +14098,7 @@
           "targetSpecId",
           "role",
           "order",
+          "active",
           "binding",
           "source"
         ],
@@ -12502,11 +14137,23 @@
           },
           "objectRef": {
             "$ref": "#/$defs/GenerationSpecRef"
+          },
+          "materialOverride": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
           "role",
-          "objectRef"
+          "objectRef",
+          "materialOverride"
         ],
         "title": "GenerationBinding",
         "type": "object"
@@ -12794,6 +14441,24 @@
             ],
             "title": "Adoptionpolicy",
             "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batchid"
+          },
+          "showAdditionalResult": {
+            "default": false,
+            "title": "Showadditionalresult",
+            "type": "boolean"
           }
         },
         "required": [
@@ -12801,7 +14466,9 @@
           "expectedSpecRevision",
           "originItemId",
           "previousJobId",
-          "adoptionPolicy"
+          "adoptionPolicy",
+          "batchId",
+          "showAdditionalResult"
         ],
         "title": "GenerationSubmit",
         "type": "object"
@@ -13762,6 +15429,19 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "createdAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Createdat"
+          },
           "inputSnapshot": {
             "$ref": "#/$defs/InputSnapshot"
           },
@@ -13932,6 +15612,69 @@
               }
             ],
             "default": null
+          },
+          "adoptionPolicy": {
+            "default": "if_current",
+            "enum": [
+              "if_current",
+              "candidate_only"
+            ],
+            "title": "Adoptionpolicy",
+            "type": "string"
+          },
+          "batchId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batchid"
+          },
+          "showAdditionalResult": {
+            "default": false,
+            "title": "Showadditionalresult",
+            "type": "boolean"
+          },
+          "adoptionResultId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Adoptionresultid"
+          },
+          "adoptionMaterial": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "adopted": {
+            "default": false,
+            "title": "Adopted",
+            "type": "boolean"
+          },
+          "adapterParameters": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "title": "Adapterparameters",
+            "type": "object"
           }
         },
         "required": [
@@ -13939,6 +15682,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "createdAt",
           "inputSnapshot",
           "inputFingerprint",
           "execution",
@@ -13953,7 +15697,14 @@
           "remoteCancellation",
           "originItemId",
           "previousJobId",
-          "technicalCheck"
+          "technicalCheck",
+          "adoptionPolicy",
+          "batchId",
+          "showAdditionalResult",
+          "adoptionResultId",
+          "adoptionMaterial",
+          "adopted",
+          "adapterParameters"
         ],
         "title": "Job",
         "type": "object"
@@ -14010,6 +15761,73 @@
           "payload"
         ],
         "title": "JobCancelCommand",
+        "type": "object"
+      },
+      "JobCheckpoint": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "$ref": "#/$defs/Job"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "JobCheckpoint",
+        "type": "object"
+      },
+      "JobCheckpointCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "job.checkpoint",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/JobCheckpoint"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "JobCheckpointCommand",
         "type": "object"
       },
       "JobControl": {
@@ -14081,6 +15899,7 @@
         "title": "JobRecoverCommand",
         "type": "object"
       },
+      "JsonValue": {},
       "LayerContentBase": {
         "additionalProperties": false,
         "properties": {
@@ -14996,6 +16815,17 @@
             ],
             "title": "Videoadapter",
             "type": "string"
+          },
+          "inputRules": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/InputRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -15005,7 +16835,8 @@
           "url",
           "protocol",
           "connectionType",
-          "videoAdapter"
+          "videoAdapter",
+          "inputRules"
         ],
         "title": "ModelSnapshot",
         "type": "object"
@@ -15226,6 +17057,11 @@
             "title": "Order",
             "type": "integer"
           },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
           "binding": {
             "const": "pinned",
             "title": "Binding",
@@ -15242,6 +17078,7 @@
           "targetSpecId",
           "role",
           "order",
+          "active",
           "binding",
           "source"
         ],
@@ -15816,6 +17653,12 @@
             "minimum": 0,
             "title": "Eventcursor",
             "type": "integer"
+          },
+          "undoClearedThrough": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Undoclearedthrough",
+            "type": "integer"
           }
         },
         "required": [
@@ -15829,7 +17672,8 @@
           "editorDocuments",
           "jobs",
           "results",
-          "eventCursor"
+          "eventCursor",
+          "undoClearedThrough"
         ],
         "title": "ProjectSnapshot",
         "type": "object"
@@ -15968,6 +17812,19 @@
             "default": null,
             "title": "Objectid"
           },
+          "revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Revision"
+          },
           "text": {
             "default": "",
             "maxLength": 1000,
@@ -15993,6 +17850,7 @@
           "projectId",
           "type",
           "objectId",
+          "revision",
           "text",
           "offset",
           "limit"
@@ -16089,6 +17947,25 @@
         "title": "ReferenceAddCommand",
         "type": "object"
       },
+      "ReferenceAddCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.add",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceAddCommandOperation",
+        "type": "object"
+      },
       "ReferenceBase": {
         "additionalProperties": false,
         "properties": {
@@ -16128,6 +18005,11 @@
             "minimum": 0,
             "title": "Order",
             "type": "integer"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
           }
         },
         "required": [
@@ -16136,7 +18018,8 @@
           "revision",
           "targetSpecId",
           "role",
-          "order"
+          "order",
+          "active"
         ],
         "title": "ReferenceBase",
         "type": "object"
@@ -16210,6 +18093,25 @@
         "title": "ReferenceRemoveCommand",
         "type": "object"
       },
+      "ReferenceRemoveCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.remove",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceRemove"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceRemoveCommandOperation",
+        "type": "object"
+      },
       "ReferenceUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -16264,6 +18166,25 @@
         "title": "ReferenceUpdateCommand",
         "type": "object"
       },
+      "ReferenceUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceUpdateCommandOperation",
+        "type": "object"
+      },
       "ReferenceWrite": {
         "additionalProperties": false,
         "properties": {
@@ -16314,13 +18235,81 @@
           },
           "metadata": {
             "$ref": "#/$defs/MediaMetadata"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "documentVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "subjectRole": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "auxiliary",
+                  "voice"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subjectrole"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "sourceTitle": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Sourcetitle",
+            "type": "string"
+          },
+          "transmission": {
+            "default": "content",
+            "enum": [
+              "content",
+              "metadata",
+              "context_only",
+              "latent"
+            ],
+            "title": "Transmission",
+            "type": "string"
           }
         },
         "required": [
           "referenceId",
           "role",
           "asset",
-          "metadata"
+          "metadata",
+          "sourceVersion",
+          "documentVersion",
+          "subjectRole",
+          "name",
+          "sourceTitle",
+          "transmission"
         ],
         "title": "ResolvedReference",
         "type": "object"
@@ -16431,6 +18420,25 @@
           "payload"
         ],
         "title": "ResultSelectCommand",
+        "type": "object"
+      },
+      "ResultSelectCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "result.select",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ResultSelect"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ResultSelectCommandOperation",
         "type": "object"
       },
       "ResultVersion": {
@@ -16568,6 +18576,234 @@
         "title": "SpecCreateCommand",
         "type": "object"
       },
+      "SpecCreateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.create",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecCreateCommandOperation",
+        "type": "object"
+      },
+      "SpecPromptCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generationSpec.setPrompt",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecPromptWrite"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "SpecPromptCommand",
+        "type": "object"
+      },
+      "SpecPromptCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.setPrompt",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecPromptWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecPromptCommandOperation",
+        "type": "object"
+      },
+      "SpecPromptWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "promptContent": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "reference": "#/$defs/PromptReference",
+                      "text": "#/$defs/PromptText"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/PromptText"
+                    },
+                    {
+                      "$ref": "#/$defs/PromptReference"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Promptcontent"
+          }
+        },
+        "required": [
+          "specId",
+          "prompt",
+          "promptContent"
+        ],
+        "title": "SpecPromptWrite",
+        "type": "object"
+      },
+      "SpecRestore": {
+        "additionalProperties": false,
+        "properties": {
+          "specId": {
+            "format": "uuid",
+            "title": "Specid",
+            "type": "string"
+          },
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "referencePolicy": {
+            "default": "follow_current",
+            "enum": [
+              "follow_current",
+              "pinned"
+            ],
+            "title": "Referencepolicy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "specId",
+          "commandId",
+          "referencePolicy"
+        ],
+        "title": "SpecRestore",
+        "type": "object"
+      },
+      "SpecRestoreCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "generationSpec.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecRestore"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "SpecRestoreCommand",
+        "type": "object"
+      },
       "SpecUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -16620,6 +18856,25 @@
           "payload"
         ],
         "title": "SpecUpdateCommand",
+        "type": "object"
+      },
+      "SpecUpdateCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "generationSpec.update",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/SpecWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "SpecUpdateCommandOperation",
         "type": "object"
       },
       "SpecWrite": {
@@ -17380,6 +19635,7 @@
           },
           "maxTokens": {
             "default": 8192,
+            "maximum": 32768,
             "minimum": 1,
             "title": "Maxtokens",
             "type": "integer"
@@ -17575,6 +19831,7 @@
           },
           "maxTokens": {
             "default": 8192,
+            "maximum": 32768,
             "minimum": 1,
             "title": "Maxtokens",
             "type": "integer"
@@ -18952,6 +21209,18 @@
             },
             "title": "Playheads",
             "type": "array"
+          },
+          "generationCounts": {
+            "additionalProperties": {
+              "maximum": 8,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Generationcounts",
+            "type": "object"
           }
         },
         "required": [
@@ -18960,7 +21229,8 @@
           "viewport",
           "selectedItemIds",
           "activeEditorId",
-          "playheads"
+          "playheads",
+          "generationCounts"
         ],
         "title": "ViewState",
         "type": "object"
@@ -19143,19 +21413,25 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
+            "canvas.configure": "#/$defs/CanvasConfigureCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
             "canvas.show": "#/$defs/CanvasShowCommand",
             "canvas.update": "#/$defs/CanvasUpdateCommand",
+            "creation.batch": "#/$defs/BatchCommand",
             "editor.create": "#/$defs/EditorCreateCommand",
             "editor.save": "#/$defs/EditorSaveCommand",
             "generation.submit": "#/$defs/GenerationSubmitCommand",
             "generationSpec.create": "#/$defs/SpecCreateCommand",
+            "generationSpec.restore": "#/$defs/SpecRestoreCommand",
+            "generationSpec.setPrompt": "#/$defs/SpecPromptCommand",
             "generationSpec.update": "#/$defs/SpecUpdateCommand",
             "history.redo": "#/$defs/HistoryRedoCommand",
             "history.undo": "#/$defs/HistoryUndoCommand",
             "job.cancel": "#/$defs/JobCancelCommand",
+            "job.checkpoint": "#/$defs/JobCheckpointCommand",
             "job.recover": "#/$defs/JobRecoverCommand",
             "project.create": "#/$defs/ProjectCreateCommand",
             "project.rename": "#/$defs/ProjectRenameCommand",
@@ -19209,10 +21485,22 @@
             "$ref": "#/$defs/CanvasMaterializeCommand"
           },
           {
+            "$ref": "#/$defs/CanvasConfigureCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasEditorAttachCommand"
+          },
+          {
             "$ref": "#/$defs/SpecCreateCommand"
           },
           {
             "$ref": "#/$defs/SpecUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/SpecRestoreCommand"
+          },
+          {
+            "$ref": "#/$defs/SpecPromptCommand"
           },
           {
             "$ref": "#/$defs/ReferenceAddCommand"
@@ -19233,6 +21521,9 @@
             "$ref": "#/$defs/JobRecoverCommand"
           },
           {
+            "$ref": "#/$defs/JobCheckpointCommand"
+          },
+          {
             "$ref": "#/$defs/ResultSelectCommand"
           },
           {
@@ -19246,6 +21537,9 @@
           },
           {
             "$ref": "#/$defs/HistoryRedoCommand"
+          },
+          {
+            "$ref": "#/$defs/BatchCommand"
           }
         ],
         "title": "Command"

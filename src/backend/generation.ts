@@ -1,6 +1,7 @@
 import { assetBlob, json, request } from "./api.ts";
 import { openBackendProject } from "./projects.ts";
 import type { BackendVideoMode, ModelConfig } from "./rules.ts";
+import { creationClient, creationEnabled } from "./creationClient.ts";
 
 /** Generation through the local API. Each submission has a service execution
  * node so batch requests can run independently. This is not a new UI node:
@@ -58,6 +59,7 @@ export interface ReferenceInput {
 export interface GenerationRequest {
   documentId: string;
   documentTitle: string;
+  batchId?: string;
   config: ModelConfig;
   kind: "text" | "image" | "video" | "audio";
   thinking?: "auto" | "low" | "medium" | "high";
@@ -273,13 +275,30 @@ export async function submitGeneration(
 }
 
 export async function cancelGeneration(projectId: string, taskId: string) {
+  if (creationEnabled()) {
+    await creationClient(projectId).control(taskId, "cancel");
+    return;
+  }
   await request(`/projects/${projectId}/tasks/${taskId}/cancel`, {
     method: "POST",
   });
 }
 
 /** Resume the saved task; this endpoint never creates a new generation ID. */
-export function recoverGeneration(projectId: string, taskId: string) {
+export async function recoverGeneration(projectId: string, taskId: string) {
+  if (creationEnabled()) {
+    const client = creationClient(projectId);
+    await client.control(taskId, "recover");
+    const job = client.snapshot.jobs.find((job) => job.id === taskId)!;
+    return {
+      id: job.id,
+      nodeId: job.originItemId ?? job.inputSnapshot.spec.id,
+      kind: job.inputSnapshot.spec.kind,
+      status: job.status,
+      assetId: job.asset?.assetId ?? null,
+      error: job.errorDetails?.message ?? null,
+    } as BackendTask;
+  }
   return request<BackendTask>(
     `/projects/${projectId}/tasks/${taskId}/recover`,
     {

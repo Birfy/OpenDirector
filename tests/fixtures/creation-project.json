@@ -187,7 +187,7 @@
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
-        "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748",
+        "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945",
         "agentRunId": null,
         "modelSnapshot": null,
         "prompt": null
@@ -553,7 +553,8 @@
         "objectRef": {
           "objectType": "generation_spec",
           "id": "00000000-0000-0000-0000-00000000003c"
-        }
+        },
+        "materialOverride": null
       },
       "editors": []
     },
@@ -943,6 +944,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "createdAt": null,
       "inputSnapshot": {
         "spec": {
           "id": "00000000-0000-0000-0000-00000000003c",
@@ -967,11 +969,12 @@
           "url": "https://models.example/v1",
           "protocol": "openai",
           "connectionType": "api",
-          "videoAdapter": "auto"
+          "videoAdapter": "auto",
+          "inputRules": null
         },
         "references": []
       },
-      "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748",
+      "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945",
       "execution": {
         "kind": "image",
         "size": "2K",
@@ -995,7 +998,14 @@
       "remoteCancellation": "not_requested",
       "originItemId": null,
       "previousJobId": null,
-      "technicalCheck": null
+      "technicalCheck": null,
+      "adoptionPolicy": "if_current",
+      "batchId": null,
+      "showAdditionalResult": false,
+      "adoptionResultId": null,
+      "adoptionMaterial": null,
+      "adopted": false,
+      "adapterParameters": {}
     }
   ],
   "results": [
@@ -1011,8 +1021,9 @@
         "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
         "kind": "image"
       },
-      "inputFingerprint": "717a8b3503a69cc60f70b7f760d1e6279244dcc346cfb3240233633de48a9748"
+      "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945"
     }
   ],
-  "eventCursor": 0
+  "eventCursor": 0,
+  "undoClearedThrough": 0
 }

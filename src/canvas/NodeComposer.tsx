@@ -24,6 +24,7 @@ import {
   type ModelConfig,
 } from "../backend/rules.ts";
 import { copyGenerationSettings } from "./dataBoundary";
+import { editPromptMentions, type InsertedMention } from "./promptMentions.ts";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import {
   ReferenceMentionInput,
@@ -202,8 +203,17 @@ export function NodeComposer({
           : next,
     });
   };
-  const updatePrompt = (value: string) =>
-    onUpdate({ prompt: value, settings: { ...settings, prompt: value } });
+  const updatePrompt = (value: string, mention?: InsertedMention) =>
+    onUpdate({
+      prompt: value,
+      settings: { ...settings, prompt: value },
+      promptMentions: editPromptMentions(
+        prompt,
+        value,
+        selectedNode.data.promptMentions,
+        mention,
+      ),
+    });
   const togglePanel = (next: Panel, anchor: HTMLElement) => {
     panelAnchor.current = anchor;
     setPanel((current) => (current === next ? null : next));

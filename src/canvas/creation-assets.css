@@ -1,0 +1,103 @@
+.cw-creation-assets {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--panel-bg, #262626);
+  color: var(--text-primary, #eee);
+  border: 1px solid #ffffff1c;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 20px 80px #0007;
+}
+.cw-creation-assets::backdrop {
+  background: #000a;
+  backdrop-filter: blur(7px);
+}
+.cw-save-conflict-actions {
+  display: flex;
+  gap: 6px;
+}
+.cw-save-conflict-actions button {
+  font-size: 11px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8885;
+  border-radius: 5px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.cw-creation-assets header,
+.cw-creation-assets footer,
+.cw-creation-asset-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cw-creation-assets header {
+  justify-content: space-between;
+}
+.cw-creation-assets h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.cw-creation-assets button,
+.cw-creation-assets input,
+.cw-creation-assets select {
+  background: transparent;
+  color: inherit;
+  border: 1px solid #8884;
+  border-radius: 8px;
+  padding: 9px;
+  font: inherit;
+}
+.cw-creation-assets button {
+  cursor: pointer;
+}
+.cw-creation-assets button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cw-creation-asset-filters input {
+  flex: 1;
+  min-width: 0;
+}
+.cw-creation-asset-rows {
+  min-height: 140px;
+  max-height: 48vh;
+  overflow: auto;
+  margin: 16px 0;
+}
+.cw-creation-asset-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #8882;
+  padding: 8px 0;
+}
+.cw-creation-assets .cw-creation-asset-open {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 5px 10px;
+  text-align: left;
+}
+.cw-creation-asset-open small {
+  grid-column: 2;
+  color: #999;
+}
+.cw-creation-asset-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-creation-assets footer {
+  flex-wrap: wrap;
+}
+.cw-creation-assets [role="alert"] {
+  color: #ff8d8d;
+}
+.cw-creation-assets p {
+  line-height: 1.7;
+}

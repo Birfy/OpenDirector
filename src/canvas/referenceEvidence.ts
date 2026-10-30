@@ -32,6 +32,13 @@ export function referencePresentation(
   const state =
     material && used === material ? ("current" as const) : ("pending" as const);
   const name = `${source?.data.title ?? "参考源"} → ${target?.data.title ?? "目标节点"}`;
+  if (edge.referenceState) {
+    const current = edge.referenceState === "used";
+    return {
+      state: current ? ("current" as const) : ("pending" as const),
+      description: `${name}：${current ? "当前结果已使用该参考" : edge.referenceState === "unknown" ? "未记录生成输入" : edge.referenceState === "unavailable" ? "参考缺失" : "待生成参考"}`,
+    };
+  }
   return {
     state,
     description: `${name}：${state === "current" ? "当前参考" : "待生成参考"}\n当前结果使用：${!recorded ? "未记录生成输入" : !used ? "未使用此参考" : used === material ? "源节点当前素材" : "源节点历史素材"}\n下次生成使用：${material ? "源节点当前素材" : "参考缺失"}`,

@@ -471,6 +471,36 @@ export function parseNodeData(
     title: value.title,
     prompt: value.prompt,
   };
+  if (value.promptMentions !== undefined) {
+    if (
+      !Array.isArray(value.promptMentions) ||
+      !value.promptMentions.every(
+        (mention) =>
+          record(mention) &&
+          (nonempty(mention.sourceNodeId) || nonempty(mention.referenceId)) &&
+          (mention.sourceNodeId === undefined ||
+            nonempty(mention.sourceNodeId)) &&
+          (mention.referenceId === undefined ||
+            nonempty(mention.referenceId)) &&
+          Number.isInteger(mention.start) &&
+          Number.isInteger(mention.end) &&
+          Number(mention.start) >= 0 &&
+          Number(mention.end) > Number(mention.start) &&
+          Number(mention.end) <= String(value.prompt).length,
+      )
+    )
+      return { ok: false, error: "正文引用范围无效。" };
+    result.promptMentions = value.promptMentions.map((mention) => ({
+      ...(mention.sourceNodeId
+        ? { sourceNodeId: mention.sourceNodeId as string }
+        : {}),
+      ...(mention.referenceId
+        ? { referenceId: mention.referenceId as string }
+        : {}),
+      start: mention.start as number,
+      end: mention.end as number,
+    }));
+  }
   for (const key of ["src", "mimeType", "text"] as const)
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
@@ -665,6 +695,8 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
     (a.kind === b.kind &&
       a.title === b.title &&
       a.prompt === b.prompt &&
+      JSON.stringify(a.promptMentions ?? []) ===
+        JSON.stringify(b.promptMentions ?? []) &&
       a.src === b.src &&
       a.mimeType === b.mimeType &&
       a.text === b.text &&

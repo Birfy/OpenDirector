@@ -31,7 +31,10 @@ interface Props extends Omit<
   "value" | "onChange"
 > {
   value: string;
-  onChangeText: (value: string) => void;
+  onChangeText: (
+    value: string,
+    mention?: import("./promptMentions.ts").InsertedMention,
+  ) => void;
   options: readonly MentionOption[];
   inputRef: RefObject<HTMLTextAreaElement | null>;
   pickerRef: Ref<ReferenceMentionHandle>;
@@ -184,7 +187,11 @@ export function ReferenceMentionInput({
       input.focus({ preventScroll: true });
       input.setSelectionRange(next.start, next.end);
       document.execCommand("insertText", false, next.inserted);
-      latest.current.onChangeText(next.value);
+      latest.current.onChangeText(next.value, {
+        id: option.id,
+        start: next.start,
+        end: next.start + next.inserted.trimEnd().length,
+      });
       savedCaret.current = { start: next.caret, end: next.caret };
       dismissed.current = null;
       rangeRef.current = null;

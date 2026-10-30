@@ -83,10 +83,13 @@ def continuation_source(store, project_id, meta, config):
     message = f'“{meta["name"]}”不能接续：需引用由当前 vLLM-Omni H3 服务生成并已完成的视频，上传或其他模型生成的视频不能接续。'
     if not meta.get('generationTaskId'):
         raise ProjectError(message, 409)
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
     try:
-        source = read_generation_task(child(child(directory, 'tasks'), str(meta['generationTaskId']) + '.json'))
+        if hasattr(store, 'generation_task'):
+            source = store.generation_task(project_id, meta['generationTaskId'])
+        else:
+            with store.transaction() as db:
+                directory = store._owner(db, project_id)
+            source = read_generation_task(child(child(directory, 'tasks'), str(meta['generationTaskId']) + '.json'))
     except (OSError, ValueError, KeyError, ProjectError):
         raise ProjectError(message, 409) from None
     if (source['kind'] != 'video' or source['status'] != 'succeeded' or not source.get('externalTaskId')

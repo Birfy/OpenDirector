@@ -13,6 +13,7 @@ import { uploadReferences } from "../backend/generation";
 import type { BackendModels } from "../backend/models";
 import type { CanvasNode } from "./model";
 import { assistantReferences } from "./assistantReferences";
+import { creationEnabled } from "../backend/creationClient.ts";
 
 export interface ProjectChatAsset extends ChatAsset {
   kind: string;
@@ -188,6 +189,8 @@ export function useAssistantChat(
   };
   const upload = (files: File[]) =>
     add(async (signal) => {
+      if (creationEnabled())
+        throw new Error("该工程的助手对话尚未接入，请在画布中上传素材。");
       if (current.current.assets.length + files.length > 64)
         throw new Error("每次最多添加 64 份参考素材。");
       for (const file of files) {
@@ -235,6 +238,8 @@ export function useAssistantChat(
     });
   const addNodes = (nodes: CanvasNode[], signal?: AbortSignal) =>
     add(async (signal) => {
+      if (creationEnabled())
+        throw new Error("该工程的助手对话尚未接入，请使用节点参考连接。");
       const references = assistantReferences(nodes);
       if (!references.length)
         throw new Error("所选节点没有可用素材，请先添加文本或上传素材。");
@@ -251,6 +256,10 @@ export function useAssistantChat(
     }, signal);
 
   const send = async () => {
+    if (creationEnabled()) {
+      setError("该工程的助手对话尚未接入，请使用节点生成面板。");
+      return;
+    }
     const draft = current.current;
     if (
       !loaded ||

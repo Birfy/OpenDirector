@@ -1,5 +1,7 @@
 """New-format project endpoints; existing workspace routes are not switched."""
 from uuid import UUID
+import asyncio
+import json
 import re
 from urllib.parse import quote, unquote
 
@@ -9,18 +11,22 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from museshow.application.creation_assets import CreationAssets
+from museshow.application.creation_canvas import CreationCanvas
+from museshow.application.creation_history import CreationHistory
 from museshow.domain.creation.assets import Asset, UploadInfo
 from museshow.domain.creation.base import MediaKind
-from museshow.domain.creation.commands import Command, CommandReceipt
-from museshow.domain.creation.project import ProjectSnapshot
+from museshow.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
+from museshow.domain.creation.project import ProjectSnapshot, ViewState
 from museshow.domain.projects import ProjectError
 from museshow.infrastructure.creation_projects import CreationProjects
 from museshow_api.models import Session
 
 
-def creation_routes(projects: CreationProjects):
+def creation_routes(projects: CreationProjects, generation=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
+    canvas = CreationCanvas(projects)
+    history = CreationHistory(projects)
 
     @router.get('/projects')
     def list_projects():
@@ -45,11 +51,49 @@ def creation_routes(projects: CreationProjects):
         return {'ok': True}
 
     @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)
-    def execute(project_id: UUID, value: Command, x_museshow_session: UUID | None = Header(default=None)):
+    async def execute(project_id: UUID, value: Command, x_museshow_session: UUID | None = Header(default=None)):
         # Source is selected by the trusted entrypoint, never by a payload flag.
         if value.projectId != project_id:
             raise ProjectError('命令不属于当前工程。')
-        return projects.execute(value, session=str(x_museshow_session) if x_museshow_session else None)
+        session = str(x_museshow_session) if x_museshow_session else None
+        if value.type == 'job.checkpoint':
+            raise ProjectError('任务执行事实只能由后台写入。', 403)
+        if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+            if generation is None:
+                raise ProjectError('任务服务不可用。', 503)
+            return await generation.execute(value, session=session)
+        return await run_in_threadpool(projects.execute, value, session=session)
+
+    @router.get('/projects/{project_id}/canvas')
+    def projection(project_id: UUID):
+        return canvas.projection(project_id)
+
+    @router.post('/projects/{project_id}/queries')
+    def query(project_id: UUID, value: CreationQuery):
+        if value.projectId != project_id:
+            raise ProjectError('查询不属于当前工程。')
+        return canvas.query(value)
+
+    @router.get('/projects/{project_id}/history')
+    def operations(project_id: UUID):
+        return history.operations(project_id)
+
+    @router.get('/projects/{project_id}/specs/{spec_id}/versions')
+    def versions(project_id: UUID, spec_id: UUID):
+        return history.versions(project_id, spec_id)
+
+    @router.get('/projects/{project_id}/asset-list')
+    def asset_list(project_id: UUID, text: str = Query(default='', max_length=1000),
+                   usage: str = Query(default='all', pattern='^(all|used|unused)$'),
+                   offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):
+        return history.asset_list(project_id, text=text, usage=usage, offset=offset, limit=limit)
+
+    @router.post('/projects/{project_id}/asset-delete-preview')
+    def asset_delete_preview(project_id: UUID, value: dict):
+        try:
+            return history.delete_preview(project_id, value['assetIds'], value.get('clearHistory', False))
+        except (KeyError, ValueError, TypeError):
+            raise ProjectError('删除选择无效。') from None
 
     @router.get('/projects/{project_id}/receipts/{command_id}', response_model=CommandReceipt)
     def receipt(project_id: UUID, command_id: UUID):
@@ -57,8 +101,34 @@ def creation_routes(projects: CreationProjects):
 
     @router.get('/projects/{project_id}/changes')
     def changes(project_id: UUID, after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):
-        # Durable pull outbox only; SSE and client subscriptions belong to C09.
+        # Pull and streaming consumers share this persisted outbox cursor.
         return projects.changes(project_id, after=after, limit=limit)
+
+    @router.get('/projects/{project_id}/subscribe')
+    async def subscribe(project_id: UUID, request: Request, after: int = Query(default=0, ge=0)):
+        await run_in_threadpool(projects.changes, project_id, after=after)
+        # The persisted cursor is authoritative; reconnects never depend on a
+        # process-local listener. Fetch clients carry the local request headers.
+        async def events():
+            cursor = after
+            while not await request.is_disconnected():
+                changes = await run_in_threadpool(projects.changes, project_id, after=cursor)
+                if changes['events']:
+                    for event in changes['events']:
+                        yield json.dumps(event.model_dump(mode='json'), ensure_ascii=False) + '\n'
+                        cursor = event.cursor
+                else:
+                    yield '\n'  # Keep-alive; no fabricated business event.
+                    await asyncio.sleep(1)
+        return StreamingResponse(events(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store'})
+
+    @router.get('/projects/{project_id}/views/{client_id}', response_model=ViewState)
+    def read_view(project_id: UUID, client_id: UUID):
+        return projects.view(project_id, client_id)
+
+    @router.put('/projects/{project_id}/views/{client_id}', response_model=ViewState)
+    def save_view(project_id: UUID, client_id: UUID, value: ViewState, x_museshow_session: UUID = Header()):
+        return projects.view(project_id, client_id, value, session=str(x_museshow_session))
 
     @router.put('/projects/{project_id}/uploads/{handle_id}', response_model=UploadInfo)
     async def upload(project_id: UUID, handle_id: UUID, request: Request,

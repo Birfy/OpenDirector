@@ -92,8 +92,17 @@ import {
   renameWorkspaceProject,
   importWorkspaceDocument,
   listWorkspaceProjects,
+  workspaceProjection,
 } from "../backend/workspace";
+import {
+  creationClient,
+  creationEnabled,
+  objectVersion,
+  visibleItems,
+} from "../backend/creationClient.ts";
 import { CanvasSearchPanel } from "./CanvasSearchPanel";
+import { CreationAssetList } from "./CreationAssetList.tsx";
+import { portableDocument } from "./portableDocument.ts";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
 import { SubjectEditor } from "./SubjectEditor";
@@ -139,7 +148,7 @@ import { AssistantPanel } from "./AssistantPanel";
 import { useAssistantLayout } from "./useAssistantLayout";
 import { SettingsDialog } from "./SettingsDialog";
 import { useTheme } from "./theme";
-import { errorMessage } from "../backend/api.ts";
+import { errorMessage, request as apiRequest } from "../backend/api.ts";
 import {
   cancelGeneration,
   recoverGeneration,
@@ -453,6 +462,10 @@ function Workspace() {
   const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [businessHistory, setBusinessHistory] = useState({
+    undo: false,
+    redo: false,
+  });
   const [settingsCategory, setSettingsCategory] = useState<
     "general" | "models"
   >("general");
@@ -462,8 +475,20 @@ function Workspace() {
     ActiveGeneration[]
   >([]);
   const generationByNode = useMemo(
-    () => generationActivities(activeGenerations, doc.id),
-    [activeGenerations, doc.id],
+    () =>
+      generationActivities(
+        creationEnabled()
+          ? jobs
+              .filter((job) => job.status === "running")
+              .map((job) => ({
+                documentId: doc.id,
+                nodeId: job.nodeId,
+                phase: "generating" as const,
+              }))
+          : activeGenerations,
+        doc.id,
+      ),
+    [activeGenerations, doc.id, jobs],
   );
   const [arrivingNodes, setArrivingNodes] = useState<ReadonlySet<string>>(
     new Set(),
@@ -621,6 +646,16 @@ function Workspace() {
       });
     return saveQueue.current;
   }, []);
+  const replayHistory = (forward = false) => {
+    if (!creationEnabled()) {
+      setHistory(forward ? redo : undo);
+      return;
+    }
+    void (async () => {
+      if (!(await persist(historyRef.current.present))) return;
+      await creationClient(doc.id).undo(forward);
+    })().catch((error) => notify(errorMessage(error)));
+  };
 
   const installDocument = useCallback(
     (next: CanvasDocument, fit = false) => {
@@ -657,7 +692,7 @@ function Workspace() {
       window.history.replaceState(
         {},
         "",
-        `/ai-tool/ai-canvas/${encodeURIComponent(next.id)}`,
+        `/ai-tool/ai-canvas/${encodeURIComponent(next.id)}${window.location.search}`,
       );
       requestAnimationFrame(() => {
         void flow.setViewport(next.viewport);
@@ -781,6 +816,85 @@ function Workspace() {
     }, 450);
     return () => clearTimeout(timeout);
   }, [doc, ready, switching, projectRenaming, persist]);
+  useEffect(() => {
+    if (!ready || !creationEnabled()) return;
+    const client = creationClient(doc.id),
+      projection = workspaceProjection(doc.id);
+    let active = true,
+      token = 0;
+    const update = () => {
+      const current = historyRef.current.present;
+      const clean =
+        projection.baseline &&
+        JSON.stringify([current.nodes, current.edges]) ===
+          JSON.stringify([
+            projection.baseline.nodes,
+            projection.baseline.edges,
+          ]);
+      if (!clean) return; // Keep unsaved edits and their original CAS basis.
+      const ticket = ++token,
+        snapshot = client.snapshot;
+      void projection
+        .read(snapshot)
+        .then((next) => {
+          if (
+            !active ||
+            ticket !== token ||
+            historyRef.current.present !== current
+          )
+            return;
+          if (
+            next.title === current.title &&
+            JSON.stringify([next.nodes, next.edges]) ===
+              JSON.stringify([current.nodes, current.edges])
+          ) {
+            projection.baseline = current;
+            projection.basis = snapshot;
+            return;
+          }
+          const merged = {
+            ...next,
+            viewport: current.viewport,
+            settings: current.settings,
+          };
+          projection.baseline = merged;
+          projection.basis = snapshot;
+          setHistory((history) => ({ ...history, present: merged }));
+        })
+        .catch((error) => active && notify(errorMessage(error)));
+    };
+    const unsubscribe = client.listen(update);
+    update();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [doc.id, ready, notify]);
+  useEffect(() => {
+    if (!ready || !creationEnabled()) return;
+    let active = true,
+      sequence = 0;
+    const refresh = () => {
+      const ticket = ++sequence;
+      void apiRequest<{ state: string }[]>(
+        `/creation/projects/${doc.id}/history`,
+      )
+        .then((entries) => {
+          if (active && sequence === ticket)
+            setBusinessHistory({
+              undo: entries.some((entry) => entry.state === "applied"),
+              redo: entries.some((entry) => entry.state === "undone"),
+            });
+        })
+        .catch((error) => active && notify(errorMessage(error)));
+    };
+    const unsubscribe = creationClient(doc.id).listen(refresh);
+    refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [doc.id, ready, notify]);
   useEffect(() => {
     const nodeIds = new Set(doc.nodes.map((node) => node.id));
     const edgeIds = new Set(doc.edges.map((edge) => edge.id));
@@ -1407,16 +1521,23 @@ function Workspace() {
       notify(error instanceof Error ? error.message : "无法下载素材，请重试。");
     }
   };
-  const exportDocument = () => {
-    const result = serializeDocument(historyRef.current.present);
-    if (!result.ok) {
-      notify(result.error.message);
-      return;
+  const exportDocument = async () => {
+    try {
+      const current = historyRef.current.present;
+      const result = serializeDocument(
+        creationEnabled() ? await portableDocument(current) : current,
+      );
+      if (!result.ok) {
+        notify(result.error.message);
+        return;
+      }
+      downloadFile(
+        new Blob([result.value], { type: "application/json" }),
+        `${doc.title}.canvas.json`,
+      );
+    } catch (error) {
+      notify(errorMessage(error));
     }
-    downloadFile(
-      new Blob([result.value], { type: "application/json" }),
-      `${doc.title}.canvas.json`,
-    );
   };
   const subjectTarget = useRef<string | null>(null);
   const applySubjectResource = (id: string, resource: CanvasResource) => {
@@ -1819,6 +1940,12 @@ function Workspace() {
   };
   /** Pull finished results this page did not place, e.g. the assistant's. */
   const syncServiceResults = async (announce = false) => {
+    if (creationEnabled()) {
+      const snapshot = await creationClient(doc.id).refresh();
+      return snapshot.jobs.filter(
+        (job) => job.status === "queued" || job.status === "running",
+      ).length;
+    }
     const documentId = doc.id;
     if (
       !mounted.current ||
@@ -1933,6 +2060,7 @@ function Workspace() {
   };
   /** The assistant's generations finish after its reply; keep syncing until they do. */
   const followServiceTasks = async () => {
+    if (creationEnabled()) return; // The recoverable project subscription owns updates.
     const documentId = doc.id;
     if (
       !mounted.current ||
@@ -1961,6 +2089,52 @@ function Workspace() {
     title: string,
     resultMode: GenerationResultMode = "replace",
   ) => {
+    if (creationEnabled()) {
+      try {
+        const current = historyRef.current.present;
+        const configured = {
+          ...current,
+          nodes: current.nodes.map((node) =>
+            node.id !== origin.nodeId
+              ? node
+              : {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    prompt: request.prompt,
+                    ...(request.kind === "text"
+                      ? {
+                          agentSettings: {
+                            modelConfigId: request.config.id,
+                            thinking: request.thinking ?? "auto",
+                            maxTokens: request.maxTokens ?? 8192,
+                          },
+                        }
+                      : {
+                          settings: {
+                            ...getNodeGenerationSettings(node),
+                            modelConfigId: request.config.id,
+                            prompt: request.prompt,
+                          },
+                        }),
+                  },
+                },
+          ),
+        };
+        change(() => configured);
+        if (!(await persist(configured))) return;
+        const receipt = await creationClient(origin.documentId).submit(
+          origin.nodeId,
+          resultMode === "additional" ? "candidate_only" : "if_current",
+          request.batchId,
+        );
+        if (receipt.status === "accepted")
+          notify("生成任务已提交，结果将保存到当前工程。");
+      } catch (error) {
+        notify(errorMessage(error));
+      }
+      return;
+    }
     const id = crypto.randomUUID();
     const run: ServiceRun = {
       controller: new AbortController(),
@@ -2133,15 +2307,28 @@ function Workspace() {
       ),
     };
     const count = settings.mode === "audio" ? 1 : (settings.count ?? 1);
+    const batchId = count > 1 ? crypto.randomUUID() : undefined;
     for (let index = 0; index < count; index++)
       void runServiceTask(
-        request,
+        { ...request, batchId },
         origin,
         settings.prompt || node.data.title,
         index === 0 ? "replace" : "additional",
       );
   };
   const cancelServiceRuns = (nodeId: string) => {
+    if (creationEnabled()) {
+      const client = creationClient(doc.id);
+      for (const job of client.snapshot.jobs)
+        if (
+          job.originItemId === nodeId &&
+          (job.status === "queued" || job.status === "running")
+        )
+          void client
+            .control(job.id, "cancel")
+            .catch((error) => notify(errorMessage(error)));
+      return;
+    }
     for (const run of serviceRuns.current.values()) {
       if (run.nodeId !== nodeId || run.documentId !== doc.id) continue;
       run.controller.abort();
@@ -2487,10 +2674,10 @@ function Workspace() {
       setTextEditingId(single.id);
     } else if (mod && key === "z") {
       event.preventDefault();
-      setHistory(event.shiftKey ? redo : undo);
+      replayHistory(event.shiftKey);
     } else if (mod && key === "y") {
       event.preventDefault();
-      setHistory(redo);
+      replayHistory(true);
     } else if (mod && key === "a") {
       event.preventDefault();
       setSelected(
@@ -3205,14 +3392,46 @@ function Workspace() {
             <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
             {saveStatus}
           </span>
+          {creationEnabled() && saveStatus.startsWith("保存失败") && (
+            <div className="cw-save-conflict-actions">
+              <button onClick={() => void exportDocument()}>
+                导出未保存副本
+              </button>
+              <button
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      "读取服务端版本会放弃本页未保存的修改。请先导出副本，确认后继续。",
+                    )
+                  )
+                    return;
+                  void workspaceProjection(doc.id)
+                    .open()
+                    .then((next) => {
+                      installDocument(next);
+                      setSaveStatus("已保存到本机");
+                    })
+                    .catch((error) => notify(errorMessage(error)));
+                }}
+              >
+                读取服务端版本
+              </button>
+            </div>
+          )}
         </div>
         <div className="cw-top-actions">
           <IconButton
             name="search"
-            label="搜索节点"
+            label={creationEnabled() ? "资产列表" : "搜索节点"}
             tooltipSide="bottom"
             active={panel === "search"}
-            onClick={() => togglePanel("search")}
+            onClick={() => {
+              if (creationEnabled())
+                void persist(historyRef.current.present).then((saved) => {
+                  if (saved) togglePanel("search");
+                });
+              else togglePanel("search");
+            }}
           />
           <IconButton
             name="history"
@@ -3339,8 +3558,12 @@ function Workspace() {
             label="撤销"
             shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
             tooltipDelay={0}
-            disabled={!history.past.length && !history.transaction}
-            onClick={() => setHistory(undo)}
+            disabled={
+              creationEnabled()
+                ? !businessHistory.undo
+                : !history.past.length && !history.transaction
+            }
+            onClick={() => replayHistory()}
           />
           <IconButton
             name="redo"
@@ -3349,8 +3572,10 @@ function Workspace() {
               navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
             }
             tooltipDelay={0}
-            disabled={!history.future.length}
-            onClick={() => setHistory(redo)}
+            disabled={
+              creationEnabled() ? !businessHistory.redo : !history.future.length
+            }
+            onClick={() => replayHistory(true)}
           />
         </div>
       </div>
@@ -3773,8 +3998,16 @@ function Workspace() {
           y={menu.y}
           mode={menu.mode ?? "context"}
           canPaste={Boolean(clipboard.current?.nodes.length)}
-          canUndo={Boolean(history.past.length || history.transaction)}
-          canRedo={Boolean(history.future.length)}
+          canUndo={
+            creationEnabled()
+              ? businessHistory.undo
+              : Boolean(history.past.length || history.transaction)
+          }
+          canRedo={
+            creationEnabled()
+              ? businessHistory.redo
+              : Boolean(history.future.length)
+          }
           onCreate={(kind) => addNode(kind, menu.world)}
           onAssets={() => {
             referenceTarget.current = null;
@@ -3783,8 +4016,8 @@ function Workspace() {
           }}
           onUpload={() => openFilePicker()}
           onPaste={() => paste()}
-          onUndo={() => setHistory(undo)}
-          onRedo={() => setHistory(redo)}
+          onUndo={() => replayHistory()}
+          onRedo={() => replayHistory(true)}
           onClose={() => setMenu(null)}
         />
       )}
@@ -3946,7 +4179,37 @@ function Workspace() {
           ),
         )}
 
-      {panel && (
+      {panel === "search" && creationEnabled() && (
+        <CreationAssetList
+          key={`assets:${doc.id}`}
+          projectId={doc.id}
+          position={center()}
+          onClose={() => setPanel(null)}
+          onLocate={(id) => {
+            void workspaceProjection(doc.id)
+              .read()
+              .then((next) => {
+                if (historyRef.current.present.id !== next.id) return;
+                const projection = workspaceProjection(next.id);
+                projection.baseline = next;
+                projection.basis = creationClient(next.id).snapshot;
+                setHistory((history) => ({ ...history, present: next }));
+                setSelected([id]);
+                requestAnimationFrame(
+                  () =>
+                    void flow.fitView({
+                      nodes: [{ id }],
+                      padding: 0.7,
+                      maxZoom: 1,
+                      duration: 200,
+                    }),
+                );
+              })
+              .catch((error) => notify(errorMessage(error)));
+          }}
+        />
+      )}
+      {panel && !(panel === "search" && creationEnabled()) && (
         <aside
           className={`cw-side-panel ${panel === "assets" ? "from-left" : ""}`}
           aria-label={
@@ -4128,6 +4391,61 @@ function Workspace() {
             <GenerationHistoryPanel
               key={doc.id}
               jobs={jobs}
+              authoritative={creationEnabled()}
+              onRestoreConfiguration={
+                creationEnabled()
+                  ? async (entry, referencePolicy) => {
+                      try {
+                        if (!(await persist(historyRef.current.present)))
+                          return;
+                        const client = creationClient(doc.id),
+                          job = client.snapshot.jobs.find(
+                            (job) => job.id === entry.taskId,
+                          );
+                        if (!job) throw new Error("原任务不存在。");
+                        const spec = client.snapshot.generationSpecs.find(
+                          (spec) => spec.id === job.inputSnapshot.spec.id,
+                        )!;
+                        const history = await apiRequest<{
+                          jobs: {
+                            job: { id: string };
+                            configurationCommandId: string | null;
+                          }[];
+                        }>(
+                          `/creation/projects/${doc.id}/specs/${spec.id}/versions`,
+                        );
+                        const commandId = history.jobs.find(
+                          (item) => item.job.id === job.id,
+                        )?.configurationCommandId;
+                        if (!commandId)
+                          throw new Error("未找到原任务的配置历史。");
+                        await client.command(
+                          "generationSpec.restore",
+                          { specId: spec.id, commandId, referencePolicy },
+                          [
+                            {
+                              objectType: "generation_spec",
+                              id: spec.id,
+                              revision: spec.revision,
+                            },
+                            ...client.snapshot.references
+                              .filter((ref) => ref.targetSpecId === spec.id)
+                              .map((ref) => ({
+                                objectType: "reference" as const,
+                                id: ref.id,
+                                revision: ref.revision,
+                              })),
+                          ],
+                        );
+                        notify(
+                          "生成配置已恢复，当前结果保留；未开始新的生成任务。",
+                        );
+                      } catch (error) {
+                        notify(errorMessage(error));
+                      }
+                    }
+                  : undefined
+              }
               onSync={
                 backendCatalog.connected
                   ? () => void syncServiceResults(true)
@@ -4165,6 +4483,60 @@ function Workspace() {
                   : undefined
               }
               onLocate={(id) => {
+                if (creationEnabled()) {
+                  void (async () => {
+                    if (!(await persist(historyRef.current.present))) return;
+                    const client = creationClient(doc.id);
+                    await client.refresh();
+                    const item = client.snapshot.canvasItems.find(
+                      (item) => item.id === id,
+                    );
+                    if (!item) {
+                      notify("该配置尚未显示，可从资产列表显示其当前结果。");
+                      return;
+                    }
+                    if (!visibleItems(client.snapshot).has(id)) {
+                      const versions = [objectVersion("canvas_item", item)];
+                      let parentId = item.parentId;
+                      while (parentId) {
+                        const parent = client.snapshot.canvasItems.find(
+                          (item) => item.id === parentId,
+                        )!;
+                        versions.push(objectVersion("canvas_item", parent));
+                        parentId = parent.parentId;
+                      }
+                      await client.command("canvas.show", { item }, versions);
+                    }
+                    const projection = workspaceProjection(doc.id),
+                      snapshot = client.snapshot,
+                      next = await projection.read(snapshot);
+                    const current = historyRef.current.present;
+                    if (
+                      current.id !== doc.id ||
+                      client.snapshot.eventCursor !== snapshot.eventCursor ||
+                      JSON.stringify([current.nodes, current.edges]) !==
+                        JSON.stringify([
+                          projection.baseline.nodes,
+                          projection.baseline.edges,
+                        ])
+                    )
+                      return;
+                    projection.baseline = next;
+                    projection.basis = snapshot;
+                    setHistory((history) => ({ ...history, present: next }));
+                    setSelected([id]);
+                    requestAnimationFrame(
+                      () =>
+                        void flow.fitView({
+                          nodes: [{ id }],
+                          padding: 0.7,
+                          maxZoom: 1,
+                          duration: 200,
+                        }),
+                    );
+                  })().catch((error) => notify(errorMessage(error)));
+                  return;
+                }
                 const node = doc.nodes.find((n) => n.id === id);
                 if (node) selectAndFocus(node);
                 else
@@ -4173,6 +4545,55 @@ function Workspace() {
                   );
               }}
               onRestore={(entries, requests = false) => {
+                if (creationEnabled()) {
+                  void (async () => {
+                    if (requests) {
+                      notify("请使用“恢复生成配置”，该操作不改变当前结果。");
+                      return;
+                    }
+                    if (!(await persist(historyRef.current.present))) return;
+                    const client = creationClient(doc.id);
+                    await client.refresh();
+                    const results = client.snapshot.results.filter((result) =>
+                      entries.some((entry) => entry.taskId === result.jobId),
+                    );
+                    if (
+                      new Set(results.map((result) => result.specId)).size !==
+                      results.length
+                    ) {
+                      notify("同一生成配置一次只能选用一个历史结果。");
+                      return;
+                    }
+                    const specs = client.snapshot.generationSpecs.filter(
+                      (spec) =>
+                        results.some((result) => result.specId === spec.id),
+                    );
+                    const items = client.snapshot.canvasItems.filter(
+                      (item) =>
+                        item.binding.role === "generation" &&
+                        specs.some(
+                          (spec) =>
+                            item.binding.role === "generation" &&
+                            item.binding.objectRef.id === spec.id,
+                        ),
+                    );
+                    await client.batch(
+                      results.map((result) => ({
+                        type: "result.select",
+                        payload: { specId: result.specId, resultId: result.id },
+                      })),
+                      [
+                        ...specs.map((spec) =>
+                          objectVersion("generation_spec", spec),
+                        ),
+                        ...items.map((item) =>
+                          objectVersion("canvas_item", item),
+                        ),
+                      ],
+                    );
+                  })().catch((error) => notify(errorMessage(error)));
+                  return;
+                }
                 if (requests) {
                   const origin = center();
                   const nodes = entries.flatMap((job, index) =>

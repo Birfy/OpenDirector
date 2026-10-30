@@ -2,6 +2,23 @@ import { ApiError, json, request } from "./api.ts";
 import { openBackendProject, releaseBackendProject } from "./projects.ts";
 import { createDocument, type CanvasDocument } from "../canvas/model.ts";
 import { parseDocument, serializeDocument } from "../canvas/storage.ts";
+import {
+  creationClient,
+  creationEnabled,
+  creationPath,
+  objectVersion,
+} from "./creationClient.ts";
+import { CreationProjection } from "./creationProjection.ts";
+
+const projections = new Map<string, CreationProjection>();
+export function workspaceProjection(id: string) {
+  let projection = projections.get(id);
+  if (!projection) {
+    projection = new CreationProjection(creationClient(id));
+    projections.set(id, projection);
+  }
+  return projection;
+}
 
 export interface WorkspaceProject {
   id: string;
@@ -17,12 +34,17 @@ interface WorkspaceRecord {
   document: unknown;
 }
 const revisions = new Map<string, number>();
-const lastKey = "opendesign.lastFilesystemProject";
+const lastKey = creationEnabled()
+  ? "opendesign.lastUnifiedFilesystemProject"
+  : "opendesign.lastFilesystemProject";
 
 export const listWorkspaceProjects = () =>
-  request<WorkspaceProjectList>("/projects");
+  request<WorkspaceProjectList>(
+    creationEnabled() ? "/creation/projects" : "/projects",
+  );
 
 export async function readWorkspaceDocument(project: WorkspaceProject) {
+  if (creationEnabled()) return workspaceProjection(project.id).open();
   const value = await request<WorkspaceRecord>(
     `/projects/${project.id}/workspace`,
   );
@@ -48,6 +70,12 @@ export async function openWorkspaceProject(project: WorkspaceProject) {
 }
 
 export async function saveWorkspaceDocument(document: CanvasDocument) {
+  if (creationEnabled()) {
+    const changed = await workspaceProjection(document.id).save(document);
+    if (changed)
+      creationClient(document.id).install(creationClient(document.id).snapshot);
+    return;
+  }
   const serialized = serializeDocument(document);
   if (!serialized.ok) throw new Error(serialized.error.message);
   const revision = revisions.get(document.id);
@@ -60,6 +88,12 @@ export async function saveWorkspaceDocument(document: CanvasDocument) {
 }
 
 export async function createWorkspaceProject(name: string, id: string) {
+  if (creationEnabled()) {
+    await creationClient(id).command("project.create", { name });
+    return (await listWorkspaceProjects()).projects.find(
+      (project) => project.id === id,
+    )!;
+  }
   return request<WorkspaceProject>("/projects", json("POST", { id, name }));
 }
 
@@ -107,7 +141,21 @@ export function initializeWorkspace() {
         // Another window may have created the default directory concurrently.
         if (!(error instanceof ApiError && error.status === 409)) throw error;
         projects = (await listWorkspaceProjects()).projects;
-        if (!projects.length) throw error;
+        if (!projects.length) {
+          // Both formats keep their own inventory. An occupied directory is
+          // preserved while this entry creates an independent project beside it.
+          for (let suffix = 2; suffix <= 100 && !projects.length; suffix++) {
+            try {
+              projects = [
+                await createWorkspaceProject(`未命名画布 (${suffix})`, id),
+              ];
+            } catch (conflict) {
+              if (!(conflict instanceof ApiError && conflict.status === 409))
+                throw conflict;
+            }
+          }
+          if (!projects.length) throw error;
+        }
       }
     }
     const document = await openWorkspaceProject(
@@ -126,6 +174,20 @@ export async function renameWorkspaceProject(
   project: WorkspaceProject,
   name: string,
 ) {
+  if (creationEnabled()) {
+    await releaseBackendProject();
+    const client = creationClient(project.id);
+    try {
+      await client.command("project.rename", { name }, [
+        objectVersion("project", client.snapshot.project),
+      ]);
+    } finally {
+      await openBackendProject(project.id, client.snapshot.project.name);
+    }
+    return (await listWorkspaceProjects()).projects.find(
+      (item) => item.id === project.id,
+    )!;
+  }
   await releaseBackendProject();
   let renamed: WorkspaceProject;
   try {

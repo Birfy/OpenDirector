@@ -257,6 +257,19 @@ export function pasteFragment(
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
     copy.data = remapDataReferences(copy.data, remapped);
+    if (copy.data.promptMentions)
+      copy.data.promptMentions = copy.data.promptMentions.flatMap(
+        ({ referenceId: _oldReference, ...mention }) =>
+          mention.sourceNodeId
+            ? [
+                {
+                  ...mention,
+                  sourceNodeId:
+                    remapped.get(mention.sourceNodeId) ?? mention.sourceNodeId,
+                },
+              ]
+            : [],
+      );
     if (copy.data.generationEvidence)
       copy.data.generationEvidence.references = Object.fromEntries(
         Object.entries(copy.data.generationEvidence.references).map(

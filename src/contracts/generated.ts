@@ -81,7 +81,7 @@ export interface AudioExecutionInput extends ContractInput {
   readonly voice?: string | null;
   readonly speaker?: string | null;
   readonly format: "mp3" | "wav";
-  readonly sampleRate: number;
+  readonly sampleRate?: number | null;
 }
 
 export interface AudioGenerationSpecInput extends GenerationSpecBaseInput {
@@ -91,6 +91,15 @@ export interface AudioGenerationSpecInput extends GenerationSpecBaseInput {
 
 export interface AudioParametersInput extends ContractInput {
   readonly voice?: string | null;
+}
+
+export interface BatchCommandInput extends CommandBaseInput {
+  readonly type: "creation.batch";
+  readonly payload: BatchPayloadInput;
+}
+
+export interface BatchPayloadInput extends ContractInput {
+  readonly operations: ReadonlyArray<CanvasShowCommandOperationInput | CanvasMoveCommandOperationInput | CanvasUpdateCommandOperationInput | CanvasHideCommandOperationInput | CanvasMaterializeCommandOperationInput | CanvasConfigureCommandOperationInput | CanvasEditorAttachCommandOperationInput | SpecCreateCommandOperationInput | SpecUpdateCommandOperationInput | SpecPromptCommandOperationInput | ReferenceAddCommandOperationInput | ReferenceUpdateCommandOperationInput | ReferenceRemoveCommandOperationInput | ResultSelectCommandOperationInput | EditorCreateCommandOperationInput | EditorSaveCommandOperationInput>;
 }
 
 export interface CameraFrameInput extends ContractInput {
@@ -106,11 +115,47 @@ export interface CameraRigInput extends ContractInput {
   readonly keyframes?: ReadonlyArray<CameraFrameInput>;
 }
 
+export interface CanvasConfigureInput extends ContractInput {
+  readonly itemId: string;
+  readonly specId: string;
+  readonly preserveMaterial?: boolean;
+}
+
+export interface CanvasConfigureCommandInput extends CommandBaseInput {
+  readonly type: "canvas.configure";
+  readonly payload: CanvasConfigureInput;
+}
+
+export interface CanvasConfigureCommandOperationInput {
+  readonly type: "canvas.configure";
+  readonly payload: CanvasConfigureInput;
+}
+
+export interface CanvasEditorAttachInput extends ContractInput {
+  readonly itemId: string;
+  readonly editorId: string;
+}
+
+export interface CanvasEditorAttachCommandInput extends CommandBaseInput {
+  readonly type: "canvas.attachEditor";
+  readonly payload: CanvasEditorAttachInput;
+}
+
+export interface CanvasEditorAttachCommandOperationInput {
+  readonly type: "canvas.attachEditor";
+  readonly payload: CanvasEditorAttachInput;
+}
+
 export interface CanvasHideInput extends ContractInput {
   readonly itemId: string;
 }
 
 export interface CanvasHideCommandInput extends CommandBaseInput {
+  readonly type: "canvas.hide";
+  readonly payload: CanvasHideInput;
+}
+
+export interface CanvasHideCommandOperationInput {
   readonly type: "canvas.hide";
   readonly payload: CanvasHideInput;
 }
@@ -139,11 +184,21 @@ export interface CanvasMaterializeCommandInput extends CommandBaseInput {
   readonly payload: CanvasMaterializeInput;
 }
 
+export interface CanvasMaterializeCommandOperationInput {
+  readonly type: "canvas.materialize";
+  readonly payload: CanvasMaterializeInput;
+}
+
 export interface CanvasMoveInput extends ContractInput {
   readonly items: ReadonlyArray<CanvasMoveItemInput>;
 }
 
 export interface CanvasMoveCommandInput extends CommandBaseInput {
+  readonly type: "canvas.move";
+  readonly payload: CanvasMoveInput;
+}
+
+export interface CanvasMoveCommandOperationInput {
   readonly type: "canvas.move";
   readonly payload: CanvasMoveInput;
 }
@@ -172,7 +227,17 @@ export interface CanvasShowCommandInput extends CommandBaseInput {
   readonly payload: CanvasShowInput;
 }
 
+export interface CanvasShowCommandOperationInput {
+  readonly type: "canvas.show";
+  readonly payload: CanvasShowInput;
+}
+
 export interface CanvasUpdateCommandInput extends CommandBaseInput {
+  readonly type: "canvas.update";
+  readonly payload: CanvasPresentationUpdateInput;
+}
+
+export interface CanvasUpdateCommandOperationInput {
   readonly type: "canvas.update";
   readonly payload: CanvasPresentationUpdateInput;
 }
@@ -221,7 +286,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
   readonly query: QueryInput;
   readonly event: ProjectEventInput;
@@ -272,6 +337,11 @@ export interface EditorCreateCommandInput extends CommandBaseInput {
   readonly payload: EditorWriteInput;
 }
 
+export interface EditorCreateCommandOperationInput {
+  readonly type: "editor.create";
+  readonly payload: EditorWriteInput;
+}
+
 export interface EditorDocumentBaseInput extends ProjectEntityInput {
   readonly schemaVersion?: 1;
 }
@@ -283,6 +353,11 @@ export interface EditorRefInput extends ContractInput {
 }
 
 export interface EditorSaveCommandInput extends CommandBaseInput {
+  readonly type: "editor.save";
+  readonly payload: EditorWriteInput;
+}
+
+export interface EditorSaveCommandOperationInput {
   readonly type: "editor.save";
   readonly payload: EditorWriteInput;
 }
@@ -317,6 +392,7 @@ export interface FollowingSourceInput extends ContractInput {
 export interface GenerationBindingInput extends ContractInput {
   readonly role: "generation";
   readonly objectRef: GenerationSpecRefInput;
+  readonly materialOverride?: AssetRefInput | null;
 }
 
 export interface GenerationFailureInput {
@@ -349,6 +425,8 @@ export interface GenerationSubmitInput extends ContractInput {
   readonly originItemId?: string | null;
   readonly previousJobId?: string | null;
   readonly adoptionPolicy?: "if_current" | "candidate_only";
+  readonly batchId?: string | null;
+  readonly showAdditionalResult?: boolean;
 }
 
 export interface GenerationSubmitCommandInput extends CommandBaseInput {
@@ -443,6 +521,7 @@ export interface InputSnapshotInput extends ContractInput {
 
 export interface JobInput extends ProjectEntityInput {
   readonly schemaVersion?: 1;
+  readonly createdAt?: string | null;
   readonly inputSnapshot: InputSnapshotInput;
   readonly inputFingerprint: string;
   readonly execution: TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
@@ -458,11 +537,27 @@ export interface JobInput extends ProjectEntityInput {
   readonly originItemId?: string | null;
   readonly previousJobId?: string | null;
   readonly technicalCheck?: ResultCheckInput | null;
+  readonly adoptionPolicy?: "if_current" | "candidate_only";
+  readonly batchId?: string | null;
+  readonly showAdditionalResult?: boolean;
+  readonly adoptionResultId?: string | null;
+  readonly adoptionMaterial?: AssetRefInput | null;
+  readonly adopted?: boolean;
+  readonly adapterParameters?: Readonly<Record<string, JsonValueInput>>;
 }
 
 export interface JobCancelCommandInput extends CommandBaseInput {
   readonly type: "job.cancel";
   readonly payload: JobControlInput;
+}
+
+export interface JobCheckpointInput extends ContractInput {
+  readonly job: JobInput;
+}
+
+export interface JobCheckpointCommandInput extends CommandBaseInput {
+  readonly type: "job.checkpoint";
+  readonly payload: JobCheckpointInput;
 }
 
 export interface JobControlInput extends ContractInput {
@@ -473,6 +568,8 @@ export interface JobRecoverCommandInput extends CommandBaseInput {
   readonly type: "job.recover";
   readonly payload: JobControlInput;
 }
+
+export type JsonValueInput = unknown;
 
 export interface LayerContentBaseInput extends ContractInput {
   readonly width: number;
@@ -557,6 +654,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly protocol: "openai" | "volcengine" | "vllm_omni";
   readonly connectionType: "api" | "self_hosted";
   readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly inputRules?: InputRulesInput | null;
 }
 
 export interface MotionClipInput extends ContractInput {
@@ -664,6 +762,7 @@ export interface ProjectSnapshotInput extends ContractInput {
   readonly jobs?: ReadonlyArray<JobInput>;
   readonly results?: ReadonlyArray<ResultVersionInput>;
   readonly eventCursor?: number;
+  readonly undoClearedThrough?: number;
 }
 
 export interface ProjectTrashCommandInput extends CommandBaseInput {
@@ -686,6 +785,7 @@ export interface QueryInput extends ContractInput {
   readonly projectId: string;
   readonly type: "project.get" | "object.get" | "asset.search" | "asset.usage" | "generationSpec.versions" | "job.get";
   readonly objectId?: string | null;
+  readonly revision?: number | null;
   readonly text?: string;
   readonly offset?: number;
   readonly limit?: number;
@@ -701,10 +801,16 @@ export interface ReferenceAddCommandInput extends CommandBaseInput {
   readonly payload: ReferenceWriteInput;
 }
 
+export interface ReferenceAddCommandOperationInput {
+  readonly type: "reference.add";
+  readonly payload: ReferenceWriteInput;
+}
+
 export interface ReferenceBaseInput extends ProjectEntityInput {
   readonly targetSpecId: string;
   readonly role?: "reference" | "first_frame" | "continuation";
   readonly order?: number;
+  readonly active?: boolean;
 }
 
 export interface ReferenceRemoveInput extends ContractInput {
@@ -716,7 +822,17 @@ export interface ReferenceRemoveCommandInput extends CommandBaseInput {
   readonly payload: ReferenceRemoveInput;
 }
 
+export interface ReferenceRemoveCommandOperationInput {
+  readonly type: "reference.remove";
+  readonly payload: ReferenceRemoveInput;
+}
+
 export interface ReferenceUpdateCommandInput extends CommandBaseInput {
+  readonly type: "reference.update";
+  readonly payload: ReferenceWriteInput;
+}
+
+export interface ReferenceUpdateCommandOperationInput {
   readonly type: "reference.update";
   readonly payload: ReferenceWriteInput;
 }
@@ -730,6 +846,12 @@ export interface ResolvedReferenceInput extends ContractInput {
   readonly role: "reference" | "first_frame" | "continuation";
   readonly asset: AssetRefInput;
   readonly metadata: MediaMetadataInput;
+  readonly sourceVersion?: ObjectVersionInput | null;
+  readonly documentVersion?: ObjectVersionInput | null;
+  readonly subjectRole?: "main" | "auxiliary" | "voice" | null;
+  readonly name?: string;
+  readonly sourceTitle?: string;
+  readonly transmission?: "content" | "metadata" | "context_only" | "latent";
 }
 
 export interface ResultCheckInput {
@@ -745,6 +867,11 @@ export interface ResultSelectInput extends ContractInput {
 }
 
 export interface ResultSelectCommandInput extends CommandBaseInput {
+  readonly type: "result.select";
+  readonly payload: ResultSelectInput;
+}
+
+export interface ResultSelectCommandOperationInput {
   readonly type: "result.select";
   readonly payload: ResultSelectInput;
 }
@@ -768,7 +895,44 @@ export interface SpecCreateCommandInput extends CommandBaseInput {
   readonly payload: SpecWriteInput;
 }
 
+export interface SpecCreateCommandOperationInput {
+  readonly type: "generationSpec.create";
+  readonly payload: SpecWriteInput;
+}
+
+export interface SpecPromptCommandInput extends CommandBaseInput {
+  readonly type: "generationSpec.setPrompt";
+  readonly payload: SpecPromptWriteInput;
+}
+
+export interface SpecPromptCommandOperationInput {
+  readonly type: "generationSpec.setPrompt";
+  readonly payload: SpecPromptWriteInput;
+}
+
+export interface SpecPromptWriteInput extends ContractInput {
+  readonly specId: string;
+  readonly prompt: string;
+  readonly promptContent?: ReadonlyArray<PromptTextInput | PromptReferenceInput> | null;
+}
+
+export interface SpecRestoreInput extends ContractInput {
+  readonly specId: string;
+  readonly commandId: string;
+  readonly referencePolicy?: "follow_current" | "pinned";
+}
+
+export interface SpecRestoreCommandInput extends CommandBaseInput {
+  readonly type: "generationSpec.restore";
+  readonly payload: SpecRestoreInput;
+}
+
 export interface SpecUpdateCommandInput extends CommandBaseInput {
+  readonly type: "generationSpec.update";
+  readonly payload: SpecWriteInput;
+}
+
+export interface SpecUpdateCommandOperationInput {
   readonly type: "generationSpec.update";
   readonly payload: SpecWriteInput;
 }
@@ -1012,6 +1176,7 @@ export interface ViewStateInput extends ContractInput {
   readonly selectedItemIds?: ReadonlyArray<string>;
   readonly activeEditorId?: string | null;
   readonly playheads?: ReadonlyArray<PlayheadInput>;
+  readonly generationCounts?: Readonly<Record<string, number>>;
 }
 
 export interface ViewportInput extends PointInput {
@@ -1026,7 +1191,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1119,7 +1284,7 @@ export interface AudioExecution extends Contract {
   readonly voice: string | null;
   readonly speaker: string | null;
   readonly format: "mp3" | "wav";
-  readonly sampleRate: number;
+  readonly sampleRate: number | null;
 }
 
 export interface AudioGenerationSpec extends GenerationSpecBase {
@@ -1129,6 +1294,15 @@ export interface AudioGenerationSpec extends GenerationSpecBase {
 
 export interface AudioParameters extends Contract {
   readonly voice: string | null;
+}
+
+export interface BatchCommand extends CommandBase {
+  readonly type: "creation.batch";
+  readonly payload: BatchPayload;
+}
+
+export interface BatchPayload extends Contract {
+  readonly operations: ReadonlyArray<CanvasShowCommandOperation | CanvasMoveCommandOperation | CanvasUpdateCommandOperation | CanvasHideCommandOperation | CanvasMaterializeCommandOperation | CanvasConfigureCommandOperation | CanvasEditorAttachCommandOperation | SpecCreateCommandOperation | SpecUpdateCommandOperation | SpecPromptCommandOperation | ReferenceAddCommandOperation | ReferenceUpdateCommandOperation | ReferenceRemoveCommandOperation | ResultSelectCommandOperation | EditorCreateCommandOperation | EditorSaveCommandOperation>;
 }
 
 export interface CameraFrame extends Contract {
@@ -1144,11 +1318,47 @@ export interface CameraRig extends Contract {
   readonly keyframes: ReadonlyArray<CameraFrame>;
 }
 
+export interface CanvasConfigure extends Contract {
+  readonly itemId: string;
+  readonly specId: string;
+  readonly preserveMaterial: boolean;
+}
+
+export interface CanvasConfigureCommand extends CommandBase {
+  readonly type: "canvas.configure";
+  readonly payload: CanvasConfigure;
+}
+
+export interface CanvasConfigureCommandOperation {
+  readonly type: "canvas.configure";
+  readonly payload: CanvasConfigure;
+}
+
+export interface CanvasEditorAttach extends Contract {
+  readonly itemId: string;
+  readonly editorId: string;
+}
+
+export interface CanvasEditorAttachCommand extends CommandBase {
+  readonly type: "canvas.attachEditor";
+  readonly payload: CanvasEditorAttach;
+}
+
+export interface CanvasEditorAttachCommandOperation {
+  readonly type: "canvas.attachEditor";
+  readonly payload: CanvasEditorAttach;
+}
+
 export interface CanvasHide extends Contract {
   readonly itemId: string;
 }
 
 export interface CanvasHideCommand extends CommandBase {
+  readonly type: "canvas.hide";
+  readonly payload: CanvasHide;
+}
+
+export interface CanvasHideCommandOperation {
   readonly type: "canvas.hide";
   readonly payload: CanvasHide;
 }
@@ -1177,11 +1387,21 @@ export interface CanvasMaterializeCommand extends CommandBase {
   readonly payload: CanvasMaterialize;
 }
 
+export interface CanvasMaterializeCommandOperation {
+  readonly type: "canvas.materialize";
+  readonly payload: CanvasMaterialize;
+}
+
 export interface CanvasMove extends Contract {
   readonly items: ReadonlyArray<CanvasMoveItem>;
 }
 
 export interface CanvasMoveCommand extends CommandBase {
+  readonly type: "canvas.move";
+  readonly payload: CanvasMove;
+}
+
+export interface CanvasMoveCommandOperation {
   readonly type: "canvas.move";
   readonly payload: CanvasMove;
 }
@@ -1210,7 +1430,17 @@ export interface CanvasShowCommand extends CommandBase {
   readonly payload: CanvasShow;
 }
 
+export interface CanvasShowCommandOperation {
+  readonly type: "canvas.show";
+  readonly payload: CanvasShow;
+}
+
 export interface CanvasUpdateCommand extends CommandBase {
+  readonly type: "canvas.update";
+  readonly payload: CanvasPresentationUpdate;
+}
+
+export interface CanvasUpdateCommandOperation {
   readonly type: "canvas.update";
   readonly payload: CanvasPresentationUpdate;
 }
@@ -1259,7 +1489,7 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | SpecCreateCommand | SpecUpdateCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
   readonly query: Query;
   readonly event: ProjectEvent;
@@ -1310,6 +1540,11 @@ export interface EditorCreateCommand extends CommandBase {
   readonly payload: EditorWrite;
 }
 
+export interface EditorCreateCommandOperation {
+  readonly type: "editor.create";
+  readonly payload: EditorWrite;
+}
+
 export interface EditorDocumentBase extends ProjectEntity {
   readonly schemaVersion: 1;
 }
@@ -1321,6 +1556,11 @@ export interface EditorRef extends Contract {
 }
 
 export interface EditorSaveCommand extends CommandBase {
+  readonly type: "editor.save";
+  readonly payload: EditorWrite;
+}
+
+export interface EditorSaveCommandOperation {
   readonly type: "editor.save";
   readonly payload: EditorWrite;
 }
@@ -1355,6 +1595,7 @@ export interface FollowingSource extends Contract {
 export interface GenerationBinding extends Contract {
   readonly role: "generation";
   readonly objectRef: GenerationSpecRef;
+  readonly materialOverride: AssetRef | null;
 }
 
 export interface GenerationFailure {
@@ -1387,6 +1628,8 @@ export interface GenerationSubmit extends Contract {
   readonly originItemId: string | null;
   readonly previousJobId: string | null;
   readonly adoptionPolicy: "if_current" | "candidate_only";
+  readonly batchId: string | null;
+  readonly showAdditionalResult: boolean;
 }
 
 export interface GenerationSubmitCommand extends CommandBase {
@@ -1481,6 +1724,7 @@ export interface InputSnapshot extends Contract {
 
 export interface Job extends ProjectEntity {
   readonly schemaVersion: 1;
+  readonly createdAt: string | null;
   readonly inputSnapshot: InputSnapshot;
   readonly inputFingerprint: string;
   readonly execution: TextExecution | ImageExecution | VideoExecution | AudioExecution;
@@ -1496,11 +1740,27 @@ export interface Job extends ProjectEntity {
   readonly originItemId: string | null;
   readonly previousJobId: string | null;
   readonly technicalCheck: ResultCheck | null;
+  readonly adoptionPolicy: "if_current" | "candidate_only";
+  readonly batchId: string | null;
+  readonly showAdditionalResult: boolean;
+  readonly adoptionResultId: string | null;
+  readonly adoptionMaterial: AssetRef | null;
+  readonly adopted: boolean;
+  readonly adapterParameters: Readonly<Record<string, JsonValue>>;
 }
 
 export interface JobCancelCommand extends CommandBase {
   readonly type: "job.cancel";
   readonly payload: JobControl;
+}
+
+export interface JobCheckpoint extends Contract {
+  readonly job: Job;
+}
+
+export interface JobCheckpointCommand extends CommandBase {
+  readonly type: "job.checkpoint";
+  readonly payload: JobCheckpoint;
 }
 
 export interface JobControl extends Contract {
@@ -1511,6 +1771,8 @@ export interface JobRecoverCommand extends CommandBase {
   readonly type: "job.recover";
   readonly payload: JobControl;
 }
+
+export type JsonValue = unknown;
 
 export interface LayerContentBase extends Contract {
   readonly width: number;
@@ -1595,6 +1857,7 @@ export interface ModelSnapshot extends Contract {
   readonly protocol: "openai" | "volcengine" | "vllm_omni";
   readonly connectionType: "api" | "self_hosted";
   readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
+  readonly inputRules: InputRules | null;
 }
 
 export interface MotionClip extends Contract {
@@ -1702,6 +1965,7 @@ export interface ProjectSnapshot extends Contract {
   readonly jobs: ReadonlyArray<Job>;
   readonly results: ReadonlyArray<ResultVersion>;
   readonly eventCursor: number;
+  readonly undoClearedThrough: number;
 }
 
 export interface ProjectTrashCommand extends CommandBase {
@@ -1724,6 +1988,7 @@ export interface Query extends Contract {
   readonly projectId: string;
   readonly type: "project.get" | "object.get" | "asset.search" | "asset.usage" | "generationSpec.versions" | "job.get";
   readonly objectId: string | null;
+  readonly revision: number | null;
   readonly text: string;
   readonly offset: number;
   readonly limit: number;
@@ -1739,10 +2004,16 @@ export interface ReferenceAddCommand extends CommandBase {
   readonly payload: ReferenceWrite;
 }
 
+export interface ReferenceAddCommandOperation {
+  readonly type: "reference.add";
+  readonly payload: ReferenceWrite;
+}
+
 export interface ReferenceBase extends ProjectEntity {
   readonly targetSpecId: string;
   readonly role: "reference" | "first_frame" | "continuation";
   readonly order: number;
+  readonly active: boolean;
 }
 
 export interface ReferenceRemove extends Contract {
@@ -1754,7 +2025,17 @@ export interface ReferenceRemoveCommand extends CommandBase {
   readonly payload: ReferenceRemove;
 }
 
+export interface ReferenceRemoveCommandOperation {
+  readonly type: "reference.remove";
+  readonly payload: ReferenceRemove;
+}
+
 export interface ReferenceUpdateCommand extends CommandBase {
+  readonly type: "reference.update";
+  readonly payload: ReferenceWrite;
+}
+
+export interface ReferenceUpdateCommandOperation {
   readonly type: "reference.update";
   readonly payload: ReferenceWrite;
 }
@@ -1768,6 +2049,12 @@ export interface ResolvedReference extends Contract {
   readonly role: "reference" | "first_frame" | "continuation";
   readonly asset: AssetRef;
   readonly metadata: MediaMetadata;
+  readonly sourceVersion: ObjectVersion | null;
+  readonly documentVersion: ObjectVersion | null;
+  readonly subjectRole: "main" | "auxiliary" | "voice" | null;
+  readonly name: string;
+  readonly sourceTitle: string;
+  readonly transmission: "content" | "metadata" | "context_only" | "latent";
 }
 
 export interface ResultCheck {
@@ -1783,6 +2070,11 @@ export interface ResultSelect extends Contract {
 }
 
 export interface ResultSelectCommand extends CommandBase {
+  readonly type: "result.select";
+  readonly payload: ResultSelect;
+}
+
+export interface ResultSelectCommandOperation {
   readonly type: "result.select";
   readonly payload: ResultSelect;
 }
@@ -1806,7 +2098,44 @@ export interface SpecCreateCommand extends CommandBase {
   readonly payload: SpecWrite;
 }
 
+export interface SpecCreateCommandOperation {
+  readonly type: "generationSpec.create";
+  readonly payload: SpecWrite;
+}
+
+export interface SpecPromptCommand extends CommandBase {
+  readonly type: "generationSpec.setPrompt";
+  readonly payload: SpecPromptWrite;
+}
+
+export interface SpecPromptCommandOperation {
+  readonly type: "generationSpec.setPrompt";
+  readonly payload: SpecPromptWrite;
+}
+
+export interface SpecPromptWrite extends Contract {
+  readonly specId: string;
+  readonly prompt: string;
+  readonly promptContent: ReadonlyArray<PromptText | PromptReference> | null;
+}
+
+export interface SpecRestore extends Contract {
+  readonly specId: string;
+  readonly commandId: string;
+  readonly referencePolicy: "follow_current" | "pinned";
+}
+
+export interface SpecRestoreCommand extends CommandBase {
+  readonly type: "generationSpec.restore";
+  readonly payload: SpecRestore;
+}
+
 export interface SpecUpdateCommand extends CommandBase {
+  readonly type: "generationSpec.update";
+  readonly payload: SpecWrite;
+}
+
+export interface SpecUpdateCommandOperation {
   readonly type: "generationSpec.update";
   readonly payload: SpecWrite;
 }
@@ -2050,6 +2379,7 @@ export interface ViewState extends Contract {
   readonly selectedItemIds: ReadonlyArray<string>;
   readonly activeEditorId: string | null;
   readonly playheads: ReadonlyArray<Playhead>;
+  readonly generationCounts: Readonly<Record<string, number>>;
 }
 
 export interface Viewport extends Point {
@@ -2064,7 +2394,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | SpecCreateCommand | SpecUpdateCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

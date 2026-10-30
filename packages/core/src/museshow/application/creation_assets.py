@@ -24,6 +24,13 @@ class CreationAssets:
         self._verified = OrderedDict()
         self._verification_lock = Lock()
 
+    def reference_available(self, project_id, asset_id):
+        stream, asset = self.open_media(project_id, asset_id)
+        with stream:
+            if asset.kind == 'text' and not stream.read().decode('utf-8-sig').strip():
+                raise ContractError('reference_invalid', '空白文本不能作为参考。', asset.id)
+        return asset
+
     def execute(self, command, *, session=None, source='ui', provenance=None):
         replay = self.projects.replay(command)
         if replay is not None:

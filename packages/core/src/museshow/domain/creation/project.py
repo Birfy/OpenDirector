@@ -1,5 +1,5 @@
 """New-format aggregate validation; no filesystem reads or legacy migration."""
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -59,9 +59,12 @@ class ProjectSnapshot(Contract):
     jobs: tuple[Job, ...] = ()
     results: tuple[ResultVersion, ...] = ()
     eventCursor: int = Field(default=0, strict=True, ge=0)
+    undoClearedThrough: int = Field(default=0, strict=True, ge=0)
 
     @model_validator(mode='after')
     def project_relations(self):
+        if self.undoClearedThrough > self.eventCursor:
+            raise ValueError('Undo clearing cannot point beyond the committed cursor')
         collections = (self.assets, self.generationSpecs, self.references, self.canvasItems,
                        self.editorDocuments, self.jobs, self.results)
         objects = [obj for collection in collections for obj in collection]
@@ -93,7 +96,7 @@ class ProjectSnapshot(Contract):
                 spec = specs.get(spec_id)
                 if spec is None or spec.kind != item.kind or spec.purpose != 'draft':
                     raise ValueError('Empty node draft points to a missing or wrong-kind spec')
-                if spec.currentResultId or any(job.inputSnapshot.spec.id == spec_id for job in self.jobs) or any(ref.targetSpecId == spec_id for ref in self.references):
+                if spec.currentResultId or any(job.inputSnapshot.spec.id == spec_id for job in self.jobs) or any(ref.active and ref.targetSpecId == spec_id for ref in self.references):
                     raise ValueError('An empty node cannot own accepted tasks, references or results')
             if isinstance(item.binding, EditorBinding):
                 ref = item.binding.objectRef
@@ -111,6 +114,8 @@ class ProjectSnapshot(Contract):
         for reference in self.references:
             if reference.targetSpecId not in specs:
                 raise ValueError('Reference target spec does not exist')
+            if not reference.active:
+                continue
             if specs[reference.targetSpecId].purpose != 'generation':
                 raise ValueError('Accepted references lock a spec to generation purpose')
             key = (reference.targetSpecId, reference.order)
@@ -119,7 +124,7 @@ class ProjectSnapshot(Contract):
             target_orders.add(key)
             if isinstance(reference, FollowingReference):
                 source = items.get(reference.source.id)
-                if source is None or source.kind not in {'text', 'image', 'video', 'audio'}:
+                if source is None or source.kind not in {'text', 'image', 'video', 'audio', 'subject'}:
                     raise ValueError('Following reference needs a stable logical media source')
                 if reference.role == 'first_frame' and source.kind != 'image' or reference.role == 'continuation' and source.kind != 'video':
                     raise ValueError('Reference source kind does not match its role')
@@ -129,7 +134,7 @@ class ProjectSnapshot(Contract):
         for spec in self.generationSpecs:
             if spec.promptContent:
                 for part in spec.promptContent:
-                    if isinstance(part, PromptReference) and (part.referenceId not in reference_ids or reference_ids[part.referenceId].targetSpecId != spec.id):
+                    if isinstance(part, PromptReference) and (part.referenceId not in reference_ids or not reference_ids[part.referenceId].active or reference_ids[part.referenceId].targetSpecId != spec.id):
                         raise ValueError('Prompt references must belong to the same generation spec')
             if spec.currentResultId and (spec.currentResultId not in results or results[spec.currentResultId].specId != spec.id):
                 raise ValueError('Current result must belong to its generation spec')
@@ -199,3 +204,4 @@ class ViewState(Contract):
     selectedItemIds: tuple[UUID, ...] = ()
     activeEditorId: UUID | None = None
     playheads: tuple[Playhead, ...] = ()
+    generationCounts: dict[UUID, Annotated[int, Field(strict=True, ge=1, le=8)]] = Field(default_factory=dict)

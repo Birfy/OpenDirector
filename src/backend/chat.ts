@@ -1,4 +1,5 @@
 import { headers, request } from "./api.ts";
+import { creationEnabled } from "./creationClient.ts";
 
 /** The local API's agent: it plans, writes and generates inside the canvas's project. */
 
@@ -58,7 +59,15 @@ export interface ChatRequest {
 }
 
 export const conversation = (projectId: string) =>
-  request<Conversation>(`/data/${projectId}/conversation`);
+  creationEnabled()
+    ? Promise.resolve<Conversation>({
+        messages: [],
+        draft: "",
+        assets: [],
+        thinking: "auto",
+        modelSelections: {},
+      })
+    : request<Conversation>(`/data/${projectId}/conversation`);
 
 export const stopChat = (projectId: string, turnId: string) =>
   request(`/data/${projectId}/chat/${turnId}/stop`, { method: "POST" });

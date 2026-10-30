@@ -8,7 +8,7 @@ from .assets import AssetRef, MediaMetadata
 from .base import Contract, Digest, GenerationKind, MediaKind, ObjectVersion, Point, Positive, Revision, digest, unique
 from .canvas import CanvasItem
 from .editors import EditorDocument
-from .generation import GenerationSpec, Reference
+from .generation import GenerationSpec, Job, PromptPart, Reference
 
 
 class ProjectCreate(Contract):
@@ -86,6 +86,30 @@ class CanvasMaterialize(Contract):
     discardGenerationDraft: bool = False
 
 
+class CanvasConfigure(Contract):
+    itemId: UUID
+    specId: UUID
+    # Explicit conversion keeps the immutable handwritten asset in the catalog.
+    preserveMaterial: bool = False
+
+
+class CanvasEditorAttach(Contract):
+    itemId: UUID
+    editorId: UUID
+
+
+class SpecRestore(Contract):
+    specId: UUID
+    commandId: UUID
+    referencePolicy: Literal['follow_current', 'pinned'] = 'follow_current'
+
+
+class SpecPromptWrite(Contract):
+    specId: UUID
+    prompt: str = Field(max_length=20000)
+    promptContent: tuple[PromptPart, ...] | None = None
+
+
 class SpecWrite(Contract):
     spec: GenerationSpec
 
@@ -104,10 +128,22 @@ class GenerationSubmit(Contract):
     originItemId: UUID | None = None
     previousJobId: UUID | None = None
     adoptionPolicy: Literal['if_current', 'candidate_only'] = 'if_current'
+    batchId: UUID | None = None
+    showAdditionalResult: bool = False
+
+    @model_validator(mode='after')
+    def presentation(self):
+        if self.showAdditionalResult and (self.originItemId is None or self.adoptionPolicy != 'candidate_only'):
+            raise ValueError('Additional result display requires an origin and candidate-only adoption')
+        return self
 
 
 class JobControl(Contract):
     jobId: UUID
+
+
+class JobCheckpoint(Contract):
+    job: Job
 
 
 class ResultSelect(Contract):
@@ -144,7 +180,7 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
-        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize'}:
+        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.configure', 'canvas.attachEditor'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
             required = [('canvas_item', item.itemId) for item in payload.items]
@@ -181,7 +217,7 @@ class CommandBase(Contract):
         return self
 
 
-# These are contracts for subsequent commits, not an active tool registry.
+# HTTP/application contracts; Agent tool registration is a separate boundary.
 _COMMANDS = (
     ('ProjectCreateCommand', 'project.create', ProjectCreate),
     ('ProjectRenameCommand', 'project.rename', ProjectRename),
@@ -196,14 +232,19 @@ _COMMANDS = (
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate),
     ('CanvasHideCommand', 'canvas.hide', CanvasHide),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize),
+    ('CanvasConfigureCommand', 'canvas.configure', CanvasConfigure),
+    ('CanvasEditorAttachCommand', 'canvas.attachEditor', CanvasEditorAttach),
     ('SpecCreateCommand', 'generationSpec.create', SpecWrite),
     ('SpecUpdateCommand', 'generationSpec.update', SpecWrite),
+    ('SpecRestoreCommand', 'generationSpec.restore', SpecRestore),
+    ('SpecPromptCommand', 'generationSpec.setPrompt', SpecPromptWrite),
     ('ReferenceAddCommand', 'reference.add', ReferenceWrite),
     ('ReferenceUpdateCommand', 'reference.update', ReferenceWrite),
     ('ReferenceRemoveCommand', 'reference.remove', ReferenceRemove),
     ('GenerationSubmitCommand', 'generation.submit', GenerationSubmit),
     ('JobCancelCommand', 'job.cancel', JobControl),
     ('JobRecoverCommand', 'job.recover', JobControl),
+    ('JobCheckpointCommand', 'job.checkpoint', JobCheckpoint),
     ('ResultSelectCommand', 'result.select', ResultSelect),
     ('EditorCreateCommand', 'editor.create', EditorWrite),
     ('EditorSaveCommand', 'editor.save', EditorWrite),
@@ -216,6 +257,22 @@ for _name, _type, _payload in _COMMANDS:
     COMMAND_MODELS[_type] = _model
     globals()[_name] = _model
 
+_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize',
+                'canvas.configure', 'canvas.attachEditor', 'generationSpec.create', 'generationSpec.update',
+                'reference.add', 'reference.update', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
+_OPERATIONS = tuple(create_model(name + 'Operation', __base__=Contract,
+                    type=(Literal[kind], ...), payload=(payload, ...))
+                    for name, kind, payload in _COMMANDS if kind in _BATCH_TYPES)
+Operation = Annotated[Union[_OPERATIONS], Field(discriminator='type')]
+
+
+class BatchPayload(Contract):
+    operations: tuple[Operation, ...] = Field(min_length=1, max_length=500)
+
+
+BatchCommand = create_model('BatchCommand', __base__=CommandBase,
+                            type=(Literal['creation.batch'], ...), payload=(BatchPayload, ...))
+COMMAND_MODELS['creation.batch'] = BatchCommand
 Command = Annotated[Union[tuple(COMMAND_MODELS.values())], Field(discriminator='type')]
 COMMAND_ADAPTER = TypeAdapter(Command)
 
@@ -264,6 +321,7 @@ class Query(Contract):
     projectId: UUID
     type: Literal['project.get', 'object.get', 'asset.search', 'asset.usage', 'generationSpec.versions', 'job.get']
     objectId: UUID | None = None
+    revision: Revision | None = None
     text: str = Field(default='', max_length=1000)
     offset: int = Field(default=0, strict=True, ge=0)
     limit: int = Field(default=50, strict=True, ge=1, le=200)

@@ -30,6 +30,12 @@ export interface GenerationJob {
     externalTaskId?: string | null;
     recovery?: string | null;
     resumeAllowed?: boolean;
+    cancelRequested?: boolean;
+    remoteCancellation?:
+      | "not_requested"
+      | "requested"
+      | "confirmed"
+      | "unknown";
   };
   /** Frozen placement owner, retained so a reopened canvas fills the same node. */
   resultSource?: ResultSource;

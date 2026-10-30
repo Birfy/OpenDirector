@@ -17,12 +17,12 @@ from pydantic import ValidationError, model_validator
 
 from museshow.domain.creation.base import Contract, Digest, ObjectVersion, digest
 from museshow.domain.creation.commands import Command, CommandReceipt, ProjectEvent, command_fingerprint
-from museshow.domain.creation.project import Project, ProjectSnapshot
+from museshow.domain.creation.project import Project, ProjectSnapshot, ViewState
 from museshow.domain.creation.validation import ContractError, validate_command
 from museshow.domain.projects import ProjectError, identifier, project_name
 from museshow.infrastructure.local_projects import LocalProjects, child, read_json, write_json
 from museshow.infrastructure.rename import rename_path
-from museshow.infrastructure.creation_files import AssetFileWrite, cleanup_staging, install_files
+from museshow.infrastructure.creation_files import AssetFileDelete, AssetFileWrite, cleanup_staging, delete_files, install_files
 
 
 class Manifest(Contract):
@@ -67,6 +67,7 @@ class CommitIntent(Contract):
     beforeFingerprint: Digest | None
     record: CommitRecord
     files: tuple[AssetFileWrite, ...] = ()
+    deletes: tuple[AssetFileDelete, ...] = ()
 
     @model_validator(mode='after')
     def consistent(self):
@@ -88,6 +89,9 @@ class CommitIntent(Contract):
             if (asset is None or asset.id not in created or asset.fingerprint != write.fingerprint
                     or asset.metadata.size != write.size):
                 raise ValueError('File write must match its committed asset')
+        deleted = {change.version.id for change in self.record.event.changed if change.change == 'deleted' and change.version.objectType == 'asset'} if self.record.event else set()
+        if any(value.assetId not in deleted or value.assetId in assets for value in self.deletes):
+            raise ValueError('Deleted files must have committed asset deletions')
         return self
 
 
@@ -148,9 +152,9 @@ def object_changes(before, after, command):
 
 
 class CreationProjects:
-    """C03/C04 repository for project lifecycle and shared asset commands.
+    """Authoritative repository for lifecycle and shared creation commands.
 
-    commit() is an internal application-service boundary for C04 and later;
+    commit() is an internal application-service boundary;
     untrusted clients cannot supply a callback or replace an entire snapshot.
     """
     def __init__(self, local: LocalProjects):
@@ -296,6 +300,27 @@ class CreationProjects:
             self._recover()
             return self._load(db, project_id)[2][0].snapshot
 
+    def history(self, project_id):
+        with self.local.transaction() as db:
+            self._recover()
+            return tuple(self._load(db, project_id)[2])
+
+    def view(self, project_id, client_id, value=None, *, session=None):
+        with self.local.transaction() as db:
+            self._recover()
+            path, _, _ = self._load(db, project_id)
+            folder = directory(child(path, 'views'))
+            file = child(folder, f'{UUID(str(client_id))}.json')
+            if value is not None:
+                self._lease(db, project_id, path, session)
+                value = ViewState.model_validate(value)
+                if str(value.projectId) != str(project_id) or str(value.clientId) != str(client_id):
+                    raise ProjectError('视图不属于当前工程或客户端。')
+                folder.mkdir(exist_ok=True)
+                durable_json(file, value.model_dump(mode='json'))
+                return value
+            return ViewState.model_validate(read_json(file)) if file.exists() else ViewState(projectId=project_id, clientId=client_id)
+
     def open(self, project_id, session):
         with self.local.transaction() as db:
             self._recover()
@@ -329,13 +354,19 @@ class CreationProjects:
                         currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
 
     def execute(self, command: Command, *, session=None, source='ui'):
+        if command.type in {'project.trash', 'project.restore'}:
+            raise ProjectError('该项目管理命令尚未开放。', 501, code='capability_unsupported')
         if command.type in {'asset.import', 'asset.writeText', 'asset.updateMetadata'}:
             from museshow.application.creation_assets import CreationAssets
             return CreationAssets(self).execute(command, session=session, source=source)
         if command.type == 'project.create':
             return self._create(command, source)
+        if command.type in {'history.undo', 'history.redo', 'generationSpec.restore', 'asset.delete'}:
+            from museshow.application.creation_history import CreationHistory
+            return CreationHistory(self).execute(command, session=session, source=source)
         if command.type != 'project.rename':
-            raise ProjectError('该命令尚未接入统一工程服务。', 501, code='capability_unsupported')
+            from museshow.application.creation_canvas import CreationCanvas
+            return CreationCanvas(self).execute(command, session=session, source=source)
         def rename(snapshot):
             name = project_name(command.payload.name)
             if snapshot.project.name == name:
@@ -383,7 +414,7 @@ class CreationProjects:
             record = self._make_record(command, None, snapshot, changed, source)
             return self._publish(CommitIntent(fromName=None, toName=name, beforeFingerprint=None, record=record))
 
-    def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui', files=()):
+    def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui', files=(), deletes=()):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
         with self.local.transaction() as db:
@@ -423,7 +454,8 @@ class CreationProjects:
             record = self._make_record(command, manifest.head, snapshot, changed, source, issue)
             to_name = snapshot.project.name if command.type == 'project.rename' and changed else path.name
             return self._publish(CommitIntent(fromName=path.name, toName=to_name,
-                                beforeFingerprint=digest(before), record=record, files=files if changed and issue is None else ()))
+                                beforeFingerprint=digest(before), record=record, files=files if changed and issue is None else (),
+                                deletes=deletes if changed and issue is None else ()))
 
     @staticmethod
     def _make_record(command, head, snapshot, changed, source, issue=None):
@@ -536,6 +568,9 @@ class CreationProjects:
         manifest = Manifest(id=record.command.projectId, name=record.snapshot.project.name, head=record.command.commandId)
         durable_json(child(path, 'project.json'), manifest.model_dump(mode='json'))
         self._checkpoint('published')
+        delete_files(path, intent.deletes)
+        if intent.deletes:
+            self._checkpoint('files_deleted')
         self._journal(record.command.projectId).unlink()
         sync_directory(self.intents)
         self._checkpoint('finished')

@@ -45,7 +45,10 @@ def validate_command(command: Command, project: ProjectSnapshot):
             if ('canvas_item', item_id) not in expected:
                 raise ContractError('revision_conflict', 'Node operation requires its current version', item_id)
             try:
-                role_after(item.binding.role, 'upload_material' if command.type == 'canvas.materialize' else 'accept_generation')
+                if command.type == 'canvas.materialize' and item.kind == 'text' and item.binding.role == 'generation' and payload.discardGenerationDraft:
+                    pass
+                else:
+                    role_after(item.binding.role, 'upload_material' if command.type == 'canvas.materialize' else 'accept_generation')
             except ValueError:
                 raise ContractError('role_restricted', 'Operation is incompatible with the node role', item_id) from None
             if command.type == 'canvas.materialize':

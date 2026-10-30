@@ -1,5 +1,6 @@
 import { json, request } from "./api.ts";
 import type { Conversation } from "./chat.ts";
+import { creationEnabled } from "./creationClient.ts";
 
 // Draft writes are serialized per project; replies remain server-owned.
 const latest = new Map<string, Conversation>();
@@ -14,6 +15,7 @@ export function currentChat(projectId: string) {
 }
 
 export function flushChatDraft(projectId: string): Promise<void> {
+  if (creationEnabled()) return Promise.resolve();
   const value = latest.get(projectId);
   if (!value) return pending.get(projectId) ?? Promise.resolve();
   const { draft, assets, thinking, modelSelections } = value;

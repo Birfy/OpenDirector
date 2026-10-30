@@ -129,6 +129,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   kind: CanvasNodeKind;
   title: string;
   prompt: string;
+  promptMentions?: import("./promptMentions.ts").PromptMention[];
   src?: string;
   mimeType?: string;
   text?: string;
@@ -171,6 +172,8 @@ export interface CanvasEdge {
   targetHandle?: string | null;
   /** Missing on legacy documents means generation_input; result provenance is not a reference. */
   intent?: "generation_input" | "post_edit_result";
+  /** Read-only business query projection, never an editable relationship. */
+  referenceState?: "used" | "pending" | "unknown" | "unavailable";
 }
 
 export interface CanvasDocument {

@@ -389,24 +389,12 @@ class Generation:
                         task['phase'] = 'save'
                         await asyncio.to_thread(cache.save, suffix, data)
                         await save()
-                    asset_id = str(uuid5(UUID(task["id"]), "output"))
-                    def commit():
-                        nonlocal stage
-                        stage = 'save'
-                        with self.store.transaction() as db:
-                            directory = self.store._owner(db, task["projectId"])
-                            if str(directory) != pinned:
-                                raise ProjectError("项目目录发生变化，结果未写入其他位置。", 409)
-                            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", task.get("title", "")).strip(" .")[:200] or f"{task['kind']}-{task['id'][:8]}"
-                            existing = self._result_asset(task, directory)
-                            result = existing or self.canvas.assets.import_file(task["projectId"], asset_id, f"{name}.{suffix}", data, None, source="generated", generation=task, expected_kind=task['kind'])
-                            task['assetId'] = result['id']
-                            task['technicalCheck'] = self._technical_check(result)
+                    try:
+                        asset = await asyncio.to_thread(self._commit_output, task, pinned, suffix if asset is None else None, data if asset is None else None)
+                    except BaseException:
+                        if task.get('phase') == 'adopt':
                             stage = 'adopt'
-                            task['phase'] = 'adopt'
-                            self._place_result(task, directory, result)
-                            return result
-                    asset = await asyncio.to_thread(commit)
+                        raise
                     task.update(status="succeeded", assetId=asset["id"], phase='complete', recovery='done')
         except asyncio.CancelledError:
             task["status"] = "cancelled" if task["id"] in self.cancelled else "interrupted"
@@ -463,6 +451,23 @@ class Generation:
                     pass  # Original task receipt remains available for startup reconciliation.
             self.cancelled.discard(task["id"])
             self.committing.discard(task["id"])
+
+    def _commit_output(self, task, pinned, suffix, data):
+        """Storage hook shared by the legacy and unified execution runtimes."""
+        asset_id = str(uuid5(UUID(task['id']), 'output'))
+        with self.store.transaction() as db:
+            directory = self.store._owner(db, task['projectId'])
+            if str(directory) != pinned:
+                raise ProjectError('项目目录发生变化，结果未写入其他位置。', 409)
+            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', task.get('title', '')).strip(' .')[:200] or f"{task['kind']}-{task['id'][:8]}"
+            existing = self._result_asset(task, directory)
+            result = existing or self.canvas.assets.import_file(task['projectId'], asset_id, f'{name}.{suffix}', data, None,
+                source='generated', generation=task, expected_kind=task['kind'])
+            task['assetId'] = result['id']
+            task['technicalCheck'] = self._technical_check(result)
+            task['phase'] = 'adopt'
+            self._place_result(task, directory, result)
+            return result
 
     async def cancel(self, project_id, task_id, session):
         accepting = self.accepting.get((project_id, task_id))

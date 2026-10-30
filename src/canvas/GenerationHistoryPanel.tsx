@@ -8,6 +8,8 @@ export function GenerationHistoryPanel({
   onLocate,
   onSync,
   onTaskAction,
+  onRestoreConfiguration,
+  authoritative = false,
 }: {
   jobs: GenerationJob[];
   onRestore: (jobs: GenerationJob[], request?: boolean) => void;
@@ -17,6 +19,11 @@ export function GenerationHistoryPanel({
     job: GenerationJob,
     action: "recover" | "cancel",
   ) => Promise<void>;
+  onRestoreConfiguration?: (
+    job: GenerationJob,
+    policy: "follow_current" | "pinned",
+  ) => Promise<void>;
+  authoritative?: boolean;
 }) {
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -28,6 +35,17 @@ export function GenerationHistoryPanel({
     setPending((ids) => [...ids, job.id]);
     try {
       await onTaskAction?.(job, action);
+    } finally {
+      setPending((ids) => ids.filter((id) => id !== job.id));
+    }
+  };
+  const restoreConfiguration = async (
+    job: GenerationJob,
+    policy: "follow_current" | "pinned",
+  ) => {
+    setPending((ids) => [...ids, job.id]);
+    try {
+      await onRestoreConfiguration?.(job, policy);
     } finally {
       setPending((ids) => ids.filter((id) => id !== job.id));
     }
@@ -47,6 +65,28 @@ export function GenerationHistoryPanel({
     cancelled: "已取消",
     interrupted: "等待恢复",
   };
+  const taskActions = (job: GenerationJob) =>
+    authoritative
+      ? {
+          recover:
+            !!job.taskId &&
+            ["interrupted", "failed", "cancelled"].includes(job.status) &&
+            job.serviceTask?.resumeAllowed === true &&
+            [
+              "remote",
+              "download",
+              "local",
+              ...(job.serviceTask.cancelRequested ? [] : ["submit"]),
+            ].includes(job.serviceTask.recovery ?? "") &&
+            job.serviceTask.remoteCancellation !== "confirmed",
+          cancel:
+            !!job.taskId &&
+            (job.status === "running" ||
+              (!!job.serviceTask?.externalTaskId &&
+                job.serviceTask.recovery === "remote" &&
+                job.serviceTask.remoteCancellation !== "confirmed")),
+        }
+      : generationTaskActions(job);
   return (
     <>
       <p className="cw-panel-note">
@@ -80,7 +120,8 @@ export function GenerationHistoryPanel({
             onRestore(jobs.filter((job) => selected.includes(job.id)))
           }
         >
-          重新放置所选结果（{selected.length}）
+          {authoritative ? "选用所选结果" : "重新放置所选结果"}（
+          {selected.length}）
         </button>
       )}
       {!rows.length && <p className="cw-panel-note">暂无此类型的生成历史。</p>}
@@ -127,7 +168,7 @@ export function GenerationHistoryPanel({
             )}
           </div>
           <div className="cw-history-actions">
-            {onTaskAction && generationTaskActions(job).recover && (
+            {onTaskAction && taskActions(job).recover && (
               <button
                 disabled={pending.includes(job.id)}
                 onClick={() => void taskAction(job, "recover")}
@@ -135,7 +176,7 @@ export function GenerationHistoryPanel({
                 继续查询原任务
               </button>
             )}
-            {onTaskAction && generationTaskActions(job).cancel && (
+            {onTaskAction && taskActions(job).cancel && (
               <button
                 disabled={pending.includes(job.id)}
                 onClick={() => void taskAction(job, "cancel")}
@@ -145,12 +186,32 @@ export function GenerationHistoryPanel({
             )}
             <button onClick={() => onLocate(job.nodeId)}>定位来源</button>
             {!!job.outputs?.length && (
-              <button onClick={() => onRestore([job])}>重新放置结果</button>
+              <button onClick={() => onRestore([job])}>
+                {authoritative ? "选用结果" : "重新放置结果"}
+              </button>
             )}
             {job.request && (
               <button onClick={() => onRestore([job], true)}>
                 恢复请求节点
               </button>
+            )}
+            {onRestoreConfiguration && (
+              <>
+                <button
+                  disabled={pending.includes(job.id)}
+                  onClick={() =>
+                    void restoreConfiguration(job, "follow_current")
+                  }
+                >
+                  恢复生成配置
+                </button>
+                <button
+                  disabled={pending.includes(job.id)}
+                  onClick={() => void restoreConfiguration(job, "pinned")}
+                >
+                  按历史素材恢复配置
+                </button>
+              </>
             )}
           </div>
         </div>

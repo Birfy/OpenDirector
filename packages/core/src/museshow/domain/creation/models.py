@@ -122,6 +122,7 @@ class ModelSnapshot(Contract):
     protocol: Protocol
     connectionType: Literal['api', 'self_hosted']
     videoAdapter: VideoAdapter = 'auto'
+    inputRules: InputRules | None = None
 
     @field_validator('url')
     @classmethod
