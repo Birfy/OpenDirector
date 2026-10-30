@@ -12,14 +12,25 @@ from museshow.infrastructure.local_projects import child, read_json, write_json
 
 
 def validate_document(document, project_id):
-    if (not isinstance(document, dict) or type(document.get('version')) is not int or document['version'] != 1
+    if (not isinstance(document, dict) or type(document.get('version')) is not int or document['version'] not in {1, 2}
             or document.get('id') != project_id or not isinstance(document.get('title'), str)
             or not isinstance(document.get('nodes'), list) or not isinstance(document.get('edges'), list)
             or not isinstance(document.get('viewport'), dict) or not isinstance(document.get('settings'), dict)):
         raise ProjectError('画布文档无效或不属于当前项目。', 422)
+    if document['version'] == 2:
+        sources = document.get('mediaSources')
+        if (not isinstance(sources, list) or not sources
+                or any(not isinstance(src, str) or not src.startswith('data:') for src in sources)):
+            raise ProjectError('画布共享媒体表无效。', 422)
     def check(value, key=None):
         if key in {'src', 'url', 'imageUrl'} and isinstance(value, str) and value.startswith('blob:'):
             raise ProjectError('请先完成媒体保存，再保存项目，不能保存临时媒体地址。', 422)
+        if document['version'] == 2 and key == 'src' and isinstance(value, str) and value.startswith('opendesign-media:'):
+            index = value.removeprefix('opendesign-media:')
+            if (not index.isascii() or not index.isdecimal()
+                    or len(index) > len(str(len(document['mediaSources'])))
+                    or str(int(index)) != index or int(index) >= len(document['mediaSources'])):
+                raise ProjectError('画布引用了不存在的共享媒体。', 422)
         if isinstance(value, float) and not math.isfinite(value):
             raise ProjectError('画布不能保存无效数值。', 422)
         if isinstance(value, dict):

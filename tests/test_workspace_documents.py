@@ -69,6 +69,29 @@ def test_text_about_blob_urls_is_not_treated_as_transient_media(workspace):
     assert documents.save(project_id, value, 0, session)['document'] == value
 
 
+def test_shared_media_wire_format_survives_save_and_reopen(workspace):
+    _, documents, project_id, session = workspace
+    value = {**document(project_id), 'version': 2, 'mediaSources': ['data:image/png;base64,YQ==']}
+    value['nodes'][0]['data']['src'] = 'opendesign-media:0'
+    saved = documents.save(project_id, value, 0, session)
+    assert documents.read(project_id) == saved
+    assert saved['document'] == value
+    for invalid in ['opendesign-media:1', 'opendesign-media:-1', 'opendesign-media:0.5', 'opendesign-media:00']:
+        changed = deepcopy(value)
+        changed['nodes'][0]['data']['src'] = invalid
+        with pytest.raises(ProjectError): documents.save(project_id, changed, 1, session)
+        assert documents.read(project_id) == saved
+
+
+@pytest.mark.parametrize('sources', [[], ['blob:temporary'], ['https://example.com/image.png'], [None]])
+def test_invalid_shared_media_table_preserves_saved_project(workspace, sources):
+    _, documents, project_id, session = workspace
+    saved = documents.save(project_id, document(project_id), 0, session)
+    invalid = {**document(project_id), 'version': 2, 'mediaSources': sources}
+    with pytest.raises(ProjectError): documents.save(project_id, invalid, 1, session)
+    assert documents.read(project_id) == saved
+
+
 @pytest.mark.parametrize('problem', ['scope', 'blob', 'version', 'corrupt'])
 def test_invalid_input_or_corrupt_file_preserves_existing_bytes(workspace, problem):
     store, documents, project_id, session = workspace

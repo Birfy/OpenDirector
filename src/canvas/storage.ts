@@ -1,4 +1,5 @@
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
+import { compactMedia, expandMedia } from "./mediaStorage.ts";
 import {
   copyGenerationSettings,
   isGenerationSettings,
@@ -85,6 +86,13 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
         "invalid-json",
         `画布 JSON 无法解析：${errorMessage(error)}`,
       );
+    }
+  }
+  if (object(value) && value.version === 2) {
+    try {
+      value = expandMedia(value);
+    } catch (error) {
+      return failure("invalid-document", errorMessage(error));
     }
   }
   if (
@@ -298,9 +306,18 @@ function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
 
 export function serializeDocument(document: CanvasDocument): Result<string> {
   const parsed = persistentDocument(document);
-  return parsed.ok
-    ? { ok: true, value: JSON.stringify(parsed.value, null, 2) }
-    : parsed;
+  if (!parsed.ok) return parsed;
+  try {
+    return {
+      ok: true,
+      value: JSON.stringify(compactMedia(parsed.value), null, 2),
+    };
+  } catch (error) {
+    return failure(
+      "storage",
+      `画布无法序列化，请减少项目内媒体或拆分项目：${errorMessage(error)}`,
+    );
+  }
 }
 
 /** IndexedDB owns the document and embedded data URLs; errors are reported for the UI to display. */
