@@ -37,7 +37,7 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
           props.data.bidirectional,
         )
       : getBezierPath(props)[0];
-  const emphasized = Boolean(props.data?.emphasized || props.selected);
+  const emphasized = props.data?.emphasized ?? Boolean(props.selected);
   // Brightening from source to target shows the direction without an arrow.
   const ends = pathEnds(path);
   const fade = `edge-fade-${props.id}`;

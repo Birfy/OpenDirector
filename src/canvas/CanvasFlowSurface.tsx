@@ -10,6 +10,7 @@ import {
 import {
   ReactFlow,
   useReactFlow,
+  useStoreApi,
   type Edge,
   type NodeChange,
   type ReactFlowProps,
@@ -49,6 +50,8 @@ export function CanvasFlowSurface({
   ...props
 }: Props) {
   const flow = useReactFlow();
+  const store = useStoreApi();
+  const cancellingNativeSelection = useRef(false);
   const latest = useRef({ documentNodes, gesture, bypassSnapping, props });
   latest.current = { documentNodes, gesture, bypassSnapping, props };
   const [preview, setPreview] = useState<Preview>(empty);
@@ -65,9 +68,35 @@ export function CanvasFlowSurface({
     frame.current = null;
   };
   function cancel() {
+    if (cancellingNativeSelection.current) return;
     stopFrame();
     session.current = null;
     setPreview(empty());
+    const state = store.getState();
+    if (state.userSelectionRect || state.userSelectionActive) {
+      const pane =
+        state.domNode?.querySelector<HTMLElement>(".react-flow__pane");
+      const pointerId = latest.current.gesture.current.pointerId;
+      cancellingNativeSelection.current = true;
+      try {
+        // Stop the pane's native marquee/autopan lifecycle before clearing its UI.
+        if (pointerId !== null && pane?.hasPointerCapture(pointerId))
+          pane.dispatchEvent(
+            new PointerEvent("pointercancel", {
+              bubbles: true,
+              pointerId,
+              button: 0,
+            }),
+          );
+        store.setState({
+          userSelectionActive: false,
+          userSelectionRect: null,
+          nodesSelectionActive: false,
+        });
+      } finally {
+        cancellingNativeSelection.current = false;
+      }
+    }
   }
   function sample(): Preview | null {
     const active = session.current,

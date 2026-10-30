@@ -422,6 +422,7 @@ function Workspace() {
   const [panel, setPanel] = useState<Panel>(null);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
+  const [toolRevision, setToolRevision] = useState(0);
   const [minimap, setMinimap] = useState(false);
   const [showEdges, setShowEdges] = useState(true);
   const flowSurface = useRef<CanvasFlowSurfaceHandle>(null);
@@ -1128,6 +1129,7 @@ function Workspace() {
   const onConnectEnd: OnConnectEnd = (event, state) => {
     const start = connectionStarted.current;
     connectionStarted.current = null;
+    if (spacePressed || pointerGesture.current.cancelled) return;
     const point = "changedTouches" in event ? event.changedTouches[0] : event;
     if (
       !point ||
@@ -1237,7 +1239,7 @@ function Workspace() {
     zoom,
     locked: lockedIds,
     disabled:
-      panning ||
+      spacePressed ||
       switching ||
       !ready ||
       Boolean(editing || preview || activeAction || textEditingId) ||
@@ -1286,6 +1288,31 @@ function Workspace() {
       });
     },
   });
+  const clearToolInteraction = useCallback(() => {
+    cancelDrag();
+    references.cancel();
+    setMenu(null);
+    setZoomMenu(false);
+    end();
+    setTextEditingId(null);
+    setToolRevision((value) => value + 1);
+  }, [cancelDrag, references.cancel, end]);
+  const previousTool = useRef({ hand, spacePressed });
+  const changeTool = (nextHand: boolean) => {
+    clearToolInteraction();
+    previousTool.current = { hand: nextHand, spacePressed };
+    setHand(nextHand);
+    root.current?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (
+      previousTool.current.hand === hand &&
+      previousTool.current.spacePressed === spacePressed
+    )
+      return;
+    previousTool.current = { hand, spacePressed };
+    clearToolInteraction();
+  }, [hand, spacePressed, clearToolInteraction]);
   const selectionControls = Boolean(
     single && !editing && !preview && !generationTarget,
   );
@@ -1346,7 +1373,7 @@ function Workspace() {
     blocked:
       interacting ||
       references.connecting ||
-      panning ||
+      spacePressed ||
       pointerGesture.current.moved ||
       !selectionControls,
     controlsKey: `${hasComposer}:${hasToolbar}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
@@ -1358,9 +1385,13 @@ function Workspace() {
         measured: measurements[n.id],
         selected: selected.includes(n.id),
         draggable:
-          !lockedIds.has(n.id) && !panning && activeAction?.nodeId !== n.id,
+          !lockedIds.has(n.id) &&
+          !spacePressed &&
+          activeAction?.nodeId !== n.id,
         connectable:
-          !lockedIds.has(n.id) && !panning && activeAction?.nodeId !== n.id,
+          !lockedIds.has(n.id) &&
+          !spacePressed &&
+          activeAction?.nodeId !== n.id,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
         ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
@@ -1368,7 +1399,7 @@ function Workspace() {
     [
       doc.nodes,
       selected,
-      panning,
+      spacePressed,
       measurements,
       lockedIds,
       activeAction?.nodeId,
@@ -1382,12 +1413,6 @@ function Workspace() {
         selected: selectedEdges.includes(e.id),
         hidden: !showEdges,
         data: {
-          emphasized:
-            selectedEdges.includes(e.id) ||
-            selected.includes(e.source) ||
-            selected.includes(e.target) ||
-            hoveredNode === e.source ||
-            hoveredNode === e.target,
           ...referencePresentation(doc, e),
           sourceBounds: (() => {
             const n = doc.nodes.find((n) => n.id === e.source)!;
@@ -1413,7 +1438,7 @@ function Workspace() {
         },
         ariaLabel: "参考连线",
       })),
-    [doc.edges, doc.nodes, selectedEdges, selected, hoveredNode, showEdges],
+    [doc.edges, doc.nodes, selectedEdges, showEdges],
   );
 
   const projected = useMemo(() => {
@@ -1435,18 +1460,17 @@ function Workspace() {
             ...edge.data,
             sourceBounds: bounds(edge.source),
             targetBounds: bounds(edge.target),
-            emphasized: Boolean(
-              edge.data?.emphasized ||
-              selected.includes(edge.source) ||
-              selected.includes(edge.target) ||
-              hoveredNode === edge.source ||
-              hoveredNode === edge.target,
-            ),
+            emphasized:
+              hoveredNode !== null
+                ? hoveredNode === edge.source || hoveredNode === edge.target
+                : selectedEdges.includes(edge.id) ||
+                  selected.includes(edge.source) ||
+                  selected.includes(edge.target),
           },
         };
       }),
     };
-  }, [flowNodes, flowEdges, doc.nodes, selected, hoveredNode]);
+  }, [flowNodes, flowEdges, doc.nodes, selected, selectedEdges, hoveredNode]);
 
   const removeSelected = () => {
     command({
@@ -2787,6 +2811,32 @@ function Workspace() {
     if (bypassSnapping.current) clearGuides();
     if (!ready || switchPending.current) return;
     const el = event.target as HTMLElement;
+    const mod = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    // Tool shortcuts also work when a canvas menu owns focus, while editors
+    // and dialogs keep their text/keyboard input.
+    if (
+      !mod &&
+      !activeAction &&
+      !preview &&
+      !editing &&
+      !generationTarget &&
+      !settingsOpen &&
+      !help &&
+      !event.altKey &&
+      !event.repeat &&
+      (key === "h" || key === "v") &&
+      (el === root.current ||
+        el.closest(
+          ".react-flow,.cw-context-menu,.cw-bottom-controls,.cw-zoom-menu,.cw-selection-bar",
+        )) &&
+      !el.closest("input,textarea,select,[contenteditable=true],[role=dialog]")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      changeTool(key === "h");
+      return;
+    }
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
@@ -2839,8 +2889,6 @@ function Workspace() {
       (el !== root.current && !el.closest(".react-flow"))
     )
       return;
-    const mod = event.metaKey || event.ctrlKey;
-    const key = event.key.toLowerCase();
     if (
       !mod &&
       event.key === "Enter" &&
@@ -2913,9 +2961,7 @@ function Workspace() {
     } else if (event.shiftKey && event.code === "Digit2") {
       event.preventDefault();
       fit(true);
-    } else if (!mod && key === "v") setHand(false);
-    else if (!mod && key === "h") setHand(true);
-    else if (!mod && key === "t") addNode("text");
+    } else if (!mod && key === "t") addNode("text");
     else if (!mod && key === "f" && single) setPreview(single);
     else if (!mod && key === "?") setHelp(true);
     else if (
@@ -3002,7 +3048,7 @@ function Workspace() {
       setPanel("assets");
     },
     select: (id: string, event: React.MouseEvent) => {
-      if (panning || pointerGesture.current.blocksClick(event.detail)) return;
+      if (pointerGesture.current.blocksClick(event.detail)) return;
       if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
       setMenu(null);
       setDismissedComposer(null);
@@ -3075,6 +3121,14 @@ function Workspace() {
     contextMenu: (id: string, event: React.MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
+      if (
+        spacePressed ||
+        pointerGesture.current.moved ||
+        pointerGesture.current.cancelled
+      ) {
+        setMenu(null);
+        return;
+      }
       if (!selected.includes(id)) setSelected([id]);
       setMenu({
         x: event.clientX,
@@ -3239,7 +3293,7 @@ function Workspace() {
     <div
       inert={!ready || switching}
       aria-busy={!ready || switching}
-      className={`cw-workspace${panning ? " cw-workspace-panning" : ""}`}
+      className={`cw-workspace${panning ? " cw-workspace-panning" : ""}${spacePressed ? " cw-workspace-space-panning" : ""}`}
       ref={root}
       data-testid="canvas-workspace"
       data-edge-motion={pageVisible}
@@ -3314,7 +3368,12 @@ function Workspace() {
         }
       }}
       onDoubleClickCapture={(event) => {
-        if (pointerGesture.current.blocksDoubleClick()) {
+        const nodeClick = Boolean(
+          (event.target as HTMLElement).closest(".react-flow__node"),
+        );
+        if (
+          pointerGesture.current.blocksDoubleClick(nodeClick && !spacePressed)
+        ) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -3386,8 +3445,9 @@ function Workspace() {
             }}
             onConnectEnd={onConnectEnd}
             connectOnClick={false}
-            elementsSelectable={!panning && !references.connecting}
-            nodesConnectable={!panning}
+            elementsSelectable={!spacePressed && !references.connecting}
+            nodesDraggable={!spacePressed}
+            nodesConnectable={!spacePressed}
             isValidConnection={(c) =>
               !lockedIds.has(c.source) &&
               !lockedIds.has(c.target) &&
@@ -3400,7 +3460,7 @@ function Workspace() {
             }}
             onNodeClick={(event, node) => {
               if (
-                panning ||
+                pointerGesture.current.blocksClick(event.detail) ||
                 (event.target as HTMLElement).closest(
                   "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
                 )
@@ -3421,6 +3481,7 @@ function Workspace() {
               setSelected([node.id]);
               focusSelection(node.id);
               if (
+                !spacePressed &&
                 node.type === "text" &&
                 !lockedIds.has(node.id) &&
                 selectionAtPointerDown.current.length === 1 &&
@@ -3430,7 +3491,7 @@ function Workspace() {
             }}
             onNodeDoubleClick={(event, node) => {
               if (
-                panning ||
+                spacePressed ||
                 (event.target as HTMLElement).closest(
                   "button,input,textarea,select,video,audio,a,[contenteditable=true],.nodrag",
                 )
@@ -3443,6 +3504,9 @@ function Workspace() {
               }
               focusSelection(node.id);
             }}
+            onNodeContextMenu={(event, node) =>
+              actions.contextMenu(node.id, event)
+            }
             onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
             onNodeMouseLeave={() => setHoveredNode(null)}
             onNodeDragStart={beginDrag}
@@ -3453,7 +3517,7 @@ function Workspace() {
               if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
             }}
             onPaneClick={(event) => {
-              if (panning || pointerGesture.current.blocksClick(1)) return;
+              if (pointerGesture.current.blocksClick(1)) return;
               root.current?.focus({ preventScroll: true });
               setMenu(null);
               setSelected([]);
@@ -3463,6 +3527,18 @@ function Workspace() {
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
+              // The pan layer also reports right-button releases over nodes.
+              // Let the shared node handler own that menu in either tool mode.
+              if ((event.target as Element).closest(".react-flow__node"))
+                return;
+              if (
+                panning ||
+                pointerGesture.current.moved ||
+                pointerGesture.current.cancelled
+              ) {
+                setMenu(null);
+                return;
+              }
               root.current?.focus({ preventScroll: true });
               setMenu({
                 x: event.clientX,
@@ -3476,7 +3552,10 @@ function Workspace() {
             onMoveStart={(event) => {
               if (event) selectionPresentation.userNavigation();
             }}
-            onMove={(_, view) => setZoom(view.zoom)}
+            onMove={(event, view) => {
+              setZoom(view.zoom);
+              if (event) setMenu(null);
+            }}
             onMoveEnd={(_, viewport) => command({ type: "viewport", viewport })}
             minZoom={MIN_ZOOM}
             maxZoom={MAX_ZOOM}
@@ -3714,7 +3793,7 @@ function Workspace() {
             shortcut={hand ? "V" : "H"}
             tooltipDelay={0}
             active={hand}
-            onClick={() => setHand(!hand)}
+            onClick={() => changeTool(!hand)}
           />
           <span className="cw-vline" />
           <IconButton
@@ -3868,7 +3947,7 @@ function Workspace() {
           <button onClick={() => setSelectedEdges([])}>取消选择</button>
         </div>
       )}
-      {selected.length > 1 && !interacting && !panning && (
+      {selected.length > 1 && !interacting && !spacePressed && (
         <div className="cw-selection-bar">
           <span>已选 {selected.length} 个节点</span>
           <select
@@ -3936,23 +4015,24 @@ function Workspace() {
           data-interacting={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
           aria-hidden={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
           inert={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
         >
           <NodeSelectionToolbar
+            key={`${single.id}:${toolRevision}`}
             node={single}
             locked={lockedIds.has(single.id)}
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
@@ -4006,7 +4086,7 @@ function Workspace() {
             data-hidden={
               interacting ||
               references.connecting ||
-              panning ||
+              spacePressed ||
               !selectionPresentation.visible
             }
             onPointerDown={(event) => event.stopPropagation()}
@@ -4034,13 +4114,13 @@ function Workspace() {
             data-interacting={
               interacting ||
               references.connecting ||
-              panning ||
+              spacePressed ||
               !selectionPresentation.visible
             }
             inert={
               interacting ||
               references.connecting ||
-              panning ||
+              spacePressed ||
               !selectionPresentation.visible
             }
           >
@@ -4126,19 +4206,19 @@ function Workspace() {
           data-interacting={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
           aria-hidden={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
           inert={
             interacting ||
             references.connecting ||
-            panning ||
+            spacePressed ||
             !selectionPresentation.visible
           }
         >
@@ -4154,6 +4234,7 @@ function Workspace() {
           </TooltipButton>
           {composerNode.type === "text" ? (
             <TextNodeComposer
+              key={`${composerNode.id}:${toolRevision}`}
               node={composerNode}
               incoming={composerIncoming}
               models={backendCatalog.models}
@@ -4174,6 +4255,7 @@ function Workspace() {
             />
           ) : (
             <NodeComposer
+              key={`${composerNode.id}:${toolRevision}`}
               selectedNode={composerNode}
               incomingNodes={composerIncoming}
               onUpdate={(patch) =>

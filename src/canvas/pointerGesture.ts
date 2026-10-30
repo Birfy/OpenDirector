@@ -54,6 +54,10 @@ export class CanvasPointerGesture {
     return this.current?.moved ?? false;
   }
 
+  get pointerId() {
+    return this.current?.pointerId ?? null;
+  }
+
   get cancelled() {
     return this.current?.cancelled ?? false;
   }
@@ -61,12 +65,13 @@ export class CanvasPointerGesture {
   blocksClick(detail: number) {
     // Keyboard / assistive activation has no pointer gesture to cancel.
     if (detail === 0 || !this.current?.surface) return false;
-    return this.current.pan || this.current.cancelled || this.current.moved;
+    return this.current.cancelled || this.current.moved;
   }
 
-  blocksDoubleClick() {
+  blocksDoubleClick(allowPanNode = false) {
     return (
       this.blocksClick(1) ||
+      Boolean(this.current?.surface && this.current.pan && !allowPanNode) ||
       Boolean(this.current?.surface && !this.current.previousClick)
     );
   }

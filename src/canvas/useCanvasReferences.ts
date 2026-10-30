@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -53,13 +54,13 @@ export function useCanvasReferences(options: {
     moved: boolean;
     anchor: Point;
   } | null>(null);
-  const cancel = () => {
+  const cancel = useCallback(() => {
     drag.current = null;
     setConnecting(false);
     setPreview(null);
     setPort(null);
     setTargetId(null);
-  };
+  }, []);
   const hover = (event: ReactPointerEvent) => {
     if (drag.current) return;
     if (

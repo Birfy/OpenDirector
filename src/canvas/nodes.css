@@ -1161,11 +1161,14 @@
   font-size: 9px;
   margin-top: 4px;
 }
-.cw-workspace-panning .react-flow__node .cw-node {
+.cw-workspace-space-panning .react-flow__node .cw-node {
   pointer-events: none;
 }
-.cw-workspace-panning .react-flow__node {
+.cw-workspace-space-panning .react-flow__node {
   cursor: grab;
+}
+.cw-workspace-panning .react-flow__nodesselection {
+  display: none;
 }
 
 .cw-node-empty:not(.cw-node-timeline):not(.cw-node-group):not(.cw-node-stack) {

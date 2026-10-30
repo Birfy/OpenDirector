@@ -37,12 +37,21 @@ test("four screen pixels of click slop are independent of canvas zoom", () => {
   }
 });
 
-test("hand tool and cancellation suppress canvas activation but not keyboard or outside controls", () => {
+test("hand clicks allow selection and node editing, while pan drags and cancellations suppress activation", () => {
   const pointer = new CanvasPointerGesture();
   pointer.begin(1, 0, 0, true, true);
   pointer.end(1, 0, 0);
-  assert.equal(pointer.blocksClick(1), true);
+  assert.equal(pointer.blocksClick(1), false);
+  assert.equal(pointer.blocksDoubleClick(), true);
   assert.equal(pointer.blocksClick(0), false);
+  pointer.begin(1, 0, 0, true, true);
+  pointer.end(1, 0, 0);
+  assert.equal(pointer.blocksDoubleClick(true), false);
+  pointer.begin(1, 0, 0, true, true);
+  pointer.move(1, 25, 10);
+  pointer.end(1, 0, 0);
+  assert.equal(pointer.blocksClick(1), true);
+  assert.equal(pointer.blocksDoubleClick(true), true);
   pointer.begin(1, 0, 0, true, false);
   pointer.cancel();
   pointer.end(1, 0, 0);
