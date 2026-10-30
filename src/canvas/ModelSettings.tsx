@@ -7,6 +7,7 @@ import {
   type ModelConfigInput,
 } from "../backend/models.ts";
 import type { ModelConfig, ModelKind } from "../backend/rules.ts";
+import { isSegmentationModel } from "../backend/rules.ts";
 import { createVideoCapabilities } from "../backend/videoCapabilities.ts";
 import {
   VideoCapabilitiesEditor,
@@ -15,22 +16,24 @@ import {
 import "./model-settings.css";
 
 type Protocol = ModelConfigInput["protocol"];
+type SettingsModelKind = Exclude<ModelKind, "vision">;
 
-const PROTOCOLS: Record<ModelKind, readonly [Protocol, string][]> = {
+const PROTOCOLS: Record<SettingsModelKind, readonly [Protocol, string][]> = {
   agent: [["openai", "OpenAI 兼容接口（含 vLLM）"]],
   image: [
     ["openai", "OpenAI 兼容接口（含 vLLM-Omni Z-Image-Turbo）"],
     ["volcengine", "火山方舟 / Agent Plan"],
+    ["vllm_omni_segmentation", "vLLM-Omni 分割接口（SAM 3）"],
   ],
   video: [
     ["vllm_omni", "异步 /videos 接口（含 vLLM-Omni）"],
     ["volcengine", "火山方舟 / Agent Plan"],
+    ["vllm_omni_segmentation", "vLLM-Omni 分割接口（SAM 3）"],
   ],
   audio: [
     ["openai", "OpenAI 兼容语音合成（含 vLLM-Omni TTS）"],
     ["volcengine", "火山引擎语音 / Agent Plan"],
   ],
-  vision: [["vllm_omni", "vLLM-Omni 分割接口（SAM 3）"]],
 };
 
 const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
@@ -47,7 +50,7 @@ function ModelForm({
   catalog,
   onClose,
 }: {
-  kind: ModelKind;
+  kind: SettingsModelKind;
   existing?: ModelConfig;
   catalog: BackendModels;
   onClose: () => void;
@@ -58,7 +61,10 @@ function ModelForm({
     modelId: existing?.modelId ?? "",
     apiKey: "",
     connectionType: existing?.connectionType ?? "self_hosted",
-    protocol: existing?.protocol ?? PROTOCOLS[kind][0][0],
+    protocol:
+      existing && isSegmentationModel(existing)
+        ? "vllm_omni_segmentation"
+        : (existing?.protocol ?? PROTOCOLS[kind][0][0]),
     authMode: existing?.authMode ?? "none",
     videoAdapter: existing?.videoAdapter ?? "auto",
   });
@@ -70,6 +76,8 @@ function ModelForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const segmentation = value.protocol === "vllm_omni_segmentation";
+  const placeholders = PLACEHOLDERS[segmentation ? "vision" : kind];
   const update = (patch: Partial<ModelConfigInput>) =>
     setValue((current) => ({ ...current, ...patch }));
   const submit = async (event: FormEvent) => {
@@ -77,19 +85,17 @@ function ModelForm({
     setBusy(true);
     setError("");
     try {
-      const videoCapabilities = outputDraft.custom
-        ? createVideoCapabilities(
-            outputDraft.outputs,
-            outputDraft.defaultResolution,
-            Number(outputDraft.defaultDuration),
-            outputDraft.dimensionStep,
-            value.videoAdapter,
-          )
-        : null;
-      await catalog.save(
-        kind === "video" ? { ...value, videoCapabilities } : value,
-        existing?.id,
-      );
+      const videoCapabilities =
+        kind === "video" && !segmentation && outputDraft.custom
+          ? createVideoCapabilities(
+              outputDraft.outputs,
+              outputDraft.defaultResolution,
+              Number(outputDraft.defaultDuration),
+              outputDraft.dimensionStep,
+              value.videoAdapter,
+            )
+          : null;
+      await catalog.save({ ...value, videoCapabilities }, existing?.id);
       onClose();
     } catch (failure) {
       setError(errorMessage(failure));
@@ -130,13 +136,6 @@ function ModelForm({
               update({
                 connectionType,
                 authMode: connectionType === "self_hosted" ? "none" : "bearer",
-                videoAdapter: "auto",
-                protocol:
-                  connectionType === "self_hosted"
-                    ? PROTOCOLS[kind][0][0]
-                    : (PROTOCOLS[kind].find(
-                        ([id]) => id === "volcengine",
-                      )?.[0] ?? PROTOCOLS[kind][0][0]),
               });
             }}
           >
@@ -169,7 +168,7 @@ function ModelForm({
             required
             maxLength={2048}
             value={value.url}
-            placeholder={PLACEHOLDERS[kind][0]}
+            placeholder={placeholders[0]}
             onChange={(event) => update({ url: event.target.value })}
           />
         </label>
@@ -179,7 +178,7 @@ function ModelForm({
             required
             maxLength={200}
             value={value.modelId}
-            placeholder={PLACEHOLDERS[kind][1]}
+            placeholder={placeholders[1]}
             onChange={(event) => update({ modelId: event.target.value })}
           />
         </label>
@@ -210,7 +209,12 @@ function ModelForm({
             />
           </label>
         )}
-        {kind === "video" && (
+        {segmentation && (
+          <p className="cw-capability-help">
+            同一配置可用于图片选区、图层拆分和视频抠像。分割模型不参与图片或视频生成。
+          </p>
+        )}
+        {kind === "video" && !segmentation && (
           <details className="cw-video-config">
             <summary>视频适配方式</summary>
             {value.protocol === "vllm_omni" && (
@@ -285,7 +289,7 @@ function ModelForm({
 
 export function ModelSettings({ catalog }: { catalog: BackendModels }) {
   const [editing, setEditing] = useState<{
-    kind: ModelKind;
+    kind: SettingsModelKind;
     model?: ModelConfig;
   } | null>(null);
   const [error, setError] = useState("");
@@ -318,7 +322,8 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
           const models = catalog.models.filter(
             (model) =>
               model.kind === kind.id ||
-              (kind.id === "image" && model.kind === "vision"),
+              ((kind.id === "image" || kind.id === "video") &&
+                model.kind === "vision"),
           );
           return (
             <section key={kind.id} className="cw-model-section">
@@ -338,7 +343,7 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                     <div>
                       <strong>{model.modelId}</strong>
                       <small>
-                        {model.kind === "vision" ? "视觉分割 · " : ""}
+                        {isSegmentationModel(model) ? "视觉分割 · " : ""}
                         {model.url} ·{" "}
                         {model.connectionType === "self_hosted"
                           ? "自部署"
@@ -348,7 +353,7 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                     </div>
                     <button
                       disabled={!!editing}
-                      onClick={() => setEditing({ kind: model.kind, model })}
+                      onClick={() => setEditing({ kind: kind.id, model })}
                     >
                       编辑
                     </button>
@@ -361,25 +366,15 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                   </li>
                 ))}
               </ul>
-              {kind.id === "image" && (
-                <button
-                  disabled={!!editing}
-                  onClick={() => setEditing({ kind: "vision" })}
-                >
-                  添加视觉分割模型（SAM 3）
-                </button>
+              {editing && editing.kind === kind.id && (
+                <ModelForm
+                  key={editing.model?.id ?? editing.kind}
+                  kind={editing.kind}
+                  existing={editing.model}
+                  catalog={catalog}
+                  onClose={() => setEditing(null)}
+                />
               )}
-              {editing &&
-                (editing.kind === kind.id ||
-                  (kind.id === "image" && editing.kind === "vision")) && (
-                  <ModelForm
-                    key={editing.model?.id ?? editing.kind}
-                    kind={editing.kind}
-                    existing={editing.model}
-                    catalog={catalog}
-                    onClose={() => setEditing(null)}
-                  />
-                )}
             </section>
           );
         })}

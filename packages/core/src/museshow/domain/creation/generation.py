@@ -256,6 +256,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
         raise ValueError('Selected model does not match generation kind')
+    if model.inputRules.profile == 'vllm-omni-segmentation':
+        raise ValueError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
     if not spec.prompt.strip() and not (spec.promptContent and any(isinstance(part, PromptText) and part.text.strip() for part in spec.promptContent)):
         raise ValueError('Generation prompt is empty')
     rules = model.inputRules

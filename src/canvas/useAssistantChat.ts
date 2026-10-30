@@ -11,6 +11,7 @@ import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { errorMessage, request } from "../backend/api";
 import { uploadReferences } from "../backend/generation";
 import type { BackendModels } from "../backend/models";
+import { isGenerationModel } from "../backend/rules";
 import type { CanvasNode } from "./model";
 import { assistantReferences } from "./assistantReferences";
 import {
@@ -148,7 +149,9 @@ export function useAssistantChat(
       const selections = { ...previous.modelSelections };
       let changed = false;
       for (const kind of ["agent", "image", "video", "audio"] as const) {
-        const options = catalog.models.filter((model) => model.kind === kind);
+        const options = catalog.models.filter(
+          (model) => model.kind === kind && isGenerationModel(model),
+        );
         if (!options.some((model) => model.id === selections[kind])) {
           const next = options[0]?.id ?? null;
           if (selections[kind] !== next) {

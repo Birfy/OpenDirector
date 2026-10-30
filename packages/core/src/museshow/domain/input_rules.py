@@ -15,6 +15,10 @@ def _adapter_rules(config):
              'maxAudios': 0, 'imageBytes': 8 * 1024 * 1024, 'requestBytes': 48 * 1024 * 1024,
              'videoModes': ['first_frame'] if kind == 'video' else []}
     rules.update(maxVideos=0, videoBytes=50 * 1024 * 1024)
+    if kind == 'vision' or config.get('protocol') == 'vllm_omni_segmentation':
+        # Shared image segmentation / video tracking service, never a generator.
+        rules.update(profile='vllm-omni-segmentation', allowedKinds=[], maxImages=0, videoModes=[])
+        return rules
     adapter = config.get('videoAdapter', 'auto')
     name = model.rsplit('/', 1)[-1].lower()
     if adapter == 'auto':
@@ -60,9 +64,6 @@ def _adapter_rules(config):
         rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
     if kind == 'audio':
         rules.update(profile='tts', allowedKinds=[], maxImages=0)
-    if kind == 'vision':
-        # Self-hosted vLLM-Omni segmentation (SAM 3): canvas tools call it, nodes never generate with it.
-        rules.update(profile='vllm-omni-segmentation', allowedKinds=[], maxImages=0)
     return rules
 
 

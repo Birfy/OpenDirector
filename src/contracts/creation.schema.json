@@ -5673,7 +5673,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -5769,7 +5770,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -5869,7 +5871,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -5951,7 +5954,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -16515,7 +16519,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -16613,7 +16618,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -16716,7 +16722,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"
@@ -16800,7 +16807,8 @@
             "enum": [
               "openai",
               "volcengine",
-              "vllm_omni"
+              "vllm_omni",
+              "vllm_omni_segmentation"
             ],
             "title": "Protocol",
             "type": "string"

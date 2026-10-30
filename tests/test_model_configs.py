@@ -127,3 +127,69 @@ def test_model_config_routes_keep_local_request_protection(api):
     client, _ = api
     assert client.get("/api/model-configs", headers={"Origin": "https://untrusted.example"}).status_code == 403
     assert client.post("/api/model-configs", json=payload(), headers={"X-MuseShow-Request": ""}).status_code == 403
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_segmentation_protocol_serves_both_tools_without_generation(api, kind):
+    from museshow.domain.creation.models import ModelConfigPublic, ModelSnapshot
+    from museshow.integrations.model_adapters import capabilities_of
+    from museshow.integrations.providers import GenerationProviders
+    client, store = api
+    response = client.post('/api/model-configs', json=payload(kind, protocol='vllm_omni_segmentation', modelId='facebook/sam3'))
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert saved['inputRules']['profile'] == 'vllm-omni-segmentation'
+    assert saved['inputRules']['allowedKinds'] == [] and saved['inputRules']['videoModes'] == []
+    assert ModelConfigs(store.repository).list() == [saved]
+    public = ModelConfigPublic.model_validate(saved)
+    ModelSnapshot(modelConfigId=public.id, **public.model_dump(exclude={'id', 'authMode', 'videoCapabilities'}))
+    private = ModelConfigs(store.repository).resolve(saved['id'], kind)
+    assert capabilities_of(private) == {'image.segment', 'video.matting'}
+    with pytest.raises(ProjectError, match='视觉分割模型'):
+        GenerationProviders(store).validate(kind, private)
+    catalog = client.get('/api/tools').json()
+    assert catalog['selectionPreview']['available']
+    for capability in ('image.segment', 'video.matting'):
+        assert catalog['capabilities'][capability][0]['id'] == saved['id']
+    assert not any(saved['id'] == model['id'] for model in catalog['capabilities'].get('image.generate', []))
+    normal = 'openai' if kind == 'image' else 'vllm_omni'
+    changed = client.patch(f"/api/model-configs/{saved['id']}", json=payload(kind, protocol=normal, apiKey=''))
+    assert changed.status_code == 200, changed.text
+    assert changed.json()['id'] == saved['id'] and changed.json()['protocol'] == normal
+    assert ModelConfigs(store.repository).resolve(saved['id'], kind)['apiKey'] == 'test-secret'
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+@pytest.mark.parametrize('segmentation', [False, True])
+def test_legacy_sam_configuration_can_be_edited_in_media_category(api, kind, segmentation):
+    client, store = api
+    legacy = client.post('/api/model-configs', json=payload('vision', protocol='vllm_omni', modelId='facebook/sam3')).json()
+    assert client.get('/api/tools').json()['selectionPreview']['available']
+    protocol = 'vllm_omni_segmentation' if segmentation else 'openai' if kind == 'image' else 'vllm_omni'
+    changed = client.patch(f"/api/model-configs/{legacy['id']}", json=payload(kind,
+        protocol=protocol, modelId=legacy['modelId'], apiKey=''))
+    assert changed.status_code == 200, changed.text
+    assert changed.json()['id'] == legacy['id'] and changed.json()['kind'] == kind
+    assert ModelConfigs(store.repository).resolve(legacy['id'], kind)['apiKey'] == 'test-secret'
+
+
+def test_segmentation_rejects_generation_specific_configuration_and_wrong_categories(api):
+    client, store = api
+    for kind in ('agent', 'audio'):
+        assert client.post('/api/model-configs', json=payload(kind, protocol='vllm_omni_segmentation')).status_code == 400
+    assert client.post('/api/model-configs', json=payload('video', protocol='vllm_omni_segmentation', videoAdapter='fasth3')).status_code == 400
+    assert ModelConfigs(store.repository).list() == []
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_legacy_generation_boundary_rejects_sam_before_creating_a_task(tmp_path, kind):
+    from canvas_helpers import setup
+    store, session, project, _, generation, provider = setup(tmp_path)
+    sam = generation.configs.save(kind, 'http://fixture.invalid/v1', 'sam3', '',
+                                  connection_type='self_hosted', protocol='vllm_omni_segmentation')
+    node = generation.canvas.create(project['id'], {'id': str(uuid4()), 'kind': kind}, session)
+    with pytest.raises(ProjectError, match='视觉分割模型'):
+        generation._prepare(project['id'], node['id'], {'id': str(uuid4()), 'expectedRevision': 1,
+            'modelConfigId': sam['id'], 'inputs': {'prompt': 'generate'}}, session)
+    assert provider.calls == []
+    assert generation.canvas.snapshot(project['id'])['tasks'] == []

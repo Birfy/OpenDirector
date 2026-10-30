@@ -107,6 +107,8 @@ class Generation:
             node.update(candidate)
             node.update(resolve_inputs(node, state, records, strict=True))
             config = self.configs.resolve(str(value["modelConfigId"]), "agent" if node["kind"] == "text" else node["kind"])
+            if input_rules(config)['profile'] == 'vllm-omni-segmentation':
+                raise ProjectError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。', 409)
             self.provider.validate(node["kind"], config)
             if not node["prompt"].strip():
                 raise ProjectError("请输入生成要求；音频节点中请输入要合成的文字。")

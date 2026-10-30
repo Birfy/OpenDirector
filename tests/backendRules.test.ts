@@ -13,6 +13,7 @@ import {
   backendReferenceIssue,
   backendReferences,
   backendVideoMode,
+  isGenerationModel,
   type ModelConfig,
 } from "../src/backend/rules.ts";
 
@@ -56,6 +57,28 @@ const video = (patch: object) => ({
   prompt: "雨夜街头",
   durationSeconds: 5,
   ...patch,
+});
+
+test("SAM stays tool-only in both media categories and legacy vision configurations", () => {
+  for (const kind of ["image", "video"] as const) {
+    const sam = {
+      ...config(kind, {}),
+      protocol: "vllm_omni_segmentation" as const,
+    };
+    const settings = {
+      ...generationDefaults(kind),
+      modelConfigId: sam.id,
+      prompt: "test",
+    };
+    assert.equal(isGenerationModel(sam), false);
+    assert.match(backendBlocker(settings, [], [sam])!, /视觉分割模型/);
+  }
+  assert.equal(
+    isGenerationModel({ kind: "vision", protocol: "vllm_omni" }),
+    false,
+  );
+  assert.equal(isGenerationModel({ kind: "image", protocol: "openai" }), true);
+  assert.equal(isGenerationModel(h3), true);
 });
 
 test("text-only reference requests become text-to-video", () => {

@@ -370,6 +370,8 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
     """The adapter serving a configuration, chosen from its explicit profile and protocol."""
     kind, protocol = config['kind'], config.get('protocol')
     profile = input_rules(config)['profile']
+    if profile == 'vllm-omni-segmentation':
+        return VllmOmniSegmentation(transport, poll_interval)
     if kind == 'agent':
         return OpenAIChat(transport, poll_interval)
     if kind == 'image' and profile == 'vllm-omni-image':
@@ -382,8 +384,6 @@ def adapter_for(config, transport=None, poll_interval=3) -> ModelAdapter | None:
         return VllmOmniVideo(transport, poll_interval)
     if kind == 'audio' and protocol in {'openai', 'vllm_omni'}:
         return OpenAISpeech(transport, poll_interval)
-    if kind == 'vision' and profile == 'vllm-omni-segmentation':
-        return VllmOmniSegmentation(transport, poll_interval)
     return None
 
 

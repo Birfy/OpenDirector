@@ -41,6 +41,8 @@ class GenerationProviders(VolcengineGeneration):
         return super().prepare_inputs(project_id, node, config, complete=complete)
 
     def validate(self, kind, config):
+        if input_rules(config)['profile'] == 'vllm-omni-segmentation':
+            raise ProjectError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
         adapter = self._profile_adapter(config)
         if adapter:
             return adapter.validate(kind, config)

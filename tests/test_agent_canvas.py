@@ -116,3 +116,30 @@ def test_rejected_tool_arguments_name_the_fields_without_their_values():
     message = argument_error(failure.value)
     assert 'modelConfigId' in message and 'secret-value' not in message
     assert argument_error(ValueError('x')) == '工具参数或文本格式无效，未执行。'
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_agent_does_not_default_to_or_generate_with_a_segmentation_model(tmp_path, kind):
+    import asyncio
+    from types import SimpleNamespace
+    from museshow.agent.loop import AgentLoop
+    from museshow.application.generation import Generation
+    from museshow.domain.projects import ProjectError
+    store = LocalProjects(tmp_path)
+    session = str(uuid4())
+    project = store.create('SAM能力筛选', str(uuid4()), session)
+    configs = ModelConfigs(tmp_path)
+    sam = configs.save(kind, 'http://fixture.invalid/v1', 'sam3', '',
+                       connection_type='self_hosted', protocol='vllm_omni_segmentation')
+    generation = Generation(store, configs)
+    loop = AgentLoop(store, configs, generation, None)
+    turn = SimpleNamespace(owner=project['id'], session=session, selections={}, selected_node_id=None)
+    assert loop._project(turn)['models'] == []
+    args = {'kind': kind, 'prompt': 'test', 'referenceIds': []}
+    with pytest.raises(ProjectError, match='尚未选择'):
+        asyncio.run(loop.execute(turn, 'generate_asset', args, str(uuid4())))
+    turn.selections = {kind: sam['id']}
+    with pytest.raises(ProjectError, match='视觉分割模型'):
+        asyncio.run(loop.execute(turn, 'generate_asset', args, str(uuid4())))
+    state = generation.canvas.snapshot(project['id'])
+    assert state['canvas']['nodes'] == [] and state['tasks'] == []

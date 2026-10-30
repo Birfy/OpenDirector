@@ -281,6 +281,16 @@ def test_model_public_contract_accepts_existing_configuration_outputs(tmp_path, 
     assert 'private-key' not in parsed.model_dump_json()
 
 
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_shared_generation_contract_rejects_segmentation_models(kind):
+    from museshow.domain.creation.generation import ImageGenerationSpec, VideoGenerationSpec
+    sam = model(kind, protocol='vllm_omni_segmentation')
+    spec_type = ImageGenerationSpec if kind == 'image' else VideoGenerationSpec
+    spec = spec_type(**entity(21, kind=kind, modelConfigId=sam.id, prompt='generate'))
+    with pytest.raises(ValueError, match='视觉分割模型'):
+        validate_generation(spec, sam)
+
+
 def test_credential_write_is_separate_and_protocols_are_restricted():
     value = model().model_dump(exclude={'id', 'inputRules'})
     write = ModelConfigWrite(**value, apiKey='private-key')

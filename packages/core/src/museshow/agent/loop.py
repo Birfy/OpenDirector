@@ -138,7 +138,8 @@ class AgentLoop:
                 "assets": [{key: asset[key] for key in ("id", "name", "kind", "purpose", "fingerprint", "referenceIds", "generationTaskId")} for asset in snapshot["assets"] if asset["id"] in snapshot["availableAssetIds"]],
                 "availableAssetIds": snapshot["availableAssetIds"],
                 "tasks": [task_summary(task, include_inputs=False) for task in snapshot["tasks"][-20:]],
-                "models": [{key: model[key] for key in ("id", "kind", "modelId", "inputRules")} for model in self.configs.list()]}
+                "models": [{key: model[key] for key in ("id", "kind", "modelId", "inputRules")} for model in self.configs.list()
+                           if model['inputRules']['profile'] != 'vllm-omni-segmentation']}
 
     async def execute(self, turn, name, value, operation_id):
         history = getattr(turn, 'conversation', {}).get('messages', [])
@@ -173,10 +174,13 @@ class AgentLoop:
             model_kind = "agent" if kind == "text" else kind
             config_id = turn.selections.get(model_kind)
             if model_kind not in turn.selections:
-                config_id = next((item["id"] for item in self.configs.list() if item["kind"] == model_kind), None)
+                config_id = next((item["id"] for item in self.configs.list() if item["kind"] == model_kind
+                                  and item['inputRules']['profile'] != 'vllm-omni-segmentation'), None)
             if not config_id:
                 raise ProjectError("尚未选择该类别模型，请先在设置中配置并在右侧选择。", 409)
             config = self.configs.resolve(config_id, model_kind)
+            if input_rules(config)['profile'] == 'vllm-omni-segmentation':
+                raise ProjectError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。', 409)
             self.generation.provider.validate(kind, config)
         node = next((node for node in snapshot["canvas"]["nodes"] if node["id"] == node_id), None)
         if node_id and node is None:

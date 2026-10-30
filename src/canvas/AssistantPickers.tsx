@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { CanvasIcon as Icon } from "./CanvasIcon";
 import type { ModelConfig, ModelKind } from "../backend/rules";
+import { isGenerationModel } from "../backend/rules";
 import type { ModelSelections } from "../backend/chat";
 
 // Preserve MuseShow's keyboard-accessible model and thinking pickers.
@@ -13,7 +14,9 @@ const MODEL_KINDS = [
 // Vision models serve canvas tools only; the assistant never picks one.
 type AssistantKind = (typeof MODEL_KINDS)[number]["id"];
 function modelOptions(models: ModelConfig[], kind: ModelKind) {
-  const options = models.filter((model) => model.kind === kind);
+  const options = models.filter(
+    (model) => model.kind === kind && isGenerationModel(model),
+  );
   return options.map((model) => {
     const host = new URL(model.url).host;
     const duplicate = options.some(
@@ -219,9 +222,7 @@ export function ModelPicker({
                 onClick={() => setKind(tab.id)}
               >
                 {tab.label}
-                <span>
-                  {models.filter((model) => model.kind === tab.id).length}
-                </span>
+                <span>{modelOptions(models, tab.id).length}</span>
               </button>
             ))}
           </div>

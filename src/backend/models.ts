@@ -7,7 +7,10 @@ import type {
   VideoCapabilities,
 } from "./rules.ts";
 
-export const MODEL_KINDS: readonly { id: ModelKind; label: string }[] = [
+export const MODEL_KINDS: readonly {
+  id: Exclude<ModelKind, "vision">;
+  label: string;
+}[] = [
   { id: "agent", label: "对话 Agent" },
   { id: "image", label: "图片生成" },
   { id: "video", label: "视频生成" },
@@ -20,7 +23,7 @@ export interface ModelConfigInput {
   modelId: string;
   apiKey: string;
   connectionType: "api" | "self_hosted";
-  protocol: "openai" | "volcengine" | "vllm_omni";
+  protocol: NonNullable<ModelConfig["protocol"]>;
   authMode: "none" | "bearer";
   videoAdapter?: VideoAdapter;
   videoCapabilities?: VideoCapabilities | null;

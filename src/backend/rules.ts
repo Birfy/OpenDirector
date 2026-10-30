@@ -35,7 +35,12 @@ export interface ModelConfig {
   url: string;
   modelId: string;
   connectionType: "api" | "self_hosted";
-  protocol: "openai" | "volcengine" | "vllm_omni" | null;
+  protocol:
+    | "openai"
+    | "volcengine"
+    | "vllm_omni"
+    | "vllm_omni_segmentation"
+    | null;
   authMode: "none" | "bearer" | null;
   inputRules: InputRules;
   videoAdapter?: VideoAdapter;
@@ -45,6 +50,19 @@ export interface ModelConfig {
 export interface BackendReference {
   node: CanvasNode;
   role: "reference" | "firstFrame" | "continuation";
+}
+
+/** SAM configurations serve editing tools, including legacy vision entries. */
+export function isSegmentationModel(
+  model: Pick<ModelConfig, "kind" | "protocol">,
+) {
+  return model.kind === "vision" || model.protocol === "vllm_omni_segmentation";
+}
+
+export function isGenerationModel(
+  model: Pick<ModelConfig, "kind" | "protocol">,
+) {
+  return !isSegmentationModel(model);
 }
 
 const LABELS: Record<string, string> = {
@@ -281,6 +299,8 @@ export function backendBlocker(
   if (!config) return "所选模型配置已删除或尚未读取，请在设置中重新选择。";
   if (config.kind !== settings.mode)
     return "模型类型与节点不符，请重新选择模型。";
+  if (!isGenerationModel(config))
+    return "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。";
   if (!settings.prompt.trim())
     return settings.mode === "audio"
       ? "请输入要合成的文字。"

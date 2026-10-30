@@ -194,13 +194,15 @@ def test_multi_output_identities_use_the_target_only_for_the_matching_first_kind
     assert output_item_id(task, 1, 'video') == output_item_id(task, 1, 'video')
 
 
-def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project, monkeypatch):
+@pytest.mark.parametrize('model_kind', ['vision', 'image', 'video'])
+def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project, monkeypatch, model_kind):
     import base64
     from museshow.domain.capabilities import Segment
     from museshow.integrations.model_adapters import VllmOmniSegmentation
     store, projects, assets, project_id, session, source, _, factory = tool_project
     configs = ModelConfigs(store.repository)
-    configs.save('vision', 'http://fixture.invalid/v1', 'facebook/sam3', '', connection_type='self_hosted', protocol='vllm_omni')
+    configs.save(model_kind, 'http://fixture.invalid/v1', 'facebook/sam3', '', connection_type='self_hosted',
+                 protocol='vllm_omni' if model_kind == 'vision' else 'vllm_omni_segmentation')
     mask = BytesIO()
     matte = Image.new('L', (64, 48), 0)
     matte.paste(255, (10, 8, 30, 32))

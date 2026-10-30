@@ -20,8 +20,9 @@ def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None
         raise ProjectError('无效的接入方式。')
     protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
-    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine'},
-               'video': {'vllm_omni', 'volcengine'}, 'audio': {'openai', 'volcengine'}, 'vision': {'vllm_omni'}}
+    allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
+               'video': {'vllm_omni', 'volcengine', 'vllm_omni_segmentation'},
+               'audio': {'openai', 'volcengine'}, 'vision': {'vllm_omni'}}
     auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
     if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')
@@ -117,7 +118,10 @@ class ModelConfigs:
             existing = next((item for item in models if item["id"] == config_id), None)
             if config_id and not existing:
                 raise ProjectError("模型配置已被删除，请重新加载。", 404)
-            if existing and existing["kind"] != kind:
+            # An old standalone SAM entry may be edited through either media
+            # category without replacing its identity or credential.
+            legacy_segmentation = existing and existing['kind'] == 'vision' and kind in {'image', 'video'}
+            if existing and existing["kind"] != kind and not legacy_segmentation:
                 raise ProjectError("不能修改模型所属类别。")
             if connection['authMode'] == 'none':
                 fields['apiKey'] = ''

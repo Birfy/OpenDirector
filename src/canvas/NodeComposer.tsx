@@ -21,6 +21,7 @@ import {
   serviceVideoSettings,
   backendReferenceIssue,
   modelLabel,
+  isGenerationModel,
   type ModelConfig,
 } from "../backend/rules.ts";
 import { copyGenerationSettings } from "./dataBoundary";
@@ -123,7 +124,9 @@ export function NodeComposer({
   const mode = settings.mode;
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
-  const serviceModels = backendModels.filter((item) => item.kind === mode);
+  const serviceModels = backendModels.filter(
+    (item) => item.kind === mode && isGenerationModel(item),
+  );
   const referenceIssue = (node: CanvasNode) =>
     !backend
       ? generationReferenceIssue(node, settings)

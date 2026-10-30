@@ -270,7 +270,7 @@ class SessionClose(Model):
 
 class ModelConnection(Model):
     connectionType: Literal['api', 'self_hosted'] = 'api'
-    protocol: Literal['openai', 'volcengine', 'vllm_omni'] | None = None
+    protocol: Literal['openai', 'volcengine', 'vllm_omni', 'vllm_omni_segmentation'] | None = None
     authMode: Literal['none', 'bearer'] | None = None
 
 
