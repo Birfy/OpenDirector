@@ -4,12 +4,14 @@ import { createDocument, createNode } from "../src/canvas/model.ts";
 import { createHistory, recordChange, undo } from "../src/canvas/history.ts";
 import { serializeDocument, parseDocument } from "../src/canvas/storage.ts";
 import { absolutePosition } from "../src/canvas/geometry.ts";
+import { createLocalStage } from "../src/canvas/stageDocument.ts";
 import {
   toolProvenanceEdges,
   type GenerationJob,
 } from "../src/canvas/generationHistory.ts";
 import {
   appendLinkedMediaResults,
+  captureEditorSource,
   type LinkedMediaResult,
 } from "../src/canvas/linkedResults.ts";
 
@@ -104,6 +106,59 @@ test("tool provenance is projected from history without duplicating saved edges 
     [],
   );
 });
+for (const kind of ["timeline", "external"] as const) {
+  test(`${kind} renders can join the canvas without an original media URL`, () => {
+    const source = createNode(kind);
+    if (kind === "external") source.data.localStage = createLocalStage();
+    const document = { ...createDocument(), nodes: [source] };
+    const origin = captureEditorSource(document.id, source);
+    const result = appendLinkedMediaResults(document, origin, [outputs[0]!]);
+    assert.equal(result.error, undefined);
+    assert.equal(result.ids.length, 1);
+    assert.equal(result.document.nodes[0], source);
+    assert.equal(result.document.edges[0]?.source, source.id);
+    assert.equal(result.document.edges[0]?.intent, "post_edit_result");
+    assert.deepEqual(
+      undo(recordChange(createHistory(document), result.document)).present,
+      document,
+    );
+    const changed = structuredClone(document);
+    if (kind === "timeline") changed.nodes[0]!.data.timeline!.width += 32;
+    else changed.nodes[0]!.data.localStage!.background = "#123456";
+    for (const invalid of [
+      changed,
+      { ...document, id: "another-project" },
+      { ...document, nodes: [] },
+      { ...document, nodes: [{ ...source, locked: true }] },
+      {
+        ...document,
+        nodes: [
+          {
+            ...source,
+            data: { ...source.data, assetState: "missing" as const },
+          },
+        ],
+      },
+    ]) {
+      const refused = appendLinkedMediaResults(invalid, origin, [outputs[0]!]);
+      assert.equal(refused.document, invalid);
+      assert.deepEqual(refused.ids, []);
+      assert.ok(refused.error);
+    }
+    // Moving or renaming the composition does not change its rendered content.
+    assert.equal(
+      appendLinkedMediaResults(
+        {
+          ...document,
+          nodes: [{ ...source, data: { ...source.data, title: "renamed" } }],
+        },
+        origin,
+        [outputs[0]!],
+      ).error,
+      undefined,
+    );
+  });
+}
 
 test("repeated results avoid existing grouped media and other new outputs without moving sources", () => {
   const source = createNode("video", { x: 0, y: 0 }, { src: "original" });
