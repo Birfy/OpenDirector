@@ -393,6 +393,8 @@ export function NodeSelectionToolbar({
                     : action.label
                 }
                 tooltipSide="top"
+                // Labelled buttons already show their text; only icons and lock reasons need a tooltip.
+                showTooltip={Boolean(action.iconOnly || action.disabled)}
                 className={`${action.iconOnly ? "is-icon-only" : ""}${action.destructive ? " is-destructive" : ""}`}
                 disabled={action.disabled}
                 onClick={(event) => {
@@ -461,6 +463,8 @@ export function NodeSelectionToolbar({
                     : (option.description ?? option.label)
                 }
                 tooltipSide="right"
+                // The item shows its label and description; only an unavailable item explains itself.
+                showTooltip={Boolean(option.disabled || locked)}
                 disabled={option.disabled || locked}
                 className="cw-selection-menu-item"
                 onClick={() => {

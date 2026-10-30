@@ -861,6 +861,7 @@ export function ImageActionEditor({
                 <TooltipButton
                   key={item.tool}
                   label={item.label}
+                  showTooltip={false}
                   aria-pressed={activeInk === item.tool}
                   onClick={() => setActiveInk(item.tool as ImageInkTool)}
                 >

@@ -35,6 +35,7 @@ export function TooltipButton({
   shortcut,
   tooltipSide = "top",
   tooltipDelay = 200,
+  showTooltip = true,
   children,
   onPointerEnter,
   onPointerLeave,
@@ -47,6 +48,8 @@ export function TooltipButton({
   shortcut?: string;
   tooltipSide?: TooltipSide;
   tooltipDelay?: number;
+  /** Off when the button already shows its label as text. */
+  showTooltip?: boolean;
 }) {
   const id = useId();
   const context = useContext(TooltipContext);
@@ -71,6 +74,7 @@ export function TooltipButton({
   };
   const show = (delay: number) => {
     clearTimer();
+    if (!showTooltip) return;
     if (delay) {
       setPending(true);
       timer.current = setTimeout(() => {
