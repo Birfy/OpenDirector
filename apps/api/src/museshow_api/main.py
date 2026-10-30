@@ -17,6 +17,7 @@ from museshow.domain.settings import GeneralSettings, GeneralSettingsPatch
 from museshow.domain.assets import MAX_ASSET_BYTES, ProjectAsset
 from museshow.application.generation import Generation
 from museshow.application.creation_generation import CreationGeneration
+from museshow.application.tool_tasks import ToolTasks
 from museshow.application.chat_references import validate_chat_references
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.creation_projects import CreationProjects
@@ -33,6 +34,7 @@ from museshow_api.chat import Chat
 from museshow_api.project_creation import ProjectCreation
 from museshow_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRequest, Conversation, Draft, GenerateNode, ModelConfigInput, ModelConfigPublic, NodeCreate, NodePatch, NodeText, ProjectCreate, ProjectRename, Session, SessionClose, TextAssetCreate
 from museshow_api.models import ProjectFromMessage
+from museshow_api.models import ToolTaskCreate
 from museshow_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
 from museshow_api.models import ModelCapabilityRequest
 
@@ -56,6 +58,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     creation_generation = CreationGeneration(creation_projects, model_configs, generation, generation_provider)
     canvas = generation.canvas
     assets = canvas.assets
+    tools = ToolTasks(store, model_configs, assets)
     chat = Chat(store, model_configs, chat_provider, generation)
     project_creation = ProjectCreation(store, model_configs, chat.provider)
 
@@ -66,6 +69,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         try:
             yield
         finally:
+            await tools.close()
             await generation.close()
             await creation_generation.close()
 
@@ -284,6 +288,22 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.post("/api/projects/{project_id}/canvas/nodes/{node_id}/generate")
     async def generate_node(project_id: UUID, node_id: UUID, value: GenerateNode, x_museshow_session: str = Header()):
         return await generation.submit(str(project_id), str(node_id), value.model_dump(mode="json", exclude_unset=True), identifier(x_museshow_session))
+
+    @app.get('/api/tools')
+    def tool_catalog():
+        return tools.catalog()
+
+    @app.post('/api/projects/{project_id}/tool-tasks', status_code=202)
+    async def submit_tool_task(project_id: UUID, value: ToolTaskCreate, x_museshow_session: str = Header()):
+        return await tools.submit(str(project_id), value.model_dump(mode='json'), identifier(x_museshow_session))
+
+    @app.get('/api/projects/{project_id}/tool-tasks/{task_id}')
+    def tool_task(project_id: UUID, task_id: UUID):
+        return tools.get(str(project_id), str(task_id))
+
+    @app.post('/api/projects/{project_id}/tool-tasks/{task_id}/cancel')
+    async def cancel_tool_task(project_id: UUID, task_id: UUID, x_museshow_session: str = Header()):
+        return await tools.cancel(str(project_id), str(task_id), identifier(x_museshow_session))
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/cancel")
     async def cancel_generation(project_id: UUID, task_id: UUID, x_museshow_session: str = Header()):

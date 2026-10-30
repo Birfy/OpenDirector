@@ -161,6 +161,12 @@ import {
 import { useBackendModels } from "../backend/models.ts";
 import { backendProjectId, openBackendProject } from "../backend/projects.ts";
 import {
+  cancelToolTask,
+  submitToolTask,
+  useToolCatalog,
+  waitForToolTask,
+} from "../backend/tools.ts";
+import {
   backendBlocker,
   backendModel,
   backendReferences,
@@ -251,6 +257,8 @@ type ServiceRun = ActiveGeneration & {
   controller: AbortController;
   projectId?: string;
   taskId?: string;
+  /** Tool tasks are cancelled through the tool task route. */
+  tool?: CanvasToolId;
 };
 const jobTime = () =>
   new Date().toLocaleTimeString("zh-CN", {
@@ -458,6 +466,10 @@ function Workspace() {
   const [help, setHelp] = useState(false);
   const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
+  const toolCatalog = useToolCatalog(
+    backendCatalog.connected,
+    backendCatalog.models,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [businessHistory, setBusinessHistory] = useState({
     undo: false,
@@ -1819,6 +1831,18 @@ function Workspace() {
         notify(next.error);
         return;
       }
+      // A model that continues its own clips (H3) extends seamlessly from cached latents.
+      const draft = next.document.nodes.find((node) => node.id === next.ids[0]);
+      const settings = draft && getNodeGenerationSettings(draft);
+      if (
+        draft &&
+        settings &&
+        backendModel(
+          settings,
+          backendCatalog.models,
+        )?.inputRules.videoModes.includes("continuation")
+      )
+        draft.data.settings = { ...settings, videoMode: "continuation" };
       setActionSession(null);
       change(() => next.document);
       setSelected(next.ids);
@@ -2260,6 +2284,146 @@ function Workspace() {
         void followServiceTasks();
     }
   };
+  /** AI tools run in the local API; results join as linked nodes beside the source. */
+  const runToolTask = async (
+    from: ResultSource,
+    task: CanvasToolTask,
+    resume?: { jobId: string; taskId: string },
+  ) => {
+    // Action sessions carry UI fields; history keeps only the placement owner.
+    const origin: ResultSource = {
+      documentId: from.documentId,
+      nodeId: from.nodeId,
+      kind: from.kind,
+      src: from.src,
+    };
+    const title = CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title;
+    const present = historyRef.current.present;
+    const sources = task.sourceNodeIds.flatMap((id) => {
+      const node = present.nodes.find((item) => item.id === id);
+      return node?.data.src && ["image", "video", "audio"].includes(node.type)
+        ? [
+            {
+              kind: node.type as "image" | "video" | "audio",
+              title: node.data.title,
+              src: node.data.src,
+            },
+          ]
+        : [];
+    });
+    if (!resume) {
+      const entry = toolCatalog.tools.find((item) => item.id === task.tool);
+      if (!entry?.available) {
+        notify(entry?.reason ?? "本地服务未提供此工具。");
+        return;
+      }
+      if (sources.length !== task.sourceNodeIds.length) {
+        notify("来源素材已删除或尚未导入，请重新选择。");
+        return;
+      }
+      saveActionDraft(origin, task);
+      closeAction();
+    }
+    const id = resume?.jobId ?? crypto.randomUUID();
+    const run: ServiceRun = {
+      controller: new AbortController(),
+      documentId: origin.documentId,
+      nodeId: origin.nodeId,
+      phase: "preparing",
+      tool: task.tool,
+    };
+    const { signal } = run.controller;
+    serviceRuns.current.set(id, run);
+    refreshRunning();
+    if (!resume) {
+      setJobs((current) => [
+        {
+          id,
+          nodeId: origin.nodeId,
+          title: title ?? task.tool,
+          status: "running",
+          time: jobTime(),
+          message: "正在上传素材",
+          resultSource: origin,
+          // Masks can be large; following a task needs only its identity.
+          tool: {
+            ...task,
+            ...(task.selection
+              ? { selection: { ...task.selection, maskDataUrl: undefined } }
+              : {}),
+          },
+        },
+        ...current,
+      ]);
+      notify(`已提交「${title}」，完成后结果会连接到来源节点。`);
+    }
+    try {
+      const submitted = resume
+        ? {
+            projectId: backendProjectId(origin.documentId),
+            taskId: resume.taskId,
+          }
+        : await submitToolTask(
+            {
+              documentId: present.id,
+              documentTitle: present.title,
+              tool: task.tool,
+              sources,
+              parameters: task.parameters,
+              maskDataUrl: task.selection?.maskDataUrl,
+              boxes: task.selection?.boxes,
+            },
+            signal,
+          );
+      Object.assign(run, submitted);
+      if (!resume) updateJob(id, { taskId: submitted.taskId });
+      run.phase = "generating";
+      refreshRunning();
+      const files = await waitForToolTask(
+        submitted.projectId,
+        submitted.taskId,
+        signal,
+        (value) => value.phase && updateJob(id, { message: value.phase }),
+      );
+      const outputs = await Promise.all(
+        files.map(({ output, file }) =>
+          mediaOutput(
+            {
+              kind: output.kind,
+              file,
+              media: {
+                ...(output.width ? { width: output.width } : {}),
+                ...(output.height ? { height: output.height } : {}),
+                ...(output.durationMs
+                  ? { durationSeconds: output.durationMs / 1000 }
+                  : {}),
+              },
+            },
+            signal,
+          ),
+        ),
+      );
+      updateJob(id, { status: "succeeded", outputs });
+      if (historyRef.current.present.id !== origin.documentId) return;
+      const placed = addLinkedOutputs(origin, outputs, task);
+      updateJob(id, {
+        message: placed
+          ? "已加入画布"
+          : "来源节点已变化，结果保存在历史中，可重新放置。",
+      });
+    } catch (error) {
+      if (signal.aborted)
+        updateJob(id, { status: "cancelled", message: "已取消" });
+      else {
+        const message = errorMessage(error);
+        updateJob(id, { status: "failed", message });
+        notify(`「${title}」失败：${message}`);
+      }
+    } finally {
+      serviceRuns.current.delete(id);
+      refreshRunning();
+    }
+  };
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const settings = getNodeGenerationSettings(node);
     const config = backendModel(settings, backendCatalog.models);
@@ -2330,12 +2494,31 @@ function Workspace() {
       if (run.nodeId !== nodeId || run.documentId !== doc.id) continue;
       run.controller.abort();
       if (run.projectId && run.taskId)
-        void cancelGeneration(run.projectId, run.taskId).catch((error) =>
-          notify(errorMessage(error)),
-        );
+        void (
+          run.tool
+            ? cancelToolTask(run.projectId, run.taskId)
+            : cancelGeneration(run.projectId, run.taskId)
+        ).catch((error) => notify(errorMessage(error)));
     }
     refreshRunning();
   };
+  useEffect(() => {
+    // Tool tasks keep running in the local API across reloads; follow them again.
+    if (!ready || !backendCatalog.connected) return;
+    for (const job of jobs)
+      if (
+        job.tool &&
+        job.status === "running" &&
+        job.taskId &&
+        job.resultSource?.documentId === doc.id &&
+        !serviceRuns.current.has(job.id)
+      )
+        void runToolTask(job.resultSource, job.tool, {
+          jobId: job.id,
+          taskId: job.taskId,
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, ready, backendCatalog.connected, jobs.length]);
   useEffect(() => {
     // Results that finished while this canvas was closed join it on opening.
     if (ready && backendCatalog.connected) void followServiceTasks();
@@ -3875,6 +4058,14 @@ function Workspace() {
                 onApply={(outputs, task) =>
                   addLinkedOutputs(activeAction, outputs, task)
                 }
+                onGenerate={
+                  toolCatalog.capabilities[activeAction.tool]?.available
+                    ? (task) => void runToolTask(activeAction, task)
+                    : undefined
+                }
+                unavailableReason={
+                  toolCatalog.capabilities[activeAction.tool]?.reason
+                }
                 onClose={closeAction}
               />
             ) : actionNode.type === "video" ? (
@@ -3889,6 +4080,14 @@ function Workspace() {
                   importActionResults(activeAction, task)
                 }
                 onApply={(outputs) => addLinkedOutputs(activeAction, outputs)}
+                onGenerate={
+                  toolCatalog.capabilities[activeAction.tool]?.available
+                    ? (task) => void runToolTask(activeAction, task)
+                    : undefined
+                }
+                unavailableReason={
+                  toolCatalog.capabilities[activeAction.tool]?.reason
+                }
                 onClose={closeAction}
               />
             ) : (
@@ -3907,6 +4106,8 @@ function Workspace() {
                   setMaskTool(activeAction.tool);
                   openEditor(actionNode, "mask");
                 }}
+                capability={toolCatalog.capabilities[activeAction.tool]}
+                onGenerate={(task) => void runToolTask(activeAction, task)}
               />
             )}
           </div>

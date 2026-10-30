@@ -30,6 +30,7 @@ const PROTOCOLS: Record<ModelKind, readonly [Protocol, string][]> = {
     ["openai", "OpenAI 兼容语音合成（含 vLLM-Omni TTS）"],
     ["volcengine", "火山引擎语音 / Agent Plan"],
   ],
+  vision: [["vllm_omni", "vLLM-Omni 分割接口（SAM 3）"]],
 };
 
 const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
@@ -37,6 +38,7 @@ const PLACEHOLDERS: Record<ModelKind, [string, string]> = {
   image: ["http://127.0.0.1:8200/v1", "Tongyi-MAI/Z-Image-Turbo"],
   video: ["http://127.0.0.1:8010/v1", "MiniMaxAI/MiniMax-H3"],
   audio: ["http://127.0.0.1:8220/v1", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"],
+  vision: ["http://127.0.0.1:8230/v1", "facebook/sam3"],
 };
 
 function ModelForm({

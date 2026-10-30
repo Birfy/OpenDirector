@@ -80,7 +80,7 @@ export interface BackendResult {
   media: { width?: number; height?: number; durationSeconds?: number };
 }
 
-const EXTENSIONS: Record<string, string> = {
+export const EXTENSIONS: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
@@ -97,7 +97,7 @@ const EXTENSIONS: Record<string, string> = {
   "audio/webm": "webm",
 };
 
-function fileName(title: string, extension: string) {
+export function fileName(title: string, extension: string) {
   const base =
     title
       // eslint-disable-next-line no-control-regex
@@ -107,7 +107,7 @@ function fileName(title: string, extension: string) {
   return `${base}.${extension}`;
 }
 
-async function fingerprint(blob: Blob) {
+export async function fingerprint(blob: Blob) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     await blob.arrayBuffer(),

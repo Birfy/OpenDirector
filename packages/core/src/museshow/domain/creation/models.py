@@ -10,7 +10,7 @@ from museshow.domain.video_capabilities import VideoAdapter, check_video_config
 from museshow.domain.projects import ProjectError
 from .base import Contract
 
-ModelKind = Literal['agent', 'image', 'video', 'audio']
+ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
 Protocol = Literal['openai', 'volcengine', 'vllm_omni']
 VideoMode = Literal['first_frame', 'reference', 'continuation']
 Count = Annotated[int, Field(strict=True, ge=0)]

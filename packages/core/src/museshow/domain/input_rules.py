@@ -49,12 +49,20 @@ def _adapter_rules(config):
                          requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
                          outputResolutions=['480P', '720P', '1080P', '4K'],
                          referenceImageResolutions=['480P', '720P', '4K'])
+    if kind == 'image' and model.rsplit('/', 1)[-1].lower() in {'qwen-image-2.1', 'qwen-image-2.1-turbo'}:
+        # Self-hosted vLLM-Omni Qwen-Image-2.1: text-to-image and instruction
+        # editing in one model, conditioned on up to four reference images.
+        rules.update(profile='vllm-omni-qwen-image', allowedKinds=['text', 'image'], maxImages=4,
+                     imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024)
     if kind == 'image' and model.rsplit('/', 1)[-1].lower() == 'z-image-turbo':
         # Self-hosted vLLM-Omni text-to-image: it draws from the prompt alone, so
         # documents are inlined as text and reference images are not accepted.
         rules.update(profile='vllm-omni-image', allowedKinds=['text'], maxImages=0)
     if kind == 'audio':
         rules.update(profile='tts', allowedKinds=[], maxImages=0)
+    if kind == 'vision':
+        # Self-hosted vLLM-Omni segmentation (SAM 3): canvas tools call it, nodes never generate with it.
+        rules.update(profile='vllm-omni-segmentation', allowedKinds=[], maxImages=0)
     return rules
 
 

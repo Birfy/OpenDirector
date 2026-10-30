@@ -5643,7 +5643,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -5738,7 +5739,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -5837,7 +5839,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -5926,7 +5929,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -16481,7 +16485,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -16578,7 +16583,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -16680,7 +16686,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"
@@ -16771,7 +16778,8 @@
               "agent",
               "image",
               "video",
-              "audio"
+              "audio",
+              "vision"
             ],
             "title": "Kind",
             "type": "string"

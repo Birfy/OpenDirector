@@ -23,12 +23,12 @@ def endpoint(base, suffix):
     return base.rstrip("/") if base.rstrip("/").endswith(suffix) else base.rstrip("/") + suffix
 
 
-async def bounded(response, *, stage, secrets=()):
+async def bounded(response, *, stage, secrets=(), limit=MAX_ASSET_BYTES):
     await checked(response, stage=stage, secrets=secrets)
     data = bytearray()
     async for chunk in response.aiter_bytes():
         data.extend(chunk)
-        if len(data) > MAX_ASSET_BYTES:
+        if len(data) > limit:
             raise ProjectError("生成结果超过 50 MB，无法保存到项目。", 413)
     return bytes(data)
 

@@ -41,6 +41,8 @@ export interface VideoActionEditorProps {
   onApply: (outputs: readonly LinkedMediaResult[]) => boolean;
   onClose: () => void;
   onGenerate?: (task: CanvasToolTask) => void;
+  /** Why the connected services cannot run this tool, from the tool catalog. */
+  unavailableReason?: string;
 }
 
 const LOCAL = new Set<CanvasToolId>([
@@ -82,6 +84,7 @@ function VideoActionSession({
   onApply,
   onClose,
   onGenerate,
+  unavailableReason,
 }: VideoActionEditorProps) {
   const definition = CANVAS_TOOLS.find((item) => item.id === tool)!;
   const saved =
@@ -129,6 +132,11 @@ function VideoActionSession({
     saved?.selection?.boxes?.[0] ?? null,
   );
   const cropRef = useRef(crop);
+  // Region tools reuse the crop box: it marks what the service redraws.
+  const regionTool =
+    tool === "video-crop" ||
+    tool === "video-edit" ||
+    tool === "video-subtitle-erasure";
   const [cropRatio, setCropRatio] = useState(
     String(saved?.parameters.aspectRatio ?? "free"),
   );
@@ -256,7 +264,7 @@ function VideoActionSession({
       tool,
       [node.id],
       values,
-      tool === "video-crop" &&
+      regionTool &&
         cropRef.current &&
         dimensions.width > 0 &&
         dimensions.height > 0
@@ -323,12 +331,7 @@ function VideoActionSession({
               element.videoWidth,
               element.videoHeight,
             )
-          : {
-              x: 0,
-              y: 0,
-              width: element.videoWidth,
-              height: element.videoHeight,
-            },
+          : defaultRegion(tool, element.videoWidth, element.videoHeight),
       );
     }
     if (Number.isFinite(element.duration) && element.duration > 0)
@@ -701,50 +704,47 @@ function VideoActionSession({
       onDoubleClick={(event) => event.stopPropagation()}
     >
       {playback}
-      {tool === "video-crop" &&
-        crop &&
-        displayRect.width > 0 &&
-        dimensions.width > 0 && (
+      {regionTool && crop && displayRect.width > 0 && dimensions.width > 0 && (
+        <div
+          ref={cropSurface}
+          className="cw-va-crop-surface"
+          style={{
+            left: displayRect.x,
+            top: displayRect.y,
+            width: displayRect.width,
+            height: displayRect.height,
+          }}
+        >
           <div
-            ref={cropSurface}
-            className="cw-va-crop-surface"
+            className="cw-va-crop-box"
             style={{
-              left: displayRect.x,
-              top: displayRect.y,
-              width: displayRect.width,
-              height: displayRect.height,
+              left: `${(crop.x / dimensions.width) * 100}%`,
+              top: `${(crop.y / dimensions.height) * 100}%`,
+              width: `${(crop.width / dimensions.width) * 100}%`,
+              height: `${(crop.height / dimensions.height) * 100}%`,
             }}
+            onPointerDown={(event) => beginCrop(event, "move")}
+            onPointerMove={moveCrop}
+            onPointerUp={() => endCrop()}
+            onPointerCancel={() => endCrop(true)}
           >
-            <div
-              className="cw-va-crop-box"
-              style={{
-                left: `${(crop.x / dimensions.width) * 100}%`,
-                top: `${(crop.y / dimensions.height) * 100}%`,
-                width: `${(crop.width / dimensions.width) * 100}%`,
-                height: `${(crop.height / dimensions.height) * 100}%`,
-              }}
-              onPointerDown={(event) => beginCrop(event, "move")}
-              onPointerMove={moveCrop}
-              onPointerUp={() => endCrop()}
-              onPointerCancel={() => endCrop(true)}
-            >
-              <span>
-                {crop.width} × {crop.height}
-              </span>
-              {(["nw", "ne", "sw", "se"] as const).map((corner) => (
-                <button
-                  key={corner}
-                  type="button"
-                  aria-label={`调整裁剪${{ nw: "左上", ne: "右上", sw: "左下", se: "右下" }[corner]}角`}
-                  className={`cw-va-crop-corner is-${corner}`}
-                  disabled={busy}
-                  onPointerDown={(event) => beginCrop(event, corner)}
-                />
-              ))}
-            </div>
+            <span>
+              {crop.width} × {crop.height}
+            </span>
+            {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+              <button
+                key={corner}
+                type="button"
+                aria-label={`调整裁剪${{ nw: "左上", ne: "右上", sw: "左下", se: "右下" }[corner]}角`}
+                className={`cw-va-crop-corner is-${corner}`}
+                disabled={busy}
+                onPointerDown={(event) => beginCrop(event, corner)}
+              />
+            ))}
           </div>
-        )}
-      {tool !== "video-crop" && (
+        </div>
+      )}
+      {!regionTool && (
         <button
           className="cw-va-source-play"
           aria-label={playing ? "暂停源视频" : "播放源视频"}
@@ -1053,6 +1053,13 @@ function VideoActionSession({
             <p className="cw-va-hint">在视频上拖动选框或四角，调整裁剪区域。</p>
           </>
         )}
+        {(tool === "video-edit" || tool === "video-subtitle-erasure") && (
+          <p className="cw-va-hint">
+            {tool === "video-edit"
+              ? "拖动选框或四角，框住要重绘的区域；框外画面和声音保持不变。"
+              : "选框默认覆盖底部字幕带，可拖动到字幕实际位置；声音保持不变。"}
+          </p>
+        )}
         {(tool === "video-edit" || tool === "video-partial-reshoot") && (
           <label className="cw-va-prompt">
             {tool === "video-partial-reshoot" ? "重拍描述" : "编辑描述"}
@@ -1086,6 +1093,20 @@ function VideoActionSession({
             [30, "30 FPS"],
             [60, "60 FPS"],
           ])}
+        {tool === "video-matting" && (
+          <label className="cw-va-prompt">
+            抠像对象
+            <textarea
+              autoFocus={false}
+              rows={2}
+              value={String(parameters.prompt ?? "")}
+              placeholder="默认抠出人物；可写多个对象，用逗号分隔，如：人物，狗"
+              onChange={(event) =>
+                changeParameter("prompt", event.target.value)
+              }
+            />
+          </label>
+        )}
         {tool === "video-matting" &&
           choices("输出背景", "background", [
             ["black", "黑色"],
@@ -1143,7 +1164,8 @@ function VideoActionSession({
         )}
         {!local && !onGenerate && (
           <p className="cw-va-unavailable">
-            当前未连接此操作的 AI 服务。可保存设置或导入处理结果。
+            {unavailableReason ?? "当前未连接此操作的 AI 服务。"}
+            可保存设置或导入处理结果。
           </p>
         )}
         {inputError && !local && <p className="cw-va-hint">{inputError}</p>}
@@ -1233,4 +1255,20 @@ function VideoActionSession({
       </footer>
     </section>
   );
+}
+
+/** Starting box per tool: the whole frame to crop, the centre to edit, the subtitle band to erase. */
+function defaultRegion(tool: CanvasToolId, width: number, height: number) {
+  if (tool === "video-edit")
+    return {
+      x: Math.round(width / 4),
+      y: Math.round(height / 4),
+      width: Math.round(width / 2),
+      height: Math.round(height / 2),
+    };
+  if (tool === "video-subtitle-erasure") {
+    const top = Math.round(height * 0.78);
+    return { x: 0, y: top, width, height: height - top };
+  }
+  return { x: 0, y: 0, width, height };
 }

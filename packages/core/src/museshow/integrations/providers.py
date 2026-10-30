@@ -16,6 +16,8 @@ from museshow.integrations.volcengine import VolcengineGeneration, bounded, endp
 from museshow.integrations.generation_errors import checked, protocol_failure, provider_failure, transport_failure
 from museshow.integrations.vllm_omni import VllmOmniGeneration
 from museshow.integrations.vllm_omni_image import VllmOmniImageGeneration
+from museshow.integrations.model_adapters import OpenAISpeech
+from museshow.domain.capabilities import SpeechRequest
 from museshow.media.probe import require_ffprobe
 
 
@@ -29,7 +31,8 @@ class GenerationProviders(VolcengineGeneration):
 
     def _profile_adapter(self, config):
         profile = input_rules(config)['profile'] if config else None
-        return {'vllm-omni-h3': self.vllm_omni, 'vllm-omni-image': self.vllm_omni_image}.get(profile)
+        return {'vllm-omni-h3': self.vllm_omni, 'vllm-omni-image': self.vllm_omni_image,
+                'vllm-omni-qwen-image': self.vllm_omni_image}.get(profile)
 
     def prepare_inputs(self, project_id, node, config, *, complete=True):
         adapter = self._profile_adapter(config)
@@ -128,11 +131,8 @@ class GenerationProviders(VolcengineGeneration):
                             raise protocol_failure('poll')
                         await asyncio.sleep(self.poll_interval)
                 if kind == 'audio':
-                    # vLLM-Omni speech servers name their own speakers; "default" selects the model's.
-                    voice = task['parameters'].get('voice') or ('default' if config.get('connectionType') == 'self_hosted' else 'alloy')
-                    payload = {'model': config['modelId'], 'input': task['prompt'], 'voice': voice, 'response_format': 'mp3'}
-                    async with client.stream('POST', endpoint(config['url'], '/audio/speech'), headers=auth_headers(config), json=payload) as response:
-                        return 'mp3', await bounded(response, stage='submit', secrets=secrets)
+                    result = await OpenAISpeech(self.transport).speech(config, SpeechRequest(task['prompt'], task['parameters'].get('voice')))
+                    return result.suffix, result.data
                 if kind == 'image':
                     prepared = await asyncio.to_thread(generation_references, self.store, task, config)
                     if prepared['images']:

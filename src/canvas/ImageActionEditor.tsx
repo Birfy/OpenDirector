@@ -53,6 +53,8 @@ export interface ImageActionEditorProps {
   onClose: () => void;
   /** A real adapter must validate/map UI presets to its own model and capability enums. */
   onGenerate?: (task: CanvasToolTask) => void;
+  /** Why the connected services cannot run this tool, from the tool catalog. */
+  unavailableReason?: string;
 }
 const IMAGE_ACTIONS: readonly CanvasToolId[] = [
   "smart-edit",
@@ -125,6 +127,7 @@ export function ImageActionEditor({
   onApply,
   onClose,
   onGenerate,
+  unavailableReason,
 }: ImageActionEditorProps) {
   const definition = CANVAS_TOOLS.find((item) => item.id === tool)!;
   const initialDraft = useRef(
@@ -946,7 +949,9 @@ export function ImageActionEditor({
             {maskMode && (
               <p className="iae-hint">
                 {tool === "cutout"
-                  ? "涂抹需要保留的区域；橡皮移除选区。自动识别尚未接入。"
+                  ? onGenerate
+                    ? "直接点“生成”由模型识别主体；先涂抹主体所在区域可限定范围，或涂抹后“应用手工抠图”。"
+                    : "涂抹需要保留的区域；橡皮移除选区。自动识别需要接入具备主体抠图能力的模型。"
                   : "涂抹需要消除的区域；内容填补需要 AI 服务。"}
               </p>
             )}
@@ -1265,7 +1270,7 @@ export function ImageActionEditor({
                 ? "本地标注，保留原图"
                 : onGenerate
                   ? "由已连接服务处理"
-                  : "尚未连接此功能的 AI 服务"}
+                  : (unavailableReason ?? "尚未连接此功能的 AI 服务")}
           </span>
           <div className="iae-actions">
             {drawing && (
@@ -1317,7 +1322,8 @@ export function ImageActionEditor({
                 disabled={
                   !ready ||
                   !onGenerate ||
-                  (maskMode && !hasMask) ||
+                  // Automatic cutout needs no selection; a stroke only narrows it.
+                  (maskMode && !hasMask && tool !== "cutout") ||
                   (tool === "lighting" &&
                     !/^#[\da-f]{6}$/.test(String(parameters.lightColor)))
                 }

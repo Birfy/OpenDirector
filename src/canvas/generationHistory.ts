@@ -1,6 +1,7 @@
 import { applyTextGenerationResult } from "./textGeneration.ts";
 import { isGenerationSettings } from "./dataBoundary.ts";
 import type { CanvasDocument, GenerationSettings } from "./model.ts";
+import type { CanvasToolTask } from "./toolCatalog.ts";
 import {
   appendServiceResults,
   applyGenerationResults,
@@ -47,6 +48,8 @@ export interface GenerationJob {
     settings: GenerationSettings;
   };
   outputs?: ServiceResult[];
+  /** The AI tool request behind a tool task, so a reopened canvas can follow it. */
+  tool?: CanvasToolTask;
 }
 interface StoredJob {
   id: string;

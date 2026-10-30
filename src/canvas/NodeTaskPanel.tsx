@@ -7,8 +7,10 @@ import {
   createCanvasToolTask,
   initialToolParameters,
   toolFields,
+  validateToolTask,
   type CanvasToolId,
   type CanvasToolTask,
+  type ToolCapability,
   type ToolParameters,
 } from "./toolCatalog";
 import "./node-task-panel.css";
@@ -23,6 +25,8 @@ export function NodeTaskPanel({
   onImportResults,
   onClose,
   onEditSelection,
+  capability,
+  onGenerate,
 }: {
   node: CanvasNode;
   nodes: readonly CanvasNode[];
@@ -32,6 +36,9 @@ export function NodeTaskPanel({
   onImportResults: (task: CanvasToolTask) => void;
   onClose: () => void;
   onEditSelection: () => void;
+  /** Service availability and options from the local API's tool catalog. */
+  capability?: ToolCapability;
+  onGenerate?: (task: CanvasToolTask) => void;
 }) {
   const spec = CANVAS_TOOLS.find((item) => item.id === tool)!;
   const saved =
@@ -39,7 +46,7 @@ export function NodeTaskPanel({
       ? draft
       : undefined;
   const [parameters, setParameters] = useState<ToolParameters>({
-    ...initialToolParameters(spec),
+    ...initialToolParameters(spec, capability),
     ...saved?.parameters,
   });
   const [extraSource, setExtraSource] = useState(saved?.sourceNodeIds[1] ?? "");
@@ -50,6 +57,21 @@ export function NodeTaskPanel({
     parameters,
     saved?.selection,
   );
+  const errors = validateToolTask(
+    task,
+    nodes.map((item) => ({
+      nodeId: item.id,
+      kind: item.type,
+      title: item.data.title,
+      src: item.data.src,
+      mimeType: item.data.mimeType,
+      width: item.data.media?.width,
+      height: item.data.media?.height,
+      durationSeconds: item.data.media?.durationSeconds,
+    })),
+    capability,
+  );
+  const runnable = Boolean(onGenerate && capability?.available);
   const change = (key: string, value: string | number | boolean) => {
     setParameters((current) => ({ ...current, [key]: value }));
     setNotice("");
@@ -96,7 +118,7 @@ export function NodeTaskPanel({
         </label>
       )}
       <div className="cw-node-task-fields">
-        {toolFields(spec).map((field) => {
+        {toolFields(spec, capability).map((field) => {
           if (
             tool === "multi-size" &&
             parameters.aspectRatio !== "custom" &&
@@ -186,7 +208,9 @@ export function NodeTaskPanel({
         </button>
       )}
       <p className="cw-node-task-note">
-        尚未连接此功能的 AI 服务，可保存参数或导入处理结果。
+        {runnable
+          ? (errors[0] ?? "由已连接的模型服务处理，结果会连接到当前节点。")
+          : `${capability?.reason ?? "尚未连接此功能的 AI 服务。"}可保存参数或导入处理结果。`}
       </p>
       <footer>
         <button
@@ -198,7 +222,18 @@ export function NodeTaskPanel({
           保存参数
         </button>
         <button onClick={() => onImportResults(task)}>导入结果</button>
-        <button disabled title="此功能尚未连接 AI 服务">
+        <button
+          disabled={!runnable || errors.length > 0}
+          title={
+            runnable
+              ? errors[0]
+              : (capability?.reason ?? "此功能尚未连接 AI 服务")
+          }
+          onClick={() => {
+            onDraftChange(task);
+            onGenerate?.(task);
+          }}
+        >
           生成
         </button>
       </footer>

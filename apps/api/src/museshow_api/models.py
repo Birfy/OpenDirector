@@ -275,7 +275,7 @@ class ModelConnection(Model):
 
 
 class ModelConfigInput(ModelConnection):
-    kind: Literal["agent", "image", "video", "audio"]
+    kind: Literal["agent", "image", "video", "audio", "vision"]
     url: str = Field(max_length=2048)
     modelId: str = Field(max_length=200)
     apiKey: SecretStr = SecretStr("")
@@ -293,6 +293,30 @@ class ModelConfigPublic(ModelConnection):
     videoCapabilities: VideoCapabilities | None = None
     inputRules: dict = Field(default_factory=dict)
     id: UUID
-    kind: Literal["agent", "image", "video", "audio"]
+    kind: Literal["agent", "image", "video", "audio", "vision"]
     url: str
     modelId: str
+
+
+class ToolBox(Model):
+    x: float = Field(ge=0, allow_inf_nan=False)
+    y: float = Field(ge=0, allow_inf_nan=False)
+    width: float = Field(gt=0, allow_inf_nan=False)
+    height: float = Field(gt=0, allow_inf_nan=False)
+
+
+class ToolTaskCreate(Model):
+    id: UUID
+    tool: str = Field(min_length=1, max_length=64, pattern=r'^[a-z0-9-]+$')
+    sourceAssetIds: list[UUID] = Field(min_length=1, max_length=20)
+    maskAssetId: UUID | None = None
+    boxes: list[ToolBox] = Field(default_factory=list, max_length=100)
+    parameters: dict[str, str | float | int | bool] = Field(default_factory=dict, max_length=64)
+    # Optional explicit model per capability; otherwise the first configured provider serves it.
+    modelConfigIds: dict[str, UUID] = Field(default_factory=dict, max_length=8)
+
+    @model_validator(mode='after')
+    def bounded_parameters(self):
+        if any(len(key) > 64 or (isinstance(value, str) and len(value) > 100_000) for key, value in self.parameters.items()):
+            raise ValueError('parameters')
+        return self

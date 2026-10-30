@@ -12,16 +12,16 @@ from museshow.domain.input_rules import input_rules
 from museshow.domain.video_capabilities import check_video_config
 from museshow.infrastructure.local_projects import child, read_json, write_json
 
-MODEL_KINDS = ("agent", "image", "video", "audio")
+MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
 
 
 def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None):
     if connection_type not in {'api', 'self_hosted'}:
         raise ProjectError('无效的接入方式。')
-    protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind != 'video'
+    protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
                             else 'vllm_omni' if connection_type == 'self_hosted' else 'volcengine')
     allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine'},
-               'video': {'vllm_omni', 'volcengine'}, 'audio': {'openai', 'volcengine'}}
+               'video': {'vllm_omni', 'volcengine'}, 'audio': {'openai', 'volcengine'}, 'vision': {'vllm_omni'}}
     auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
     if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')

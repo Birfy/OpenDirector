@@ -636,7 +636,7 @@ export interface ModelConfigWriteInput extends ModelConnectionInput {
 }
 
 export interface ModelConnectionInput extends ContractInput {
-  readonly kind: "agent" | "image" | "video" | "audio";
+  readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
@@ -648,7 +648,7 @@ export interface ModelConnectionInput extends ContractInput {
 
 export interface ModelSnapshotInput extends ContractInput {
   readonly modelConfigId: string;
-  readonly kind: "agent" | "image" | "video" | "audio";
+  readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
   readonly protocol: "openai" | "volcengine" | "vllm_omni";
@@ -1201,7 +1201,7 @@ export type MediaRoleInput = "empty" | "material" | "generation";
 
 export type RoleActionInput = "configure_generation" | "save_manual_text" | "upload_material" | "add_reference" | "accept_generation" | "select_result";
 
-export type ModelKindInput = "agent" | "image" | "video" | "audio";
+export type ModelKindInput = "agent" | "image" | "video" | "audio" | "vision";
 
 export type VideoModeInput = "first_frame" | "reference" | "continuation";
 
@@ -1839,7 +1839,7 @@ export interface ModelConfigWrite extends ModelConnection {
 }
 
 export interface ModelConnection extends Contract {
-  readonly kind: "agent" | "image" | "video" | "audio";
+  readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly url: string;
   readonly modelId: string;
   readonly connectionType: "api" | "self_hosted";
@@ -1851,7 +1851,7 @@ export interface ModelConnection extends Contract {
 
 export interface ModelSnapshot extends Contract {
   readonly modelConfigId: string;
-  readonly kind: "agent" | "image" | "video" | "audio";
+  readonly kind: "agent" | "image" | "video" | "audio" | "vision";
   readonly modelId: string;
   readonly url: string;
   readonly protocol: "openai" | "volcengine" | "vllm_omni";
@@ -2404,6 +2404,6 @@ export type MediaRole = "empty" | "material" | "generation";
 
 export type RoleAction = "configure_generation" | "save_manual_text" | "upload_material" | "add_reference" | "accept_generation" | "select_result";
 
-export type ModelKind = "agent" | "image" | "video" | "audio";
+export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
 
 export type VideoMode = "first_frame" | "reference" | "continuation";

@@ -10,6 +10,8 @@ const MODEL_KINDS = [
   { id: "video", label: "视频" },
   { id: "audio", label: "音频" },
 ] as const;
+// Vision models serve canvas tools only; the assistant never picks one.
+type AssistantKind = (typeof MODEL_KINDS)[number]["id"];
 function modelOptions(models: ModelConfig[], kind: ModelKind) {
   const options = models.filter((model) => model.kind === kind);
   return options.map((model) => {
@@ -45,12 +47,12 @@ export function ModelPicker({
 }: {
   models: ModelConfig[];
   selections: ModelSelections;
-  onChange: (kind: ModelKind, id: string) => void;
+  onChange: (kind: AssistantKind, id: string) => void;
   onConfigure: () => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<ModelKind>("agent");
+  const [kind, setKind] = useState<AssistantKind>("agent");
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);

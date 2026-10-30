@@ -307,7 +307,7 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
           { value: "boxes", label: "框选拆分" },
           { value: "description", label: "按描述拆分" },
         ],
-        hint: "本地草稿记录模式；框选数据和新模式的服务协议尚未接入。",
+        hint: "智能拆分识别常见对象；框选拆分需先编辑选区；按描述拆分需填写对象。",
       },
       { ...prompt, hint: "按描述拆分时必须填写；智能拆分无需描述。" },
       choice("resolution", "清晰度", ["auto"]),
