@@ -1,4 +1,4 @@
-import { json, request } from "./api.ts";
+import { json, request, sessionId } from "./api.ts";
 import type { Conversation } from "./chat.ts";
 import { creationEnabled } from "./creationClient.ts";
 
@@ -12,6 +12,24 @@ export function rememberChat(projectId: string, value: Conversation) {
 
 export function currentChat(projectId: string) {
   return latest.get(projectId);
+}
+
+/** Explicit close and page exit use the same atomic save-and-release endpoint.
+ * Wait for pending writes when the page remains alive; keepalive must start
+ * immediately on exit. A skipped draft is not a successful save acknowledgement.
+ */
+export async function closeChatSession(projectId: string, keepalive = false) {
+  if (!keepalive) await pending.get(projectId)?.catch(() => {});
+  const value = currentChat(projectId);
+  return value
+    ? request<{ ok: boolean; draftSaved: boolean }>(
+        `/sessions/${sessionId}/close`,
+        { ...json("POST", { projectId, conversation: value }), keepalive },
+      )
+    : request<{ ok: boolean }>(`/sessions/${sessionId}`, {
+        method: "DELETE",
+        keepalive,
+      });
 }
 
 export function flushChatDraft(projectId: string): Promise<void> {

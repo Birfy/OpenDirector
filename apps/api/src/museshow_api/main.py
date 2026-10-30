@@ -190,8 +190,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.post("/api/sessions/{session}/close")
     def close_with_conversation(session: str, value: SessionClose):
-        store.close_with_conversation(str(value.projectId), value.conversation.model_dump(mode="json"), identifier(session))
-        return {"ok": True}
+        saved = store.close_with_conversation(str(value.projectId), value.conversation.model_dump(mode="json"), identifier(session))
+        return {"ok": True, "draftSaved": saved}
 
     @app.patch("/api/projects/{project_id}")
     def rename(project_id: str, value: ProjectRename):

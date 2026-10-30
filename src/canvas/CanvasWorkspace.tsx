@@ -737,7 +737,7 @@ function Workspace() {
       window.history.replaceState(
         {},
         "",
-        `/ai-tool/ai-canvas/${encodeURIComponent(next.id)}${window.location.search}`,
+        `/${window.location.search}`,
       );
       requestAnimationFrame(() => {
         void flow.setViewport(next.viewport);

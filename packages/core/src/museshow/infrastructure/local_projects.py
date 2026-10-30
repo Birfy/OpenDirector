@@ -468,10 +468,20 @@ class LocalProjects:
 
     def close_with_conversation(self, project_id: str, value: dict, session: str):
         with self.transaction() as db:
+            lease = db.execute('SELECT project_id,expires FROM sessions WHERE id=?', (session,)).fetchone()
+            # A delayed page-exit request must not write an old draft or release
+            # a newer project now held by this session. Closing is idempotent;
+            # normal saves still require a live lease in _owner.
+            if not lease or lease['project_id'] != project_id:
+                return False
+            if lease['expires'] <= time.time():
+                db.execute('DELETE FROM sessions WHERE id=? AND project_id=?', (session, project_id))
+                return False
             # Flush and release under one lock. Older in-flight saves arriving
             # afterwards fail their lease check instead of replacing this state.
             self._save_conversation(db, project_id, value, session)
-            db.execute("DELETE FROM sessions WHERE id=?", (session,))
+            db.execute('DELETE FROM sessions WHERE id=? AND project_id=?', (session, project_id))
+            return True
 
     @staticmethod
     def _inventory(path):

@@ -1,5 +1,5 @@
-import { ApiError, headers, json, request, sessionId } from "./api.ts";
-import { currentChat, flushChatDraft } from "./chatDrafts.ts";
+import { ApiError, errorMessage, json, request, sessionId } from "./api.ts";
+import { closeChatSession } from "./chatDrafts.ts";
 import { creationClient, creationEnabled } from "./creationClient.ts";
 
 /** Canvas documents use the stable identity of an existing filesystem project. */
@@ -19,30 +19,33 @@ let heartbeat: number | undefined;
 function keepAlive() {
   if (heartbeat !== undefined) return;
   heartbeat = window.setInterval(() => {
-    if (active)
-      void request(
-        `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
-        json("PUT", { projectId: active }),
+    if (active && !opening) {
+      const projectId = active;
+      // A pending renewal must finish before an explicit close or project switch.
+      void serializeSessionChange(() =>
+        request(
+          `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
+          json("PUT", { projectId }),
+        ),
       ).catch(() => {});
+    }
   }, 15000);
   window.addEventListener("pagehide", () => {
     if (!active) return;
-    const value = creationEnabled() ? null : currentChat(active);
-    // Save the latest draft and release the lease atomically, as MuseShow does.
-    void fetch(
-      `/api${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}${value ? "/close" : ""}`,
-      {
-        ...(value
-          ? json("POST", { projectId: active, conversation: value })
-          : { method: "DELETE" }),
-        headers: {
-          ...headers,
-          ...(value ? { "Content-Type": "application/json" } : {}),
-        },
-        keepalive: true,
-      },
-    ).catch(() => {});
+    void closeProjectSession(active, true).catch(() => {});
   });
+}
+
+function closeProjectSession(projectId: string | null, keepalive = false) {
+  if (projectId && !creationEnabled())
+    return closeChatSession(projectId, keepalive);
+  return request(
+    `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
+    {
+      method: "DELETE",
+      keepalive,
+    },
+  );
 }
 
 function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
@@ -76,9 +79,30 @@ function activateBackendProject<T>(
   const id = backendProjectId(documentId);
   return serializeSessionChange(async () => {
     const previous = active;
-    if (previous && previous !== id && !creationEnabled())
-      await flushChatDraft(previous);
-    const value = await activate();
+    const switching = previous && previous !== id;
+    if (switching) {
+      await closeProjectSession(previous);
+      active = null;
+    }
+    let value: T;
+    try {
+      value = await activate();
+    } catch (failure) {
+      if (switching) {
+        try {
+          await request(
+            `${creationEnabled() ? "/creation" : ""}/projects/${previous}/open`,
+            { method: "POST" },
+          );
+          active = previous;
+        } catch (restoreFailure) {
+          throw new Error(
+            `打开项目失败：${errorMessage(failure)}；原项目未能重新取得编辑权限：${errorMessage(restoreFailure)}`,
+          );
+        }
+      }
+      throw failure;
+    }
     active = id;
     if (previous && previous !== id && creationEnabled())
       creationClient(previous).close();
@@ -110,11 +134,7 @@ export function openBackendProject(documentId: string, _title: string) {
 /** Pause lease renewal while the current project directory is renamed. */
 export function releaseBackendProject() {
   return serializeSessionChange(async () => {
-    if (active && !creationEnabled()) await flushChatDraft(active);
-    await request(
-      `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
-      { method: "DELETE" },
-    );
+    await closeProjectSession(active);
     active = null;
   });
 }

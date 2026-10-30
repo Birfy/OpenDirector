@@ -96,6 +96,12 @@ function fixture(t: TestContext) {
       lease = null;
       return Response.json({ ok: true });
     }
+    if (path.endsWith("/close") && method === "POST") {
+      const value = JSON.parse(options!.body as string);
+      const draftSaved = lease === value.projectId;
+      if (draftSaved) lease = null;
+      return Response.json({ ok: true, draftSaved });
+    }
     throw new Error(`Unexpected request ${method} ${path}`);
   };
   t.after(async () => {
@@ -135,7 +141,7 @@ test("a later workspace mount rereads saved content while concurrent initializat
   );
 });
 
-test("importing an example flushes the old draft before creation transfers its lease", async (t) => {
+test("importing an example atomically saves and closes the old project before creation", async (t) => {
   const state = fixture(t);
   const original = await initializeWorkspace();
   rememberChat(original.id, {
@@ -156,15 +162,12 @@ test("importing an example flushes the old draft before creation transfers its l
     state.documents.get(imported.id)!.document!.nodes[0]!.data.text,
     "示例内容",
   );
-  const flushed = state.calls.indexOf(`PATCH /api/data/${original.id}/draft`);
+  const isClose = (call: string) =>
+    call.startsWith("POST /api/sessions/") && call.endsWith("/close");
+  const flushed = state.calls.findIndex(isClose);
   const created = state.calls.indexOf("POST /api/projects");
   assert.ok(flushed >= 0 && flushed < created, state.calls.join("\n"));
-  assert.equal(
-    state.calls.filter(
-      (call) => call === `PATCH /api/data/${original.id}/draft`,
-    ).length,
-    1,
-  );
+  assert.equal(state.calls.filter(isClose).length, 1);
   const restored = await openWorkspaceProject(state.projects.get(original.id)!);
   await saveWorkspaceDocument(restored);
   assert.equal(restored.id, original.id);
