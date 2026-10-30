@@ -135,6 +135,10 @@ import {
 } from "./generationHistory";
 import {
   appendLinkedMediaResults,
+  appendPendingResult,
+  fillPendingResult,
+  pendingResultNode,
+  removePendingResult,
   validateNodeActionSource,
   appendServiceResults,
   applyGenerationResults,
@@ -144,6 +148,7 @@ import {
   type ServiceResult,
 } from "./linkedResults";
 import { AssistantPanel } from "./AssistantPanel";
+import { expectedDuration, recordDuration } from "./generationDurations";
 import { useAssistantLayout } from "./useAssistantLayout";
 import { SettingsDialog } from "./SettingsDialog";
 import { useTheme } from "./theme";
@@ -259,6 +264,18 @@ type ServiceRun = ActiveGeneration & {
   taskId?: string;
   /** Tool tasks are cancelled through the tool task route. */
   tool?: CanvasToolId;
+};
+/** Media kind of a tool's first result, or null when it is only known after the run. */
+const toolOutputKind = (
+  tool: CanvasToolId,
+  source: CanvasNodeKind,
+): "image" | "video" | "audio" | null => {
+  if (tool === "dynamic-poster") return "video";
+  // Separation returns a soundtrack and a silent video in one run.
+  if (tool === "audio-separation") return null;
+  return source === "image" || source === "video" || source === "audio"
+    ? source
+    : null;
 };
 const jobTime = () =>
   new Date().toLocaleTimeString("zh-CN", {
@@ -1806,6 +1823,34 @@ function Workspace() {
     notify(`已加入 ${result.ids.length} 个真实素材，并连接来源节点。`);
     return true;
   };
+  const placePendingOutputs = (
+    source: ResultSource,
+    pendingId: string,
+    outputs: readonly LinkedMediaResult[],
+    sourceTask: CanvasToolTask,
+  ) => {
+    const result = fillPendingResult(
+      historyRef.current.present,
+      source,
+      pendingId,
+      outputs,
+      sourceTask,
+    );
+    if (result.error) {
+      notify(result.error);
+      return false;
+    }
+    if (!result.ids.length) return false;
+    // Outputs of another media kind were linked instead; the placeholder goes.
+    const next = result.ids.includes(pendingId)
+      ? result.document
+      : removePendingResult(result.document, pendingId);
+    change(() => next);
+    setSelected(result.ids);
+    revealResults(result.ids);
+    notify(`已生成 ${outputs.length} 个结果，并连接来源节点。`);
+    return true;
+  };
   const editorOutputs = (outputs: readonly LinkedMediaResult[]) => {
     return editorOrigin.current
       ? addLinkedOutputs(editorOrigin.current, outputs)
@@ -1955,10 +2000,12 @@ function Workspace() {
     setActiveGenerations(
       [...serviceRuns.current.values()]
         .filter((run) => !run.controller.signal.aborted)
-        .map(({ documentId, nodeId, phase }) => ({
+        .map(({ documentId, nodeId, phase, startedAt, expectedMs }) => ({
           documentId,
           nodeId,
           phase,
+          startedAt,
+          expectedMs,
         })),
     );
   const revealResults = (ids: readonly string[]) =>
@@ -2181,11 +2228,14 @@ function Workspace() {
       return;
     }
     const id = crypto.randomUUID();
+    const durationKey = `generate:${request.kind}:${request.config.id}`;
     const run: ServiceRun = {
       controller: new AbortController(),
       documentId: origin.documentId,
       nodeId: origin.nodeId,
       phase: "preparing",
+      startedAt: Date.now(),
+      expectedMs: expectedDuration(durationKey, request.kind),
     };
     const { signal } = run.controller;
     serviceRuns.current.set(id, run);
@@ -2257,6 +2307,7 @@ function Workspace() {
               signal,
             );
       setPhase("finishing");
+      recordDuration(durationKey, Date.now() - run.startedAt!);
       updateJob(id, {
         status: "succeeded",
         outputs: [output],
@@ -2312,7 +2363,12 @@ function Workspace() {
   const runToolTask = async (
     from: ResultSource,
     task: CanvasToolTask,
-    resume?: { jobId: string; taskId: string },
+    resume?: {
+      jobId: string;
+      taskId: string;
+      targetNodeId?: string;
+      startedAt?: number;
+    },
   ) => {
     // Action sessions carry UI fields; history keeps only the placement owner.
     const origin: ResultSource = {
@@ -2348,13 +2404,39 @@ function Workspace() {
       saveActionDraft(origin, task);
       closeAction();
     }
+    const outputKind = toolOutputKind(task.tool, origin.kind);
+    // The result gets its node now, linked from the source, and shows the progress there.
+    let targetNodeId = resume?.targetNodeId;
+    if (!resume && outputKind) {
+      const pending = appendPendingResult(
+        historyRef.current.present,
+        origin,
+        outputKind,
+        title ?? task.tool,
+      );
+      if (!pending.error && pending.ids[0]) {
+        change(() => pending.document);
+        targetNodeId = pending.ids[0];
+      }
+    }
+    const durationKey = `tool:${task.tool}`;
     const id = resume?.jobId ?? crypto.randomUUID();
     const run: ServiceRun = {
       controller: new AbortController(),
       documentId: origin.documentId,
-      nodeId: origin.nodeId,
+      nodeId: targetNodeId ?? origin.nodeId,
       phase: "preparing",
       tool: task.tool,
+      startedAt: resume?.startedAt ?? Date.now(),
+      expectedMs: expectedDuration(durationKey, outputKind ?? origin.kind),
+    };
+    const dropPending = () => {
+      if (
+        targetNodeId &&
+        historyRef.current.present.id === origin.documentId &&
+        pendingResultNode(historyRef.current.present, targetNodeId)
+      )
+        change((current) => removePendingResult(current, targetNodeId!));
     };
     const { signal } = run.controller;
     serviceRuns.current.set(id, run);
@@ -2367,8 +2449,10 @@ function Workspace() {
           title: title ?? task.tool,
           status: "running",
           time: jobTime(),
+          createdAt: run.startedAt,
           message: "正在上传素材",
           resultSource: origin,
+          ...(targetNodeId ? { targetNodeId } : {}),
           // Masks can be large; following a task needs only its identity.
           tool: {
             ...task,
@@ -2379,7 +2463,7 @@ function Workspace() {
         },
         ...current,
       ]);
-      notify(`已提交「${title}」，完成后结果会连接到来源节点。`);
+      notify(`已提交「${title}」，结果会生成在右侧连接的新节点中。`);
     }
     try {
       const submitted = resume
@@ -2427,15 +2511,20 @@ function Workspace() {
           ),
         ),
       );
+      recordDuration(durationKey, Date.now() - run.startedAt!);
       updateJob(id, { status: "succeeded", outputs });
       if (historyRef.current.present.id !== origin.documentId) return;
-      const placed = addLinkedOutputs(origin, outputs, task);
+      const placed = targetNodeId
+        ? placePendingOutputs(origin, targetNodeId, outputs, task)
+        : addLinkedOutputs(origin, outputs, task);
+      if (!placed) dropPending();
       updateJob(id, {
         message: placed
           ? "已加入画布"
           : "来源节点已变化，结果保存在历史中，可重新放置。",
       });
     } catch (error) {
+      dropPending();
       if (signal.aborted)
         updateJob(id, { status: "cancelled", message: "已取消" });
       else {
@@ -2540,6 +2629,8 @@ function Workspace() {
         void runToolTask(job.resultSource, job.tool, {
           jobId: job.id,
           taskId: job.taskId,
+          targetNodeId: job.targetNodeId,
+          startedAt: job.createdAt,
         });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id, ready, backendCatalog.connected, jobs.length]);

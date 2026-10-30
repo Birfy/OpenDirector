@@ -198,6 +198,117 @@ export function appendLinkedMediaResults(
   };
 }
 
+/**
+ * An empty result node linked from the source, placed where its result will
+ * land, so a running tool shows its progress on the node it is filling.
+ */
+export function appendPendingResult(
+  document: CanvasDocument,
+  source: ResultSource,
+  kind: "image" | "video" | "audio",
+  title: string,
+): PlacementResult {
+  const validation = validateNodeActionSource(document, source);
+  if (!validation.node) return { document, ids: [], error: validation.error };
+  const target = validation.node;
+  const p = absolutePosition(target, document.nodes);
+  const [placed] = placeResults(
+    document,
+    [{ kind, src: "", mimeType: "", title }],
+    { x: p.x + target.width + 100, y: p.y },
+  );
+  const node = createNode(kind, placed!.position, { title });
+  return {
+    document: {
+      ...document,
+      nodes: [...document.nodes, node],
+      edges: [
+        ...document.edges,
+        {
+          id: crypto.randomUUID(),
+          source: target.id,
+          target: node.id,
+          intent: "post_edit_result" as const,
+        },
+      ],
+    },
+    ids: [node.id],
+  };
+}
+
+/** Whether a pending result node is still the untouched placeholder it was created as. */
+export function pendingResultNode(document: CanvasDocument, id: string) {
+  const node = document.nodes.find((item) => item.id === id);
+  return node && !node.data.src && !node.data.text ? node : undefined;
+}
+
+/**
+ * The first output fills the pending node; further outputs join the source
+ * like any linked result. A pending node that was removed, filled by hand or
+ * of another media kind leaves every output to the linked placement.
+ */
+export function fillPendingResult(
+  document: CanvasDocument,
+  source: ResultSource,
+  pendingId: string,
+  outputs: readonly LinkedMediaResult[],
+  sourceTask?: CanvasToolTask,
+): PlacementResult {
+  const pending = pendingResultNode(document, pendingId);
+  const [first, ...rest] = outputs;
+  if (
+    !pending ||
+    !first ||
+    first.kind !== pending.type ||
+    hasInvalidMedia(outputs)
+  )
+    return appendLinkedMediaResults(document, source, outputs, sourceTask);
+  const filled = applyCommand(document, {
+    type: "update-node",
+    id: pending.id,
+    patch: {
+      data: {
+        src: first.src,
+        title: first.title,
+        mimeType: first.mimeType,
+        assetState: "ready",
+        mediaRole: "asset",
+        ...(first.media ? { media: { ...first.media } } : {}),
+      },
+    },
+  });
+  if (rest.length) {
+    const linked = appendLinkedMediaResults(filled, source, rest, sourceTask);
+    if (linked.error) return linked;
+    return { document: linked.document, ids: [pending.id, ...linked.ids] };
+  }
+  // Like a linked placement, the source keeps the task that produced its result.
+  const next = sourceTask
+    ? {
+        ...filled,
+        nodes: filled.nodes.map((node) =>
+          node.id === source.nodeId
+            ? {
+                ...node,
+                data: { ...node.data, taskDraft: structuredClone(sourceTask) },
+              }
+            : node,
+        ),
+      }
+    : filled;
+  return { document: next, ids: [pending.id] };
+}
+
+/** A failed or cancelled task leaves no empty placeholder behind. */
+export function removePendingResult(
+  document: CanvasDocument,
+  pendingId: string,
+): CanvasDocument {
+  return pendingResultNode(document, pendingId)
+    ? applyCommand(document, { type: "remove-nodes", ids: [pendingId] })
+    : document;
+}
+
 export type ServiceResult =
   | LinkedMediaResult
   | { kind: "text"; title: string; text: string };

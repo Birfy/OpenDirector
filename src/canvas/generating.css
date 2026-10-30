@@ -184,3 +184,33 @@
     display: none;
   }
 }
+
+/* Estimated progress: the outline fills clockwise from the top-left corner. */
+.cw-generating-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.cw-generating-ring path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cw-generating-ring-track {
+  stroke: #ffffff14;
+  stroke-width: 2;
+}
+.cw-generating-ring-progress {
+  stroke: #5aa8ff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px #3d8bffaa);
+  transition: stroke-dashoffset 250ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-generating-ring-progress {
+    transition: none;
+  }
+}

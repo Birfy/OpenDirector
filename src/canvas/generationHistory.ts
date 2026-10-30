@@ -50,6 +50,8 @@ export interface GenerationJob {
   outputs?: ServiceResult[];
   /** The AI tool request behind a tool task, so a reopened canvas can follow it. */
   tool?: CanvasToolTask;
+  /** The pending result node a tool task fills, linked from its source. */
+  targetNodeId?: string;
 }
 interface StoredJob {
   id: string;
@@ -75,7 +77,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
       "interrupted",
     ].includes(raw.status) ||
     (raw.createdAt !== undefined && !Number.isFinite(raw.createdAt)) ||
-    [raw.message, raw.taskId].some(
+    [raw.message, raw.taskId, raw.targetNodeId].some(
       (v) => v !== undefined && typeof v !== "string",
     )
   )

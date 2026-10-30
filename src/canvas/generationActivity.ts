@@ -20,11 +20,16 @@ export interface ActiveGeneration {
   documentId: string;
   nodeId: string;
   phase: GenerationPhase;
+  /** Wall-clock start and expected duration, for the estimated progress ring. */
+  startedAt?: number;
+  expectedMs?: number;
 }
 
 export interface NodeGenerationActivity {
   phase: GenerationPhase;
   count: number;
+  startedAt?: number;
+  expectedMs?: number;
 }
 
 export function generationPhase(
@@ -66,12 +71,25 @@ export function generationActivities(
   for (const run of runs) {
     if (run.documentId !== documentId) continue;
     const previous = nodes.get(run.nodeId);
+    // Several runs on one node finish together: the earliest start, the longest expectation.
+    const startedAt = [previous?.startedAt, run.startedAt].filter(
+      (value): value is number => value !== undefined,
+    );
+    const expectedMs = [previous?.expectedMs, run.expectedMs].filter(
+      (value): value is number => value !== undefined,
+    );
     nodes.set(run.nodeId, {
       count: (previous?.count ?? 0) + 1,
       phase:
         previous && PRIORITY[previous.phase] > PRIORITY[run.phase]
           ? previous.phase
           : run.phase,
+      ...(startedAt.length && expectedMs.length
+        ? {
+            startedAt: Math.min(...startedAt),
+            expectedMs: Math.max(...expectedMs),
+          }
+        : {}),
     });
   }
   return nodes;
