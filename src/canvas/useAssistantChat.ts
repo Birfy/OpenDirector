@@ -25,9 +25,10 @@ import {
   referenceContent,
   referenceIds,
   type ReferenceContent,
+  type ReferenceAsset,
 } from "./chatReferenceContent.ts";
 
-export interface ProjectChatAsset extends ChatAsset {
+export interface ProjectChatAsset extends ReferenceAsset {
   kind: string;
 }
 export const attachment = ({
@@ -71,16 +72,22 @@ export function useAssistantChat(
   const current = useRef(value);
   current.current = value;
   // Retain metadata for editor undo after a reference is removed from the draft.
-  const knownAssets = useRef(new Map<string, ChatAsset>());
-  value.assets.forEach((asset) => knownAssets.current.set(asset.id, asset));
-  const setContent = (content: ReferenceContent, added: ChatAsset[] = []) => {
-    added.forEach((asset) =>
-      knownAssets.current.set(asset.id, attachment(asset)),
-    );
+  const knownAssets = useRef(new Map<string, ReferenceAsset>());
+  value.assets.forEach((asset) =>
+    knownAssets.current.set(asset.id, {
+      ...knownAssets.current.get(asset.id),
+      ...asset,
+    }),
+  );
+  const setContent = (
+    content: ReferenceContent,
+    added: ReferenceAsset[] = [],
+  ) => {
+    added.forEach((asset) => knownAssets.current.set(asset.id, asset));
     const assets = referenceIds(content).map((id) => {
       const asset = knownAssets.current.get(id);
       if (!asset) throw new Error("引用素材不存在，未插入。");
-      return asset;
+      return attachment(asset);
     });
     setValue((previous) => ({
       ...previous,
@@ -196,9 +203,9 @@ export function useAssistantChat(
     });
   };
   const add = async (
-    read: (signal: AbortSignal) => Promise<ChatAsset[]>,
+    read: (signal: AbortSignal) => Promise<ReferenceAsset[]>,
     externalSignal?: AbortSignal,
-    commit?: (assets: ChatAsset[]) => boolean | Promise<boolean>,
+    commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
   ) => {
     if (
       !loaded ||
@@ -242,7 +249,7 @@ export function useAssistantChat(
   };
   const upload = (
     files: File[],
-    commit?: (assets: ChatAsset[]) => boolean | Promise<boolean>,
+    commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
   ) =>
     add(
       async (signal) => {
@@ -302,7 +309,7 @@ export function useAssistantChat(
   const addNodes = (
     nodes: CanvasNode[],
     signal?: AbortSignal,
-    commit?: (assets: ChatAsset[]) => boolean | Promise<boolean>,
+    commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
   ) =>
     add(
       async (signal) => {
@@ -328,8 +335,13 @@ export function useAssistantChat(
               const doc = snapshot.editorDocuments.find(
                 (doc) => doc.id === binding.objectRef.id,
               );
-              if (doc?.kind !== "subject" || !doc.data.main)
-                throw new Error("主体尚无已保存的主素材，整批未插入。");
+              if (
+                doc?.kind !== "subject" ||
+                ![doc.data.main, ...doc.data.auxiliaries, doc.data.voice].some(
+                  Boolean,
+                )
+              )
+                throw new Error("主体尚无已保存的素材，整批未插入。");
               for (const ref of [
                 doc.data.main,
                 ...doc.data.auxiliaries,
@@ -366,6 +378,9 @@ export function useAssistantChat(
             type: asset.metadata.mimeType,
             size: asset.metadata.size,
             fingerprint: asset.fingerprint,
+            ...(nodes.length === 1 && nodes[0]!.type !== "subject"
+              ? { nodeId: nodes[0]!.id }
+              : {}),
           }));
         }
         const references = assistantReferences(nodes);
@@ -378,10 +393,18 @@ export function useAssistantChat(
           `/projects/${projectId}/assets?current_only=true`,
           { signal },
         );
+        const inventory = await request<{
+          referenceSources: { id: string; assetId: string }[];
+        }>(`/projects/${projectId}/canvas`, { signal });
         return ids.map((id) => {
           const asset = assets.find((item) => item.id === id);
           if (!asset) throw new Error("参考素材已不可用，请重新选择。");
-          return attachment(asset);
+          return {
+            ...attachment(asset),
+            nodeId: inventory.referenceSources?.find(
+              (source) => source.assetId === id,
+            )?.id,
+          };
         });
       },
       signal,

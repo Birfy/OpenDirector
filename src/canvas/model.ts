@@ -5,6 +5,10 @@ import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
 import { referenceIssue } from "./connectionPolicy.ts";
 import {
+  generationContent,
+  generationContentPatch,
+} from "./generationReferenceContent.ts";
+import {
   fillConnectedFrames,
   frameImageLimitIssue,
 } from "./frameReferences.ts";
@@ -135,6 +139,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   title: string;
   prompt: string;
   promptMentions?: import("./promptMentions.ts").PromptMention[];
+  promptContent?: import("./chatReferenceContent.ts").ReferenceContent;
   src?: string;
   mimeType?: string;
   text?: string;
@@ -186,6 +191,8 @@ export interface CanvasDocument {
   id: string;
   title: string;
   nodes: CanvasNode[];
+  /** Logical sources remain usable when their presentation is hidden. */
+  hiddenNodes?: CanvasNode[];
   edges: CanvasEdge[];
   viewport: Viewport;
   settings: GenerationSettings;
@@ -335,6 +342,8 @@ export type CanvasCommand =
       position?: Point;
     }
   | { type: "remove-nodes"; ids: string[] }
+  | { type: "hide-nodes"; ids: string[] }
+  | { type: "reference-sources"; nodes: CanvasNode[] }
   | { type: "move-nodes"; ids: string[]; delta: Point }
   | {
       type: "reorder-nodes";
@@ -363,8 +372,111 @@ export function applyCommand(
   document: CanvasDocument,
   command: CanvasCommand,
 ): CanvasDocument {
+  const next = applyCanvasCommand(document, command);
+  if (
+    next === document ||
+    !(
+      command.type === "add-edge" ||
+      (command.type === "update-node" &&
+        command.patch.data &&
+        ["title", "src", "text", "subject", "assetState"].some((key) =>
+          Object.hasOwn(command.patch.data!, key),
+        ))
+    )
+  )
+    return next;
+  const logical = [...next.nodes, ...(next.hiddenNodes ?? [])];
+  const sync = (node: CanvasNode) => {
+    if (
+      node.data.promptContent === undefined &&
+      !(
+        command.type === "add-edge" &&
+        command.edge.target === node.id &&
+        command.edge.intent !== "post_edit_result"
+      )
+    )
+      return node;
+    const incoming = logical.filter((source) =>
+      next.edges.some(
+        (edge) =>
+          edge.intent !== "post_edit_result" &&
+          edge.target === node.id &&
+          edge.source === source.id,
+      ),
+    );
+    if (!incoming.length && node.data.promptContent === undefined) return node;
+    const patch = generationContentPatch(
+      generationContent(
+        node,
+        incoming,
+        (source) =>
+          next.edges.find(
+            (edge) =>
+              edge.intent !== "post_edit_result" &&
+              edge.target === node.id &&
+              edge.source === source,
+          )?.id,
+      ),
+    );
+    if (
+      JSON.stringify(patch.promptContent) ===
+      JSON.stringify(node.data.promptContent)
+    )
+      return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        ...patch,
+        ...(node.data.settings
+          ? { settings: { ...node.data.settings, prompt: patch.prompt } }
+          : {}),
+      },
+    };
+  };
+  return {
+    ...next,
+    nodes: next.nodes.map(sync),
+    ...(next.hiddenNodes ? { hiddenNodes: next.hiddenNodes.map(sync) } : {}),
+  };
+}
+
+function applyCanvasCommand(
+  document: CanvasDocument,
+  command: CanvasCommand,
+): CanvasDocument {
   if (command.type === "batch")
     return command.commands.reduce(applyCommand, document);
+  if (command.type === "reference-sources") {
+    const ids = new Set(
+      [...document.nodes, ...(document.hiddenNodes ?? [])].map(
+        (node) => node.id,
+      ),
+    );
+    return {
+      ...document,
+      hiddenNodes: [
+        ...(document.hiddenNodes ?? []),
+        ...command.nodes.filter((node) => !ids.has(node.id)),
+      ],
+    };
+  }
+  if (command.type === "hide-nodes") {
+    const removed = applyCommand(document, {
+      type: "remove-nodes",
+      ids: command.ids,
+    });
+    const visible = new Set(removed.nodes.map((node) => node.id));
+    if (visible.size === document.nodes.length) return document;
+    return {
+      ...document,
+      nodes: document.nodes.filter((node) => visible.has(node.id)),
+      hiddenNodes: [
+        ...(document.hiddenNodes ?? []),
+        ...document.nodes.filter((node) => !visible.has(node.id)),
+      ],
+    };
+  }
   if (command.type === "title")
     return document.title === command.title
       ? document
@@ -383,7 +495,19 @@ export function applyCommand(
       ids.add(node.id);
     }
     return command.nodes.length
-      ? { ...document, nodes: [...document.nodes, ...command.nodes] }
+      ? {
+          ...document,
+          nodes: [...document.nodes, ...command.nodes],
+          ...(document.hiddenNodes
+            ? {
+                hiddenNodes: document.hiddenNodes.filter(
+                  (node) =>
+                    !ids.has(node.id) ||
+                    !command.nodes.some((added) => added.id === node.id),
+                ),
+              }
+            : {}),
+        }
       : document;
   }
   const byId = indexNodes(document.nodes);
@@ -464,6 +588,14 @@ export function applyCommand(
           delete base[key];
       }
       let data = command.patch.data ? { ...base, ...command.patch.data } : base;
+      if (
+        command.patch.data &&
+        Object.hasOwn(command.patch.data, "prompt") &&
+        command.patch.data.prompt !== node.data.prompt &&
+        !Object.hasOwn(command.patch.data, "promptContent")
+      ) {
+        data = { ...data, promptContent: undefined, promptMentions: [] };
+      }
       if (data.settings) {
         let settings = data.settings;
         if (
@@ -675,7 +807,8 @@ export function applyCommand(
   if (command.type === "add-edge") {
     if (document.edges.some((edge) => edge.id === command.edge.id))
       throw new Error(`连线 ID 重复：${command.edge.id}`);
-    const ids = new Set(document.nodes.map((node) => node.id));
+    const logicalNodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
+    const ids = new Set(logicalNodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))
       throw new Error("连线两端必须是当前画布中的节点。");
     if (
@@ -691,7 +824,7 @@ export function applyCommand(
     const target = document.nodes.find(
       (node) => node.id === command.edge.target,
     )!;
-    const source = document.nodes.find(
+    const source = logicalNodes.find(
       (node) => node.id === command.edge.source,
     )!;
     if (
@@ -711,7 +844,7 @@ export function applyCommand(
       ),
     ];
     const incoming = incomingIds.flatMap(
-      (id) => document.nodes.find((node) => node.id === id) ?? [],
+      (id) => logicalNodes.find((node) => node.id === id) ?? [],
     );
     const settings = fillConnectedFrames(target.data.settings, incoming);
     return {
@@ -748,6 +881,33 @@ export function applyCommand(
     ...document,
     edges,
     nodes: document.nodes.map((node) => {
+      const unlinked = disconnected.filter((edge) => edge.target === node.id);
+      if (unlinked.length) {
+        const logicalNodes = [
+          ...document.nodes,
+          ...(document.hiddenNodes ?? []),
+        ];
+        const incoming = logicalNodes.filter((source) =>
+          document.edges.some(
+            (edge) =>
+              edge.intent !== "post_edit_result" &&
+              edge.source === source.id &&
+              edge.target === node.id,
+          ),
+        );
+        const content = generationContent(node, incoming).filter(
+          (part) =>
+            part.type !== "reference" ||
+            !unlinked.some(
+              (edge) =>
+                edge.source === part.nodeId || edge.id === part.referenceId,
+            ),
+        );
+        node = {
+          ...node,
+          data: { ...node.data, ...generationContentPatch(content) },
+        };
+      }
       if (!node.data.settings) return node;
       const settings = mapSettingsNodeReferences(node.data.settings, (id) =>
         disconnected.some(

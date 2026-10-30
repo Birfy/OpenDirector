@@ -5,17 +5,22 @@ export type ContentPart =
   | {
       type: "reference";
       assetId: string;
+      referenceId?: string;
+      binding?: "asset";
       nodeId?: string | null;
       name: string;
       fingerprint?: string | null;
     };
 export type ReferenceContent = ContentPart[];
 export type ReferenceAsset = ChatAsset & {
+  referenceId?: string;
+  binding?: "asset";
   kind?: string;
   nodeTitle?: string;
   nodeId?: string;
   fingerprintAliases?: string[];
   onCanvas?: boolean;
+  available?: boolean;
 };
 export function fingerprintMatches(asset: ReferenceAsset, value: string) {
   return (
@@ -51,6 +56,8 @@ export function normalizeContent(parts: ReferenceContent): ReferenceContent {
       result.push({
         type: "reference",
         assetId: part.assetId,
+        ...(part.referenceId ? { referenceId: part.referenceId } : {}),
+        ...(part.binding === "asset" ? { binding: "asset" as const } : {}),
         ...(part.nodeId ? { nodeId: part.nodeId } : {}),
         name: part.name,
         fingerprint: part.fingerprint ?? null,
@@ -128,10 +135,31 @@ export function referencePart(asset: ReferenceAsset): ContentPart {
   return {
     type: "reference",
     assetId: asset.id,
+    ...(asset.referenceId ? { referenceId: asset.referenceId } : {}),
+    ...(asset.binding === "asset" ? { binding: "asset" } : {}),
     ...(asset.nodeId ? { nodeId: asset.nodeId } : {}),
     name: asset.nodeTitle || asset.name,
     fingerprint: asset.fingerprint,
   };
+}
+
+/** Refresh only following tokens. Pinned versions and authored text stay put. */
+export function currentReferences(
+  content: ReferenceContent,
+  assets: readonly ReferenceAsset[],
+): ReferenceContent {
+  return content.map((part) => {
+    if (part.type === "text" || part.binding === "asset") return part;
+    const asset = part.nodeId
+      ? assets.find((asset) => asset.nodeId === part.nodeId)
+      : assets.find((asset) => asset.id === part.assetId);
+    return asset
+      ? {
+          ...referencePart(asset),
+          ...(part.referenceId ? { referenceId: part.referenceId } : {}),
+        }
+      : part;
+  });
 }
 
 export function validContent(content: ReferenceContent) {

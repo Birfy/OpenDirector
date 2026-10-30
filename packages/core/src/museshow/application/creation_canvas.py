@@ -23,6 +23,26 @@ DOWNSTREAM = {'text': {'text', 'image', 'video'}, 'image': {'text', 'image', 'vi
               'subject': {'image', 'video', 'audio'}}
 
 
+def prompt_projection(data, spec):
+    """Structured text is authoritative; labels never identify relationships."""
+    if spec['promptContent'] is None:
+        return spec['prompt']
+    references = {ref['id']: ref for ref in data['references']}
+    items = {item['id']: item for item in data['canvasItems']}
+    assets = {asset['id']: asset for asset in data['assets']}
+    result = []
+    for part in spec['promptContent']:
+        if part['type'] == 'text':
+            result.append(part['text'])
+        else:
+            ref = references.get(part['referenceId'])
+            if not ref or not ref['active'] or ref['targetSpecId'] != spec['id']:
+                raise ContractError('reference_invalid', '正文引用的参考关系已不存在。')
+            source = items.get(ref['source']['id']) if ref['binding'] == 'follow_current' else assets.get(ref['source']['assetId'])
+            result.append('@' + ((source.get('title') or source.get('name') or '参考') if source else '参考'))
+    return ''.join(result)
+
+
 def visible_item_ids(snapshot):
     items = {item.id: item for item in snapshot.canvasItems}
     states = {}
@@ -167,6 +187,11 @@ class CreationCanvas:
         operations = command.payload.operations if command.type == 'creation.batch' else [command]
         for operation in operations:
             self._mutate(data, operation.type, operation.payload)
+        previous_specs = {str(spec.id): spec.model_dump(mode='json') for spec in before.generationSpecs}
+        for spec in data['generationSpecs']:
+            previous = previous_specs.get(spec['id'])
+            if spec['promptContent'] is not None and (previous is None or any(spec[key] != previous[key] for key in ('prompt', 'promptContent'))):
+                spec['prompt'] = prompt_projection(data, spec)
         # One revision per object per atomic transaction, regardless of how many
         # semantic operations touch it. New objects always begin at revision 1.
         for collection in COLLECTIONS.values():
@@ -296,7 +321,7 @@ class CreationCanvas:
                 raise ContractError('role_restricted', '仅媒体节点可附加媒体编辑器。', payload.itemId)
             if not any(ref['id'] == doc['id'] for ref in item['editors']):
                 item['editors'].append({'objectType': 'editor_document', 'id': doc['id'], 'kind': doc['kind']})
-        elif kind in {'reference.add', 'reference.update'}:
+        elif kind in {'reference.add', 'reference.update', 'reference.restore'}:
             ref = payload.reference.model_dump(mode='json')
             changed_source = False
             if str(ref['projectId']) != str(data['project']['id']):
@@ -322,7 +347,14 @@ class CreationCanvas:
             else:
                 old = self._get(data, 'reference', payload.reference.id)
                 changed_source = (old['binding'], old['source']) != (ref['binding'], ref['source'])
-                if old['active'] != ref['active']:
+                if kind == 'reference.restore':
+                    if old['revision'] != ref['revision']:
+                        raise ContractError('revision_conflict', '参考已发生变化，请重新读取后恢复。', payload.reference.id)
+                    if old['active'] or not ref['active']:
+                        raise ContractError('invalid_input', '仅能恢复已移除的参考关系。', payload.reference.id)
+                    if (old['targetSpecId'], old['binding'], old['source']) != (ref['targetSpecId'], ref['binding'], ref['source']):
+                        raise ContractError('invalid_input', '恢复参考不能改变原有来源和目标。', payload.reference.id)
+                elif old['active'] != ref['active']:
                     raise ContractError('role_restricted', '参考的移除与恢复需使用对应生命周期命令。', payload.reference.id)
                 if old['targetSpecId'] != ref['targetSpecId']:
                     raise ContractError('invalid_input', '不能转移参考的目标配置。', payload.reference.id)
@@ -332,7 +364,7 @@ class CreationCanvas:
             if ref['binding'] == 'follow_current':
                 source = self._get(data, 'canvas_item', ref['source']['id'])
                 source_kind = source['kind']
-                if kind == 'reference.add' or changed_source:
+                if kind in {'reference.add', 'reference.restore'} or changed_source:
                     self._editable(data, source['id'])
             else:
                 source_kind = ref['source']['kind']
@@ -348,7 +380,7 @@ class CreationCanvas:
                 owner = item['binding'].get('objectRef') or item['binding'].get('draftSpec')
                 if owner and owner.get('id') == spec['id']:
                     self._editable(data, item['id'])
-            if spec['promptContent']:
+            if spec['promptContent'] is not None:
                 spec['promptContent'] = [part for part in spec['promptContent'] if part.get('referenceId') != ref['id']]
             ref['active'] = False
         elif kind == 'generationSpec.setPrompt':

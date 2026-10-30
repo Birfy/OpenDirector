@@ -99,7 +99,7 @@ export interface BatchCommandInput extends CommandBaseInput {
 }
 
 export interface BatchPayloadInput extends ContractInput {
-  readonly operations: ReadonlyArray<CanvasShowCommandOperationInput | CanvasMoveCommandOperationInput | CanvasUpdateCommandOperationInput | CanvasHideCommandOperationInput | CanvasMaterializeCommandOperationInput | CanvasConfigureCommandOperationInput | CanvasEditorAttachCommandOperationInput | SpecCreateCommandOperationInput | SpecUpdateCommandOperationInput | SpecPromptCommandOperationInput | ReferenceAddCommandOperationInput | ReferenceUpdateCommandOperationInput | ReferenceRemoveCommandOperationInput | ResultSelectCommandOperationInput | EditorCreateCommandOperationInput | EditorSaveCommandOperationInput>;
+  readonly operations: ReadonlyArray<CanvasShowCommandOperationInput | CanvasMoveCommandOperationInput | CanvasUpdateCommandOperationInput | CanvasHideCommandOperationInput | CanvasMaterializeCommandOperationInput | CanvasConfigureCommandOperationInput | CanvasEditorAttachCommandOperationInput | SpecCreateCommandOperationInput | SpecUpdateCommandOperationInput | SpecPromptCommandOperationInput | ReferenceAddCommandOperationInput | ReferenceUpdateCommandOperationInput | ReferenceRestoreCommandOperationInput | ReferenceRemoveCommandOperationInput | ResultSelectCommandOperationInput | EditorCreateCommandOperationInput | EditorSaveCommandOperationInput>;
 }
 
 export interface CameraFrameInput extends ContractInput {
@@ -286,7 +286,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
   readonly query: QueryInput;
   readonly event: ProjectEventInput;
@@ -827,6 +827,16 @@ export interface ReferenceRemoveCommandOperationInput {
   readonly payload: ReferenceRemoveInput;
 }
 
+export interface ReferenceRestoreCommandInput extends CommandBaseInput {
+  readonly type: "reference.restore";
+  readonly payload: ReferenceWriteInput;
+}
+
+export interface ReferenceRestoreCommandOperationInput {
+  readonly type: "reference.restore";
+  readonly payload: ReferenceWriteInput;
+}
+
 export interface ReferenceUpdateCommandInput extends CommandBaseInput {
   readonly type: "reference.update";
   readonly payload: ReferenceWriteInput;
@@ -1191,7 +1201,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1302,7 +1312,7 @@ export interface BatchCommand extends CommandBase {
 }
 
 export interface BatchPayload extends Contract {
-  readonly operations: ReadonlyArray<CanvasShowCommandOperation | CanvasMoveCommandOperation | CanvasUpdateCommandOperation | CanvasHideCommandOperation | CanvasMaterializeCommandOperation | CanvasConfigureCommandOperation | CanvasEditorAttachCommandOperation | SpecCreateCommandOperation | SpecUpdateCommandOperation | SpecPromptCommandOperation | ReferenceAddCommandOperation | ReferenceUpdateCommandOperation | ReferenceRemoveCommandOperation | ResultSelectCommandOperation | EditorCreateCommandOperation | EditorSaveCommandOperation>;
+  readonly operations: ReadonlyArray<CanvasShowCommandOperation | CanvasMoveCommandOperation | CanvasUpdateCommandOperation | CanvasHideCommandOperation | CanvasMaterializeCommandOperation | CanvasConfigureCommandOperation | CanvasEditorAttachCommandOperation | SpecCreateCommandOperation | SpecUpdateCommandOperation | SpecPromptCommandOperation | ReferenceAddCommandOperation | ReferenceUpdateCommandOperation | ReferenceRestoreCommandOperation | ReferenceRemoveCommandOperation | ResultSelectCommandOperation | EditorCreateCommandOperation | EditorSaveCommandOperation>;
 }
 
 export interface CameraFrame extends Contract {
@@ -1489,7 +1499,7 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
   readonly query: Query;
   readonly event: ProjectEvent;
@@ -2030,6 +2040,16 @@ export interface ReferenceRemoveCommandOperation {
   readonly payload: ReferenceRemove;
 }
 
+export interface ReferenceRestoreCommand extends CommandBase {
+  readonly type: "reference.restore";
+  readonly payload: ReferenceWrite;
+}
+
+export interface ReferenceRestoreCommandOperation {
+  readonly type: "reference.restore";
+  readonly payload: ReferenceWrite;
+}
+
 export interface ReferenceUpdateCommand extends CommandBase {
   readonly type: "reference.update";
   readonly payload: ReferenceWrite;
@@ -2394,7 +2414,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

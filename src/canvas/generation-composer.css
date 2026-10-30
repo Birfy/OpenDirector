@@ -1,4 +1,7 @@
 .cw-composer {
+  --chat-border: #ffffff20;
+  --chat-surface: #303034;
+  --chat-text: #e9e9ed;
   --input-min-height: 112px;
   --input-max-height: 240px;
   --composer-reference-height: 60px;
@@ -60,6 +63,14 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cw-composer .cw-prompt-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: #7f828d;
+  pointer-events: none;
 }
 
 .cw-composer-footer {

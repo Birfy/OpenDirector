@@ -1,4 +1,6 @@
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
+import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
+export { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 
 /** Model configurations and input rules published by the local API. */
@@ -73,30 +75,6 @@ const LABELS: Record<string, string> = {
   subject: "主体",
 };
 
-/** Transient model inputs retain the subject's canvas ID for provenance. */
-export function subjectReferenceNodes(node: CanvasNode): CanvasNode[] {
-  if (node.type !== "subject" || node.data.assetState === "missing") return [];
-  const subject = node.data.subject;
-  if (!subject) return [];
-  return [subject.main, ...subject.auxiliaries, subject.voice].flatMap(
-    (resource) => {
-      if (!resource?.src || resource.kind === "file") return [];
-      return [
-        {
-          ...node,
-          type: resource.kind,
-          data: {
-            ...node.data,
-            kind: resource.kind,
-            src: resource.src,
-            title: `${node.data.title} / ${resource.title}`,
-          },
-        },
-      ];
-    },
-  );
-}
-
 /** Speaker names a speech service accepts; others fall back to its default voice. */
 export function serviceVoice(settings: Pick<GenerationSettings, "voiceName">) {
   return /^[A-Za-z0-9_.-]{1,64}$/.test(settings.voiceName ?? "")
@@ -124,6 +102,12 @@ export function backendReferenceIssue(
 ): string | null {
   const kind = node.data.kind;
   const rules = config.inputRules;
+  if (
+    settings.mode === "video" &&
+    settings.videoMode === "first-last" &&
+    ["video", "audio"].includes(kind)
+  )
+    return "首尾帧模式不接收视频或音频参考";
   if (kind === "subject") {
     if (settings.mode === "video" && settings.videoMode === "first-last")
       return "首尾帧模式请使用图片节点选择帧素材";

@@ -8,11 +8,10 @@ import { ComposerPopover } from "./ComposerPopover";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import {
-  ReferenceMentionInput,
-  type ReferenceMentionHandle,
-} from "./ReferenceMentionInput";
-import { nodeMentionOptions } from "./referenceMentions";
-import { editPromptMentions } from "./promptMentions.ts";
+  GenerationReferenceEditor,
+  type GenerationReferenceHandle,
+  type GenerationReferenceControls,
+} from "./GenerationReferenceEditor";
 import "./nodes.css";
 
 export function TextNodeComposer({
@@ -24,6 +23,7 @@ export function TextNodeComposer({
   onCancel,
   onPickReference,
   running,
+  referenceControls,
 }: {
   node: CanvasNode;
   incoming: CanvasNode[];
@@ -33,12 +33,12 @@ export function TextNodeComposer({
   onCancel: () => void;
   onPickReference: () => void;
   running: boolean;
+  referenceControls?: GenerationReferenceControls;
 }) {
   const root = useRef<HTMLDivElement>(null),
-    input = useRef<HTMLTextAreaElement>(null),
     anchor = useRef<HTMLElement | null>(null);
   const [panel, setPanel] = useState<"parameters" | null>(null);
-  const mentions = useRef<ReferenceMentionHandle>(null);
+  const mentions = useRef<GenerationReferenceHandle>(null);
   useEffect(() => setPanel(null), [node.id]);
   const settings = agentNodeSettings(node),
     agents = models.filter((m) => m.kind === "agent");
@@ -53,17 +53,13 @@ export function TextNodeComposer({
     anchor.current = element;
     setPanel((old) => (old === next ? null : next));
   };
-  const mentionOptions = nodeMentionOptions(incoming, (reference) =>
+  const referenceIssue = (reference: CanvasNode) =>
     !model
       ? "请先选择 Agent 模型"
       : !model.inputRules.allowedKinds.includes(reference.type)
         ? "当前 Agent 不支持此类参考"
-        : null,
-  );
-  const insert = (reference: CanvasNode) => {
-    const option = mentionOptions.find((item) => item.id === reference.id);
-    if (option) mentions.current?.insert(option);
-  };
+        : null;
+  const insert = (reference: CanvasNode) => mentions.current?.insert(reference);
   return (
     <GenerationComposerShell
       composerRef={root}
@@ -79,7 +75,7 @@ export function TextNodeComposer({
               className="cw-add-reference"
               aria-label="添加参考素材"
               label="添加参考素材"
-              onClick={onPickReference}
+              onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={20} />
             </TooltipButton>
@@ -105,40 +101,33 @@ export function TextNodeComposer({
             ))}
           </div>
         )}
-        <ReferenceMentionInput
+        <GenerationReferenceEditor
           key={node.id}
-          inputRef={input}
+          node={node}
+          incoming={incoming}
+          controls={referenceControls}
+          issue={referenceIssue}
+          validate={(sources) => {
+            if (!model) return null;
+            for (const [kind, maximum] of [
+              ["image", model.inputRules.maxImages],
+              ["video", model.inputRules.maxVideos],
+              ["audio", model.inputRules.maxAudios],
+            ] as const)
+              if (
+                sources.filter((source) => source.type === kind).length >
+                maximum
+              )
+                return "参考数量超出当前 Agent 模型限制";
+            return null;
+          }}
+          onUpdate={onUpdate}
+          running={running}
           pickerRef={mentions}
-          options={mentionOptions}
-          referencesDisabled={running}
-          autoGrow
-          className="cw-prompt-input"
-          aria-label="文本生成提示词"
-          spellCheck={false}
-          value={node.data.prompt}
+          label="文本生成提示词"
           placeholder="输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本"
-          onChangeText={(prompt, mention) =>
-            onUpdate({
-              prompt,
-              promptMentions: editPromptMentions(
-                node.data.prompt,
-                prompt,
-                node.data.promptMentions,
-                mention,
-              ),
-            })
-          }
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              (event.ctrlKey || event.metaKey) &&
-              !event.nativeEvent.isComposing &&
-              !blocker &&
-              !running
-            ) {
-              event.preventDefault();
-              onRun();
-            }
+          onRun={() => {
+            if (!blocker && !running) onRun();
           }}
         />
       </div>
@@ -189,7 +178,7 @@ export function TextNodeComposer({
               className="cw-reference-trigger"
               aria-label="添加参考素材"
               label="添加参考素材"
-              onClick={onPickReference}
+              onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={16} />
             </TooltipButton>

@@ -1,6 +1,7 @@
 import { indexNodes, ancestors, isNodeLocked } from "./hierarchy.ts";
 import { mapCanvasToolTaskReferences } from "./toolCatalog.ts";
 import { mapSettingsNodeReferences } from "./model.ts";
+import { generationContentPatch } from "./generationReferenceContent.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
 import { applyCommand, createNode } from "./model.ts";
 import type {
@@ -151,6 +152,16 @@ export function ungroupSelection(
   return {
     ...document,
     nodes,
+    ...(document.hiddenNodes?.some(
+      (node) => node.parentId && removed.has(node.parentId),
+    )
+      ? {
+          hiddenNodes: [
+            ...document.hiddenNodes,
+            ...document.nodes.filter((node) => removed.has(node.id)),
+          ],
+        }
+      : {}),
     edges: document.edges.filter(
       (edge) => !removed.has(edge.source) && !removed.has(edge.target),
     ),
@@ -208,7 +219,7 @@ export function cutSelection(
   if (!fragment.nodes.length) return { document };
   const included = new Set(fragment.nodes.map((node) => node.id));
   const next = applyCommand(document, {
-    type: "remove-nodes",
+    type: "hide-nodes",
     ids: [...included],
   });
   if (next.nodes.some((node) => included.has(node.id))) return { document };
@@ -257,6 +268,22 @@ export function pasteFragment(
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
     copy.data = remapDataReferences(copy.data, remapped);
+    if (copy.data.promptContent && copy.data.settings && node.data.settings) {
+      for (const field of ["firstFrameNodeId", "lastFrameNodeId"] as const) {
+        const original = node.data.settings[field];
+        if (
+          original &&
+          !remapped.has(original) &&
+          [...document.nodes, ...(document.hiddenNodes ?? [])].some(
+            (source) => source.id === original,
+          ) &&
+          copy.data.promptContent.some(
+            (part) => part.type === "reference" && part.nodeId === original,
+          )
+        )
+          copy.data.settings = { ...copy.data.settings, [field]: original };
+      }
+    }
     if (copy.data.promptMentions)
       copy.data.promptMentions = copy.data.promptMentions.flatMap(
         ({ referenceId: _oldReference, ...mention }) =>
@@ -270,12 +297,7 @@ export function pasteFragment(
               ]
             : [],
       );
-    if (copy.data.generationEvidence)
-      copy.data.generationEvidence.references = Object.fromEntries(
-        Object.entries(copy.data.generationEvidence.references).map(
-          ([id, value]) => [remapped.get(id) ?? id, value],
-        ),
-      );
+    // A copied result's historical inputs retain their original identities.
     if (node.parentId) copy.parentId = remapped.get(node.parentId)!;
     else
       copy.position = {
@@ -284,13 +306,58 @@ export function pasteFragment(
       };
     return copy;
   });
-  const ordered = orderNodesForCanvas(nodes);
+  let ordered = orderNodesForCanvas(nodes);
   const edges = fragment.edges.map((edge) => ({
     ...structuredClone(edge),
     id: newId(),
     source: remapped.get(edge.source)!,
     target: remapped.get(edge.target)!,
   }));
+  const knownSources = new Set(
+    [...document.nodes, ...(document.hiddenNodes ?? []), ...ordered].map(
+      (node) => node.id,
+    ),
+  );
+  ordered = ordered.map((node) => {
+    if (!node.data.promptContent) return node;
+    const pinned = new Map<string, string>();
+    const content = node.data.promptContent.map((part) => {
+      if (part.type === "text") return part;
+      if (part.binding === "asset") {
+        const key = part.referenceId ?? `${part.assetId}:${part.fingerprint}`;
+        if (!pinned.has(key)) pinned.set(key, newId());
+        return { ...part, referenceId: pinned.get(key)! };
+      }
+      const source = part.nodeId && (remapped.get(part.nodeId) ?? part.nodeId);
+      if (!source || !knownSources.has(source))
+        return { type: "text" as const, text: `@${part.name}` };
+      let edge = edges.find(
+        (edge) =>
+          edge.intent !== "post_edit_result" &&
+          edge.source === source &&
+          edge.target === node.id,
+      );
+      if (!edge) {
+        edge = {
+          id: newId(),
+          source,
+          target: node.id,
+          intent: "generation_input",
+        };
+        edges.push(edge);
+      }
+      return {
+        ...part,
+        nodeId: source,
+        assetId: `node:${source}`,
+        referenceId: edge.id,
+      };
+    });
+    return {
+      ...node,
+      data: { ...node.data, ...generationContentPatch(content) },
+    };
+  });
   return {
     document: {
       ...document,

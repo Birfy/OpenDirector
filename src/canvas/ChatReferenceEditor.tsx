@@ -14,8 +14,11 @@ import {
   assetKind,
   contentText,
   normalizeContent,
+  currentReferences,
+  referencePart,
   referenceIds,
   validContent,
+  type ReferenceAsset,
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
 import {
@@ -27,6 +30,7 @@ import {
   type Caret,
 } from "./chatReferenceDOM.ts";
 import { referenceInsertion } from "./chatReferenceInsertion.ts";
+import type { ReferenceRules } from "./chatReferenceInsertion.ts";
 import {
   mentionCategories,
   mentionRange,
@@ -49,7 +53,7 @@ export interface ChatReferenceEditorHandle {
 interface Props {
   scope: string;
   value: ReferenceContent;
-  assets: ChatAsset[];
+  assets: ReferenceAsset[];
   previews: Record<string, string>;
   options: MentionOption[];
   disabled: boolean;
@@ -60,16 +64,28 @@ interface Props {
   onChoose: (
     option: MentionOption,
     signal: AbortSignal,
-  ) => Promise<ChatAsset[] | null>;
-  onChange: (content: ReferenceContent, added?: ChatAsset[]) => void;
+  ) => Promise<ReferenceAsset[] | null>;
+  onChange: (content: ReferenceContent, added?: ReferenceAsset[]) => void;
   onSubmit: () => void;
   onPasteFiles: (files: File[]) => void;
   onConfirmPending?: (caret: Caret) => void;
+  label?: string;
+  placeholder?: string;
+  className?: string;
+  autoGrow?: boolean;
+  referenceRules?: ReferenceRules;
+  submitOnEnter?: boolean;
+  metadataOnlyKinds?: readonly string[];
+  onPasteReference?: (
+    part: Extract<ReferenceContent[number], { type: "reference" }>,
+    signal: AbortSignal,
+  ) => Promise<ReferenceAsset[]>;
+  rebindOnPaste?: boolean;
   ref: Ref<ChatReferenceEditorHandle>;
 }
 type Snapshot = { content: ReferenceContent; caret: Caret };
 const CLIPBOARD = "application/x-opendesign-references";
-const rules = {
+const defaultRules = {
   allowedKinds: ["image", "video", "audio", "text"],
   maxImages: 64,
   imageBytes: 32 * 1024 * 1024,
@@ -92,8 +108,18 @@ export function ChatReferenceEditor({
   onSubmit,
   onPasteFiles,
   onConfirmPending,
+  label = "消息内容",
+  placeholder = "输入想法、剧本或上传参考，输入 @ 引用项目素材，和 Agent 一起创作",
+  className = "",
+  autoGrow = false,
+  referenceRules = defaultRules,
+  submitOnEnter = true,
+  metadataOnlyKinds = [],
+  onPasteReference,
+  rebindOnPaste = false,
   ref,
 }: Props) {
+  const rules = referenceRules;
   const root = useRef<HTMLDivElement>(null),
     panel = useRef<HTMLDivElement>(null);
   const iconTemplates = useRef<HTMLSpanElement>(null);
@@ -141,7 +167,16 @@ export function ChatReferenceEditor({
           (asset) => asset.id === part.assetId,
         );
         const src = latest.current.previews[part.assetId];
-        chip.title = part.name;
+        const metadataOnly =
+          asset && metadataOnlyKinds.includes(assetKind(asset));
+        chip.title = part.name + (metadataOnly ? "（仅传递素材信息）" : "");
+        chip.querySelector("[data-reference-info]")?.remove();
+        if (metadataOnly) {
+          const hint = document.createElement("small");
+          hint.dataset.referenceInfo = "1";
+          hint.textContent = "仅素材信息";
+          chip.append(hint);
+        }
         chip.classList.toggle(
           "is-unavailable",
           !asset ||
@@ -179,6 +214,7 @@ export function ChatReferenceEditor({
         icon.dataset.referenceIcon = "1";
         icon.setAttribute("aria-hidden", "true");
         const label = document.createElement("span");
+        label.className = "cw-chat-reference-label";
         label.textContent = part.name;
         chip.append(icon, label);
         fragment.append(chip);
@@ -203,7 +239,7 @@ export function ChatReferenceEditor({
     at: Caret,
     redraw = true,
     typing = false,
-    added: ChatAsset[] = [],
+    added: ReferenceAsset[] = [],
   ) {
     const next = normalizeContent(content);
     if (!validContent(next)) {
@@ -235,7 +271,7 @@ export function ChatReferenceEditor({
     return true;
   }
   function insert(
-    added: ChatAsset[],
+    added: ReferenceAsset[],
     at = rangeRef.current ?? caret(),
     deduplicate = false,
   ) {
@@ -321,13 +357,81 @@ export function ChatReferenceEditor({
       if (alive.current) setBusy(false);
     }
   }
+  async function pasteReferences(content: ReferenceContent, at: Caret) {
+    if (!onPasteReference || choosing.current || disabled || referencesDisabled)
+      return;
+    const before = current.current;
+    const abort = new AbortController();
+    preparation.current = abort;
+    choosing.current = true;
+    setBusy(true);
+    setNotice("");
+    try {
+      const inserted: ReferenceContent = [],
+        added: ReferenceAsset[] = [];
+      const resolved = new Map<string, ReferenceAsset[]>();
+      for (const part of content) {
+        if (part.type === "text") {
+          inserted.push(part);
+          continue;
+        }
+        const key = JSON.stringify([
+          part.assetId,
+          part.nodeId,
+          part.referenceId,
+          part.binding,
+        ]);
+        let assets = resolved.get(key);
+        if (!assets) {
+          assets = await onPasteReference(part, abort.signal);
+          resolved.set(key, assets);
+        }
+        abort.signal.throwIfAborted();
+        for (const asset of assets) {
+          added.push(asset);
+          inserted.push(referencePart(asset));
+        }
+      }
+      if (!alive.current || abort.signal.aborted || current.current !== before)
+        return;
+      // Validate the entire paste before changing the document or its graph.
+      referenceInsertion(
+        [],
+        { start: 0, end: 0 },
+        [...new Map(added.map((asset) => [asset.id, asset])).values()],
+        [...latest.current.assets, ...added],
+        rules,
+      );
+      const end = at.start + editingText(inserted).length;
+      publish(
+        editContent(before, at, inserted),
+        { start: end, end },
+        true,
+        false,
+        added,
+      );
+    } catch (error) {
+      if (alive.current && !abort.signal.aborted)
+        setNotice((error as Error).message);
+    } finally {
+      choosing.current = false;
+      if (preparation.current === abort) preparation.current = null;
+      if (alive.current) setBusy(false);
+    }
+  }
   function undo(redo: boolean) {
     const from = redo ? future : past,
       to = redo ? past : future;
-    const snapshot = from.current.pop();
+    const snapshot = from.current.at(-1);
     if (!snapshot) return;
+    try {
+      latest.current.onChange(snapshot.content);
+    } catch (error) {
+      setNotice((error as Error).message);
+      return;
+    }
+    from.current.pop();
     to.current.push({ content: current.current, caret: caret() });
-    latest.current.onChange(snapshot.content);
     current.current = snapshot.content;
     paint(snapshot.content, snapshot.caret);
     lastEdit.current = 0;
@@ -381,13 +485,44 @@ export function ChatReferenceEditor({
         root.current && document.activeElement === root.current
           ? caret()
           : undefined;
-      past.current = [];
-      future.current = [];
+      if (editingText(value) === editingText(current.current)) {
+        for (const stack of [past, future])
+          stack.current = stack.current.map((snapshot) => ({
+            ...snapshot,
+            content: currentReferences(snapshot.content, assets),
+          }));
+      } else {
+        past.current = [];
+        future.current = [];
+      }
       current.current = value;
       paint(value, at);
     }
   }, [value]);
-  useEffect(decorate, [assets, previews]);
+  useEffect(decorate, [assets, previews, metadataOnlyKinds]);
+  useLayoutEffect(() => {
+    if (!autoGrow || !root.current) return;
+    const element = root.current;
+    const fit = () => {
+      const top = element.scrollTop;
+      const minimum =
+        Number.parseFloat(
+          getComputedStyle(element).getPropertyValue("--input-min-height"),
+        ) || 112;
+      element.style.height = "auto";
+      element.style.height = `${Math.max(minimum, element.scrollHeight)}px`;
+      element.scrollTop = top;
+    };
+    fit();
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (width === element.clientWidth) return;
+      width = element.clientWidth;
+      fit();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [value, autoGrow]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -480,21 +615,21 @@ export function ChatReferenceEditor({
   return (
     <>
       <span ref={iconTemplates} hidden aria-hidden="true">
-        {["image", "video", "audio", "text"].map((kind) => (
+        {["image", "video", "audio", "text", "subject"].map((kind) => (
           <CanvasIcon key={kind} name={kind} data-kind={kind} size={20} />
         ))}
       </span>
       <div
         ref={root}
-        className="cw-chat-reference-editor"
+        className={`cw-chat-reference-editor ${className}`}
         contentEditable={!disabled && !busy}
         suppressContentEditableWarning
         role="textbox"
-        aria-label="消息内容"
+        aria-label={label}
         aria-multiline="true"
         aria-disabled={disabled || busy}
         aria-busy={busy}
-        data-placeholder="输入想法、剧本或上传参考，输入 @ 引用项目素材，和 Agent 一起创作"
+        data-placeholder={placeholder}
         aria-expanded={Boolean(range)}
         aria-controls={range ? listId : undefined}
         aria-autocomplete="list"
@@ -548,6 +683,12 @@ export function ChatReferenceEditor({
             event.preventDefault();
         }}
         onKeyDown={(event) => {
+          if (event.key === "Escape" && busy) {
+            event.preventDefault();
+            event.stopPropagation();
+            preparation.current?.abort();
+            return;
+          }
           if (
             composing.current ||
             event.nativeEvent.isComposing ||
@@ -616,7 +757,11 @@ export function ChatReferenceEditor({
           }
           if (event.key === "Enter") {
             event.preventDefault();
-            if (!event.shiftKey) onSubmit();
+            if (
+              (submitOnEnter || event.ctrlKey || event.metaKey) &&
+              !event.shiftKey
+            )
+              onSubmit();
             else {
               const at = caret(),
                 end = at.start + 1;
@@ -654,6 +799,7 @@ export function ChatReferenceEditor({
             if (
               data.scope === scope &&
               Array.isArray(data.content) &&
+              data.content.length <= 2000 &&
               data.content.every((part: ReferenceContent[number]) =>
                 part.type === "text"
                   ? typeof part.text === "string"
@@ -661,15 +807,32 @@ export function ChatReferenceEditor({
                     typeof part.name === "string" &&
                     part.name.length > 0 &&
                     part.name.length <= 255 &&
-                    latest.current.assets.some(
-                      (asset) =>
-                        asset.id === part.assetId &&
-                        (!part.fingerprint ||
-                          asset.fingerprint === part.fingerprint),
-                    ),
+                    typeof part.assetId === "string" &&
+                    (Boolean(onPasteReference) ||
+                      latest.current.assets.some(
+                        (asset) =>
+                          asset.id === part.assetId &&
+                          (!part.fingerprint ||
+                            asset.fingerprint === part.fingerprint),
+                      )),
               )
-            )
+            ) {
+              if (
+                onPasteReference &&
+                (rebindOnPaste ||
+                  data.content.some(
+                    (part: ReferenceContent[number]) =>
+                      part.type === "reference" &&
+                      !latest.current.assets.some(
+                        (asset) => asset.id === part.assetId,
+                      ),
+                  ))
+              ) {
+                void pasteReferences(normalizeContent(data.content), caret());
+                return;
+              }
               inserted = normalizeContent(data.content);
+            }
           } catch {
             /* Foreign clipboard data is inserted as plain text. */
           }

@@ -1,5 +1,9 @@
 import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
+import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { referenceContentCommand } from "./generationReferenceEdit.ts";
+import { incomingReferenceNodes } from "./generationReferenceContent.ts";
+import type { GenerationReferenceControls } from "./GenerationReferenceEditor";
 import { lockedNodeIds } from "./hierarchy";
 import {
   lazy,
@@ -100,6 +104,7 @@ import {
   creationClient,
   creationEnabled,
   objectVersion,
+  itemSpec,
   visibleItems,
 } from "../backend/creationClient.ts";
 import { CanvasSearchPanel } from "./CanvasSearchPanel";
@@ -392,14 +397,7 @@ function incomingNodes(
   document: CanvasDocument,
   nodeId: string | null | undefined,
 ) {
-  return document.nodes.filter((node) =>
-    document.edges.some(
-      (edge) =>
-        edge.intent !== "post_edit_result" &&
-        edge.target === nodeId &&
-        edge.source === node.id,
-    ),
-  );
+  return incomingReferenceNodes(document, nodeId);
 }
 
 function Workspace() {
@@ -587,8 +585,113 @@ function Workspace() {
   const composerNode = doc.nodes.find((node) => node.id === composerNodeId);
   const composerIncoming = useMemo(
     () => incomingNodes(doc, composerNodeId),
-    [doc.nodes, doc.edges, composerNodeId],
+    [doc.nodes, doc.hiddenNodes, doc.edges, composerNodeId],
   );
+  const referenceAssets = useProjectMentionAssets(doc.id);
+  const generationReferenceControls = (
+    target: CanvasNode,
+  ): GenerationReferenceControls => ({
+    projectId: doc.id,
+    nodes: [...doc.nodes, ...(doc.hiddenNodes ?? [])],
+    assets: referenceAssets.assets,
+    pinned: creationEnabled()
+      ? (() => {
+          const snapshot = creationClient(doc.id).snapshot;
+          const item = snapshot?.canvasItems.find(
+            (item) => item.id === target.id,
+          );
+          const spec = item && itemSpec(snapshot, item);
+          return (
+            snapshot?.references.flatMap((ref) => {
+              if (
+                !ref.active ||
+                ref.binding !== "pinned" ||
+                ref.targetSpecId !== spec?.id
+              )
+                return [];
+              const source = ref.source;
+              const asset = snapshot.assets.find(
+                (asset) => asset.id === source.assetId,
+              );
+              return asset
+                ? [
+                    {
+                      id: asset.id,
+                      name: asset.name,
+                      referenceId: ref.id,
+                      binding: "asset" as const,
+                      kind: asset.kind,
+                      type: asset.metadata.mimeType,
+                      size: asset.metadata.size,
+                      fingerprint: asset.fingerprint,
+                    },
+                  ]
+                : [];
+            }) ?? []
+          );
+        })()
+      : [],
+    loading: referenceAssets.loading,
+    error: referenceAssets.error,
+    load: referenceAssets.load,
+    referenceId: (source) =>
+      doc.edges.find(
+        (edge) =>
+          edge.intent !== "post_edit_result" &&
+          edge.source === source &&
+          edge.target === target.id,
+      )?.id,
+    issue: (source) => {
+      const current = historyRef.current.present;
+      const issue = referenceIssue(
+        {
+          ...current,
+          nodes: [
+            ...current.nodes,
+            ...(current.hiddenNodes ?? []),
+            ...(!current.nodes.some((node) => node.id === source.id) &&
+            !current.hiddenNodes?.some((node) => node.id === source.id)
+              ? [source]
+              : []),
+          ],
+          hiddenNodes: [],
+        },
+        source.id,
+        target.id,
+      );
+      return issue && issue !== "duplicate_relation"
+        ? REFERENCE_ISSUE_TEXT[issue]
+        : null;
+    },
+    prepareAsset: async (asset, signal) => {
+      if (creationEnabled()) {
+        const client = creationClient(doc.id);
+        const record = client.snapshot.assets.find(
+          (item) => item.id === asset.id,
+        );
+        if (!record) throw new Error("素材已不存在。");
+        signal.throwIfAborted();
+        return record.kind === "text"
+          ? { text: await client.textContent(record.id) }
+          : { src: await client.mediaUrl(record.id, { signal }) };
+      }
+      const src = `/api/data/${doc.id}/assets/${asset.id}`;
+      if (asset.kind !== "text") return { src };
+      const response = await fetch(src, { signal });
+      if (!response.ok) throw new Error("参考文本读取失败。");
+      return { text: await response.text() };
+    },
+    onChange: (content, sources) => {
+      const current = historyRef.current.present;
+      const edit = referenceContentCommand(
+        current,
+        target.id,
+        content,
+        sources,
+      );
+      command(edit);
+    },
+  });
   const actionSource = actionSession
     ? validateNodeActionSource(doc, actionSession)
     : null;
@@ -735,11 +838,7 @@ function Workspace() {
       setRename(null);
       setZoomMenu(false);
       setHand(false);
-      window.history.replaceState(
-        {},
-        "",
-        `/${window.location.search}`,
-      );
+      window.history.replaceState({}, "", `/${window.location.search}`);
       requestAnimationFrame(() => {
         void flow.setViewport(next.viewport);
         if (fit)
@@ -1114,7 +1213,7 @@ function Workspace() {
   ) => {
     const present = historyRef.current.present;
     const working = {
-      nodes: [...present.nodes, ...added],
+      nodes: [...present.nodes, ...(present.hiddenNodes ?? []), ...added],
       edges: [...present.edges],
     };
     const issues = new Set<string>();
@@ -1131,6 +1230,19 @@ function Workspace() {
     };
   };
   const selectAndFocus = (requested: CanvasNode) => {
+    if (doc.hiddenNodes?.some((node) => node.id === requested.id)) {
+      const restored = [requested];
+      let parentId = requested.parentId;
+      const visited = new Set([requested.id]);
+      while (parentId && !visited.has(parentId)) {
+        visited.add(parentId);
+        const parent = doc.hiddenNodes.find((node) => node.id === parentId);
+        if (!parent) break;
+        restored.unshift(parent);
+        parentId = parent.parentId;
+      }
+      command({ type: "add-nodes", nodes: restored });
+    }
     const owner = doc.nodes.find(
       (n) => n.type === "stack" && n.data.stack?.nodeIds.includes(requested.id),
     );
@@ -1445,38 +1557,45 @@ function Workspace() {
   );
   const flowEdges: Edge[] = useMemo(
     () =>
-      [...doc.edges, ...toolProvenanceEdges(jobs, doc)].map((e) => ({
-        ...e,
-        type: "reference",
-        selected: selectedEdges.includes(e.id),
-        hidden: !showEdges,
-        selectable: !e.id.startsWith("tool-"),
-        data: {
-          ...referencePresentation(doc, e),
-          sourceBounds: (() => {
-            const n = doc.nodes.find((n) => n.id === e.source)!;
-            return {
-              ...absolutePosition(n, doc.nodes),
-              width: n.width,
-              height: n.height,
-            };
-          })(),
-          targetBounds: (() => {
-            const n = doc.nodes.find((n) => n.id === e.target)!;
-            return {
-              ...absolutePosition(n, doc.nodes),
-              width: n.width,
-              height: n.height,
-            };
-          })(),
-          bidirectional:
-            e.source !== e.target &&
-            doc.edges.some(
-              (other) => other.source === e.target && other.target === e.source,
-            ),
-        },
-        ariaLabel: "参考连线",
-      })),
+      [...doc.edges, ...toolProvenanceEdges(jobs, doc)]
+        .filter(
+          (edge) =>
+            doc.nodes.some((node) => node.id === edge.source) &&
+            doc.nodes.some((node) => node.id === edge.target),
+        )
+        .map((e) => ({
+          ...e,
+          type: "reference",
+          selected: selectedEdges.includes(e.id),
+          hidden: !showEdges,
+          selectable: !e.id.startsWith("tool-"),
+          data: {
+            ...referencePresentation(doc, e),
+            sourceBounds: (() => {
+              const n = doc.nodes.find((n) => n.id === e.source)!;
+              return {
+                ...absolutePosition(n, doc.nodes),
+                width: n.width,
+                height: n.height,
+              };
+            })(),
+            targetBounds: (() => {
+              const n = doc.nodes.find((n) => n.id === e.target)!;
+              return {
+                ...absolutePosition(n, doc.nodes),
+                width: n.width,
+                height: n.height,
+              };
+            })(),
+            bidirectional:
+              e.source !== e.target &&
+              doc.edges.some(
+                (other) =>
+                  other.source === e.target && other.target === e.source,
+              ),
+          },
+          ariaLabel: "参考连线",
+        })),
     [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
   );
 
@@ -1515,7 +1634,7 @@ function Workspace() {
     command({
       type: "batch",
       commands: [
-        { type: "remove-nodes", ids: selectedRef.current },
+        { type: "hide-nodes", ids: selectedRef.current },
         { type: "remove-edges", ids: selectedEdges },
       ],
     });
@@ -4556,6 +4675,7 @@ function Workspace() {
               key={`${composerNode.id}:${toolRevision}`}
               node={composerNode}
               incoming={composerIncoming}
+              referenceControls={generationReferenceControls(composerNode)}
               models={backendCatalog.models}
               onUpdate={(patch) =>
                 command({
@@ -4577,6 +4697,7 @@ function Workspace() {
               key={`${composerNode.id}:${toolRevision}`}
               selectedNode={composerNode}
               incomingNodes={composerIncoming}
+              referenceControls={generationReferenceControls(composerNode)}
               onUpdate={(patch) =>
                 command({
                   type: "update-node",
@@ -4869,7 +4990,7 @@ function Workspace() {
               </button>
               <h3>画布素材</h3>
               <div className="cw-asset-grid">
-                {doc.nodes
+                {[...doc.nodes, ...(doc.hiddenNodes ?? [])]
                   .filter((n) => n.data.src)
                   .map((n) => (
                     <button
@@ -5304,7 +5425,7 @@ function Workspace() {
           documentId={doc.id}
           documentTitle={doc.title}
           catalog={backendCatalog}
-          nodes={doc.nodes}
+          nodes={[...doc.nodes, ...(doc.hiddenNodes ?? [])]}
           selectedNodes={doc.nodes.filter((node) => selected.includes(node.id))}
           open={assistantOpen}
           layout={assistantLayout}

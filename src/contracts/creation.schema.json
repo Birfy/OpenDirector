@@ -933,6 +933,7 @@
                   "generationSpec.update": "#/$defs/SpecUpdateCommandOperation",
                   "reference.add": "#/$defs/ReferenceAddCommandOperation",
                   "reference.remove": "#/$defs/ReferenceRemoveCommandOperation",
+                  "reference.restore": "#/$defs/ReferenceRestoreCommandOperation",
                   "reference.update": "#/$defs/ReferenceUpdateCommandOperation",
                   "result.select": "#/$defs/ResultSelectCommandOperation"
                 },
@@ -974,6 +975,9 @@
                 },
                 {
                   "$ref": "#/$defs/ReferenceUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceRestoreCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/ReferenceRemoveCommandOperation"
@@ -2346,6 +2350,7 @@
                 "project.trash": "#/$defs/ProjectTrashCommand",
                 "reference.add": "#/$defs/ReferenceAddCommand",
                 "reference.remove": "#/$defs/ReferenceRemoveCommand",
+                "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand"
               },
@@ -2414,6 +2419,9 @@
               },
               {
                 "$ref": "#/$defs/ReferenceUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/ReferenceRestoreCommand"
               },
               {
                 "$ref": "#/$defs/ReferenceRemoveCommand"
@@ -7222,6 +7230,77 @@
         "title": "ReferenceRemoveCommandOperation",
         "type": "object"
       },
+      "ReferenceRestoreCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "reference.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceRestoreCommand",
+        "type": "object"
+      },
+      "ReferenceRestoreCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceRestoreCommandOperation",
+        "type": "object"
+      },
       "ReferenceUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -10379,6 +10458,7 @@
             "project.trash": "#/$defs/ProjectTrashCommand",
             "reference.add": "#/$defs/ReferenceAddCommand",
             "reference.remove": "#/$defs/ReferenceRemoveCommand",
+            "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand"
           },
@@ -10447,6 +10527,9 @@
           },
           {
             "$ref": "#/$defs/ReferenceUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/ReferenceRestoreCommand"
           },
           {
             "$ref": "#/$defs/ReferenceRemoveCommand"
@@ -11562,6 +11645,7 @@
                   "generationSpec.update": "#/$defs/SpecUpdateCommandOperation",
                   "reference.add": "#/$defs/ReferenceAddCommandOperation",
                   "reference.remove": "#/$defs/ReferenceRemoveCommandOperation",
+                  "reference.restore": "#/$defs/ReferenceRestoreCommandOperation",
                   "reference.update": "#/$defs/ReferenceUpdateCommandOperation",
                   "result.select": "#/$defs/ResultSelectCommandOperation"
                 },
@@ -11603,6 +11687,9 @@
                 },
                 {
                   "$ref": "#/$defs/ReferenceUpdateCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/ReferenceRestoreCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/ReferenceRemoveCommandOperation"
@@ -13016,6 +13103,7 @@
                 "project.trash": "#/$defs/ProjectTrashCommand",
                 "reference.add": "#/$defs/ReferenceAddCommand",
                 "reference.remove": "#/$defs/ReferenceRemoveCommand",
+                "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
                 "result.select": "#/$defs/ResultSelectCommand"
               },
@@ -13084,6 +13172,9 @@
               },
               {
                 "$ref": "#/$defs/ReferenceUpdateCommand"
+              },
+              {
+                "$ref": "#/$defs/ReferenceRestoreCommand"
               },
               {
                 "$ref": "#/$defs/ReferenceRemoveCommand"
@@ -18128,6 +18219,79 @@
         "title": "ReferenceRemoveCommandOperation",
         "type": "object"
       },
+      "ReferenceRestoreCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "reference.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "ReferenceRestoreCommand",
+        "type": "object"
+      },
+      "ReferenceRestoreCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "reference.restore",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/ReferenceWrite"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "ReferenceRestoreCommandOperation",
+        "type": "object"
+      },
       "ReferenceUpdateCommand": {
         "additionalProperties": false,
         "properties": {
@@ -21455,6 +21619,7 @@
             "project.trash": "#/$defs/ProjectTrashCommand",
             "reference.add": "#/$defs/ReferenceAddCommand",
             "reference.remove": "#/$defs/ReferenceRemoveCommand",
+            "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
             "result.select": "#/$defs/ResultSelectCommand"
           },
@@ -21523,6 +21688,9 @@
           },
           {
             "$ref": "#/$defs/ReferenceUpdateCommand"
+          },
+          {
+            "$ref": "#/$defs/ReferenceRestoreCommand"
           },
           {
             "$ref": "#/$defs/ReferenceRemoveCommand"

@@ -194,8 +194,8 @@ class CommandBase(Contract):
                 raise ValueError('Asset deletion requires an impact preview fingerprint')
         elif self.type == 'generationSpec.update':
             required = [('generation_spec', payload.spec.id)]
-        elif self.type in {'reference.update', 'reference.remove'}:
-            required = [('reference', payload.reference.id if self.type == 'reference.update' else payload.referenceId)]
+        elif self.type in {'reference.update', 'reference.restore', 'reference.remove'}:
+            required = [('reference', payload.referenceId if self.type == 'reference.remove' else payload.reference.id)]
         elif self.type == 'reference.add':
             required = [('generation_spec', payload.reference.targetSpecId)]
         elif self.type == 'generation.submit':
@@ -209,7 +209,7 @@ class CommandBase(Contract):
             raise ValueError('Mutation requires the current versions of all target objects')
         if self.type == 'generation.submit' and versions[('generation_spec', payload.specId)] != payload.expectedSpecRevision:
             raise ValueError('Submission version differs from expected spec version')
-        if self.type in {'generationSpec.update', 'editor.save', 'reference.update'}:
+        if self.type in {'generationSpec.update', 'editor.save', 'reference.update', 'reference.restore'}:
             obj = (payload.spec if self.type == 'generationSpec.update' else
                    payload.document if self.type == 'editor.save' else payload.reference)
             if versions[required[0]] != obj.revision:
@@ -240,6 +240,7 @@ _COMMANDS = (
     ('SpecPromptCommand', 'generationSpec.setPrompt', SpecPromptWrite),
     ('ReferenceAddCommand', 'reference.add', ReferenceWrite),
     ('ReferenceUpdateCommand', 'reference.update', ReferenceWrite),
+    ('ReferenceRestoreCommand', 'reference.restore', ReferenceWrite),
     ('ReferenceRemoveCommand', 'reference.remove', ReferenceRemove),
     ('GenerationSubmitCommand', 'generation.submit', GenerationSubmit),
     ('JobCancelCommand', 'job.cancel', JobControl),
@@ -259,7 +260,7 @@ for _name, _type, _payload in _COMMANDS:
 
 _BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize',
                 'canvas.configure', 'canvas.attachEditor', 'generationSpec.create', 'generationSpec.update',
-                'reference.add', 'reference.update', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
+                'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
 _OPERATIONS = tuple(create_model(name + 'Operation', __base__=Contract,
                     type=(Literal[kind], ...), payload=(payload, ...))
                     for name, kind, payload in _COMMANDS if kind in _BATCH_TYPES)

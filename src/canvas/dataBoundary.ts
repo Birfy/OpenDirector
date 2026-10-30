@@ -13,6 +13,11 @@ import type {
   ToolData,
 } from "./model.ts";
 import { parseLayerDocumentValue, sameLayerDocument } from "./layerDocument.ts";
+import {
+  normalizeContent,
+  validContent,
+  type ReferenceContent,
+} from "./chatReferenceContent.ts";
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -474,6 +479,32 @@ export function parseNodeData(
     title: value.title,
     prompt: value.prompt,
   };
+  if (value.promptContent !== undefined) {
+    if (
+      !Array.isArray(value.promptContent) ||
+      value.promptContent.length > 2000 ||
+      !value.promptContent.every(
+        (part) =>
+          record(part) &&
+          (part.type === "text"
+            ? typeof part.text === "string"
+            : part.type === "reference" &&
+              nonempty(part.assetId) &&
+              nonempty(part.name) &&
+              part.name.length <= 255 &&
+              (part.nodeId == null || nonempty(part.nodeId)) &&
+              (part.referenceId === undefined || nonempty(part.referenceId)) &&
+              (part.binding === undefined || part.binding === "asset") &&
+              (part.fingerprint == null ||
+                typeof part.fingerprint === "string")),
+      )
+    )
+      return { ok: false, error: "结构化正文引用无效。" };
+    const content = normalizeContent(value.promptContent as ReferenceContent);
+    if (!validContent(content))
+      return { ok: false, error: "结构化正文超过长度或参考数量限制。" };
+    result.promptContent = content;
+  }
   if (value.promptMentions !== undefined) {
     if (
       !Array.isArray(value.promptMentions) ||
@@ -698,6 +729,7 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
     (a.kind === b.kind &&
       a.title === b.title &&
       a.prompt === b.prompt &&
+      JSON.stringify(a.promptContent) === JSON.stringify(b.promptContent) &&
       JSON.stringify(a.promptMentions ?? []) ===
         JSON.stringify(b.promptMentions ?? []) &&
       a.src === b.src &&

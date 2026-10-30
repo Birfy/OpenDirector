@@ -206,6 +206,9 @@ test("an accepted command whose snapshot refresh fails retains its original deli
 });
 
 class CommandCapture extends CreationClient {
+  override async textContent() {
+    return "Actual source";
+  }
   batches: {
     operations: CreationOperation[];
     versions: readonly ObjectVersion[];
@@ -425,7 +428,8 @@ test("hiding a source removes its rendered edge while retaining the business ref
     };
     client.install(hidden);
     const rendered = await projection.read();
-    assert.equal(rendered.edges.length, 0);
+    assert.equal(rendered.edges.length, binding === "follow_current" ? 1 : 0);
+    assert.equal(rendered.hiddenNodes?.[0]?.id, source.id);
     const current = rendered.nodes[0]!;
     assert.equal(current.data.promptMentions?.[0]?.referenceId, ref.id);
     projection.baseline = rendered;
@@ -452,5 +456,89 @@ test("hiding a source removes its rendered edge while retaining the business ref
         type: "reference",
         referenceId: ref.id,
       });
+    const inactive = { ...reference, active: false, revision: 2 };
+    const removed = {
+      ...hidden,
+      references: [inactive],
+      generationSpecs: [{ ...spec, promptContent: [], prompt: "" }],
+    };
+    client.install(removed);
+    const blank = await projection.read();
+    projection.baseline = blank;
+    projection.basis = removed;
+    client.batches = [];
+    await projection.save({
+      ...blank,
+      nodes: rendered.nodes,
+      edges: rendered.edges,
+    });
+    const restored = client.batches[0]!;
+    const restore = restored.operations.find(
+      (op) => op.type === "reference.restore",
+    );
+    assert.equal(restore?.type, "reference.restore");
+    if (restore?.type === "reference.restore") {
+      assert.equal(restore.payload.reference.id, ref.id);
+      assert.equal(restore.payload.reference.revision, 2);
+      assert.equal(restore.payload.reference.active, true);
+    }
+    assert.ok(
+      restored.versions.some(
+        (version) =>
+          version.objectType === "reference" &&
+          version.id === ref.id &&
+          version.revision === 2,
+      ),
+    );
+    const prompt = restored.operations.find(
+      (op) => op.type === "generationSpec.setPrompt",
+    );
+    assert.ok(
+      prompt?.type === "generationSpec.setPrompt" &&
+        prompt.payload.promptContent?.some(
+          (part) => part.type === "reference" && part.referenceId === ref.id,
+        ),
+    );
+    if (binding === "pinned") {
+      const unpositioned = {
+        ...hidden,
+        generationSpecs: [
+          { ...spec, prompt: "Plain instructions", promptContent: null },
+        ],
+      };
+      client.install(unpositioned);
+      const document = await projection.read();
+      const targetNode = document.nodes[0]!;
+      assert.equal(
+        targetNode.data.promptContent?.find((part) => part.type === "reference")
+          ?.referenceId,
+        ref.id,
+      );
+      projection.baseline = document;
+      projection.basis = unpositioned;
+      client.batches = [];
+      const { generationContentPatch } =
+        await import("../src/canvas/generationReferenceContent.ts");
+      await projection.save({
+        ...document,
+        nodes: [
+          {
+            ...targetNode,
+            data: {
+              ...targetNode.data,
+              ...generationContentPatch([
+                { type: "text", text: "Retained instructions" },
+              ]),
+            },
+          },
+        ],
+      });
+      assert.ok(
+        client.batches[0]!.operations.some(
+          (op) =>
+            op.type === "reference.remove" && op.payload.referenceId === ref.id,
+        ),
+      );
+    }
   }
 });

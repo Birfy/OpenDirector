@@ -26,6 +26,7 @@ import {
   createLocalStage,
   parseLocalStageValue,
 } from "../canvas/stageDocument.ts";
+import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
 import {
   assetReference,
   CreationClient,
@@ -236,166 +237,218 @@ export class CreationProjection {
     document.viewport = view.viewport;
     const visible = visibleItems(snapshot);
     document.nodes = await Promise.all(
-      snapshot.canvasItems
-        .filter((item) => visible.has(item.id))
-        .map(async (item) => {
-          const node = {
-            ...createNode(item.kind, item.position),
-            id: item.id,
-            width: item.width,
-            height: item.height,
-            locked: item.locked,
-            zIndex: item.zIndex,
-            parentId: item.parentId ?? undefined,
-          };
-          node.data.title = item.title;
-          const asset = currentAsset(snapshot, item);
-          if (asset) {
-            try {
-              if (asset.kind === "text")
-                node.data.text = await this.client.textContent(asset.id);
-              else node.data.src = await this.client.mediaUrl(asset.id);
-              node.data.assetState = "ready";
-            } catch {
-              node.data.assetState = "missing";
-            }
-            node.data.mimeType = asset.metadata.mimeType;
-            node.data.mediaRole =
-              item.binding.role === "material" ? "asset" : "generation";
-            node.data.media = {
-              width: asset.metadata.width ?? undefined,
-              height: asset.metadata.height ?? undefined,
-              durationSeconds: asset.metadata.durationSeconds ?? undefined,
-            };
-          } else if (item.binding.role === "empty" && item.kind === "text")
-            node.data.text = item.binding.manualText ?? "";
-          const spec = itemSpec(snapshot, item);
-          if (spec) {
-            node.data.prompt = spec.prompt;
-            if (spec.promptContent) {
-              let prompt = "";
-              const mentions: NonNullable<
-                CanvasNode["data"]["promptMentions"]
-              > = [];
-              for (const part of spec.promptContent) {
-                if (part.type === "text") prompt += part.text;
-                else {
-                  const ref = snapshot.references.find(
-                    (r) => r.id === part.referenceId,
-                  );
-                  if (!ref) continue;
-                  const source =
-                    ref.binding === "follow_current"
-                      ? snapshot.canvasItems.find((i) => i.id === ref.source.id)
-                      : undefined;
-                  const asset =
-                    ref.binding === "pinned"
-                      ? snapshot.assets.find((a) => a.id === ref.source.assetId)
-                      : undefined;
-                  const label = `@${source?.title ?? asset?.name ?? "参考"}`;
-                  mentions.push({
-                    ...(source ? { sourceNodeId: source.id } : {}),
-                    referenceId: ref.id,
-                    start: prompt.length,
-                    end: prompt.length + label.length,
-                  });
-                  prompt += label;
-                }
-              }
-              node.data.prompt = prompt;
-              node.data.promptMentions = mentions;
-            }
-            if (spec.kind === "text")
-              node.data.agentSettings = {
-                modelConfigId: spec.modelConfigId ?? undefined,
-                ...spec.parameters,
-              };
-            else
-              node.data.settings = {
-                ...DEFAULT_SETTINGS,
-                mode: spec.kind,
-                modelConfigId: spec.modelConfigId ?? undefined,
-                prompt: node.data.prompt,
-                count: view.generationCounts?.[item.id] ?? 1,
-                ...(spec.kind === "video"
-                  ? {
-                      videoMode:
-                        spec.parameters.videoMode === "first_frame"
-                          ? "first-last"
-                          : spec.parameters.videoMode,
-                      durationSeconds:
-                        spec.parameters.durationSeconds ??
-                        DEFAULT_SETTINGS.durationSeconds,
-                      aspectRatio:
-                        spec.parameters.aspectRatio ??
-                        DEFAULT_SETTINGS.aspectRatio,
-                      resolution: spec.parameters.resolution,
-                    }
-                  : {}),
-                ...(spec.kind === "audio"
-                  ? { voiceName: spec.parameters.voice ?? undefined }
-                  : {}),
-              };
-            if (spec.kind === "video" && node.data.settings) {
-              const frame = snapshot.references.find(
-                (ref) =>
-                  ref.active &&
-                  ref.targetSpecId === spec.id &&
-                  ref.role === "first_frame" &&
-                  ref.binding === "follow_current",
-              );
-              if (frame?.binding === "follow_current")
-                node.data.settings.firstFrameNodeId = frame.source.id;
-            }
-            const selected = snapshot.results.find(
-              (r) => r.id === spec.currentResultId,
-            );
-            const job = snapshot.jobs.find((j) => j.id === selected?.jobId);
-            if (job && asset) {
-              const references: Record<string, string> = {};
-              for (const ref of job.inputSnapshot.references) {
-                if (ref.sourceVersion?.objectType === "canvas_item")
-                  references[ref.sourceVersion.id] = ref.asset.fingerprint;
-              }
-              node.data.generationEvidence = {
-                output:
-                  asset.kind === "text"
-                    ? (node.data.text ?? "")
-                    : (node.data.src ?? ""),
-                references,
-              };
-            }
+      snapshot.canvasItems.map(async (item) => {
+        const node = {
+          ...createNode(item.kind, item.position),
+          id: item.id,
+          width: item.width,
+          height: item.height,
+          locked: item.locked,
+          zIndex: item.zIndex,
+          parentId: item.parentId ?? undefined,
+        };
+        node.data.title = item.title;
+        const asset = currentAsset(snapshot, item);
+        if (asset) {
+          try {
+            if (asset.kind === "text")
+              node.data.text = await this.client.textContent(asset.id);
+            else node.data.src = await this.client.mediaUrl(asset.id);
+            node.data.assetState = "ready";
+          } catch {
+            node.data.assetState = "missing";
           }
-          if (item.binding.role === "editor") {
-            const binding = item.binding;
-            const doc = snapshot.editorDocuments.find(
-              (d) => d.id === binding.objectRef.id,
-            )!;
+          node.data.mimeType = asset.metadata.mimeType;
+          node.data.mediaRole =
+            item.binding.role === "material" ? "asset" : "generation";
+          node.data.media = {
+            width: asset.metadata.width ?? undefined,
+            height: asset.metadata.height ?? undefined,
+            durationSeconds: asset.metadata.durationSeconds ?? undefined,
+          };
+        } else if (item.binding.role === "empty" && item.kind === "text")
+          node.data.text = item.binding.manualText ?? "";
+        const spec = itemSpec(snapshot, item);
+        if (spec) {
+          node.data.prompt = spec.prompt;
+          if (spec.promptContent) {
+            node.data.promptContent = [];
+            let prompt = "";
+            const mentions: NonNullable<CanvasNode["data"]["promptMentions"]> =
+              [];
+            for (const part of spec.promptContent) {
+              if (part.type === "text") {
+                prompt += part.text;
+                node.data.promptContent.push({ type: "text", text: part.text });
+              } else {
+                const ref = snapshot.references.find(
+                  (r) => r.id === part.referenceId,
+                );
+                if (!ref) continue;
+                const source =
+                  ref.binding === "follow_current"
+                    ? snapshot.canvasItems.find((i) => i.id === ref.source.id)
+                    : undefined;
+                const asset =
+                  ref.binding === "pinned"
+                    ? snapshot.assets.find((a) => a.id === ref.source.assetId)
+                    : undefined;
+                const label = `@${source?.title ?? asset?.name ?? "参考"}`;
+                node.data.promptContent.push({
+                  type: "reference",
+                  assetId:
+                    ref.binding === "follow_current"
+                      ? `node:${ref.source.id}`
+                      : ref.source.assetId,
+                  ...(ref.binding === "follow_current"
+                    ? { nodeId: ref.source.id }
+                    : { binding: "asset" as const }),
+                  referenceId: ref.id,
+                  name: source?.title ?? asset?.name ?? "参考",
+                  fingerprint: asset?.fingerprint ?? null,
+                });
+                mentions.push({
+                  ...(source ? { sourceNodeId: source.id } : {}),
+                  referenceId: ref.id,
+                  start: prompt.length,
+                  end: prompt.length + label.length,
+                });
+                prompt += label;
+              }
+            }
+            node.data.prompt = prompt;
+            node.data.promptMentions = mentions;
+          }
+          const located = new Set(
+            node.data.promptContent?.flatMap((part) =>
+              part.type === "reference" && part.referenceId
+                ? [part.referenceId]
+                : [],
+            ) ?? [],
+          );
+          const pins = snapshot.references.flatMap((ref) => {
+            if (
+              !ref.active ||
+              ref.targetSpecId !== spec.id ||
+              ref.binding !== "pinned" ||
+              located.has(ref.id)
+            )
+              return [];
+            const asset = snapshot.assets.find(
+              (asset) => asset.id === ref.source.assetId,
+            );
+            return asset
+              ? [
+                  {
+                    type: "reference" as const,
+                    assetId: asset.id,
+                    referenceId: ref.id,
+                    binding: "asset" as const,
+                    name: asset.name,
+                    fingerprint: asset.fingerprint,
+                  },
+                ]
+              : [];
+          });
+          if (pins.length) {
+            const body =
+              node.data.promptContent ??
+              (node.data.prompt
+                ? [{ type: "text" as const, text: node.data.prompt }]
+                : []);
+            Object.assign(
+              node.data,
+              generationContentPatch([
+                ...pins.flatMap((part, index) => [
+                  ...(index ? [{ type: "text" as const, text: " " }] : []),
+                  part,
+                ]),
+                ...(body.length
+                  ? [{ type: "text" as const, text: "\n" }, ...body]
+                  : []),
+              ]),
+            );
+          }
+          if (spec.kind === "text")
+            node.data.agentSettings = {
+              modelConfigId: spec.modelConfigId ?? undefined,
+              ...spec.parameters,
+            };
+          else
+            node.data.settings = {
+              ...DEFAULT_SETTINGS,
+              mode: spec.kind,
+              modelConfigId: spec.modelConfigId ?? undefined,
+              prompt: node.data.prompt,
+              count: view.generationCounts?.[item.id] ?? 1,
+              ...(spec.kind === "video"
+                ? {
+                    videoMode:
+                      spec.parameters.videoMode === "first_frame"
+                        ? "first-last"
+                        : spec.parameters.videoMode,
+                    durationSeconds:
+                      spec.parameters.durationSeconds ??
+                      DEFAULT_SETTINGS.durationSeconds,
+                    aspectRatio:
+                      spec.parameters.aspectRatio ??
+                      DEFAULT_SETTINGS.aspectRatio,
+                    resolution: spec.parameters.resolution,
+                  }
+                : {}),
+              ...(spec.kind === "audio"
+                ? { voiceName: spec.parameters.voice ?? undefined }
+                : {}),
+            };
+          if (spec.kind === "video" && node.data.settings) {
+            const frame = snapshot.references.find(
+              (ref) =>
+                ref.active &&
+                ref.targetSpecId === spec.id &&
+                ref.role === "first_frame" &&
+                ref.binding === "follow_current",
+            );
+            if (frame?.binding === "follow_current")
+              node.data.settings.firstFrameNodeId = frame.source.id;
+          }
+          const selected = snapshot.results.find(
+            (r) => r.id === spec.currentResultId,
+          );
+          const job = snapshot.jobs.find((j) => j.id === selected?.jobId);
+          if (job && asset) {
+            const references: Record<string, string> = {};
+            for (const ref of job.inputSnapshot.references) {
+              if (ref.sourceVersion?.objectType === "canvas_item")
+                references[ref.sourceVersion.id] = ref.asset.fingerprint;
+            }
+            node.data.generationEvidence = {
+              output:
+                asset.kind === "text"
+                  ? (node.data.text ?? "")
+                  : (node.data.src ?? ""),
+              references,
+            };
+          }
+        }
+        if (item.binding.role === "editor") {
+          const binding = item.binding;
+          const doc = snapshot.editorDocuments.find(
+            (d) => d.id === binding.objectRef.id,
+          )!;
+          Object.assign(node.data, await this.editorData(doc));
+        }
+        if ("editors" in item)
+          for (const ref of item.editors) {
+            const doc = snapshot.editorDocuments.find((d) => d.id === ref.id)!;
             Object.assign(node.data, await this.editorData(doc));
           }
-          if ("editors" in item)
-            for (const ref of item.editors) {
-              const doc = snapshot.editorDocuments.find(
-                (d) => d.id === ref.id,
-              )!;
-              Object.assign(node.data, await this.editorData(doc));
-            }
-          return node;
-        }),
+        return node;
+      }),
     );
     document.edges = snapshot.references.flatMap((ref) => {
-      if (
-        !ref.active ||
-        ref.binding !== "follow_current" ||
-        !visible.has(ref.source.id)
-      )
-        return [];
+      if (!ref.active || ref.binding !== "follow_current") return [];
       return snapshot.canvasItems
-        .filter(
-          (item) =>
-            visible.has(item.id) &&
-            itemSpec(snapshot, item)?.id === ref.targetSpecId,
-        )
+        .filter((item) => itemSpec(snapshot, item)?.id === ref.targetSpecId)
         .map((item) => ({
           id: ref.id,
           source: ref.source.id,
@@ -404,6 +457,10 @@ export class CreationProjection {
           referenceState: this.client.referenceStates.get(ref.id),
         }));
     });
+    document.hiddenNodes = document.nodes.filter(
+      (node) => !visible.has(node.id),
+    );
+    document.nodes = document.nodes.filter((node) => visible.has(node.id));
     return document;
   }
   async open() {
@@ -615,7 +672,11 @@ export class CreationProjection {
     if (!this.baseline || document.id !== this.client.id)
       throw new Error("请先打开统一工程。");
     const basis = this.basis;
-    const oldNodes = new Map(this.baseline.nodes.map((n) => [n.id, n]));
+    const oldNodes = new Map(
+      [...this.baseline.nodes, ...(this.baseline.hiddenNodes ?? [])].map(
+        (n) => [n.id, n],
+      ),
+    );
     const items = new Map(basis.canvasItems.map((i) => [i.id, i]));
     const operations: CreationOperation[] = [];
     const versions = new Map<string, ObjectVersion>();
@@ -625,11 +686,43 @@ export class CreationProjection {
     ) => {
       versions.set(`${type}:${obj.id}`, objectVersion(type, obj));
     };
+    const addReference = (reference: ReferenceInput) => {
+      const previous = basis.references.find((ref) => ref.id === reference.id);
+      if (previous) {
+        expect("reference", previous);
+        operations.push({
+          type: "reference.restore",
+          payload: {
+            reference: {
+              ...previous,
+              ...reference,
+              active: true,
+              revision: previous.revision,
+            },
+          },
+        });
+      } else {
+        operations.push({ type: "reference.add", payload: { reference } });
+      }
+    };
     const specs = new Map<string, string>();
     const moves: { itemId: string; position: { x: number; y: number } }[] = [];
-    for (const node of document.nodes) {
+    for (const node of [
+      ...document.nodes,
+      ...(document.hiddenNodes ?? []).filter((node) => !items.has(node.id)),
+    ]) {
       const old = oldNodes.get(node.id),
         item = items.get(node.id);
+      if (
+        item &&
+        !this.baseline.nodes.some((visible) => visible.id === item.id)
+      ) {
+        expect("canvas_item", item);
+        operations.push({
+          type: "canvas.show",
+          payload: { item: { ...item, visible: true } },
+        });
+      }
       if (old && same(old, node)) {
         const spec = item && itemSpec(basis, item);
         if (spec) specs.set(node.id, spec.id);
@@ -678,8 +771,19 @@ export class CreationProjection {
           const current = item ? itemSpec(basis, item) : undefined;
           const configureText =
             node.type === "text" && !!node.data.agentSettings?.modelConfigId;
-          if (binding?.role !== "material" || configureText) {
-            const spec = this.specInput(node, current);
+          const cloneGeneration =
+            !item &&
+            binding?.role === "material" &&
+            node.data.mediaRole === "generation";
+          if (
+            binding?.role !== "material" ||
+            configureText ||
+            cloneGeneration
+          ) {
+            const spec = {
+              ...this.specInput(node, current),
+              ...(cloneGeneration ? { purpose: "generation" as const } : {}),
+            };
             specs.set(node.id, spec.id);
             if (!current)
               operations.push({
@@ -693,7 +797,13 @@ export class CreationProjection {
                 payload: { spec },
               });
             }
-            if (!binding || binding.role === "empty")
+            if (cloneGeneration && binding?.role === "material")
+              binding = {
+                role: "generation",
+                objectRef: { objectType: "generation_spec", id: spec.id },
+                materialOverride: binding.objectRef,
+              };
+            else if (!binding || binding.role === "empty")
               binding = {
                 role: "empty",
                 draftSpec: { objectType: "generation_spec", id: spec.id },
@@ -784,6 +894,11 @@ export class CreationProjection {
         };
         if (configureIndex >= 0) operations.splice(configureIndex, 0, show);
         else operations.push(show);
+        if (!document.nodes.some((visible) => visible.id === node.id))
+          operations.push({
+            type: "canvas.hide",
+            payload: { itemId: node.id },
+          });
       } else {
         const presentation = {
           title: node.data.title,
@@ -812,7 +927,7 @@ export class CreationProjection {
     }
     if (moves.length)
       operations.push({ type: "canvas.move", payload: { items: moves } });
-    for (const [id] of oldNodes)
+    for (const { id } of this.baseline.nodes)
       if (!document.nodes.some((n) => n.id === id)) {
         const item = items.get(id)!;
         expect("canvas_item", item);
@@ -831,7 +946,7 @@ export class CreationProjection {
         .filter((r) => r.active && r.targetSpecId === specId)
         .map((r) => r.order);
       const addedOrders = operations.flatMap((op) =>
-        op.type === "reference.add" &&
+        (op.type === "reference.add" || op.type === "reference.restore") &&
         op.payload.reference.targetSpecId === specId
           ? [op.payload.reference.order ?? 0]
           : [],
@@ -845,10 +960,12 @@ export class CreationProjection {
         order: Math.max(-1, ...existingOrders, ...addedOrders) + 1,
         role: "reference",
       };
-      operations.push({ type: "reference.add", payload: { reference } });
+      addReference(reference);
     }
     // Hiding a node hides its rendered edges but retains business references.
-    const stillVisible = new Set(document.nodes.map((n) => n.id));
+    const stillVisible = new Set(
+      [...document.nodes, ...(document.hiddenNodes ?? [])].map((n) => n.id),
+    );
     for (const edge of this.baseline.edges)
       if (
         !document.edges.some((e) => e.id === edge.id) &&
@@ -894,8 +1011,11 @@ export class CreationProjection {
           settings?.videoMode === "continuation" && sourceKind === "video"
             ? "continuation"
             : settings?.videoMode === "first-last" &&
-                ref.binding === "follow_current" &&
-                ref.source.id === settings.firstFrameNodeId
+                ((ref.binding === "follow_current" &&
+                  ref.source.id === settings.firstFrameNodeId) ||
+                  (ref.binding === "pinned" &&
+                    ref.role === "first_frame" &&
+                    !settings.firstFrameNodeId))
               ? "first_frame"
               : "reference";
         if (role !== ref.role) {
@@ -909,7 +1029,7 @@ export class CreationProjection {
       for (let index = 0; index < operations.length; index++) {
         const op = operations[index]!;
         if (
-          op.type === "reference.add" &&
+          (op.type === "reference.add" || op.type === "reference.restore") &&
           op.payload.reference.targetSpecId === specId
         ) {
           const ref = op.payload.reference;
@@ -922,12 +1042,15 @@ export class CreationProjection {
             settings?.videoMode === "continuation" && sourceKind === "video"
               ? "continuation"
               : settings?.videoMode === "first-last" &&
-                  ref.binding === "follow_current" &&
-                  ref.source.id === settings.firstFrameNodeId
+                  ((ref.binding === "follow_current" &&
+                    ref.source.id === settings.firstFrameNodeId) ||
+                    (ref.binding === "pinned" &&
+                      ref.role === "first_frame" &&
+                      !settings.firstFrameNodeId))
                 ? "first_frame"
                 : "reference";
           operations[index] = {
-            type: "reference.add",
+            type: op.type,
             payload: { reference: { ...ref, role } },
           };
         }
@@ -943,9 +1066,97 @@ export class CreationProjection {
       if (
         !specId ||
         (node.data.prompt === old?.data.prompt &&
+          same(node.data.promptContent, old?.data.promptContent) &&
           same(node.data.promptMentions, old?.data.promptMentions))
       )
         continue;
+      for (const part of node.data.promptContent ?? []) {
+        if (
+          part.type !== "reference" ||
+          part.binding !== "asset" ||
+          !part.referenceId
+        )
+          continue;
+        if (
+          basis.references.some(
+            (ref) =>
+              ref.id === part.referenceId &&
+              ref.targetSpecId === specId &&
+              ref.active,
+          )
+        )
+          continue;
+        if (
+          operations.some(
+            (op) =>
+              (op.type === "reference.add" ||
+                op.type === "reference.restore") &&
+              op.payload.reference.id === part.referenceId,
+          )
+        )
+          continue;
+        const asset = basis.assets.find((asset) => asset.id === part.assetId);
+        if (
+          !asset ||
+          (part.fingerprint && part.fingerprint !== asset.fingerprint)
+        )
+          throw new Error("固定参考版本已缺失或内容已改变。");
+        const orders = [
+          ...basis.references
+            .filter((ref) => ref.active && ref.targetSpecId === specId)
+            .map((ref) => ref.order),
+          ...operations.flatMap((op) =>
+            (op.type === "reference.add" || op.type === "reference.restore") &&
+            op.payload.reference.targetSpecId === specId
+              ? [op.payload.reference.order ?? 0]
+              : [],
+          ),
+        ];
+        addReference({
+          id: part.referenceId,
+          projectId: this.client.id,
+          targetSpecId: specId,
+          binding: "pinned",
+          source: assetReference(asset),
+          order: Math.max(-1, ...orders) + 1,
+        });
+      }
+      const previousMentions = new Set(
+        old?.data.promptContent?.flatMap((part) =>
+          part.type === "reference" && part.referenceId
+            ? [part.referenceId]
+            : [],
+        ) ?? [],
+      );
+      const nextMentions = new Set(
+        node.data.promptContent?.flatMap((part) =>
+          part.type === "reference" && part.referenceId
+            ? [part.referenceId]
+            : [],
+        ) ?? [],
+      );
+      for (const ref of basis.references.filter(
+        (ref) =>
+          ref.active &&
+          ref.targetSpecId === specId &&
+          node.data.promptContent !== undefined &&
+          (ref.binding === "pinned" || previousMentions.has(ref.id)) &&
+          !nextMentions.has(ref.id),
+      )) {
+        if (
+          operations.some(
+            (op) =>
+              op.type === "reference.remove" &&
+              op.payload.referenceId === ref.id,
+          )
+        )
+          continue;
+        expect("reference", ref);
+        operations.push({
+          type: "reference.remove",
+          payload: { referenceId: ref.id },
+        });
+      }
       const content: (
         | { type: "text"; text: string }
         | { type: "reference"; referenceId: string }
@@ -964,7 +1175,20 @@ export class CreationProjection {
               (ref.binding === "follow_current" &&
                 ref.source.id === mention.sourceNodeId)),
         );
-        const referenceId = edge?.id ?? existing?.id;
+        const pending = operations.find(
+          (op) =>
+            (op.type === "reference.add" || op.type === "reference.restore") &&
+            op.payload.reference.id === mention.referenceId &&
+            op.payload.reference.targetSpecId === specId,
+        );
+        const referenceId =
+          edge?.id ??
+          existing?.id ??
+          (pending &&
+          (pending.type === "reference.add" ||
+            pending.type === "reference.restore")
+            ? pending.payload.reference.id
+            : undefined);
         const removed = operations.some(
           (op) =>
             op.type === "reference.remove" &&

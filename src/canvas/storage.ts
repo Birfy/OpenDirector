@@ -119,8 +119,18 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     return failure("invalid-document", "画布生成设置无效。");
 
   const nodes: CanvasNode[] = [];
+  if (value.hiddenNodes !== undefined && !Array.isArray(value.hiddenNodes))
+    return failure("invalid-document", "隐藏来源格式无效。");
+  const hiddenIds = new Set(
+    (value.hiddenNodes as { id: string }[] | undefined)?.map(
+      (node) => node?.id,
+    ) ?? [],
+  );
   const nodeIds = new Set<string>();
-  for (const raw of value.nodes) {
+  for (const raw of [
+    ...value.nodes,
+    ...((value.hiddenNodes as unknown[]) ?? []),
+  ]) {
     if (
       !object(raw) ||
       !nonempty(raw.id) ||
@@ -269,7 +279,10 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       version: 1,
       id: value.id,
       title: value.title,
-      nodes,
+      nodes: nodes.filter((node) => !hiddenIds.has(node.id)),
+      ...(hiddenIds.size
+        ? { hiddenNodes: nodes.filter((node) => hiddenIds.has(node.id)) }
+        : {}),
       edges,
       viewport: {
         x: value.viewport.x,
@@ -284,7 +297,10 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
 function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
   const parsed = parseDocument(document);
   if (!parsed.ok) return parsed;
-  const transient = parsed.value.nodes.find(
+  const transient = [
+    ...parsed.value.nodes,
+    ...(parsed.value.hiddenNodes ?? []),
+  ].find(
     (node) =>
       node.data.src?.startsWith("blob:") ||
       nodeResources(node.data).some((resource) =>

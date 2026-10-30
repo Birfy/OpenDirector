@@ -43,7 +43,7 @@ export function referenceMaterial(node: CanvasNode): string | null {
   if (node.type === "subject") {
     const subject = node.data.subject;
     if (
-      !subject ||
+      !subject?.main?.src ||
       ![subject.main, ...subject.auxiliaries, subject.voice].some(
         (resource) => resource?.src,
       )
@@ -148,13 +148,15 @@ export function connectedCreationKinds(
 }
 
 export function referenceIssue(
-  document: Pick<CanvasDocument, "nodes" | "edges">,
+  document: Pick<CanvasDocument, "nodes" | "edges"> &
+    Partial<Pick<CanvasDocument, "hiddenNodes">>,
   source: string | null | undefined,
   target: string | null | undefined,
   intent: CanvasEdge["intent"] = "generation_input",
 ): ReferenceIssue | null {
-  const a = document.nodes.find((n) => n.id === source),
-    b = document.nodes.find((n) => n.id === target);
+  const nodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
+  const a = nodes.find((n) => n.id === source),
+    b = nodes.find((n) => n.id === target);
   if (!a || !b) return "endpoint_missing";
   const isLocked = (node: CanvasNode): boolean => {
     const seen = new Set<string>();
@@ -162,7 +164,7 @@ export function referenceIssue(
     while (current && !seen.has(current.id)) {
       if (current.locked) return true;
       seen.add(current.id);
-      current = document.nodes.find((n) => n.id === current!.parentId);
+      current = nodes.find((n) => n.id === current!.parentId);
     }
     return false;
   };
@@ -198,9 +200,7 @@ export function referenceIssue(
     b.data.settings?.videoMode === "first-last"
   ) {
     const imageIds = new Set(
-      document.nodes
-        .filter((node) => node.type === "image")
-        .map((node) => node.id),
+      nodes.filter((node) => node.type === "image").map((node) => node.id),
     );
     if (
       new Set(

@@ -279,7 +279,14 @@ test("reference status follows adopted result evidence, upstream versions and un
   );
   assert.equal(
     referencePresentation(copied.document, copied.document.edges.at(-1)!).state,
-    "current",
+    "pending",
+  );
+  // Copies create new logical sources; the original execution evidence keeps
+  // its actual source identities instead of pretending the copies were used.
+  assert.deepEqual(
+    copied.document.nodes.at(-1)!.data.generationEvidence,
+    adopted.nodes.find((node) => node.id === target.id)!.data
+      .generationEvidence,
   );
 });
 

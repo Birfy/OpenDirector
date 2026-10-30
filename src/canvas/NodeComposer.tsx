@@ -20,18 +20,19 @@ import {
   backendDurations,
   serviceVideoSettings,
   backendReferenceIssue,
+  backendReferences,
   modelLabel,
   isGenerationModel,
   type ModelConfig,
 } from "../backend/rules.ts";
 import { copyGenerationSettings } from "./dataBoundary";
-import { editPromptMentions, type InsertedMention } from "./promptMentions.ts";
 import { GenerationComposerShell } from "./GenerationComposerShell";
+import { generationPrompt } from "./generationReferenceContent.ts";
 import {
-  ReferenceMentionInput,
-  type ReferenceMentionHandle,
-} from "./ReferenceMentionInput";
-import { nodeMentionOptions } from "./referenceMentions";
+  GenerationReferenceEditor,
+  type GenerationReferenceHandle,
+  type GenerationReferenceControls,
+} from "./GenerationReferenceEditor";
 import "./nodes.css";
 import {
   frameImageLimitIssue,
@@ -48,6 +49,7 @@ export interface NodeComposerProps {
   running?: boolean;
   /** Models configured in the local API, usable alongside the catalog. */
   backendModels?: readonly ModelConfig[];
+  referenceControls?: GenerationReferenceControls;
 }
 
 export type ComposerSettings = GenerationSettings;
@@ -89,7 +91,7 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
         : sameMode?.resolution && sameMode.resolution !== "1024"
           ? sameMode.resolution
           : defaults.resolution,
-    prompt: node.data.prompt,
+    prompt: generationPrompt(node),
     count: previous?.count ?? 1,
     audioEnabled: sameMode?.audioEnabled ?? true,
   };
@@ -104,12 +106,12 @@ export function NodeComposer({
   onPickReference,
   running = false,
   backendModels = [],
+  referenceControls,
 }: NodeComposerProps) {
   const [panel, setPanel] = useState<Panel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelAnchor = useRef<HTMLElement | null>(null);
-  const mentions = useRef<ReferenceMentionHandle>(null);
+  const mentions = useRef<GenerationReferenceHandle>(null);
   useEffect(() => {
     setPanel(null);
   }, [selectedNode?.id]);
@@ -120,7 +122,6 @@ export function NodeComposer({
   )
     return null;
   const settings = getNodeGenerationSettings(selectedNode);
-  const prompt = selectedNode.data.prompt;
   const mode = settings.mode;
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
@@ -215,26 +216,11 @@ export function NodeComposer({
           : next,
     });
   };
-  const updatePrompt = (value: string, mention?: InsertedMention) =>
-    onUpdate({
-      prompt: value,
-      settings: { ...settings, prompt: value },
-      promptMentions: editPromptMentions(
-        prompt,
-        value,
-        selectedNode.data.promptMentions,
-        mention,
-      ),
-    });
   const togglePanel = (next: Panel, anchor: HTMLElement) => {
     panelAnchor.current = anchor;
     setPanel((current) => (current === next ? null : next));
   };
-  const mentionOptions = nodeMentionOptions(incomingNodes, referenceIssue);
-  const insertReference = (node: CanvasNode) => {
-    const option = mentionOptions.find((item) => item.id === node.id);
-    if (option) mentions.current?.insert(option);
-  };
+  const insertReference = (node: CanvasNode) => mentions.current?.insert(node);
   const popoverProps = {
     anchor: panelAnchor.current,
     composer: rootRef.current,
@@ -365,7 +351,7 @@ export function NodeComposer({
               <TooltipButton
                 type="button"
                 className="cw-add-reference"
-                onClick={onPickReference}
+                onClick={() => mentions.current?.openUpload()}
                 aria-label="添加参考素材"
                 label="添加参考素材"
               >
@@ -396,16 +382,38 @@ export function NodeComposer({
               ))}
             </div>
           )}
-        <ReferenceMentionInput
+        <GenerationReferenceEditor
           key={selectedNode.id}
-          inputRef={textareaRef}
           pickerRef={mentions}
-          options={mentionOptions}
-          referencesDisabled={running}
-          autoGrow
-          className="cw-prompt-input"
-          aria-label={reading ? "朗读文本" : "生成提示词"}
-          value={prompt}
+          node={selectedNode}
+          incoming={incomingNodes}
+          controls={referenceControls}
+          issue={referenceIssue}
+          validate={(sources) => {
+            const frameIssue = frameImageLimitIssue(settings, sources);
+            if (frameIssue) return frameIssue;
+            if (!config) return null;
+            const references = backendReferences(settings, sources, config);
+            for (const [kind, maximum] of [
+              ["image", config.inputRules.maxImages],
+              ["video", config.inputRules.maxVideos],
+              ["audio", config.inputRules.maxAudios],
+            ] as const)
+              if (
+                references.filter(
+                  (ref) =>
+                    ref.role !== "continuation" && ref.node.type === kind,
+                ).length > maximum
+              )
+                return "参考数量超出当前模型限制";
+            return null;
+          }}
+          onUpdate={onUpdate}
+          running={running}
+          onRun={() => {
+            if (canRun && !running) onRun();
+          }}
+          label={reading ? "朗读文本" : "生成提示词"}
           placeholder={
             mode === "image"
               ? "上传参考图、输入文字或 @ 主体，描述你想要生成的图片"
@@ -419,19 +427,6 @@ export function NodeComposer({
                     ? "描述音乐风格、情绪、节奏和乐器…"
                     : "描述台词、音色和声音场景，可添加音频参考…"
           }
-          spellCheck={false}
-          onChangeText={updatePrompt}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              (event.ctrlKey || event.metaKey) &&
-              canRun &&
-              !running
-            ) {
-              event.preventDefault();
-              onRun();
-            }
-          }}
         />
       </div>
 
@@ -617,7 +612,7 @@ export function NodeComposer({
               className="cw-reference-trigger"
               aria-label="添加参考素材"
               label="添加参考素材"
-              onClick={onPickReference}
+              onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={16} />
             </TooltipButton>

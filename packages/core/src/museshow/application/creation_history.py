@@ -11,7 +11,7 @@ EDITABLE = {'canvasItems', 'generationSpecs', 'references', 'editorDocuments'}
 ABSENT = object()
 UNDOABLE = {'creation.batch', 'canvas.show', 'canvas.hide', 'canvas.move', 'canvas.update', 'canvas.configure',
     'canvas.materialize', 'canvas.attachEditor', 'generationSpec.update', 'generationSpec.restore',
-    'reference.add', 'reference.update', 'reference.remove', 'result.select', 'editor.save', 'generationSpec.setPrompt'}
+    'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'result.select', 'editor.save', 'generationSpec.setPrompt'}
 
 
 class Preview(Contract):

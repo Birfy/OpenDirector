@@ -1,4 +1,5 @@
 import type { CanvasNode, GenerationSettings } from "./model.ts";
+import { subjectReferenceNodes } from "./subjectReferences.ts";
 import { frameImageLimitIssue } from "./frameReferences.ts";
 
 /** Authored capability catalog, based on the 2026-10-26 original-site session.
@@ -229,6 +230,12 @@ export function generationReferenceIssue(
     (settings.audioCreationType === "music" || settings.audioMode === "tts")
   )
     return "此模式使用提示词或朗读文本，不使用该参考";
+  if (
+    settings.mode === "video" &&
+    settings.videoMode === "first-last" &&
+    !["image", "text", "tool"].includes(node.data.kind)
+  )
+    return "首尾帧模式请使用图片节点选择帧素材";
   if (node.data.kind === "tool" && settings.mode !== "audio") {
     if (settings.mode === "image" && node.data.tool?.kind === "camera_motion")
       return "运镜工具只用于视频创作";
@@ -238,15 +245,24 @@ export function generationReferenceIssue(
       ? null
       : "工具尚未配置参数";
   }
-  if (node.data.kind === "subject" && settings.mode !== "audio")
-    return node.data.subject?.main?.src ? null : "主体尚未添加主素材";
+  if (node.data.kind === "subject") {
+    const resources = subjectReferenceNodes(node);
+    if (!resources.length) return "主体尚未添加可用主素材";
+    return resources.some(
+      (resource) => !generationReferenceIssue(resource, settings),
+    )
+      ? null
+      : "当前模式不接收主体中的素材";
+  }
   const allowed =
     settings.mode === "image"
-      ? ["image"]
+      ? ["image", "text"]
       : settings.mode === "video"
-        ? ["image", "video", "audio"]
+        ? ["image", "video", "audio", "text"]
         : ["audio"];
   if (!allowed.includes(node.data.kind)) return "此模式未核实支持该素材类型";
+  if (node.type === "text")
+    return node.data.text?.trim() ? null : "文本节点为空";
   return node.data.src && node.data.assetState !== "missing"
     ? null
     : "素材尚未导入或已丢失";
@@ -364,6 +380,12 @@ export function generationActiveReferences(
     }
     return [
       ...result,
+      ...incomingNodes
+        .filter(
+          (node) =>
+            node.type === "text" && !generationReferenceIssue(node, settings),
+        )
+        .map((node) => ({ node, role: "reference" as const })),
       ...incomingNodes
         .filter(
           (node) =>

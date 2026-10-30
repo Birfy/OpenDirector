@@ -11,16 +11,18 @@ import {
   ChatReferenceEditor,
   type ChatReferenceEditorHandle,
 } from "./ChatReferenceEditor";
-import {
-  nodeMentionOptions,
-  type MentionOption,
-  type ReferenceKind,
-} from "./referenceMentions";
+import { type MentionOption } from "./referenceMentions";
+import { referenceCandidates } from "./referenceCandidates.ts";
+import { nodeReferenceAsset } from "./generationReferenceContent.ts";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { creationEnabled, creationClient } from "../backend/creationClient.ts";
 import { assetBlob } from "../backend/api.ts";
 import "./assistant-panel.css";
-import { referenceContent } from "./chatReferenceContent.ts";
+import {
+  referenceContent,
+  currentReferences,
+  type ReferenceAsset,
+} from "./chatReferenceContent.ts";
 import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
 import {
   pendingCanvasReferences,
@@ -102,6 +104,30 @@ export function AssistantPanel({
     (chat.sending && !chat.started);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
+  const sourceKey = nodes
+    .map(
+      (node) =>
+        `${node.id}:${node.data.title}:${nodeReferenceAsset(node).fingerprint}`,
+    )
+    .join("|");
+  useEffect(() => {
+    if (
+      open &&
+      value.draftContent?.some(
+        (part) => part.type === "reference" && part.nodeId,
+      )
+    )
+      projectReferences.load();
+  }, [documentId, open, sourceKey]);
+  useEffect(() => {
+    if (!open || chat.sending || !value.draftContent) return;
+    const content = currentReferences(
+      value.draftContent,
+      projectReferences.assets,
+    );
+    if (JSON.stringify(content) !== JSON.stringify(value.draftContent))
+      chat.setContent(content, projectReferences.assets);
+  }, [projectReferences.assets]);
 
   useEffect(() => {
     if (open && chat.loaded) editor.current?.focus();
@@ -200,35 +226,24 @@ export function AssistantPanel({
     }
   };
 
-  const mentionOptions: MentionOption[] = [
-    ...nodeMentionOptions(nodes, () => null, "画布节点").map((option) => ({
-      ...option,
-      id: `node:${option.id}`,
-    })),
-    ...projectReferences.assets.map((asset) => ({
-      id: `asset:${asset.id}`,
-      kind: asset.kind as ReferenceKind,
-      title: asset.name,
-      detail: `${{ image: "图片", video: "视频", audio: "音频", text: "文本" }[asset.kind] ?? "素材"} · ${value.assets.some((item) => item.id === asset.id) ? "已引用，可再次提及" : "项目素材"}`,
-      thumbnail:
-        asset.kind === "image"
-          ? `/api/data/${documentId}/assets/${asset.id}`
-          : undefined,
-      disabledReason:
-        asset.size > (asset.kind === "image" ? 32 : 50) * 1024 * 1024
-          ? "文件超过参考大小限制"
-          : value.assets.length >= 64 &&
-              !value.assets.some((item) => item.id === asset.id)
-            ? "已达数量限制"
-            : null,
-    })),
-  ];
+  const mentionOptions = referenceCandidates(
+    nodes,
+    projectReferences.assets,
+  ).map((option) => ({
+    ...option,
+    disabledReason:
+      option.disabledReason ||
+      (value.assets.length >= 64 &&
+      !value.assets.some((asset) => option.id === `asset:${asset.id}`)
+        ? "已达数量限制"
+        : null),
+  }));
   const chooseMention = async (option: MentionOption, signal: AbortSignal) => {
     if (option.id.startsWith("node:")) {
       const node = nodes.find((item) => `node:${item.id}` === option.id);
       if (!node || !(await onPrepareReferences()) || signal.aborted)
         return null;
-      let prepared: ChatAsset[] | null = null;
+      let prepared: ReferenceAsset[] | null = null;
       await chat.addNodes([node], signal, (assets) => {
         prepared = assets;
         return true;
@@ -238,7 +253,9 @@ export function AssistantPanel({
     const asset = projectReferences.assets.find(
       (item) => `asset:${item.id}` === option.id,
     );
-    return asset ? [attachment(asset)] : null;
+    return asset
+      ? [{ ...attachment(asset), kind: asset.kind, nodeId: asset.nodeId }]
+      : null;
   };
 
   const upload = (files: File[]) =>
@@ -481,6 +498,7 @@ export function AssistantPanel({
             key={documentId}
             ref={editor}
             scope={documentId}
+            metadataOnlyKinds={["video", "audio"]}
             value={referenceContent(
               value.draft,
               value.assets.map((asset) => asset.id),
@@ -493,6 +511,26 @@ export function AssistantPanel({
             referencesDisabled={!open || referenceDisabled}
             disabled={locked}
             onChoose={chooseMention}
+            onPasteReference={async (part, signal) => {
+              const source = nodes.find((node) => node.id === part.nodeId);
+              if (
+                source &&
+                part.fingerprint?.startsWith("source:") &&
+                part.fingerprint !== nodeReferenceAsset(source).fingerprint
+              )
+                throw new Error("参考内容已变化，请重新复制。");
+              const option = mentionOptions.find(
+                (option) =>
+                  option.id === `node:${part.nodeId}` ||
+                  option.id === `asset:${part.assetId}`,
+              );
+              if (!option || option.disabledReason)
+                throw new Error(
+                  option?.disabledReason ||
+                    "当前输入不支持此参考版本，整批未插入。",
+                );
+              return (await chooseMention(option, signal)) ?? [];
+            }}
             onOpen={projectReferences.load}
             loading={projectReferences.loading}
             loadError={projectReferences.error}

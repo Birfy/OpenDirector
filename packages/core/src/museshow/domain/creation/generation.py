@@ -258,7 +258,7 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError('Selected model does not match generation kind')
     if model.inputRules.profile == 'vllm-omni-segmentation':
         raise ValueError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
-    if not spec.prompt.strip() and not (spec.promptContent and any(isinstance(part, PromptText) and part.text.strip() for part in spec.promptContent)):
+    if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
         raise ValueError('Generation prompt is empty')
     rules = model.inputRules
     if len(references) > 64:
