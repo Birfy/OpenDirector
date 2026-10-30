@@ -19,6 +19,7 @@ from museshow.domain.assets import MAX_ASSET_BYTES, ProjectAsset
 from museshow.application.generation import Generation
 from museshow.application.creation_generation import CreationGeneration
 from museshow.application.tool_tasks import ToolTasks
+from museshow.application.creation_tool_assets import CreationToolAssets
 from museshow.application.chat_references import validate_chat_references
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.creation_projects import CreationProjects
@@ -35,7 +36,7 @@ from museshow_api.chat import Chat
 from museshow_api.project_creation import ProjectCreation
 from museshow_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRequest, Conversation, Draft, GenerateNode, ModelConfigInput, ModelConfigPublic, NodeCreate, NodePatch, NodeText, ProjectCreate, ProjectRename, Session, SessionClose, TextAssetCreate
 from museshow_api.models import ProjectFromMessage
-from museshow_api.models import ToolTaskCreate, ImageSelectionCreate
+from museshow_api.models import ToolTaskCreate, ToolPlacement, ImageSelectionCreate
 from museshow_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
 from museshow_api.models import ModelCapabilityRequest
 
@@ -60,6 +61,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     canvas = generation.canvas
     assets = canvas.assets
     tools = ToolTasks(store, model_configs, assets)
+    creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
     chat = Chat(store, model_configs, chat_provider, generation)
     project_creation = ProjectCreation(store, model_configs, chat.provider)
 
@@ -71,6 +73,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             yield
         finally:
             await tools.close()
+            await creation_tools.close()
             await generation.close()
             await creation_generation.close()
 
@@ -294,39 +297,58 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def tool_catalog():
         return tools.catalog()
 
-    @app.post('/api/projects/{project_id}/image-selections')
-    async def image_selection(project_id: UUID, value: ImageSelectionCreate, request: Request,
-                              x_museshow_session: str = Header()):
-        # Fetch abort closes the request. Cancel the local upstream HTTP operation
-        # rather than leaving superseded previews running in the background.
-        work = asyncio.create_task(tools.selection_preview(str(project_id), value.model_dump(mode='json'),
-                                                          identifier(x_museshow_session)))
+    def register_selection_route(service, prefix):
+        @app.post(prefix)
+        async def image_selection(project_id: UUID, value: ImageSelectionCreate, request: Request,
+                                  x_museshow_session: str = Header()):
+            # Preview work has no durable task; disconnecting cancels the local
+            # upstream request without disturbing accepted tool executions.
+            work = asyncio.create_task(service.selection_preview(str(project_id), value.model_dump(mode='json'),
+                                                               identifier(x_museshow_session)))
 
-        async def disconnected():
-            while not await request.is_disconnected():
-                await asyncio.sleep(0.2)
+            async def disconnected():
+                # The body has been decoded by FastAPI. Wait on the remaining
+                # ASGI events: is_disconnected() uses a cancelled scope that can
+                # miss disconnects through BaseHTTPMiddleware's receive stream.
+                while (await request.receive())['type'] != 'http.disconnect':
+                    pass
 
-        disconnect = asyncio.create_task(disconnected())
-        try:
-            done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
-            return await work if work in done else Response(status_code=499)
-        finally:
-            for task in (work, disconnect):
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(work, disconnect, return_exceptions=True)
+            disconnect = asyncio.create_task(disconnected())
+            try:
+                done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
+                return await work if work in done else Response(status_code=499)
+            finally:
+                for task in (work, disconnect):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(work, disconnect, return_exceptions=True)
 
-    @app.post('/api/projects/{project_id}/tool-tasks', status_code=202)
-    async def submit_tool_task(project_id: UUID, value: ToolTaskCreate, x_museshow_session: str = Header()):
-        return await tools.submit(str(project_id), value.model_dump(mode='json'), identifier(x_museshow_session))
+    register_selection_route(tools, '/api/projects/{project_id}/image-selections')
+    register_selection_route(creation_tools, '/api/creation/projects/{project_id}/image-selections')
 
-    @app.get('/api/projects/{project_id}/tool-tasks/{task_id}')
-    def tool_task(project_id: UUID, task_id: UUID):
-        return tools.get(str(project_id), str(task_id))
+    def register_tool_routes(service, prefix):
+        @app.get(prefix)
+        def tool_tasks(project_id: UUID):
+            return {'tasks': service.list(str(project_id))}
 
-    @app.post('/api/projects/{project_id}/tool-tasks/{task_id}/cancel')
-    async def cancel_tool_task(project_id: UUID, task_id: UUID, x_museshow_session: str = Header()):
-        return await tools.cancel(str(project_id), str(task_id), identifier(x_museshow_session))
+        @app.post(prefix, status_code=202)
+        async def submit(project_id: UUID, value: ToolTaskCreate, x_museshow_session: str = Header()):
+            return await service.submit(str(project_id), value.model_dump(mode='json', exclude_none=True), identifier(x_museshow_session))
+
+        @app.get(prefix + '/{task_id}')
+        def task(project_id: UUID, task_id: UUID):
+            return service.get(str(project_id), str(task_id))
+
+        @app.post(prefix + '/{task_id}/cancel')
+        async def cancel(project_id: UUID, task_id: UUID, x_museshow_session: str = Header()):
+            return await service.cancel(str(project_id), str(task_id), identifier(x_museshow_session))
+
+        @app.post(prefix + '/{task_id}/placement')
+        def placement(project_id: UUID, task_id: UUID, value: ToolPlacement, x_museshow_session: str = Header()):
+            return service.placement(str(project_id), str(task_id), value.state, identifier(x_museshow_session))
+
+    register_tool_routes(tools, '/api/projects/{project_id}/tool-tasks')
+    register_tool_routes(creation_tools, '/api/creation/projects/{project_id}/tool-tasks')
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/cancel")
     async def cancel_generation(project_id: UUID, task_id: UUID, x_museshow_session: str = Header()):

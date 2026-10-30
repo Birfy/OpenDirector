@@ -11,6 +11,7 @@ test("tool submission forwards the selected model after uploading its source", a
   const projectId = crypto.randomUUID();
   const modelId = crypto.randomUUID();
   const sourceId = crypto.randomUUID();
+  const sourceNodeId = crypto.randomUUID();
   let submitted: Record<string, unknown> | undefined;
   Object.defineProperty(globalThis, "window", {
     configurable: true,
@@ -31,6 +32,8 @@ test("tool submission forwards the selected model after uploading its source", a
   try {
     await submitToolTask(
       {
+        id: crypto.randomUUID(),
+        canvas: { nodeId: sourceNodeId, sourceNodeIds: [sourceNodeId] },
         documentId: projectId,
         documentTitle: "改图测试",
         tool: "smart-edit",

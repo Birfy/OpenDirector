@@ -6,10 +6,19 @@ import {
   fillPendingResult,
   pendingResultNode,
   removePendingResult,
+  placeToolResults,
+  toolResultsPlaced,
   type LinkedMediaResult,
 } from "../src/canvas/linkedResults.ts";
-import { generationActivities } from "../src/canvas/generationActivity.ts";
-import { estimatedProgress } from "../src/canvas/generationDurations.ts";
+import {
+  generationActivities,
+  jobActivities,
+} from "../src/canvas/generationActivity.ts";
+import {
+  estimatedProgress,
+  expectedDuration,
+  recordDuration,
+} from "../src/canvas/generationDurations.ts";
 
 const image = (title: string): LinkedMediaResult => ({
   kind: "image",
@@ -111,4 +120,242 @@ test("progress grows with elapsed time but never completes before the result", (
     startedAt: 1000,
     expectedMs: 30_000,
   });
+});
+
+test("stable identities make repeated and partially saved placeholder fills idempotent", () => {
+  const { document, origin } = fixture();
+  const pending = appendPendingResult(document, origin, "image", "Layers");
+  const ids = [pending.ids[0]!, crypto.randomUUID()];
+  const outputs = [image("First"), image("Second")];
+  const target = { id: ids[0]!, title: "Layers", kind: "image" };
+  const partial = placeToolResults(
+    pending.document,
+    origin,
+    outputs.slice(0, 1),
+    undefined,
+    ids.slice(0, 1),
+    target,
+  );
+  const completed = placeToolResults(
+    partial.document,
+    origin,
+    outputs,
+    undefined,
+    ids,
+    target,
+  );
+  assert.equal(completed.error, undefined);
+  assert.equal(completed.document.nodes.length, 3);
+  const replay = placeToolResults(
+    completed.document,
+    origin,
+    outputs,
+    undefined,
+    ids,
+    target,
+  );
+  assert.equal(replay.document, completed.document);
+  assert.deepEqual(replay.ids, []);
+  assert.ok(toolResultsPlaced(replay.document, outputs, ids));
+});
+
+for (const change of [
+  "source-deleted",
+  "source-replaced",
+  "source-locked",
+  "target-locked",
+  "target-deleted",
+  "target-uploaded",
+  "target-prompt",
+  "target-parameters",
+  "target-renamed",
+]) {
+  test(`pending output respects ${change}`, () => {
+    const f = fixture();
+    const pending = appendPendingResult(
+      f.document,
+      f.origin,
+      "image",
+      "Pending",
+    );
+    const id = pending.ids[0]!;
+    const document = {
+      ...pending.document,
+      nodes: pending.document.nodes.flatMap((node) => {
+        if (node.id === f.source.id) {
+          if (change === "source-deleted") return [];
+          if (change === "source-replaced")
+            return [{ ...node, data: { ...node.data, src: "replacement" } }];
+          if (change === "source-locked") return [{ ...node, locked: true }];
+        }
+        if (node.id === id) {
+          if (change === "target-deleted") return [];
+          if (change === "target-locked") return [{ ...node, locked: true }];
+          if (change === "target-uploaded")
+            return [{ ...node, data: { ...node.data, src: "manual" } }];
+          if (change === "target-prompt")
+            return [
+              { ...node, data: { ...node.data, prompt: "My own prompt" } },
+            ];
+          if (change === "target-parameters")
+            return [
+              {
+                ...node,
+                data: {
+                  ...node.data,
+                  settings: { ...node.data.settings!, aspectRatio: "16:9" },
+                },
+              },
+            ];
+          if (change === "target-renamed")
+            return [{ ...node, data: { ...node.data, title: "My result" } }];
+        }
+        return [node];
+      }),
+    };
+    const result = placeToolResults(
+      document,
+      f.origin,
+      [image("Generated")],
+      undefined,
+      [id],
+      { id, title: "Pending", kind: "image" },
+    );
+    assert.ok(result.error, change);
+    assert.equal(result.document, document);
+    if (change.startsWith("target-") && change !== "target-deleted")
+      assert.equal(
+        removePendingResult(document, id, "Pending", "image"),
+        document,
+      );
+  });
+}
+
+test("hidden completed outputs remain hidden while unfinished hidden placeholders are not resurrected", () => {
+  const { document, origin } = fixture();
+  const pending = appendPendingResult(document, origin, "image", "Pending");
+  const id = pending.ids[0]!;
+  const outputs = [image("Generated")];
+  const hidden = {
+    ...pending.document,
+    nodes: pending.document.nodes.filter((node) => node.id !== id),
+    edges: [],
+  };
+  const unfilled = placeToolResults(hidden, origin, outputs, undefined, [id], {
+    id,
+  });
+  assert.ok(unfilled.error);
+  const placed = placeToolResults(
+    hidden,
+    origin,
+    outputs,
+    undefined,
+    [id],
+    { id },
+    new Set([id]),
+  );
+  assert.equal(placed.document, hidden);
+  assert.deepEqual(placed.ids, []);
+});
+
+test("a different output kind removes only an untouched prediction and preserves stable extra IDs", () => {
+  const { document, origin } = fixture();
+  const pending = appendPendingResult(document, origin, "image", "Pending");
+  const output = {
+    ...image("Motion"),
+    kind: "video" as const,
+    mimeType: "video/mp4",
+  };
+  const outputId = crypto.randomUUID();
+  const placed = placeToolResults(
+    pending.document,
+    origin,
+    [output],
+    undefined,
+    [outputId],
+    { id: pending.ids[0]!, title: "Pending", kind: "image" },
+  );
+  assert.equal(placed.error, undefined);
+  assert.equal(
+    placed.document.nodes.some((node) => node.id === pending.ids[0]),
+    false,
+  );
+  assert.equal(
+    placed.document.nodes.find((node) => node.id === outputId)?.type,
+    "video",
+  );
+});
+
+test("server task activity belongs to the result, including the final download phase", () => {
+  const base = {
+    id: "job",
+    nodeId: "source",
+    title: "Tool",
+    time: "",
+    targetNodeId: "result",
+    targetKind: "video" as const,
+    createdAt: 1000,
+    durationKey: "tool:test",
+    toolTask: { placement: "pending" as const, outputIds: ["result"] },
+  };
+  const running = jobActivities(
+    [{ ...base, status: "running", taskId: "task" }],
+    "project",
+  );
+  assert.equal(running[0]!.nodeId, "result");
+  assert.equal(running[0]!.startedAt, 1000);
+  assert.equal(running[0]!.expectedMs, 180000);
+  const finishing = jobActivities(
+    [{ ...base, status: "succeeded" }],
+    "project",
+  );
+  assert.equal(finishing[0]!.phase, "finishing");
+  assert.deepEqual(
+    jobActivities(
+      [
+        {
+          ...base,
+          status: "succeeded",
+          toolTask: { placement: "placed", outputIds: ["result"] },
+        },
+      ],
+      "project",
+    ),
+    [],
+  );
+});
+
+test("history polling and reloads learn each successful duration sample only once", () => {
+  const storage = new Map<string, string>();
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    },
+  });
+  try {
+    const key = `tool:${crypto.randomUUID()}`;
+    recordDuration(key, 1000, "first");
+    recordDuration(key, 9000, "first");
+    assert.equal(expectedDuration(key, "image"), 1000);
+    recordDuration(key, 3000, "second");
+    assert.equal(expectedDuration(key, "image"), 1800);
+    storage.set(
+      "opendesign.generation-durations.v1.samples",
+      JSON.stringify([`${key}:reloaded`]),
+    );
+    recordDuration(key, 20000, "reloaded");
+    assert.equal(expectedDuration(key, "image"), 1800);
+  } finally {
+    if (descriptor)
+      Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  }
 });

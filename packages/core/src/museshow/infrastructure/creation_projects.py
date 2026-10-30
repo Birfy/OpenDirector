@@ -275,6 +275,10 @@ class CreationProjects:
             raise ProjectError('工程仍在生成回复，请先停止回复。', 409) from None
         if any(job.status in {'queued', 'running'} for job in snapshot.jobs):
             raise ProjectError('工程仍在生成素材，请等待或取消任务后再重命名。', 409)
+        path, _ = self._find(db, project_id)
+        tools = child(path, 'tool-tasks')
+        if tools.exists() and any(read_json(child(tools, item.name)).get('status') in {'queued', 'running'} for item in tools.glob('*.json')):
+            raise ProjectError('工程仍有工具任务，请等待或取消任务后再重命名。', 409)
 
     def list_projects(self):
         with self.local.transaction() as db:

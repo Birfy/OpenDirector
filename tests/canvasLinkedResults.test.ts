@@ -5,6 +5,10 @@ import { createHistory, recordChange, undo } from "../src/canvas/history.ts";
 import { serializeDocument, parseDocument } from "../src/canvas/storage.ts";
 import { absolutePosition } from "../src/canvas/geometry.ts";
 import {
+  toolProvenanceEdges,
+  type GenerationJob,
+} from "../src/canvas/generationHistory.ts";
+import {
   appendLinkedMediaResults,
   type LinkedMediaResult,
 } from "../src/canvas/linkedResults.ts";
@@ -25,6 +29,81 @@ const outputs: LinkedMediaResult[] = [
     media: { durationSeconds: 4 },
   },
 ];
+
+test("recovered tool output identities prevent duplicate and partially repeated placement", () => {
+  const source = createNode("image", { x: 0, y: 0 }, { src: "source" });
+  const document = { ...createDocument(), nodes: [source] };
+  const origin = {
+    documentId: document.id,
+    nodeId: source.id,
+    kind: source.type,
+    src: source.data.src,
+  };
+  const ids = [crypto.randomUUID(), crypto.randomUUID()];
+  const first = appendLinkedMediaResults(
+    document,
+    origin,
+    outputs.slice(0, 1),
+    undefined,
+    ids.slice(0, 1),
+  );
+  const recovered = appendLinkedMediaResults(
+    first.document,
+    origin,
+    outputs,
+    undefined,
+    ids,
+  );
+  assert.deepEqual(recovered.ids, [ids[1]]);
+  const again = appendLinkedMediaResults(
+    recovered.document,
+    origin,
+    outputs,
+    undefined,
+    ids,
+  );
+  assert.deepEqual(again.ids, []);
+  assert.equal(again.document, recovered.document);
+  assert.deepEqual(
+    recovered.document.nodes.map((node) => node.id),
+    [source.id, ...ids],
+  );
+  assert.deepEqual(
+    recovered.document.edges.map((edge) => edge.target),
+    ids,
+  );
+  assert.ok(
+    appendLinkedMediaResults(document, origin, outputs, undefined, [ids[0]!])
+      .error,
+  );
+});
+
+test("tool provenance is projected from history without duplicating saved edges or revealing hidden results", () => {
+  const source = createNode("image", { x: 0, y: 0 });
+  const result = createNode("image", { x: 400, y: 0 });
+  const document = { ...createDocument(), nodes: [source, result] };
+  const job: GenerationJob = {
+    id: "tool-task",
+    taskId: "tool-task",
+    nodeId: source.id,
+    title: "outpaint",
+    time: "",
+    status: "succeeded",
+    toolTask: { placement: "placed", outputIds: [result.id] },
+  };
+  const edges = toolProvenanceEdges([job], document);
+  assert.equal(edges.length, 1);
+  assert.equal(edges[0]!.intent, "post_edit_result");
+  assert.deepEqual(toolProvenanceEdges([job], { ...document, edges }), []);
+  assert.deepEqual(
+    toolProvenanceEdges([job], { ...document, nodes: [source] }),
+    [],
+  );
+  assert.deepEqual(
+    toolProvenanceEdges([{ ...job, status: "cancelled" }], document),
+    [],
+  );
+});
 
 test("repeated results avoid existing grouped media and other new outputs without moving sources", () => {
   const source = createNode("video", { x: 0, y: 0 }, { src: "original" });

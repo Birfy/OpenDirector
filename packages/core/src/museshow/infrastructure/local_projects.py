@@ -295,6 +295,9 @@ class LocalProjects:
         tasks = child(directory, "tasks")
         if tasks.exists() and any(read_generation_task(child(tasks, path.name))["status"] in {"queued", "running"} for path in tasks.glob("*.json")):
             raise ProjectError("项目仍在生成资产，请等待或取消任务后再重命名。", 409)
+        tools = child(directory, 'tool-tasks')
+        if tools.exists() and any(read_json(child(tools, path.name)).get('status') in {'queued', 'running'} for path in tools.glob('*.json')):
+            raise ProjectError('项目仍有工具任务，请等待或取消任务后再重命名。', 409)
 
     def rename(self, project_id: str, name: str, expected_name: str):
         name = project_name(name)

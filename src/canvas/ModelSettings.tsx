@@ -316,7 +316,9 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
       {catalog.connected &&
         MODEL_KINDS.map((kind) => {
           const models = catalog.models.filter(
-            (model) => model.kind === kind.id,
+            (model) =>
+              model.kind === kind.id ||
+              (kind.id === "image" && model.kind === "vision"),
           );
           return (
             <section key={kind.id} className="cw-model-section">
@@ -336,6 +338,7 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                     <div>
                       <strong>{model.modelId}</strong>
                       <small>
+                        {model.kind === "vision" ? "视觉分割 · " : ""}
                         {model.url} ·{" "}
                         {model.connectionType === "self_hosted"
                           ? "自部署"
@@ -345,7 +348,7 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                     </div>
                     <button
                       disabled={!!editing}
-                      onClick={() => setEditing({ kind: kind.id, model })}
+                      onClick={() => setEditing({ kind: model.kind, model })}
                     >
                       编辑
                     </button>
@@ -358,15 +361,25 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                   </li>
                 ))}
               </ul>
-              {editing?.kind === kind.id && (
-                <ModelForm
-                  key={editing.model?.id ?? kind.id}
-                  kind={kind.id}
-                  existing={editing.model}
-                  catalog={catalog}
-                  onClose={() => setEditing(null)}
-                />
+              {kind.id === "image" && (
+                <button
+                  disabled={!!editing}
+                  onClick={() => setEditing({ kind: "vision" })}
+                >
+                  添加视觉分割模型（SAM 3）
+                </button>
               )}
+              {editing &&
+                (editing.kind === kind.id ||
+                  (kind.id === "image" && editing.kind === "vision")) && (
+                  <ModelForm
+                    key={editing.model?.id ?? editing.kind}
+                    kind={editing.kind}
+                    existing={editing.model}
+                    catalog={catalog}
+                    onClose={() => setEditing(null)}
+                  />
+                )}
             </section>
           );
         })}

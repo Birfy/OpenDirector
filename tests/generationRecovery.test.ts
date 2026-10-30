@@ -23,6 +23,29 @@ const remote = {
   resumeAllowed: true,
 };
 
+test("tool tasks cancel through their own history and never offer a paid resubmission", () => {
+  const tool = {
+    version: 1 as const,
+    tool: "outpaint" as const,
+    sourceNodeIds: [job.nodeId],
+    parameters: {},
+  };
+  assert.deepEqual(generationTaskActions({ ...job, tool, status: "running" }), {
+    recover: false,
+    cancel: true,
+  });
+  for (const status of [
+    "interrupted",
+    "failed",
+    "cancelled",
+    "succeeded",
+  ] as const)
+    assert.deepEqual(generationTaskActions({ ...job, tool, status }), {
+      recover: false,
+      cancel: false,
+    });
+});
+
 test("history retains original task identity and offers explicit recovery/cancellation", () => {
   const [next] = reconcileGenerationJobs(
     [job],

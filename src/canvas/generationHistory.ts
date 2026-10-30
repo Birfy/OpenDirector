@@ -1,6 +1,10 @@
 import { applyTextGenerationResult } from "./textGeneration.ts";
 import { isGenerationSettings } from "./dataBoundary.ts";
-import type { CanvasDocument, GenerationSettings } from "./model.ts";
+import type {
+  CanvasDocument,
+  CanvasEdge,
+  GenerationSettings,
+} from "./model.ts";
 import type { CanvasToolTask } from "./toolCatalog.ts";
 import {
   appendServiceResults,
@@ -24,6 +28,10 @@ export interface GenerationJob {
     | "interrupted";
   time: string;
   createdAt?: number;
+  finishedAt?: number;
+  durationKey?: string;
+  outputKind?: "text" | "image" | "video" | "audio";
+  activityPhase?: import("./generationActivity.ts").GenerationPhase;
   message?: string;
   taskId?: string;
   serviceTask?: {
@@ -52,11 +60,55 @@ export interface GenerationJob {
   tool?: CanvasToolTask;
   /** The pending result node a tool task fills, linked from its source. */
   targetNodeId?: string;
+  targetKind?: "image" | "video" | "audio";
+  targetTitle?: string;
+  /** Execution and placement facts read from the independent tool ledger. */
+  toolTask?: {
+    placement: "pending" | "placed" | "unplaced";
+    sourceFingerprint?: string;
+    outputIds: string[];
+    unavailable?: boolean;
+  };
 }
 interface StoredJob {
   id: string;
   documentId: string;
   job: GenerationJob;
+}
+
+/** Tool provenance is a projection of the service ledger, not a generation
+ * reference targeting a GenerationSpec. Hidden/missing endpoints stay hidden. */
+export function toolProvenanceEdges(
+  jobs: readonly GenerationJob[],
+  document: CanvasDocument,
+): CanvasEdge[] {
+  const visible = new Set(document.nodes.map((node) => node.id));
+  return jobs.flatMap((job) =>
+    job.toolTask && visible.has(job.nodeId)
+      ? [
+          ...new Set([
+            ...(job.status === "running" && job.targetNodeId
+              ? [job.targetNodeId]
+              : []),
+            ...(job.status === "succeeded" ? job.toolTask.outputIds : []),
+          ]),
+        ].flatMap((id) =>
+          visible.has(id) &&
+          !document.edges.some(
+            (edge) => edge.source === job.nodeId && edge.target === id,
+          )
+            ? [
+                {
+                  id: `tool-${id}`,
+                  source: job.nodeId,
+                  target: id,
+                  intent: "post_edit_result" as const,
+                },
+              ]
+            : [],
+        )
+      : [],
+  );
 }
 
 export function parseGenerationJob(value: unknown): GenerationJob {
@@ -288,6 +340,8 @@ export function reconcileGenerationJobs(
 
 /** These actions continue or stop existing jobs; they never repeat submission. */
 export function generationTaskActions(job: GenerationJob) {
+  if (job.tool)
+    return { recover: false, cancel: !!job.taskId && job.status === "running" };
   const remote =
     !!job.taskId &&
     ["interrupted", "failed"].includes(job.status) &&

@@ -53,6 +53,21 @@ function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
   });
 }
 
+/** Previews use the visible project's lease; they must never reactivate an old
+ * editor's project after a queued navigation or cancellation. */
+export function requireActiveBackendProject(
+  documentId: string,
+  signal: AbortSignal,
+) {
+  const id = backendProjectId(documentId);
+  return serializeSessionChange(async () => {
+    signal.throwIfAborted();
+    if (active !== id)
+      throw new DOMException("工程已切换，请重新打开选区工具。", "AbortError");
+    return id;
+  });
+}
+
 /** Both creating and opening a project move the server's single session lease. */
 function activateBackendProject<T>(
   documentId: string,

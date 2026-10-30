@@ -66,7 +66,7 @@ export function GenerationHistoryPanel({
     interrupted: "等待恢复",
   };
   const taskActions = (job: GenerationJob) =>
-    authoritative
+    authoritative && !job.tool
       ? {
           recover:
             !!job.taskId &&
@@ -187,7 +187,7 @@ export function GenerationHistoryPanel({
             <button onClick={() => onLocate(job.nodeId)}>定位来源</button>
             {!!job.outputs?.length && (
               <button onClick={() => onRestore([job])}>
-                {authoritative ? "选用结果" : "重新放置结果"}
+                {authoritative && !job.tool ? "选用结果" : "重新放置结果"}
               </button>
             )}
             {job.request && (
@@ -195,7 +195,7 @@ export function GenerationHistoryPanel({
                 恢复请求节点
               </button>
             )}
-            {onRestoreConfiguration && (
+            {onRestoreConfiguration && !job.tool && (
               <>
                 <button
                   disabled={pending.includes(job.id)}

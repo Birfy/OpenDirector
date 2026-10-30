@@ -525,6 +525,11 @@
   padding: 0;
   min-height: 112px;
 }
+.cw-video-composer-body > :is(.cw-frame-slots, .cw-reference-strip) {
+  flex: 0 0 48px;
+  height: 48px;
+  box-sizing: border-box;
+}
 .cw-reference-strip {
   display: flex;
   gap: 6px;

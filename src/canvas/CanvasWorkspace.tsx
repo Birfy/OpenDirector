@@ -53,6 +53,7 @@ import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasPointerGesture } from "./pointerGesture";
 import {
   generationActivities,
+  jobActivities,
   generationPhase,
   GENERATION_LABELS,
   type ActiveGeneration,
@@ -131,6 +132,7 @@ import { useGenerationJobs } from "./useGenerationJobs";
 import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
 import {
   reconcileGenerationJobs,
+  toolProvenanceEdges,
   mergeGenerationJobs,
   applyRecoveredGenerationResults,
   type GenerationJob as Job,
@@ -138,8 +140,8 @@ import {
 import {
   appendLinkedMediaResults,
   appendPendingResult,
-  fillPendingResult,
-  pendingResultNode,
+  placeToolResults,
+  toolResultsPlaced,
   removePendingResult,
   validateNodeActionSource,
   appendServiceResults,
@@ -165,13 +167,15 @@ import {
   type BackendTask,
   type GenerationRequest,
 } from "../backend/generation.ts";
+import { fingerprint } from "../backend/generation.ts";
 import { useBackendModels } from "../backend/models.ts";
 import { backendProjectId, openBackendProject } from "../backend/projects.ts";
 import {
   cancelToolTask,
+  acknowledgeToolPlacement,
   submitToolTask,
   useToolCatalog,
-  waitForToolTask,
+  ToolSubmissionError,
 } from "../backend/tools.ts";
 import {
   backendBlocker,
@@ -266,6 +270,7 @@ type ServiceRun = ActiveGeneration & {
   taskId?: string;
   /** Tool tasks are cancelled through the tool task route. */
   tool?: CanvasToolId;
+  targetNodeId?: string;
 };
 /** Media kind of a tool's first result, or null when it is only known after the run. */
 const toolOutputKind = (
@@ -484,7 +489,6 @@ function Workspace() {
     null,
   );
   const [help, setHelp] = useState(false);
-  const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
   const selectionSource = useRef<{
     documentId: string;
@@ -492,6 +496,11 @@ function Workspace() {
     src: string;
     assetId: string;
   } | null>(null);
+  const [jobs, setJobs, readJobs] = useGenerationJobs(
+    doc.id,
+    setToast,
+    ready && backendCatalog.connected,
+  );
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
     backendCatalog.models,
@@ -512,15 +521,18 @@ function Workspace() {
   const generationByNode = useMemo(
     () =>
       generationActivities(
-        creationEnabled()
-          ? jobs
-              .filter((job) => job.status === "running")
-              .map((job) => ({
-                documentId: doc.id,
-                nodeId: job.nodeId,
-                phase: "generating" as const,
-              }))
-          : activeGenerations,
+        [
+          ...(creationEnabled()
+            ? jobActivities(
+                jobs.filter((job) => !job.tool),
+                doc.id,
+              )
+            : activeGenerations),
+          ...jobActivities(
+            jobs.filter((job) => job.tool),
+            doc.id,
+          ),
+        ],
         doc.id,
       ),
     [activeGenerations, doc.id, jobs],
@@ -1432,11 +1444,12 @@ function Workspace() {
   );
   const flowEdges: Edge[] = useMemo(
     () =>
-      doc.edges.map((e) => ({
+      [...doc.edges, ...toolProvenanceEdges(jobs, doc)].map((e) => ({
         ...e,
         type: "reference",
         selected: selectedEdges.includes(e.id),
         hidden: !showEdges,
+        selectable: !e.id.startsWith("tool-"),
         data: {
           ...referencePresentation(doc, e),
           sourceBounds: (() => {
@@ -1463,7 +1476,7 @@ function Workspace() {
         },
         ariaLabel: "参考连线",
       })),
-    [doc.edges, doc.nodes, selectedEdges, showEdges],
+    [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
   );
 
   const projected = useMemo(() => {
@@ -1831,34 +1844,6 @@ function Workspace() {
     notify(`已加入 ${result.ids.length} 个真实素材，并连接来源节点。`);
     return true;
   };
-  const placePendingOutputs = (
-    source: ResultSource,
-    pendingId: string,
-    outputs: readonly LinkedMediaResult[],
-    sourceTask: CanvasToolTask,
-  ) => {
-    const result = fillPendingResult(
-      historyRef.current.present,
-      source,
-      pendingId,
-      outputs,
-      sourceTask,
-    );
-    if (result.error) {
-      notify(result.error);
-      return false;
-    }
-    if (!result.ids.length) return false;
-    // Outputs of another media kind were linked instead; the placeholder goes.
-    const next = result.ids.includes(pendingId)
-      ? result.document
-      : removePendingResult(result.document, pendingId);
-    change(() => next);
-    setSelected(result.ids);
-    revealResults(result.ids);
-    notify(`已生成 ${outputs.length} 个结果，并连接来源节点。`);
-    return true;
-  };
   const editorOutputs = (outputs: readonly LinkedMediaResult[]) => {
     return editorOrigin.current
       ? addLinkedOutputs(editorOrigin.current, outputs)
@@ -2007,7 +1992,7 @@ function Workspace() {
   const refreshRunning = () =>
     setActiveGenerations(
       [...serviceRuns.current.values()]
-        .filter((run) => !run.controller.signal.aborted)
+        .filter((run) => !run.tool && !run.controller.signal.aborted)
         .map(({ documentId, nodeId, phase, startedAt, expectedMs }) => ({
           documentId,
           nodeId,
@@ -2040,6 +2025,7 @@ function Workspace() {
   };
   /** Pull finished results this page did not place, e.g. the assistant's. */
   const syncServiceResults = async (announce = false) => {
+    setJobs(await readJobs());
     if (creationEnabled()) {
       const snapshot = await creationClient(doc.id).refresh();
       return snapshot.jobs.filter(
@@ -2367,26 +2353,15 @@ function Workspace() {
         void followServiceTasks();
     }
   };
-  /** AI tools run in the local API; results join as linked nodes beside the source. */
-  const runToolTask = async (
-    from: ResultSource,
-    task: CanvasToolTask,
-    resume?: {
-      jobId: string;
-      taskId: string;
-      targetNodeId?: string;
-      startedAt?: number;
-    },
-  ) => {
-    // Action sessions carry UI fields; history keeps only the placement owner.
-    const origin: ResultSource = {
-      documentId: from.documentId,
-      nodeId: from.nodeId,
-      kind: from.kind,
-      src: from.src,
-    };
-    const title = CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title;
+  /** Submit once; the service ledger owns progress/history in both modes. */
+  const runToolTask = async (origin: ResultSource, task: CanvasToolTask) => {
     const present = historyRef.current.present;
+    if (present.id !== origin.documentId) return;
+    const entry = toolCatalog.tools.find((item) => item.id === task.tool);
+    if (!entry?.available) {
+      notify(entry?.reason ?? "本地服务未提供此工具。");
+      return;
+    }
     const sources = task.sourceNodeIds.flatMap((id) => {
       const node = present.nodes.find((item) => item.id === id);
       return node?.data.src && ["image", "video", "audio"].includes(node.type)
@@ -2399,160 +2374,359 @@ function Workspace() {
           ]
         : [];
     });
-    if (!resume) {
-      const entry = toolCatalog.tools.find((item) => item.id === task.tool);
-      if (!entry?.available) {
-        notify(entry?.reason ?? "本地服务未提供此工具。");
-        return;
-      }
-      if (sources.length !== task.sourceNodeIds.length) {
-        notify("来源素材已删除或尚未导入，请重新选择。");
-        return;
-      }
-      saveActionDraft(origin, task);
-      closeAction();
+    if (sources.length !== task.sourceNodeIds.length) {
+      notify("来源素材已删除或尚未导入，请重新选择。");
+      return;
     }
+    const validation = validateNodeActionSource(
+      historyRef.current.present,
+      origin,
+    );
+    if (validation.error) {
+      notify(validation.error);
+      return;
+    }
+    const id = crypto.randomUUID();
+    const title =
+      CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title ?? task.tool;
     const outputKind = toolOutputKind(task.tool, origin.kind);
-    // The result gets its node now, linked from the source, and shows the progress there.
-    let targetNodeId = resume?.targetNodeId;
-    if (!resume && outputKind) {
+    const targetNodeId = outputKind ? crypto.randomUUID() : undefined;
+    // Persist the draft and owned placeholder before any execution can be accepted.
+    let prepared = {
+      ...historyRef.current.present,
+      nodes: historyRef.current.present.nodes.map((node) =>
+        node.id === origin.nodeId
+          ? {
+              ...node,
+              data: { ...node.data, taskDraft: structuredClone(task) },
+            }
+          : node,
+      ),
+    };
+    if (targetNodeId && outputKind) {
       const pending = appendPendingResult(
-        historyRef.current.present,
+        prepared,
         origin,
         outputKind,
-        title ?? task.tool,
+        title,
+        targetNodeId,
       );
-      if (!pending.error && pending.ids[0]) {
-        change(() => pending.document);
-        targetNodeId = pending.ids[0];
+      if (pending.error) {
+        notify(pending.error);
+        return;
       }
+      prepared = pending.document;
     }
-    const durationKey = `tool:${task.tool}`;
-    const id = resume?.jobId ?? crypto.randomUUID();
+    const submissionDocument = prepared;
+    change(() => submissionDocument);
+    if (!(await persist(submissionDocument))) {
+      if (targetNodeId)
+        change((current) => removePendingResult(current, targetNodeId, title));
+      return;
+    }
+    if (historyRef.current.present.id !== origin.documentId) return;
+    closeAction();
     const run: ServiceRun = {
       controller: new AbortController(),
       documentId: origin.documentId,
-      nodeId: targetNodeId ?? origin.nodeId,
+      nodeId: origin.nodeId,
+      targetNodeId,
       phase: "preparing",
       tool: task.tool,
-      startedAt: resume?.startedAt ?? Date.now(),
-      expectedMs: expectedDuration(durationKey, outputKind ?? origin.kind),
+      startedAt: Date.now(),
+      expectedMs: expectedDuration(
+        `tool:${task.tool}`,
+        outputKind ?? origin.kind,
+      ),
     };
-    const dropPending = () => {
-      if (
-        targetNodeId &&
-        historyRef.current.present.id === origin.documentId &&
-        pendingResultNode(historyRef.current.present, targetNodeId)
-      )
-        change((current) => removePendingResult(current, targetNodeId!));
-    };
-    const { signal } = run.controller;
     serviceRuns.current.set(id, run);
     refreshRunning();
-    if (!resume) {
-      setJobs((current) => [
+    setJobs((current) => [
+      {
+        id,
+        nodeId: origin.nodeId,
+        title,
+        status: "running",
+        time: jobTime(),
+        createdAt: run.startedAt,
+        targetNodeId,
+        targetKind: outputKind ?? undefined,
+        targetTitle: targetNodeId ? title : undefined,
+        durationKey: `tool:${task.tool}`,
+        message: "正在上传素材",
+        tool: { ...task, selection: undefined },
+        resultSource: origin,
+      },
+      ...current,
+    ]);
+    try {
+      const submitted = await submitToolTask(
         {
           id,
-          nodeId: origin.nodeId,
-          title: title ?? task.tool,
-          status: "running",
-          time: jobTime(),
-          createdAt: run.startedAt,
-          message: "正在上传素材",
-          resultSource: origin,
-          ...(targetNodeId ? { targetNodeId } : {}),
-          // Masks can be large; following a task needs only its identity.
-          tool: {
-            ...task,
-            ...(task.selection
-              ? { selection: { ...task.selection, maskDataUrl: undefined } }
+          canvas: {
+            nodeId: origin.nodeId,
+            sourceNodeIds: task.sourceNodeIds,
+            ...(targetNodeId && outputKind
+              ? { targetNodeId, targetKind: outputKind, targetTitle: title }
               : {}),
           },
+          documentId: present.id,
+          documentTitle: present.title,
+          tool: task.tool,
+          sources,
+          parameters: task.parameters,
+          modelConfigIds:
+            typeof task.parameters.imageModelConfigId === "string" &&
+            task.parameters.imageModelConfigId
+              ? { "image.edit": task.parameters.imageModelConfigId }
+              : undefined,
+          annotatedDataUrl: sources[0]
+            ? await imageAnnotationPayload(
+                task,
+                sources[0].src,
+                run.controller.signal,
+              )
+            : undefined,
+          maskDataUrl: task.selection?.maskDataUrl,
+          boxes: task.selection?.boxes,
         },
-        ...current,
-      ]);
-      notify(`已提交「${title}」，结果会生成在右侧连接的新节点中。`);
-    }
-    try {
-      const submitted = resume
-        ? {
-            projectId: backendProjectId(origin.documentId),
-            taskId: resume.taskId,
-          }
-        : await submitToolTask(
-            {
-              documentId: present.id,
-              documentTitle: present.title,
-              tool: task.tool,
-              sources,
-              parameters: task.parameters,
-              modelConfigIds:
-                typeof task.parameters.imageModelConfigId === "string" &&
-                task.parameters.imageModelConfigId
-                  ? { "image.edit": task.parameters.imageModelConfigId }
-                  : undefined,
-              annotatedDataUrl: sources[0]
-                ? await imageAnnotationPayload(task, sources[0].src, signal)
-                : undefined,
-              maskDataUrl: task.selection?.maskDataUrl,
-              boxes: task.selection?.boxes,
-            },
-            signal,
-          );
+        run.controller.signal,
+      );
       Object.assign(run, submitted);
-      if (!resume) updateJob(id, { taskId: submitted.taskId });
-      run.phase = "generating";
-      refreshRunning();
-      const files = await waitForToolTask(
-        submitted.projectId,
-        submitted.taskId,
-        signal,
-        (value) => value.phase && updateJob(id, { message: value.phase }),
-      );
-      const outputs = await Promise.all(
-        files.map(({ output, file }) =>
-          mediaOutput(
-            {
-              kind: output.kind,
-              file,
-              media: {
-                ...(output.width ? { width: output.width } : {}),
-                ...(output.height ? { height: output.height } : {}),
-                ...(output.durationMs
-                  ? { durationSeconds: output.durationMs / 1000 }
-                  : {}),
-              },
-            },
-            signal,
-          ),
-        ),
-      );
-      recordDuration(durationKey, Date.now() - run.startedAt!);
-      updateJob(id, { status: "succeeded", outputs });
-      if (historyRef.current.present.id !== origin.documentId) return;
-      const placed = targetNodeId
-        ? placePendingOutputs(origin, targetNodeId, outputs, task)
-        : addLinkedOutputs(origin, outputs, task);
-      if (!placed) dropPending();
-      updateJob(id, {
-        message: placed
-          ? "已加入画布"
-          : "来源节点已变化，结果保存在历史中，可重新放置。",
-      });
+      updateJob(id, { taskId: submitted.taskId });
+      setJobs(await readJobs());
     } catch (error) {
-      dropPending();
-      if (signal.aborted)
-        updateJob(id, { status: "cancelled", message: "已取消" });
-      else {
-        const message = errorMessage(error);
-        updateJob(id, { status: "failed", message });
-        notify(`「${title}」失败：${message}`);
+      const uncertain = error instanceof ToolSubmissionError && error.uncertain;
+      updateJob(id, {
+        status: uncertain
+          ? "running"
+          : run.controller.signal.aborted
+            ? "cancelled"
+            : "failed",
+        message: uncertain
+          ? "提交未确认，请同步服务记录核对原任务。"
+          : errorMessage(error),
+      });
+      if (
+        !uncertain &&
+        targetNodeId &&
+        historyRef.current.present.id === origin.documentId
+      ) {
+        const cleaned = removePendingResult(
+          historyRef.current.present,
+          targetNodeId,
+          title,
+          outputKind ?? undefined,
+        );
+        change(() => cleaned);
+        await persist(cleaned);
       }
+      if (!run.controller.signal.aborted)
+        notify(`「${title}」：${errorMessage(error)}`);
     } finally {
       serviceRuns.current.delete(id);
       refreshRunning();
     }
   };
+
+  const observedRuns = useRef(new Map<string, number>());
+  useEffect(() => {
+    for (const job of jobs) {
+      if (job.status === "running" && job.createdAt)
+        observedRuns.current.set(job.id, job.createdAt);
+      if (job.status === "succeeded" && job.createdAt && job.durationKey) {
+        const finished =
+          job.finishedAt ??
+          (observedRuns.current.has(job.id) ? Date.now() : undefined);
+        if (finished)
+          recordDuration(
+            job.durationKey,
+            finished - job.createdAt,
+            job.taskId ?? job.id,
+          );
+        observedRuns.current.delete(job.id);
+      }
+      if (["failed", "cancelled", "interrupted"].includes(job.status))
+        observedRuns.current.delete(job.id);
+    }
+  }, [jobs]);
+
+  const toolPlacementQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const placingTools = useRef(new Set<string>());
+  const placementRetryAfter = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!ready || !backendCatalog.connected) return;
+    for (const job of jobs) {
+      const placementKey = `${doc.id}:${job.id}`;
+      if (
+        job.targetNodeId &&
+        ["failed", "cancelled", "interrupted"].includes(job.status) &&
+        job.toolTask &&
+        !placingTools.current.has(placementKey)
+      ) {
+        const next = removePendingResult(
+          historyRef.current.present,
+          job.targetNodeId,
+          job.targetTitle,
+          job.targetKind,
+        );
+        if (next !== historyRef.current.present) {
+          placingTools.current.add(placementKey);
+          toolPlacementQueue.current = toolPlacementQueue.current
+            .catch(() => {})
+            .then(async () => {
+              if (!mounted.current || historyRef.current.present.id !== doc.id)
+                return;
+              const cleaned = removePendingResult(
+                historyRef.current.present,
+                job.targetNodeId!,
+                job.targetTitle,
+                job.targetKind,
+              );
+              if (cleaned !== historyRef.current.present) {
+                change(() => cleaned);
+                await persist(cleaned);
+              }
+            })
+            .catch((error) => notify(errorMessage(error)))
+            .finally(() => placingTools.current.delete(placementKey));
+        }
+        continue;
+      }
+      if (
+        !job.toolTask ||
+        job.toolTask.placement !== "pending" ||
+        job.status !== "succeeded" ||
+        !job.resultSource ||
+        !job.outputs?.length ||
+        job.toolTask.unavailable ||
+        placingTools.current.has(placementKey) ||
+        Date.now() < (placementRetryAfter.current.get(placementKey) ?? 0)
+      )
+        continue;
+      placingTools.current.add(placementKey);
+      placementRetryAfter.current.set(placementKey, Date.now() + 5000);
+      const place = async () => {
+        const origin = job.resultSource!;
+        const current = () => historyRef.current.present;
+        if (!mounted.current || current().id !== origin.documentId) return;
+        // Stable output IDs and the server acknowledgement cover a lost reply,
+        // a reload after saving, and outputs intentionally hidden in C04.
+        const outputs = job.outputs!.flatMap((output) =>
+          output.kind === "text" ? [] : [output],
+        );
+        const ids = job.toolTask!.outputIds;
+        const hiddenPlaced = new Set<string>();
+        if (creationEnabled()) {
+          const client = creationClient(origin.documentId);
+          const visible = new Set(current().nodes.map((node) => node.id));
+          ids.forEach((id, index) => {
+            if (visible.has(id)) return;
+            const item = client.snapshot.canvasItems.find(
+              (item) => item.id === id,
+            );
+            const asset =
+              outputs[index] && client.assetForSource(outputs[index]!.src);
+            if (
+              item?.binding.role === "material" &&
+              item.binding.objectRef.assetId === asset?.id
+            )
+              hiddenPlaced.add(id);
+          });
+        }
+        if (toolResultsPlaced(current(), outputs, ids, hiddenPlaced)) {
+          if (await persist(current()))
+            await acknowledgeToolPlacement(
+              origin.documentId,
+              job.taskId!,
+              "placed",
+            );
+          return;
+        }
+        const unplaced = async () => {
+          const next = job.targetNodeId
+            ? removePendingResult(
+                current(),
+                job.targetNodeId,
+                job.targetTitle,
+                job.targetKind,
+              )
+            : current();
+          if (next !== current()) change(() => next);
+          if (await persist(next))
+            await acknowledgeToolPlacement(
+              origin.documentId,
+              job.taskId!,
+              "unplaced",
+            );
+        };
+        const source = current().nodes.find(
+          (node) => node.id === origin.nodeId,
+        );
+        let sourceMatches = false;
+        if (
+          source?.data.src &&
+          source.type === origin.kind &&
+          job.toolTask!.sourceFingerprint
+        ) {
+          const capturedSrc = source.data.src;
+          const actual = await fingerprint(
+            await (await fetch(capturedSrc)).blob(),
+          );
+          sourceMatches =
+            actual === job.toolTask!.sourceFingerprint &&
+            current().id === origin.documentId &&
+            current().nodes.find((node) => node.id === origin.nodeId)?.data
+              .src === capturedSrc;
+        }
+        if (!mounted.current || current().id !== origin.documentId) return;
+        if (!sourceMatches) {
+          await unplaced();
+          return;
+        }
+        const result = placeToolResults(
+          current(),
+          { ...origin, src: source!.data.src },
+          outputs,
+          job.tool,
+          ids,
+          job.targetNodeId
+            ? {
+                id: job.targetNodeId,
+                title: job.targetTitle,
+                kind: job.targetKind,
+              }
+            : undefined,
+          hiddenPlaced,
+        );
+        if (result.error) {
+          await unplaced();
+          return;
+        }
+        if (result.ids.length) {
+          change(() => result.document);
+          setSelected(result.ids);
+          revealResults(result.ids);
+        }
+        if (await persist(result.document))
+          await acknowledgeToolPlacement(
+            origin.documentId,
+            job.taskId!,
+            "placed",
+          );
+      };
+      toolPlacementQueue.current = toolPlacementQueue.current
+        .catch(() => {})
+        .then(place)
+        .catch((error) => {
+          if (mounted.current && historyRef.current.present.id === doc.id)
+            notify(errorMessage(error));
+        })
+        .finally(() => {
+          placingTools.current.delete(placementKey);
+        });
+    }
+  }, [jobs, ready, backendCatalog.connected, doc.id, change, persist, notify]);
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const settings = getNodeGenerationSettings(node);
     const config = backendModel(settings, backendCatalog.models);
@@ -2607,6 +2781,23 @@ function Workspace() {
       );
   };
   const cancelServiceRuns = (nodeId: string) => {
+    for (const job of jobs)
+      if (
+        job.tool &&
+        job.taskId &&
+        (job.nodeId === nodeId || job.targetNodeId === nodeId) &&
+        job.status === "running"
+      )
+        void cancelToolTask(doc.id, job.taskId)
+          .then(async () => setJobs(await readJobs()))
+          .catch((error) => notify(errorMessage(error)));
+    for (const run of serviceRuns.current.values())
+      if (
+        run.tool &&
+        (run.nodeId === nodeId || run.targetNodeId === nodeId) &&
+        run.documentId === doc.id
+      )
+        run.controller.abort();
     if (creationEnabled()) {
       const client = creationClient(doc.id);
       for (const job of client.snapshot.jobs)
@@ -2632,25 +2823,6 @@ function Workspace() {
     refreshRunning();
   };
   useEffect(() => {
-    // Tool tasks keep running in the local API across reloads; follow them again.
-    if (!ready || !backendCatalog.connected) return;
-    for (const job of jobs)
-      if (
-        job.tool &&
-        job.status === "running" &&
-        job.taskId &&
-        job.resultSource?.documentId === doc.id &&
-        !serviceRuns.current.has(job.id)
-      )
-        void runToolTask(job.resultSource, job.tool, {
-          jobId: job.id,
-          taskId: job.taskId,
-          targetNodeId: job.targetNodeId,
-          startedAt: job.createdAt,
-        });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.id, ready, backendCatalog.connected, jobs.length]);
-  useEffect(() => {
     // Results that finished while this canvas was closed join it on opening.
     if (ready && backendCatalog.connected) void followServiceTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2660,6 +2832,7 @@ function Workspace() {
     const node = current.nodes.find((node) => node.id === nodeId);
     if (!node || lockedNodeIds(current.nodes).has(nodeId)) return;
     if (
+      generationByNode.has(nodeId) ||
       [...serviceRuns.current.values()].some(
         (run) => run.documentId === current.id && run.nodeId === nodeId,
       )
@@ -3561,6 +3734,7 @@ function Workspace() {
               canAddReference(doc, c.source, c.target)
             }
             onEdgeClick={(_, edge) => {
+              if (edge.id.startsWith("tool-")) return;
               setSelected([]);
               setSelectedEdges([edge.id]);
               setMenu(null);
@@ -4895,6 +5069,19 @@ function Workspace() {
                   ? async (job, action) => {
                       if (!job.taskId) return;
                       try {
+                        if (job.tool) {
+                          if (action === "cancel")
+                            await cancelToolTask(doc.id, job.taskId);
+                          setJobs(await readJobs());
+                          return;
+                        }
+                        if (creationEnabled()) {
+                          await creationClient(doc.id).control(
+                            job.taskId,
+                            action,
+                          );
+                          return;
+                        }
                         const projectId = await openBackendProject(
                           doc.id,
                           doc.title,
@@ -4984,99 +5171,130 @@ function Workspace() {
                   );
               }}
               onRestore={(entries, requests = false) => {
-                if (creationEnabled()) {
-                  void (async () => {
-                    if (requests) {
-                      notify("请使用“恢复生成配置”，该操作不改变当前结果。");
-                      return;
-                    }
-                    if (!(await persist(historyRef.current.present))) return;
-                    const client = creationClient(doc.id);
-                    await client.refresh();
-                    const results = client.snapshot.results.filter((result) =>
-                      entries.some((entry) => entry.taskId === result.jobId),
+                void (async () => {
+                  const toolEntries = entries.filter((entry) => entry.tool);
+                  if (toolEntries.length && !requests) {
+                    const outputs = toolEntries.flatMap(
+                      (job) => job.outputs ?? [],
                     );
-                    if (
-                      new Set(results.map((result) => result.specId)).size !==
-                      results.length
-                    ) {
-                      notify("同一生成配置一次只能选用一个历史结果。");
-                      return;
-                    }
-                    const specs = client.snapshot.generationSpecs.filter(
-                      (spec) =>
-                        results.some((result) => result.specId === spec.id),
+                    if (!outputs.length) return;
+                    const next = appendServiceResults(
+                      historyRef.current.present,
+                      outputs,
                     );
-                    const items = client.snapshot.canvasItems.filter(
-                      (item) =>
-                        item.binding.role === "generation" &&
-                        specs.some(
-                          (spec) =>
-                            item.binding.role === "generation" &&
-                            item.binding.objectRef.id === spec.id,
-                        ),
-                    );
-                    await client.batch(
-                      results.map((result) => ({
-                        type: "result.select",
-                        payload: { specId: result.specId, resultId: result.id },
-                      })),
-                      [
-                        ...specs.map((spec) =>
-                          objectVersion("generation_spec", spec),
-                        ),
-                        ...items.map((item) =>
-                          objectVersion("canvas_item", item),
-                        ),
-                      ],
-                    );
-                  })().catch((error) => notify(errorMessage(error)));
-                  return;
-                }
-                if (requests) {
-                  const origin = center();
-                  const nodes = entries.flatMap((job, index) =>
-                    job.request
-                      ? [
-                          createNode(
-                            job.request.kind,
-                            { x: origin.x + index * 360, y: origin.y },
-                            {
-                              title: job.request.title,
-                              prompt: job.request.prompt,
-                              settings: {
-                                ...job.request.settings,
-                                firstFrameNodeId: undefined,
-                                lastFrameNodeId: undefined,
-                              },
-                            },
-                          ),
-                        ]
-                      : [],
-                  );
-                  if (nodes.length) {
-                    command({ type: "add-nodes", nodes });
-                    setSelected(nodes.map((node) => node.id));
-                    notify("请求节点已恢复；请重新选择需要的参考素材。");
+                    change(() => next.document);
+                    if (!(await persist(next.document))) return;
+                    for (const entry of toolEntries)
+                      if (entry.taskId)
+                        await acknowledgeToolPlacement(
+                          doc.id,
+                          entry.taskId,
+                          "placed",
+                        );
+                    setSelected(next.ids);
+                    revealResults(next.ids);
+                    setJobs(await readJobs());
+
+                    entries = entries.filter((entry) => !entry.tool);
+                    if (!entries.length) return;
                   }
-                } else {
-                  const outputs = entries.flatMap((job) => job.outputs ?? []);
-                  if (!outputs.length) return;
-                  const next = appendServiceResults(
-                    historyRef.current.present,
-                    outputs,
-                  );
-                  change(() => next.document);
-                  // A re-placed service result must not be synced again.
-                  for (const job of entries)
-                    if (job.taskId && job.outputs?.length)
-                      markHandled(backendProjectId(doc.id), job.taskId);
-                  setSelected(next.ids);
-                  revealResults(next.ids);
-                  notify(
-                    `已从历史重新放置 ${next.ids.length} 个结果，可撤销。`,
-                  );
-                }
+                  if (creationEnabled()) {
+                    void (async () => {
+                      if (requests) {
+                        notify("请使用“恢复生成配置”，该操作不改变当前结果。");
+                        return;
+                      }
+                      if (!(await persist(historyRef.current.present))) return;
+                      const client = creationClient(doc.id);
+                      await client.refresh();
+                      const results = client.snapshot.results.filter((result) =>
+                        entries.some((entry) => entry.taskId === result.jobId),
+                      );
+                      if (
+                        new Set(results.map((result) => result.specId)).size !==
+                        results.length
+                      ) {
+                        notify("同一生成配置一次只能选用一个历史结果。");
+                        return;
+                      }
+                      const specs = client.snapshot.generationSpecs.filter(
+                        (spec) =>
+                          results.some((result) => result.specId === spec.id),
+                      );
+                      const items = client.snapshot.canvasItems.filter(
+                        (item) =>
+                          item.binding.role === "generation" &&
+                          specs.some(
+                            (spec) =>
+                              item.binding.role === "generation" &&
+                              item.binding.objectRef.id === spec.id,
+                          ),
+                      );
+                      await client.batch(
+                        results.map((result) => ({
+                          type: "result.select",
+                          payload: {
+                            specId: result.specId,
+                            resultId: result.id,
+                          },
+                        })),
+                        [
+                          ...specs.map((spec) =>
+                            objectVersion("generation_spec", spec),
+                          ),
+                          ...items.map((item) =>
+                            objectVersion("canvas_item", item),
+                          ),
+                        ],
+                      );
+                    })().catch((error) => notify(errorMessage(error)));
+                    return;
+                  }
+                  if (requests) {
+                    const origin = center();
+                    const nodes = entries.flatMap((job, index) =>
+                      job.request
+                        ? [
+                            createNode(
+                              job.request.kind,
+                              { x: origin.x + index * 360, y: origin.y },
+                              {
+                                title: job.request.title,
+                                prompt: job.request.prompt,
+                                settings: {
+                                  ...job.request.settings,
+                                  firstFrameNodeId: undefined,
+                                  lastFrameNodeId: undefined,
+                                },
+                              },
+                            ),
+                          ]
+                        : [],
+                    );
+                    if (nodes.length) {
+                      command({ type: "add-nodes", nodes });
+                      setSelected(nodes.map((node) => node.id));
+                      notify("请求节点已恢复；请重新选择需要的参考素材。");
+                    }
+                  } else {
+                    const outputs = entries.flatMap((job) => job.outputs ?? []);
+                    if (!outputs.length) return;
+                    const next = appendServiceResults(
+                      historyRef.current.present,
+                      outputs,
+                    );
+                    change(() => next.document);
+                    // A re-placed service result must not be synced again.
+                    for (const job of entries)
+                      if (job.taskId && job.outputs?.length)
+                        markHandled(backendProjectId(doc.id), job.taskId);
+                    setSelected(next.ids);
+                    revealResults(next.ids);
+                    notify(
+                      `已从历史重新放置 ${next.ids.length} 个结果，可撤销。`,
+                    );
+                  }
+                })().catch((error) => notify(errorMessage(error)));
               }}
             />
           )}

@@ -32,13 +32,22 @@ def _model_label(config):
     return config['modelId'].rsplit('/', 1)[-1] or config['modelId']
 
 
+def output_item_id(task, index, kind):
+    canvas = task.get('canvas') or {}
+    if index == 0 and canvas.get('targetNodeId') and canvas.get('targetKind') == kind:
+        return canvas['targetNodeId']
+    return str(uuid5(UUID(task['id']), f'canvas-output-{index}'))
+
+
 class ToolTasks:
-    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2):
+    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects=None):
         self.store, self.configs, self.assets = store, configs, assets
         self.transport, self.poll_interval = transport, poll_interval
         self.jobs: dict[tuple[str, str], asyncio.Task] = {}
         self.remote: dict[tuple[str, str], tuple[dict, str]] = {}
         self.limit = asyncio.Semaphore(concurrency)
+        self.projects = projects
+        self.accepting = set()
 
     # Capabilities -------------------------------------------------------------
 
@@ -86,6 +95,8 @@ class ToolTasks:
             records = self.assets._records(directory, project_id)
             if source_id not in records or records[source_id]['kind'] != 'image':
                 raise ProjectError('来源图片不存在，请重新上传。', 409)
+            if self.projects is not None:
+                return media.open_image(self.assets.read_bytes(project_id, source_id))
             return media.open_image(child(child(directory, 'assets'), source_id).read_bytes())
 
         image = await asyncio.to_thread(read)
@@ -130,7 +141,32 @@ class ToolTasks:
 
     def _directory(self, project_id, session=None):
         with self.store.transaction() as db:
+            if self.projects is not None:
+                self.projects._recover()
+                path, _, _ = self.projects._load(db, project_id)
+                if session is not None:
+                    self.projects._lease(db, project_id, path, session)
+                return path
             return self.store._owner(db, project_id, session)
+
+    def list(self, project_id):
+        directory = self._directory(project_id)
+        tasks = [self.get(project_id, path.stem) for path in self._folder(directory).glob('*.json')]
+        return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
+
+    def placement(self, project_id, task_id, state, session):
+        # Serialize acknowledgement with task writes/project moves. This never
+        # adopts a GenerationSpec result or changes a terminal execution state.
+        with self.store.transaction():
+            directory = self._directory(project_id, session)
+            task = self.get(project_id, task_id)
+            if task['status'] != 'succeeded':
+                raise ProjectError('工具任务尚未完成。', 409)
+            if task.get('placement') == 'placed':
+                return task
+            task['placement'] = state
+            self._write(directory, task)
+            return task
 
     def _write(self, directory, task):
         write_json(child(self._folder(directory), task['id'] + '.json'), task)
@@ -142,10 +178,17 @@ class ToolTasks:
         if not path.is_file():
             raise ProjectError('工具任务不存在。', 404)
         task = read_json(path)
-        if task['status'] in ACTIVE and (project_id, task_id) not in self.jobs:
+        for index, output in enumerate(task.get('outputs', [])):
+            # Canvas items and assets occupy different project identities.
+            output.setdefault('canvasItemId', output_item_id(task, index, output['kind']))
+        if task['status'] in ACTIVE and (project_id, task_id) not in self.jobs and (project_id, task_id) not in self.accepting:
             # The service restarted mid-run; the work cannot resume.
             task.update(status='interrupted', phase=None, error='服务重启，任务已中断，请重新提交。', finishedAt=_now())
             self._write(path.parent.parent, task)
+        if 'sourceFingerprint' not in task and task.get('sourceAssetIds'):
+            records = self.assets._records(path.parent.parent, project_id)
+            source = records.get(task['sourceAssetIds'][0], {})
+            task.update(sourceFingerprint=source.get('fingerprint'), sourceKind=source.get('kind'))
         return task
 
     # Submission ----------------------------------------------------------------
@@ -165,8 +208,6 @@ class ToolTasks:
         if spec.id == 'cutout' and not mask_id:
             needs = ('image.segment',) if 'image.segment' in self.providers() else ('image.cutout',)
         chosen = value.get('modelConfigIds') or {}
-        for capability in needs:
-            self._model(capability, chosen.get(capability))  # Fail before accepting the task.
         source_ids = [identifier(str(item)) for item in value.get('sourceAssetIds') or []]
         if not source_ids or len(source_ids) > MAX_SOURCES or len(set(source_ids)) != len(source_ids):
             raise ProjectError('请提供 1–20 个不重复的来源素材。', 422)
@@ -174,9 +215,16 @@ class ToolTasks:
         path = child(self._folder(directory), task_id + '.json')
         if path.is_file():
             existing = read_json(path)
-            if existing['tool'] != spec.id or existing['sourceAssetIds'] != source_ids:
+            if (existing['tool'] != spec.id or existing['sourceAssetIds'] != source_ids
+                    or existing['parameters'] != parameters or existing.get('maskAssetId') != mask_id
+                    or existing.get('boxes', []) != (value.get('boxes') or [])
+                    or existing.get('canvas') != value.get('canvas')
+                    or existing.get('annotationAssetId') != annotation_id
+                    or existing.get('requestedModelConfigIds', existing.get('modelConfigIds', {})) != chosen):
                 raise ProjectError('工具任务标识已使用。', 409)
             return existing, directory, None
+        for capability in needs:
+            self._model(capability, chosen.get(capability))
         records = self.assets._records(directory, project_id)
         for asset_id in [*source_ids, *([mask_id] if mask_id else []), *([annotation_id] if annotation_id else [])]:
             if asset_id not in records:
@@ -187,22 +235,31 @@ class ToolTasks:
             raise ProjectError('选区必须是图片。', 422)
         if annotation_id and records[annotation_id]['kind'] != 'image':
             raise ProjectError('标注必须是图片。', 422)
+        canvas = value.get('canvas')
+        if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
+            raise ProjectError('工具任务的画布来源不匹配。', 422)
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
                 'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
                 'boxes': value.get('boxes') or [], 'parameters': parameters,
-                'modelConfigIds': {item: chosen[item] for item in needs if chosen.get(item)}, 'requires': list(needs),
-                'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None}
+                'modelConfigIds': {item: chosen[item] for item in needs if chosen.get(item)}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
+                'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None,
+                'canvas': canvas, 'sourceFingerprint': records[source_ids[0]]['fingerprint'],
+                'sourceKind': records[source_ids[0]]['kind'], 'placement': 'pending'}
         self._write(directory, task)
         return task, directory, records
 
     async def submit(self, project_id, value, session):
-        task, directory, records = await asyncio.to_thread(self._prepare, project_id, value, session)
-        key = (project_id, task['id'])
-        if records is not None and key not in self.jobs:
-            job = asyncio.create_task(self._run(task, directory, records))
-            self.jobs[key] = job
-            job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
-        return task
+        key = (project_id, identifier(str(value['id'])))
+        self.accepting.add(key)
+        try:
+            task, directory, records = await asyncio.to_thread(self._prepare, project_id, value, session)
+            if records is not None and key not in self.jobs:
+                job = asyncio.create_task(self._run(task, directory, records))
+                self.jobs[key] = job
+                job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
+            return task
+        finally:
+            self.accepting.discard(key)
 
     async def _update(self, directory, task, **changes):
         task.update(changes)
@@ -285,10 +342,14 @@ class ToolTasks:
                 saved = []
                 for index, output in enumerate(outputs):
                     asset_id = str(uuid5(UUID(task['id']), f'output-{index}'))
-                    asset = await asyncio.to_thread(self.assets.import_file, task['projectId'], asset_id,
-                                                    f'{output.title}.{output.suffix}', output.data, None, source='generated')
+                    if hasattr(self.assets, 'import_output'):
+                        asset = await asyncio.to_thread(self.assets.import_output, task, asset_id,
+                                                       f'{output.title}.{output.suffix}', output.data)
+                    else:
+                        asset = await asyncio.to_thread(self.assets.import_file, task['projectId'], asset_id,
+                                                        f'{output.title}.{output.suffix}', output.data, None, source='generated')
                     saved.append({name: asset.get(name) for name in ('id', 'kind', 'name', 'type', 'width', 'height', 'durationMs')}
-                                 | {'title': output.title})
+                                 | {'title': output.title, 'canvasItemId': output_item_id(task, index, output.kind)})
                 await self._update(directory, task, status='succeeded', phase=None, outputs=saved, finishedAt=_now())
         except asyncio.CancelledError:
             remote = self.remote.get(key)
@@ -319,6 +380,11 @@ class ToolTasks:
                 pass
             except Exception:  # noqa: BLE001 — the failure is already recorded on the task.
                 pass
+            directory = self._directory(project_id, session)
+            saved = read_json(child(self._folder(directory), task_id + '.json'))
+            if saved['status'] in ACTIVE:
+                saved.update(status='cancelled', phase=None, error='已取消。', finishedAt=_now())
+                self._write(directory, saved)
         return await asyncio.to_thread(self.get, project_id, task_id, session)
 
     async def close(self):

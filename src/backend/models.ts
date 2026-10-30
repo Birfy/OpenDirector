@@ -12,7 +12,6 @@ export const MODEL_KINDS: readonly { id: ModelKind; label: string }[] = [
   { id: "image", label: "图片生成" },
   { id: "video", label: "视频生成" },
   { id: "audio", label: "音频生成" },
-  { id: "vision", label: "视觉分割" },
 ];
 
 export interface ModelConfigInput {

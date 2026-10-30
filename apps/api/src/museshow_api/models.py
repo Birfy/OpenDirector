@@ -315,6 +315,7 @@ class ToolTaskCreate(Model):
     parameters: dict[str, str | float | int | bool] = Field(default_factory=dict, max_length=64)
     # Optional explicit model per capability; otherwise the first configured provider serves it.
     modelConfigIds: dict[str, UUID] = Field(default_factory=dict, max_length=8)
+    canvas: 'ToolCanvasOrigin | None' = None
 
     @model_validator(mode='after')
     def bounded_parameters(self):
@@ -328,3 +329,23 @@ class ImageSelectionCreate(Model):
     prompt: str = Field(default='', max_length=2000)
     boxes: list[ToolBox] = Field(default_factory=list, max_length=64)
     modelConfigId: UUID | None = None
+
+
+class ToolCanvasOrigin(Model):
+    nodeId: UUID
+    sourceNodeIds: list[UUID] = Field(min_length=1, max_length=20)
+    targetNodeId: UUID | None = None
+    targetKind: Literal['image', 'video', 'audio'] | None = None
+    targetTitle: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @model_validator(mode='after')
+    def pending_target(self):
+        values = (self.targetNodeId, self.targetKind, self.targetTitle)
+        if any(value is not None for value in values):
+            if not all(value is not None for value in values) or self.targetNodeId in self.sourceNodeIds:
+                raise ValueError('pending result identity')
+        return self
+
+
+class ToolPlacement(Model):
+    state: Literal['placed', 'unplaced']

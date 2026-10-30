@@ -13,6 +13,7 @@ const DEFAULTS: Record<string, number> = {
 };
 // Recent runs weigh more: services, models and canvases change over a session.
 const WEIGHT = 0.4;
+const recorded = new Set<string>();
 
 function read(): Record<string, number> {
   try {
@@ -30,8 +31,29 @@ export function expectedDuration(key: string, kind: string): number {
     : (DEFAULTS[kind] ?? DEFAULTS.image!);
 }
 
-export function recordDuration(key: string, elapsedMs: number) {
+export function recordDuration(
+  key: string,
+  elapsedMs: number,
+  sampleId?: string,
+) {
   if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return;
+  const sample = sampleId ? `${key}:${sampleId}` : undefined;
+  let saved: string[] = [];
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem(`${STORAGE_KEY}.samples`) ?? "[]",
+    );
+    if (Array.isArray(value))
+      saved = value.filter((id): id is string => typeof id === "string");
+  } catch {
+    /* Private windows retain in-memory deduplication. */
+  }
+  if (sample && (recorded.has(sample) || saved.includes(sample))) return;
+  if (sample) {
+    recorded.add(sample);
+    if (recorded.size > 512) recorded.delete(recorded.values().next().value!);
+    saved.push(sample);
+  }
   const durations = read();
   const previous = durations[key];
   durations[key] =
@@ -40,6 +62,11 @@ export function recordDuration(key: string, elapsedMs: number) {
       : elapsedMs;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(durations));
+    if (sample)
+      localStorage.setItem(
+        `${STORAGE_KEY}.samples`,
+        JSON.stringify(saved.slice(-512)),
+      );
   } catch {
     // A private window or full storage only loses the estimate.
   }

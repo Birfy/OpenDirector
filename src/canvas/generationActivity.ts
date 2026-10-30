@@ -1,4 +1,42 @@
 import type { BackendTask } from "../backend/generation.ts";
+import type { GenerationJob } from "./generationHistory.ts";
+import { expectedDuration } from "./generationDurations.ts";
+
+/** Display ownership may differ from the source retained by task/history APIs. */
+export function jobActivities(
+  jobs: readonly GenerationJob[],
+  documentId: string,
+): ActiveGeneration[] {
+  return jobs.flatMap((job) => {
+    const finishing = Boolean(
+      job.toolTask &&
+      job.status === "succeeded" &&
+      job.toolTask.placement === "pending",
+    );
+    if (job.status !== "running" && !finishing) return [];
+    const kind =
+      job.targetKind ??
+      job.outputKind ??
+      job.resultSource?.kind ??
+      job.request?.kind ??
+      "image";
+    return [
+      {
+        documentId,
+        nodeId: job.targetNodeId ?? job.nodeId,
+        startedAt: job.createdAt,
+        expectedMs: expectedDuration(
+          job.durationKey ?? `tool:${job.tool?.tool}`,
+          kind,
+        ),
+        phase: finishing
+          ? ("finishing" as const)
+          : (job.activityPhase ??
+            (job.taskId ? ("generating" as const) : ("preparing" as const))),
+      },
+    ];
+  });
+}
 
 /** Transient task activity, never part of the saved canvas or undo history. */
 export type GenerationPhase =

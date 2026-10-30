@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, assetBlob, errorMessage, json, request } from "./api.ts";
 import {
+  abortable,
+  readDelay,
+  resilientRead,
+  transientReadFailure,
+  type ReadOptions,
+} from "./resilientRead.ts";
+import {
   EXTENSIONS,
   fileName,
   fingerprint,
   type BackendAsset,
 } from "./generation.ts";
 import { openBackendProject } from "./projects.ts";
+import { creationClient, creationEnabled } from "./creationClient.ts";
+import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
+import { readEditorResource } from "../canvas/editorMedia.ts";
+import type { GenerationJob } from "../canvas/generationHistory.ts";
+import type { LinkedMediaResult } from "../canvas/linkedResults.ts";
 import type {
   CanvasToolId,
   ToolCapabilities,
@@ -30,6 +42,7 @@ export interface ToolCatalogEntry {
 
 export interface ToolTaskOutput {
   id: string;
+  canvasItemId: string;
   kind: "image" | "video" | "audio";
   name: string;
   type: string;
@@ -52,6 +65,21 @@ export interface ToolTask {
   phase: string | null;
   error: string | null;
   outputs: ToolTaskOutput[];
+  createdAt?: string;
+  finishedAt?: string | null;
+  canvas?: ToolCanvasOrigin | null;
+  sourceFingerprint?: string;
+  sourceKind?: "image" | "video" | "audio";
+  placement?: "pending" | "placed" | "unplaced";
+  parameters?: ToolParameters;
+}
+
+export interface ToolCanvasOrigin {
+  nodeId: string;
+  sourceNodeIds: string[];
+  targetNodeId?: string;
+  targetKind?: "image" | "video" | "audio";
+  targetTitle?: string;
 }
 
 export interface ToolSourceInput {
@@ -61,6 +89,8 @@ export interface ToolSourceInput {
 }
 
 export interface ToolRequest {
+  id: string;
+  canvas: ToolCanvasOrigin;
   documentId: string;
   documentTitle: string;
   tool: CanvasToolId;
@@ -126,6 +156,26 @@ export async function uploadAsset(
   signal: AbortSignal,
 ) {
   const print = await fingerprint(blob);
+  if (creationEnabled()) {
+    const client = creationClient(projectId);
+    const existing = client.snapshot.assets.find(
+      (asset) => asset.fingerprint === print,
+    );
+    return (
+      existing?.id ??
+      (
+        await client.importBlob(
+          blob,
+          fileName(title, EXTENSIONS[blob.type] ?? "png"),
+          blob.type.startsWith("video/")
+            ? "video"
+            : blob.type.startsWith("audio/")
+              ? "audio"
+              : "image",
+        )
+      ).assetId
+    );
+  }
   const existing = known.find(
     (asset) =>
       asset.fingerprint === print || asset.fingerprintAliases?.includes(print),
@@ -150,103 +200,129 @@ export async function uploadAsset(
   return asset.id;
 }
 
+export class ToolSubmissionError extends Error {
+  uncertain: boolean;
+  constructor(message: string, uncertain: boolean) {
+    super(message);
+    this.uncertain = uncertain;
+  }
+}
+
 export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
-  const projectId = await openBackendProject(
-    value.documentId,
-    value.documentTitle,
-  );
-  const known = await request<BackendAsset[]>(`/projects/${projectId}/assets`, {
-    signal,
-  });
-  const sourceAssetIds: string[] = [];
-  for (const source of value.sources) {
+  let attempted = false;
+  try {
+    const projectId = await openBackendProject(
+      value.documentId,
+      value.documentTitle,
+    );
+    const known = creationEnabled()
+      ? []
+      : await request<BackendAsset[]>(`/projects/${projectId}/assets`, {
+          signal,
+        });
+    const sourceAssetIds: string[] = [];
+    for (const source of value.sources) {
+      signal.throwIfAborted();
+      const blob = await (await fetch(source.src, { signal })).blob();
+      sourceAssetIds.push(
+        await uploadAsset(projectId, known, blob, source.title, signal),
+      );
+    }
+    const maskAssetId = value.maskDataUrl
+      ? await uploadAsset(
+          projectId,
+          known,
+          await (await fetch(value.maskDataUrl, { signal })).blob(),
+          "选区",
+          signal,
+        )
+      : undefined;
+    const annotationAssetId = value.annotatedDataUrl
+      ? await uploadAsset(
+          projectId,
+          known,
+          await (await fetch(value.annotatedDataUrl, { signal })).blob(),
+          "改图标注",
+          signal,
+        )
+      : undefined;
     signal.throwIfAborted();
-    const blob = await (await fetch(source.src, { signal })).blob();
-    sourceAssetIds.push(
-      await uploadAsset(projectId, known, blob, source.title, signal),
+    attempted = true;
+    const task = await request<ToolTask>(
+      toolTaskPath(projectId),
+      json("POST", {
+        id: value.id,
+        canvas: value.canvas,
+        tool: value.tool,
+        sourceAssetIds,
+        ...(maskAssetId ? { maskAssetId } : {}),
+        ...(annotationAssetId ? { annotationAssetId } : {}),
+        ...(value.modelConfigIds
+          ? { modelConfigIds: value.modelConfigIds }
+          : {}),
+        boxes: value.boxes ?? [],
+        parameters: value.parameters,
+      }),
+    );
+    if (signal.aborted) {
+      // Acceptance may race a click on Cancel. Once the identity is known,
+      // cancel the accepted task too; aborting a browser request is not enough.
+      await cancelToolTask(projectId, task.id);
+      attempted = false; // Cancellation was confirmed by the service.
+      signal.throwIfAborted();
+    }
+    return { projectId, taskId: task.id };
+  } catch (failure) {
+    const rejected =
+      failure instanceof ApiError &&
+      failure.status !== null &&
+      failure.status >= 400 &&
+      failure.status < 500;
+    throw new ToolSubmissionError(
+      errorMessage(failure),
+      attempted && !rejected,
     );
   }
-  const maskAssetId = value.maskDataUrl
-    ? await uploadAsset(
-        projectId,
-        known,
-        await (await fetch(value.maskDataUrl, { signal })).blob(),
-        "选区",
-        signal,
-      )
-    : undefined;
-  const annotationAssetId = value.annotatedDataUrl
-    ? await uploadAsset(
-        projectId,
-        known,
-        await (await fetch(value.annotatedDataUrl, { signal })).blob(),
-        "改图标注",
-        signal,
-      )
-    : undefined;
-  signal.throwIfAborted();
-  const task = await request<ToolTask>(
-    `/projects/${projectId}/tool-tasks`,
-    json("POST", {
-      id: crypto.randomUUID(),
-      tool: value.tool,
-      sourceAssetIds,
-      ...(maskAssetId ? { maskAssetId } : {}),
-      ...(annotationAssetId ? { annotationAssetId } : {}),
-      boxes: value.boxes ?? [],
-      parameters: value.parameters,
-      ...(value.modelConfigIds ? { modelConfigIds: value.modelConfigIds } : {}),
-    }),
-  );
-  return { projectId, taskId: task.id };
 }
+
+export const toolTaskPath = (projectId: string) =>
+  `${creationEnabled() ? "/creation" : ""}/projects/${projectId}/tool-tasks`;
+
+export const getToolTask = (
+  projectId: string,
+  taskId: string,
+  signal?: AbortSignal,
+) => request<ToolTask>(`${toolTaskPath(projectId)}/${taskId}`, { signal });
+
+export const acknowledgeToolPlacement = (
+  projectId: string,
+  taskId: string,
+  state: "placed" | "unplaced",
+) =>
+  request<ToolTask>(
+    `${toolTaskPath(projectId)}/${taskId}/placement`,
+    json("POST", { state }),
+  );
 
 export function cancelToolTask(projectId: string, taskId: string) {
-  return request<ToolTask>(
-    `/projects/${projectId}/tool-tasks/${taskId}/cancel`,
-    {
-      method: "POST",
-    },
-  );
-}
-
-const wait = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
+  return request<ToolTask>(`${toolTaskPath(projectId)}/${taskId}/cancel`, {
+    method: "POST",
   });
-
-/**
- * One read that cannot hang the follow loop. A request stalled in transit (for
- * example in a port-forwarding tunnel) never reaches the API and never fails,
- * so each attempt has a timeout and transport failures are retried.
- */
-async function resilient<T>(
-  read: (signal: AbortSignal) => Promise<T>,
-  signal: AbortSignal,
-  timeoutMs: number,
-  attempts = 5,
-): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await read(
-        AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
-      );
-    } catch (failure) {
-      const rejected =
-        failure instanceof ApiError && failure.code !== "network_error";
-      if (signal.aborted || rejected || attempt >= attempts) throw failure;
-      await wait(2000, signal);
-    }
-  }
 }
+
+export interface ToolReadOptions {
+  signal?: AbortSignal;
+  timeouts?: { status: number; download: number };
+  retryDelayMs?: number;
+}
+
+const TIMEOUTS = { status: 15_000, download: 120_000 };
+const downloadOptions = (options: ToolReadOptions): ReadOptions => ({
+  signal: options.signal,
+  timeoutMs: (options.timeouts ?? TIMEOUTS).download,
+  attempts: 3,
+  retryDelayMs: options.retryDelayMs,
+});
 
 /** Polls until the task ends; resolves with downloadable result files. */
 export async function waitForToolTask(
@@ -254,16 +330,12 @@ export async function waitForToolTask(
   taskId: string,
   signal: AbortSignal,
   onProgress?: (task: ToolTask) => void,
-  timeouts = { status: 15_000, download: 120_000 },
+  timeouts = TIMEOUTS,
 ) {
   for (;;) {
-    const task = await resilient(
-      (attempt) =>
-        request<ToolTask>(`/projects/${projectId}/tool-tasks/${taskId}`, {
-          signal: attempt,
-        }),
-      signal,
-      timeouts.status,
+    const task = await resilientRead(
+      (attempt) => getToolTask(projectId, taskId, attempt),
+      { signal, timeoutMs: timeouts.status },
     );
     onProgress?.(task);
     if (task.status === "succeeded")
@@ -272,11 +344,10 @@ export async function waitForToolTask(
           output,
           file: new File(
             [
-              await resilient(
-                (attempt) => assetBlob(projectId, output.id, attempt),
-                signal,
-                timeouts.download,
-                3,
+              await toolBlob(
+                projectId,
+                output.id,
+                downloadOptions({ signal, timeouts }),
               ),
             ],
             output.name,
@@ -289,6 +360,187 @@ export async function waitForToolTask(
         task.error ??
           (task.status === "cancelled" ? "任务已取消。" : "工具任务未完成。"),
       );
-    await wait(2000, signal);
+    await readDelay(2000, signal);
   }
+}
+
+function toolBlob(projectId: string, assetId: string, options: ReadOptions) {
+  return creationEnabled()
+    ? creationClient(projectId).blob(assetId, options)
+    : resilientRead((signal) => assetBlob(projectId, assetId, signal), options);
+}
+
+const outputCache = new Map<string, Promise<LinkedMediaResult>>();
+async function toolOutput(
+  projectId: string,
+  output: ToolTaskOutput,
+  options: ToolReadOptions,
+) {
+  options.signal?.throwIfAborted();
+  if (creationEnabled())
+    return {
+      kind: output.kind,
+      title: output.title,
+      src: await creationClient(projectId).mediaUrl(
+        output.id,
+        downloadOptions(options),
+      ),
+      mimeType: output.type,
+      media: {
+        width: output.width ?? undefined,
+        height: output.height ?? undefined,
+        durationSeconds: output.durationMs
+          ? output.durationMs / 1000
+          : undefined,
+      },
+    };
+  const key = `${creationEnabled()}:${projectId}:${output.id}`;
+  let pending = outputCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      // Share a bounded download, not a consumer's cancellation lifetime.
+      const blob = await toolBlob(projectId, output.id, {
+        ...downloadOptions(options),
+        signal: undefined,
+      });
+      const resource = await readEditorResource(
+        new File([blob], output.name, { type: output.type }),
+      );
+      return {
+        kind: output.kind,
+        title: output.title,
+        src: resource.src!,
+        mimeType: output.type,
+        media: {
+          width: output.width ?? undefined,
+          height: output.height ?? undefined,
+          durationSeconds: output.durationMs
+            ? output.durationMs / 1000
+            : undefined,
+        },
+      };
+    })().catch((error) => {
+      outputCache.delete(key);
+      throw error;
+    });
+    outputCache.set(key, pending);
+    if (outputCache.size > 128)
+      outputCache.delete(outputCache.keys().next().value!);
+  }
+  return abortable(pending, options.signal);
+}
+
+/** Tool execution lives on the service in both workspace modes. Browser job
+ * records are used only to recover ownership of tasks from older clients. */
+export async function toolHistoryJobs(
+  projectId: string,
+  previous: readonly GenerationJob[] = [],
+  options: ToolReadOptions = {},
+) {
+  const { tasks } = await resilientRead(
+    (signal) =>
+      request<{ tasks: ToolTask[] }>(toolTaskPath(projectId), { signal }),
+    {
+      signal: options.signal,
+      timeoutMs: (options.timeouts ?? TIMEOUTS).status,
+      retryDelayMs: options.retryDelayMs,
+    },
+  );
+  return Promise.all(
+    tasks.map(async (task) => {
+      const old = previous.find((job) => job.tool && job.taskId === task.id);
+      const canvas: ToolCanvasOrigin | undefined =
+        task.canvas ??
+        (old?.tool
+          ? { nodeId: old.nodeId, sourceNodeIds: old.tool.sourceNodeIds }
+          : undefined);
+      const definition = CANVAS_TOOLS.find((tool) => tool.id === task.tool);
+      let outputs: LinkedMediaResult[] = [];
+      let unavailable = false;
+      let outputFailure: unknown;
+      try {
+        outputs = await Promise.all(
+          task.outputs.map((output) => toolOutput(projectId, output, options)),
+        );
+      } catch (failure) {
+        if (options.signal?.aborted) throw failure;
+        unavailable = true;
+        outputFailure = failure;
+      }
+      const job = {
+        id: task.id,
+        taskId: task.id,
+        nodeId: canvas?.nodeId ?? task.id,
+        targetNodeId: canvas?.targetNodeId,
+        targetKind: canvas?.targetKind,
+        targetTitle: canvas?.targetTitle,
+        title: definition?.title ?? task.tool,
+        time: "",
+        createdAt: task.createdAt ? Date.parse(task.createdAt) : old?.createdAt,
+        finishedAt: task.finishedAt ? Date.parse(task.finishedAt) : undefined,
+        durationKey: `tool:${task.tool}`,
+        status: task.status === "queued" ? "running" : task.status,
+        message:
+          task.error ??
+          (unavailable
+            ? transientReadFailure(outputFailure)
+              ? "结果读取暂时失败，将自动重试。"
+              : outputFailure instanceof ApiError &&
+                  [404, 410].includes(outputFailure.status ?? 0)
+                ? "结果文件缺失，任务记录已保留。"
+                : `结果读取失败：${errorMessage(outputFailure)}`
+            : (task.phase ??
+              (task.placement === "placed"
+                ? "已加入画布"
+                : task.placement === "unplaced"
+                  ? "来源已变化，结果保留在历史中，可重新放置。"
+                  : "等待加入画布"))),
+        outputs,
+        tool: {
+          version: 1,
+          tool: task.tool,
+          parameters: task.parameters ?? old?.tool?.parameters ?? {},
+          sourceNodeIds: canvas?.sourceNodeIds ?? [],
+        },
+        resultSource: canvas
+          ? {
+              documentId: projectId,
+              nodeId: canvas.nodeId,
+              kind:
+                task.sourceKind ??
+                old?.resultSource?.kind ??
+                definition?.sources[0] ??
+                "image",
+            }
+          : undefined,
+        toolTask: {
+          placement: task.placement ?? "pending",
+          sourceFingerprint: task.sourceFingerprint,
+          outputIds: task.outputs.map((output) => output.canvasItemId),
+          unavailable,
+        },
+      } satisfies GenerationJob;
+      // Preserve stable rows between polls, including their media URLs. Idle
+      // history queries should not invalidate canvas memoization during drags.
+      return old?.toolTask &&
+        old.targetNodeId === job.targetNodeId &&
+        old.targetKind === job.targetKind &&
+        old.targetTitle === job.targetTitle &&
+        old.createdAt === job.createdAt &&
+        old.finishedAt === job.finishedAt &&
+        old.status === job.status &&
+        old.message === job.message &&
+        old.toolTask.placement === job.toolTask.placement &&
+        old.toolTask.sourceFingerprint === job.toolTask.sourceFingerprint &&
+        old.toolTask.unavailable === job.toolTask.unavailable &&
+        old.toolTask.outputIds.join() === job.toolTask.outputIds.join() &&
+        old.outputs?.length === outputs.length &&
+        old.outputs.every(
+          (output, index) =>
+            output.kind !== "text" && output.src === outputs[index]?.src,
+        )
+        ? old
+        : job;
+    }),
+  );
 }

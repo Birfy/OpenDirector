@@ -1,4 +1,5 @@
-import { ApiError, headers, json, request } from "./api.ts";
+import { ApiError, headers, json, request, responseError } from "./api.ts";
+import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
 import type {
   Asset,
   AssetRef,
@@ -276,18 +277,26 @@ export class CreationClient {
       }
     })();
   }
-  async blob(assetId: string) {
-    const response = await fetch(
-      `/api${creationPath(this.id)}/assets/${assetId}/content`,
-      { headers },
+  async blob(assetId: string, options: ReadOptions = {}) {
+    return resilientRead(
+      async (signal) => {
+        const response = await fetch(
+          `/api${creationPath(this.id)}/assets/${assetId}/content`,
+          { headers, signal },
+        );
+        if (!response.ok) throw await responseError(response);
+        return response.blob();
+      },
+      { timeoutMs: 120_000, attempts: 3, ...options },
     );
-    if (!response.ok) throw new Error("工程素材读取失败，请检查原文件。");
-    return response.blob();
   }
-  mediaUrl(assetId: string) {
+  mediaUrl(assetId: string, options: ReadOptions = {}) {
+    options.signal?.throwIfAborted();
     let pending = this.media.get(assetId);
     if (!pending) {
-      pending = this.blob(assetId)
+      // Cached reads have their own bounded lifetime. Cancelling one history
+      // consumer must not abort the same media read used by the visible node.
+      pending = this.blob(assetId, { ...options, signal: undefined })
         .then((blob) => {
           const url = URL.createObjectURL(blob);
           this.sourceAssets.set(url, assetId);
@@ -299,7 +308,7 @@ export class CreationClient {
         });
       this.media.set(assetId, pending);
     }
-    return pending;
+    return abortable(pending, options.signal);
   }
   textContent(assetId: string) {
     let pending = this.text.get(assetId);

@@ -245,7 +245,9 @@ export function NodeComposer({
       running={running}
       onEscape={() => setPanel(null)}
     >
-      <div className="cw-composer-body">
+      <div
+        className={`cw-composer-body${mode === "video" ? " cw-video-composer-body" : ""}`}
+      >
         {firstLast && (
           <div className="cw-frame-slots" aria-label="首尾帧参考">
             {(
@@ -354,42 +356,45 @@ export function NodeComposer({
             </TooltipButton>
           </div>
         )}
-        {!firstLast && !reading && !music && incomingNodes.length > 0 && (
-          <div className="cw-reference-strip">
-            <TooltipButton
-              type="button"
-              className="cw-add-reference"
-              onClick={onPickReference}
-              aria-label="添加参考素材"
-              label="添加参考素材"
-            >
-              <CanvasIcon name="plus" size={20} />
-            </TooltipButton>
-            {incomingNodes.map((node) => (
-              <button
+        {!firstLast &&
+          !reading &&
+          !music &&
+          (mode === "video" || incomingNodes.length > 0) && (
+            <div className="cw-reference-strip">
+              <TooltipButton
                 type="button"
-                className="cw-reference-chip"
-                key={node.id}
-                onClick={() => insertReference(node)}
-                disabled={Boolean(referenceIssue(node))}
-                title={`${generationReferenceRole(node)}：${node.data.title}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
+                className="cw-add-reference"
+                onClick={onPickReference}
+                aria-label="添加参考素材"
+                label="添加参考素材"
               >
-                {node.data.kind === "image" &&
-                node.data.src &&
-                node.data.assetState !== "missing" ? (
-                  <img
-                    src={node.data.src}
-                    alt={node.data.title}
-                    draggable={false}
-                  />
-                ) : (
-                  <CanvasIcon name={node.data.kind} size={22} />
-                )}
-                <span>{node.data.title}</span>
-              </button>
-            ))}
-          </div>
-        )}
+                <CanvasIcon name="plus" size={20} />
+              </TooltipButton>
+              {incomingNodes.map((node) => (
+                <button
+                  type="button"
+                  className="cw-reference-chip"
+                  key={node.id}
+                  onClick={() => insertReference(node)}
+                  disabled={Boolean(referenceIssue(node))}
+                  title={`${generationReferenceRole(node)}：${node.data.title}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
+                >
+                  {node.data.kind === "image" &&
+                  node.data.src &&
+                  node.data.assetState !== "missing" ? (
+                    <img
+                      src={node.data.src}
+                      alt={node.data.title}
+                      draggable={false}
+                    />
+                  ) : (
+                    <CanvasIcon name={node.data.kind} size={22} />
+                  )}
+                  <span>{node.data.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
         <ReferenceMentionInput
           key={selectedNode.id}
           inputRef={textareaRef}

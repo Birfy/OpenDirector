@@ -4,9 +4,11 @@ PYTHONPATH=packages/core/src:apps/api/src python tests/browser/creation_server.p
 """
 import argparse
 import asyncio
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 import tempfile
+import subprocess
 
 from fastapi import Request
 from PIL import Image
@@ -16,6 +18,9 @@ from museshow.domain.projects import ProjectError
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow_api.main import create_app
+from museshow.application.tool_operations import TOOLS, Output
+from museshow.domain.capabilities import Segment, MediaResult
+from museshow.integrations.model_adapters import OpenAIImages, VllmOmniSegmentation
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -32,6 +37,54 @@ if not configs.list():
         configs.save(kind, 'http://127.0.0.1:12345/v1', f'fixture-{kind}', '',
                      connection_type='self_hosted', protocol='openai', auth_mode='none')
 
+# Test-only adapters let the real preview and tool services exercise owned
+# assets, model selection and cancellation without contacting a GPU endpoint.
+if not any(model['kind'] == 'vision' for model in configs.list()):
+    configs.save('vision', 'http://127.0.0.1:12345/v1', 'facebook/sam3', '',
+                 connection_type='self_hosted', protocol='vllm_omni', auth_mode='none')
+if not any(model['modelId'] == 'Qwen/Qwen-Image-2.1' for model in configs.list()):
+    configs.save('image', 'http://127.0.0.1:12345/v1', 'Qwen/Qwen-Image-2.1', '',
+                 connection_type='self_hosted', protocol='openai', auth_mode='none')
+selection_gate = asyncio.Event()
+selection_gate.set()
+selection_calls, image_edit_calls = [], []
+selection_active = 0
+
+
+async def fixture_segment(self, config, request):
+    global selection_active
+    selection_calls.append(dict(concept=request.concept, boxes=request.boxes))
+    selection_active += 1
+    try:
+        await selection_gate.wait()
+        await asyncio.sleep(.01)
+        with Image.open(BytesIO(request.image)) as image:
+            width, height = image.size
+        boxes = request.boxes or ((width * .05, height * .1, width * .45, height * .9),
+                                  (width * .55, height * .1, width * .95, height * .9))
+        results = []
+        for box in boxes:
+            box = tuple(round(value) for value in box)
+            mask = Image.new('L', (width, height), 0)
+            mask.paste(255, box)
+            out = BytesIO()
+            mask.save(out, 'PNG')
+            results.append(Segment(out.getvalue(), box, .9))
+        return results
+    finally:
+        selection_active -= 1
+
+
+async def fixture_image_edit(self, config, request, **kwargs):
+    image_edit_calls.append(dict(modelId=config['modelId'], references=len(request.references), prompt=request.prompt))
+    out = BytesIO()
+    Image.new('RGB', (request.width, request.height), 'red').save(out, 'PNG')
+    return MediaResult(out.getvalue(), 'png')
+
+
+VllmOmniSegmentation.segment = fixture_segment
+OpenAIImages.image = fixture_image_edit
+
 
 class FixtureProvider:
     def __init__(self):
@@ -40,8 +93,8 @@ class FixtureProvider:
         self.calls = []
 
     def validate(self, kind, config):
-        if kind not in {'text', 'image'}:
-            raise ProjectError('This fixture only generates text/images')
+        if kind not in {'text', 'image', 'video', 'audio'}:
+            raise ProjectError('Unsupported fixture generation kind')
 
     async def generate(self, config, task, submitted, *, result_ready=None):
         self.calls.append(dict(id=task['id'], kind=task['kind'], referenceIds=task['referenceIds']))
@@ -49,18 +102,53 @@ class FixtureProvider:
         await asyncio.sleep(.2)
         if task['kind'] == 'text':
             return 'md', ('Fixture generated: ' + task['prompt']).encode('utf-8')
+        if task['kind'] == 'video':
+            data = await asyncio.to_thread(lambda: subprocess.run(
+                ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=96x64:r=10',
+                 '-t', '1', '-c:v', 'libx264', '-threads', '1', '-pix_fmt', 'yuv420p',
+                 '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1'], capture_output=True, check=True).stdout)
+            return 'mp4', data
+        if task['kind'] == 'audio':
+            data = await asyncio.to_thread(lambda: subprocess.run(
+                ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=8000',
+                 '-t', '0.3', '-threads', '1', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'], capture_output=True, check=True).stdout)
+            return 'wav', data
         image = BytesIO()
         Image.new('RGB', (320, 240), 'purple').save(image, 'PNG')
         return 'png', image.getvalue()
 
 
 provider = FixtureProvider()
+tool_gate = asyncio.Event()
+tool_gate.set()
+tool_calls = []
+tool_outcome = 'succeeded'
+
+
+async def fixture_outpaint(context):
+    outcome = tool_outcome
+    tool_calls.append(len(tool_calls) + 1)
+    await context.progress('Fixture tool waiting')
+    await tool_gate.wait()
+    if outcome == 'failed':
+        raise ProjectError('Fixture tool failed')
+    outputs = []
+    for color in (['purple', 'orange'] if outcome == 'multiple' else ['purple']):
+        out = BytesIO()
+        Image.new('RGB', (96, 64), color).save(out, 'PNG')
+        outputs.append(Output('image', out.getvalue(), 'png', 'Fixture tool result ' + color))
+    return outputs
+
+
+# Only this isolated executable substitutes a recipe; no model endpoint is used.
+TOOLS['outpaint'] = replace(TOOLS['outpaint'], requires=lambda _: (), recipe=fixture_outpaint)
 app = create_app(store, generation_provider=provider)
 
 
 @app.get('/api/creation-test-health')
 def health():
-    return dict(isolated=True, provider='fixture', root=str(root), calls=provider.calls)
+    return dict(isolated=True, provider='fixture', root=str(root), calls=provider.calls, toolCalls=tool_calls,
+                selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls)
 
 
 @app.post('/api/creation-test-gate')
@@ -71,6 +159,28 @@ async def gate(request: Request):
     else:
         provider.gate.clear()
     return dict(open=provider.gate.is_set())
+
+
+@app.post('/api/creation-test-selection-gate')
+async def gate_selection(request: Request):
+    if (await request.json()).get('open') is True:
+        selection_gate.set()
+    else:
+        selection_gate.clear()
+    return dict(open=selection_gate.is_set())
+
+
+@app.post('/api/creation-test-tool-gate')
+async def gate_tool(request: Request):
+    global tool_outcome
+    value = await request.json()
+    if value.get('outcome') in {'succeeded', 'failed', 'multiple'}:
+        tool_outcome = value['outcome']
+    if value.get('open') is True:
+        tool_gate.set()
+    else:
+        tool_gate.clear()
+    return dict(open=tool_gate.is_set())
 
 
 print('Isolated browser fixture root:', root, flush=True)

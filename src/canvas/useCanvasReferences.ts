@@ -16,8 +16,23 @@ import {
 } from "./connectionPorts";
 export { portPoint, type PortSide } from "./connectionPorts";
 
-const blocked =
+const hoverBlocked =
   ".cw-node-title,.cw-node-title-field,.cw-composer-dock,.cw-node-toolbar-anchor,.cw-side-panel,.cw-assistant-panel,.cw-canvas-menu,.cw-domain-dialog,[role=dialog],input,textarea,select,video,audio,button:not(.cw-reference-port),[contenteditable=true]";
+
+// MuseShow's finish handler excludes canvas UI, then resolves the enclosing
+// logical node. Node contents (including native players and title controls)
+// remain drop targets; their ordinary click/hover behavior is independent.
+const dropBlocked =
+  ".cw-composer-dock,.cw-node-toolbar-anchor,.cw-side-panel,.cw-assistant-panel,.cw-context-menu,.cw-domain-dialog,.cw-selection-bar,.cw-toast,dialog,[role=dialog]";
+
+function referenceDropTarget(x: number, y: number) {
+  const hit = document.elementFromPoint(x, y);
+  if (!hit?.closest(".react-flow") || hit.closest(dropBlocked)) return null;
+  const node = hit.closest(".react-flow__node");
+  if (!node) return { kind: "canvas" as const };
+  const id = node.getAttribute("data-id");
+  return id ? { kind: "node" as const, id } : null;
+}
 
 export function useCanvasReferences(options: {
   nodes: CanvasNode[];
@@ -66,7 +81,7 @@ export function useCanvasReferences(options: {
     if (
       current.current.disabled ||
       event.buttons ||
-      (event.target as Element).closest(blocked)
+      (event.target as Element).closest(hoverBlocked)
     ) {
       setPort(null);
       return;
@@ -166,26 +181,23 @@ export function useCanvasReferences(options: {
       }
       const point = world({ x: event.clientX, y: event.clientY });
       setPreview(referencePreviewPath(d.anchor, d.side, point));
-      const hit = document.elementFromPoint(event.clientX, event.clientY);
-      setTargetId(
-        hit?.closest(".react-flow__node")?.getAttribute("data-id") ?? null,
-      );
+      const target = referenceDropTarget(event.clientX, event.clientY);
+      setTargetId(target?.kind === "node" ? target.id : null);
     };
     const up = (event: PointerEvent) => {
       const d = drag.current;
       if (!d || d.pointer !== event.pointerId) return;
       const { nodes, locked, world, connect, create } = current.current;
       const source = nodes.find((n) => n.id === d.source);
-      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      const hit = referenceDropTarget(event.clientX, event.clientY);
       cancel();
       if (!source || locked.has(source.id) || !canStartReference(source))
         return;
-      if (d.moved && (!hit?.closest(".react-flow") || hit.closest(blocked)))
-        return;
-      const id = d.moved
-        ? hit?.closest(".react-flow__node")?.getAttribute("data-id")
-        : null;
+      if (d.moved && !hit) return;
+      const id = d.moved && hit?.kind === "node" ? hit.id : null;
       const target = nodes.find((n) => n.id === id);
+      // A stale rendered node must not be mistaken for empty canvas.
+      if (id && !target) return;
       const client = { x: event.clientX, y: event.clientY };
       if (target && target.type !== "group") {
         connect(d.source, target.id);

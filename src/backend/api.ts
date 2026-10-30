@@ -17,7 +17,7 @@ export const headers = {
   "X-MuseShow-Session": sessionId,
 };
 
-async function responseError(response: Response) {
+export async function responseError(response: Response) {
   const error = await response.json().catch(() => null);
   return new ApiError(
     typeof error?.detail === "string"

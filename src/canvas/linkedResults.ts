@@ -1,6 +1,7 @@
 import {
   applyCommand,
   createNode,
+  DEFAULT_SETTINGS,
   type CanvasDocument,
   type CanvasNode,
   type CanvasNodeData,
@@ -158,7 +159,14 @@ export function appendLinkedMediaResults(
   source: ResultSource,
   outputs: readonly LinkedMediaResult[],
   sourceTask?: CanvasToolTask,
+  resultIds?: readonly string[],
 ): PlacementResult {
+  if (
+    resultIds &&
+    (resultIds.length !== outputs.length ||
+      new Set(resultIds).size !== resultIds.length)
+  )
+    return { document, ids: [], error: "工具结果身份不匹配。" };
   const validation = validateNodeActionSource(document, source);
   if (!validation.node) return { document, ids: [], error: validation.error };
   const target = validation.node;
@@ -168,10 +176,22 @@ export function appendLinkedMediaResults(
   if (sourceTask && sourceTask.sourceNodeIds[0] !== source.nodeId)
     return { document, ids: [], error: "编辑草稿与来源节点不匹配。" };
   const p = absolutePosition(target, document.nodes);
-  const nodes = placeResults(document, outputs, {
-    x: p.x + target.width + 100,
-    y: p.y,
-  });
+  const remaining = outputs.flatMap((output, index) =>
+    resultIds && document.nodes.some((node) => node.id === resultIds[index])
+      ? []
+      : [{ output, id: resultIds?.[index] }],
+  );
+  if (!remaining.length) return { document, ids: [] };
+  const nodes = placeResults(
+    document,
+    remaining.map((item) => item.output),
+    {
+      x: p.x + target.width + 100,
+      y: p.y,
+    },
+  ).map((node, index) =>
+    remaining[index]!.id ? { ...node, id: remaining[index]!.id! } : node,
+  );
   const edges = nodes.map((node) => ({
     id: crypto.randomUUID(),
     source: target.id,
@@ -207,7 +227,10 @@ export function appendPendingResult(
   source: ResultSource,
   kind: "image" | "video" | "audio",
   title: string,
+  resultId?: string,
 ): PlacementResult {
+  if (resultId && document.nodes.some((node) => node.id === resultId))
+    return { document, ids: [], error: "结果节点身份已存在。" };
   const validation = validateNodeActionSource(document, source);
   if (!validation.node) return { document, ids: [], error: validation.error };
   const target = validation.node;
@@ -217,7 +240,13 @@ export function appendPendingResult(
     [{ kind, src: "", mimeType: "", title }],
     { x: p.x + target.width + 100, y: p.y },
   );
-  const node = createNode(kind, placed!.position, { title });
+  const node = {
+    ...createNode(kind, placed!.position, {
+      title,
+      settings: pendingSettings(kind),
+    }),
+    ...(resultId ? { id: resultId } : {}),
+  };
   return {
     document: {
       ...document,
@@ -236,77 +265,258 @@ export function appendPendingResult(
   };
 }
 
-/** Whether a pending result node is still the untouched placeholder it was created as. */
-export function pendingResultNode(document: CanvasDocument, id: string) {
-  const node = document.nodes.find((item) => item.id === id);
-  return node && !node.data.src && !node.data.text ? node : undefined;
+/** Canonical draft parameters survive the C04 presentation round trip. */
+function pendingSettings(kind: "image" | "video" | "audio") {
+  return {
+    ...DEFAULT_SETTINGS,
+    mode: kind,
+    count: 1,
+    ...(kind === "video"
+      ? { videoMode: "first-last" as const, resolution: "auto" }
+      : {}),
+  };
 }
 
-/**
- * The first output fills the pending node; further outputs join the source
- * like any linked result. A pending node that was removed, filled by hand or
- * of another media kind leaves every output to the linked placement.
- */
+/** Task-owned identity plus unchanged content; movement is deliberately allowed. */
+export function pendingResultNode(
+  document: CanvasDocument,
+  id: string,
+  expectedTitle?: string,
+  expectedKind?: string,
+) {
+  const node = document.nodes.find((item) => item.id === id);
+  if (
+    !node ||
+    !["image", "video", "audio"].includes(node.type) ||
+    isNodeLocked(node, indexNodes(document.nodes)) ||
+    node.data.src ||
+    node.data.text ||
+    node.data.prompt ||
+    node.data.assetState === "missing" ||
+    node.data.mediaRole === "asset" ||
+    node.data.taskDraft ||
+    node.data.layers ||
+    node.data.localStage ||
+    node.data.promptMentions?.length ||
+    (expectedTitle !== undefined && node.data.title !== expectedTitle) ||
+    (expectedKind !== undefined && node.type !== expectedKind) ||
+    document.edges.some(
+      (edge) => edge.target === id && edge.intent !== "post_edit_result",
+    )
+  )
+    return undefined;
+  const settings = node.data.settings;
+  const defaults = pendingSettings(node.type as "image" | "video" | "audio");
+  if (
+    settings &&
+    Object.entries(settings).some(
+      ([key, value]) =>
+        value !== undefined &&
+        value !== (defaults as unknown as Record<string, unknown>)[key],
+    )
+  )
+    return undefined;
+  return node;
+}
+
+/** Fill an owned placeholder once. Stable IDs make a replay or partial placement
+ * idempotent; edited, hidden, removed and locked targets remain untouched. */
 export function fillPendingResult(
   document: CanvasDocument,
   source: ResultSource,
   pendingId: string,
   outputs: readonly LinkedMediaResult[],
   sourceTask?: CanvasToolTask,
+  resultIds?: readonly string[],
+  expectedTitle?: string,
 ): PlacementResult {
-  const pending = pendingResultNode(document, pendingId);
+  const validation = validateNodeActionSource(document, source);
+  if (validation.error) return { document, ids: [], error: validation.error };
+  if (sourceTask && sourceTask.sourceNodeIds[0] !== source.nodeId)
+    return { document, ids: [], error: "编辑草稿与来源节点不匹配。" };
   const [first, ...rest] = outputs;
   if (
-    !pending ||
     !first ||
-    first.kind !== pending.type ||
-    hasInvalidMedia(outputs)
+    hasInvalidMedia(outputs) ||
+    (resultIds &&
+      (resultIds.length !== outputs.length ||
+        resultIds[0] !== pendingId ||
+        new Set(resultIds).size !== resultIds.length))
   )
-    return appendLinkedMediaResults(document, source, outputs, sourceTask);
-  const filled = applyCommand(document, {
-    type: "update-node",
-    id: pending.id,
-    patch: {
-      data: {
-        src: first.src,
-        title: first.title,
-        mimeType: first.mimeType,
-        assetState: "ready",
-        mediaRole: "asset",
-        ...(first.media ? { media: { ...first.media } } : {}),
-      },
-    },
-  });
+    return { document, ids: [], error: "工具结果身份或素材无效。" };
+  const existing = document.nodes.find((node) => node.id === pendingId);
+  const alreadyFilled =
+    existing?.type === first.kind &&
+    existing.data.src === first.src &&
+    existing.data.mimeType === first.mimeType;
+  const pending = pendingResultNode(document, pendingId, expectedTitle);
+  if (!alreadyFilled && (!pending || pending.type !== first.kind))
+    return {
+      document,
+      ids: [],
+      error: "结果节点已修改、锁定或移除，结果保留在历史中。",
+    };
+  if (
+    rest.some((output, index) => {
+      const node =
+        resultIds &&
+        document.nodes.find((node) => node.id === resultIds[index + 1]);
+      return (
+        node && (node.type !== output.kind || node.data.src !== output.src)
+      );
+    })
+  )
+    return { document, ids: [], error: "结果节点已修改，结果保留在历史中。" };
+  const filled = alreadyFilled
+    ? document
+    : applyCommand(document, {
+        type: "update-node",
+        id: pendingId,
+        patch: {
+          data: {
+            src: first.src,
+            title: first.title,
+            mimeType: first.mimeType,
+            assetState: "ready",
+            mediaRole: "asset",
+            ...(first.media ? { media: { ...first.media } } : {}),
+          },
+        },
+      });
   if (rest.length) {
-    const linked = appendLinkedMediaResults(filled, source, rest, sourceTask);
-    if (linked.error) return linked;
-    return { document: linked.document, ids: [pending.id, ...linked.ids] };
+    const linked = appendLinkedMediaResults(
+      filled,
+      source,
+      rest,
+      sourceTask,
+      resultIds?.slice(1),
+    );
+    if (linked.error) return { document, ids: [], error: linked.error };
+    return {
+      document: linked.document,
+      ids: [...(alreadyFilled ? [] : [pendingId]), ...linked.ids],
+    };
   }
-  // Like a linked placement, the source keeps the task that produced its result.
-  const next = sourceTask
-    ? {
-        ...filled,
-        nodes: filled.nodes.map((node) =>
-          node.id === source.nodeId
-            ? {
-                ...node,
-                data: { ...node.data, taskDraft: structuredClone(sourceTask) },
-              }
-            : node,
-        ),
-      }
-    : filled;
-  return { document: next, ids: [pending.id] };
+  const next =
+    sourceTask && !alreadyFilled
+      ? {
+          ...filled,
+          nodes: filled.nodes.map((node) =>
+            node.id === source.nodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    taskDraft: structuredClone(sourceTask),
+                  },
+                }
+              : node,
+          ),
+        }
+      : filled;
+  return { document: next, ids: alreadyFilled ? [] : [pendingId] };
 }
 
-/** A failed or cancelled task leaves no empty placeholder behind. */
+/** Only an unchanged, editable placeholder owned by the terminal task is removed. */
 export function removePendingResult(
   document: CanvasDocument,
   pendingId: string,
+  expectedTitle?: string,
+  expectedKind?: string,
 ): CanvasDocument {
-  return pendingResultNode(document, pendingId)
+  return pendingResultNode(document, pendingId, expectedTitle, expectedKind)
     ? applyCommand(document, { type: "remove-nodes", ids: [pendingId] })
     : document;
+}
+
+function placedOutput(
+  document: CanvasDocument,
+  id: string,
+  output: LinkedMediaResult,
+  hidden: ReadonlySet<string>,
+) {
+  const node = document.nodes.find((node) => node.id === id);
+  return node
+    ? node.type === output.kind &&
+        node.data.src === output.src &&
+        node.data.mimeType === output.mimeType
+    : hidden.has(id);
+}
+
+export function toolResultsPlaced(
+  document: CanvasDocument,
+  outputs: readonly LinkedMediaResult[],
+  ids: readonly string[],
+  hidden: ReadonlySet<string> = new Set(),
+) {
+  return (
+    outputs.length > 0 &&
+    outputs.length === ids.length &&
+    outputs.every((output, index) =>
+      placedOutput(document, ids[index]!, output, hidden),
+    )
+  );
+}
+
+/** The same stable identities drive initial fill, reload and partial recovery. */
+export function placeToolResults(
+  document: CanvasDocument,
+  source: ResultSource,
+  outputs: readonly LinkedMediaResult[],
+  task: CanvasToolTask | undefined,
+  ids: readonly string[],
+  target?: { id: string; title?: string; kind?: string },
+  hidden: ReadonlySet<string> = new Set(),
+): PlacementResult {
+  if (
+    !outputs.length ||
+    ids.length !== outputs.length ||
+    new Set(ids).size !== ids.length
+  )
+    return { document, ids: [], error: "工具结果身份不匹配。" };
+  if (toolResultsPlaced(document, outputs, ids, hidden))
+    return { document, ids: [] };
+  const validation = validateNodeActionSource(document, source);
+  if (validation.error) return { document, ids: [], error: validation.error };
+  for (let index = 0; index < outputs.length; index++) {
+    const node = document.nodes.find((node) => node.id === ids[index]);
+    if (
+      node &&
+      !placedOutput(document, ids[index]!, outputs[index]!, hidden) &&
+      !(
+        index === 0 &&
+        target?.id === ids[index] &&
+        pendingResultNode(document, node.id, target.title, target.kind)
+      )
+    )
+      return { document, ids: [], error: "结果节点已修改，结果保留在历史中。" };
+  }
+  if (target?.id === ids[0] && !hidden.has(target.id))
+    return fillPendingResult(
+      document,
+      source,
+      target.id,
+      outputs,
+      task,
+      ids,
+      target.title,
+    );
+  const remaining = outputs.flatMap((output, index) =>
+    placedOutput(document, ids[index]!, output, hidden)
+      ? []
+      : [{ output, id: ids[index]! }],
+  );
+  const base =
+    target && target.id !== ids[0]
+      ? removePendingResult(document, target.id, target.title, target.kind)
+      : document;
+  return appendLinkedMediaResults(
+    base,
+    source,
+    remaining.map((item) => item.output),
+    task,
+    remaining.map((item) => item.id),
+  );
 }
 
 export type ServiceResult =

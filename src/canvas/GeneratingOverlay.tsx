@@ -94,6 +94,8 @@ export function GeneratingOverlay({
     <div
       className={`cw-generating${hasAsset ? " cw-generating-with-asset" : ""}`}
       data-phase={activity.phase}
+      data-started-at={activity.startedAt}
+      data-expected-ms={activity.expectedMs}
     >
       <div className="cw-generating-field" aria-hidden="true">
         <i />

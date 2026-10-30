@@ -71,6 +71,19 @@ export async function creationJobs(
             : job.status,
         time: "",
         createdAt: job.createdAt ? Date.parse(job.createdAt) : undefined,
+        durationKey: `generate:${spec.kind}:${job.inputSnapshot.model.modelConfigId}`,
+        outputKind: spec.kind,
+        activityPhase: [
+          "download",
+          "check",
+          "save",
+          "adopt",
+          "complete",
+        ].includes(job.phase)
+          ? ("finishing" as const)
+          : job.phase === "queued"
+            ? ("queued" as const)
+            : ("generating" as const),
         outputs,
         message:
           job.errorDetails?.message ??
