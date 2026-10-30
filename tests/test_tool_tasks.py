@@ -132,6 +132,22 @@ def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
     assert image.getpixel((64, 24))[2] > 200 and image.getpixel((2, 24))[0] > 200  # original centre, drawn border
 
 
+def test_outpaint_asks_instruction_editors_to_pull_the_camera_back(project):
+    # Qwen-Image ignores strength and recomposes a padded canvas, so it gets the original and a zoom-out instruction.
+    store, project_id, session = project
+    configs = configure(store, ('image', 'http://gpu:8210/v1', 'Qwen/Qwen-Image-2.1'))
+    source = upload(store, project_id, session, 'blue.png', png((64, 48), 'blue'))
+    calls = []
+    task = run(store, configs, httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'outpaint', 'sourceAssetIds': [source], 'parameters': {'left': 0, 'right': 1, 'top': 0, 'bottom': 0}})
+    assert task['status'] == 'succeeded', task['error']
+    body = calls[0]
+    assert '镜头拉远'.encode() in body and '位于新画面的左侧'.encode() in body and '在右侧新增'.encode() in body
+    assert b'name="strength"' not in body
+    assert Image.open(io.BytesIO(body[body.index(b'\x89PNG'):])).size == (64, 48)  # the original, not a padded canvas
+    assert output_image(store, project_id, task).size == (128, 48)
+
+
 def test_inpainting_only_changes_the_masked_region(project):
     store, project_id, session = project
     configs = configure(store, ZIMAGE)

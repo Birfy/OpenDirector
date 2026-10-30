@@ -40,13 +40,16 @@ class ToolContext:
     """What a recipe may use: inputs, model capabilities and progress reporting."""
 
     def __init__(self, *, sources, mask, boxes, parameters, image_model, video_model, progress, video_submitted=None, cutout_model=None,
-                 edit_model=None, edit_seconds=(4.0, 15.0), chat_model=None, segment_model=None, track_model=None):
+                 edit_model=None, edit_seconds=(4.0, 15.0), chat_model=None, segment_model=None, track_model=None,
+                 edit_keeps_layout=True):
         self.sources: list[Source] = sources
         self.mask: bytes | None = mask
         self.boxes: list[dict] = boxes
         self.parameters: dict = parameters
         self._image, self._video, self._cutout, self._edit = image_model, video_model, cutout_model, edit_model
         self._segment, self._track = segment_model, track_model
+        # img2img models redraw in place by strength; instruction editors recompose the picture.
+        self.edit_keeps_layout = edit_keeps_layout
         # Shortest and longest clip one redraw accepts; longer sources are processed piecewise.
         self.edit_seconds = edit_seconds
         # Optional: a chat model only improves prompts; tools never require it.
@@ -79,6 +82,11 @@ class ToolContext:
         result = await self._image(ImageRequest(prompt=prompt, width=image.width, height=image.height,
                                                 image=media.rgb_png(image), strength=strength))
         return media.resize(media.open_image(result.data), image.width, image.height)
+
+    async def reframe(self, image: Image.Image, width: int, height: int, prompt: str) -> Image.Image:
+        """An instruction edit of image rendered on a width x height frame."""
+        result = await self._image(ImageRequest(prompt=prompt, width=width, height=height, image=media.rgb_png(image)))
+        return media.resize(media.open_image(result.data), width, height)
 
     async def cutout(self, image: Image.Image, subject: str = '') -> Image.Image:
         """The subject on transparency, at the source size."""
@@ -190,8 +198,31 @@ def _with(prompt: str, instruction: str) -> str:
     return f'{prompt}。{instruction}' if prompt else instruction
 
 
+def _placement(pads, width, height) -> str:
+    """Where the original sits in the extended frame, and which sides grow, in words."""
+    left, top, right, bottom = pads
+    total_width, total_height = width + left + right, height + top + bottom
+    horizontal = '左侧' if not left and right else '右侧' if left and not right else ''
+    vertical = '上方' if not top and bottom else '下方' if top and not bottom else ''
+    where = f'{vertical}{horizontal}'.replace('上方左侧', '左上角').replace('上方右侧', '右上角') \
+        .replace('下方左侧', '左下角').replace('下方右侧', '右下角') or '中央'
+    sides = '、'.join(name for name, pad in (('左侧', left), ('上方', top), ('右侧', right), ('下方', bottom)) if pad)
+    return (f'原画面约占新画面宽度的 {width / total_width:.0%}、高度的 {height / total_height:.0%}，位于新画面的{where}，'
+            f'在{sides}新增与原场景连续的内容')
+
+
 async def _extend(ctx: ToolContext, image: Image.Image, pads, prompt: str) -> Image.Image:
-    """Outpainting: soft border, image-to-image, original pixels kept inside a feathered seam."""
+    """Outpainting: soft border, image-to-image, original pixels kept inside a feathered seam.
+
+    Instruction editors ignore strength and recompose a padded canvas instead of
+    filling it, so they are asked to pull the camera back over the original.
+    """
+    if not ctx.edit_keeps_layout:
+        await ctx.progress('正在扩展画面')
+        width, height = image.width + pads[0] + pads[2], image.height + pads[1] + pads[3]
+        return await ctx.reframe(image, width, height, _with(prompt, (
+            f'镜头拉远，扩展画面：{_placement(pads, image.width, image.height)}。保持原图中的人物、物体、服饰、场景、色调与光线完全一致，'
+            '延续原有的透视与风格，画面完整自然，不要边框、白边或拼接痕迹')))
     canvas, _ = media.extend_canvas(image, *pads)
     await ctx.progress('正在扩展画面')
     drawn = await ctx.edit(canvas, _with(prompt, '自然延展画面四周，与原图内容、风格、透视和光线保持一致，无边框无拼接痕迹'), 0.9)

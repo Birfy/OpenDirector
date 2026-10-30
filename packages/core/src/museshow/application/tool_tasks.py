@@ -201,6 +201,10 @@ class ToolTasks:
                     config, adapter = self._model('video.matting', task['modelConfigIds'].get('video.matting'))
                     return await adapter.track(config, request)
 
+                keeps_layout = True
+                if 'image.edit' in task['requires']:
+                    _, painter = self._model('image.edit', task['modelConfigIds'].get('image.edit'))
+                    keeps_layout = bool(getattr(painter, 'strength', False))
                 limits = (4.0, 15.0)
                 if 'video.edit' in task['requires']:
                     _, editor = self._model('video.edit', task['modelConfigIds'].get('video.edit'))
@@ -214,7 +218,7 @@ class ToolTasks:
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],
                                       image_model=image_model, video_model=video_model, progress=progress, cutout_model=cutout_model,
                                       edit_model=edit_model, edit_seconds=limits, chat_model=chat_model,
-                                      segment_model=segment_model, track_model=track_model)
+                                      segment_model=segment_model, track_model=track_model, edit_keeps_layout=keeps_layout)
                 outputs = await spec.recipe(context)
                 await progress('正在保存结果')
                 saved = []
