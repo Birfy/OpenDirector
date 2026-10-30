@@ -53,84 +53,160 @@
 .cw-workspace .react-flow__node {
   font-family: inherit;
 }
+.cw-reference-edge {
+  color: #8a8f9c;
+  transition: color 160ms;
+}
+.cw-reference-edge.is-emphasized {
+  color: #2f8bff;
+}
 .cw-reference-edge .react-flow__edge-path {
-  stroke: #686b72;
-  stroke-width: 1.5;
-  transition: stroke 160ms;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
 }
 .cw-reference-edge.is-emphasized .react-flow__edge-path {
-  stroke: #6995ff;
-}
-.react-flow__edge.selected .cw-reference-edge .react-flow__edge-path {
-  stroke-width: 2.5;
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 2px rgb(47 139 255 / 0.55));
 }
 .cw-workspace {
-  --cw-edge-flow-color: #23c5f5;
-  --cw-edge-flow-head: #d2fbff;
+  --cw-comet-1: #2f8bff;
+  --cw-comet-2: #35a6ff;
+  --cw-comet-3: #3cc2fb;
+  --cw-comet-4: #4fd8ea;
+  --cw-comet-5: #93e8c2;
+  --cw-comet-6: #e2f7a8;
 }
 :root[data-theme="light"] .cw-workspace {
-  --cw-edge-flow-color: #0799cd;
-  --cw-edge-flow-head: #007cba;
+  --cw-comet-1: #1f6fe5;
+  --cw-comet-2: #1688e6;
+  --cw-comet-3: #0ea3d6;
+  --cw-comet-4: #10b5b9;
+  --cw-comet-5: #4cbf7d;
+  --cw-comet-6: #9ccc3c;
 }
 .cw-edge-motion {
   pointer-events: none;
 }
 .cw-edge-motion path {
   fill: none;
-  stroke: var(--cw-edge-flow-color);
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+  /* Off the path between passes. */
+  stroke-dashoffset: 200;
 }
-/* All three layers share one leading edge and a normalized 120-unit cycle. */
-.cw-edge-glow {
-  --cw-beam-animation: cw-edge-glow-flow;
-  stroke-dasharray: 20 100;
-  stroke-dashoffset: 20;
-  stroke-width: 9;
-  opacity: 0.16;
+/* Each layer is a segment of length d in a 140-unit cycle (the 100-unit path
+   plus room to enter and leave), all centred on the same moving point. */
+.cw-edge-comet-glow {
+  --cw-comet-animation: cw-comet-glow;
+  stroke: var(--cw-comet-1);
+  stroke-dasharray: 34 106;
+  stroke-width: 4;
+  opacity: 0.2;
+  filter: blur(2px);
 }
-.cw-edge-trail {
-  --cw-beam-animation: cw-edge-trail-flow;
-  stroke-dasharray: 12 108;
-  stroke-dashoffset: 12;
-  stroke-width: 4.5;
-  opacity: 0.7;
+.cw-edge-comet-1 {
+  --cw-comet-animation: cw-comet-1;
+  stroke: var(--cw-comet-1);
+  stroke-dasharray: 40 100;
+  stroke-width: 0.9;
+  filter: blur(0.2px);
 }
-.cw-edge-motion .cw-edge-head {
-  --cw-beam-animation: cw-edge-head-flow;
-  stroke: var(--cw-edge-flow-head);
-  stroke-dasharray: 4 116;
-  stroke-dashoffset: 4;
-  stroke-width: 2.5;
+.cw-edge-comet-2 {
+  --cw-comet-animation: cw-comet-2;
+  stroke: var(--cw-comet-2);
+  stroke-dasharray: 32 108;
+  stroke-width: 1.1;
+  filter: blur(0.2px);
+}
+.cw-edge-comet-3 {
+  --cw-comet-animation: cw-comet-3;
+  stroke: var(--cw-comet-3);
+  stroke-dasharray: 24 116;
+  stroke-width: 1.3;
+  filter: blur(0.3px);
+}
+.cw-edge-comet-4 {
+  --cw-comet-animation: cw-comet-4;
+  stroke: var(--cw-comet-4);
+  stroke-dasharray: 17 123;
+  stroke-width: 1.5;
+  filter: blur(0.3px);
+}
+.cw-edge-comet-5 {
+  --cw-comet-animation: cw-comet-5;
+  stroke: var(--cw-comet-5);
+  stroke-dasharray: 11 129;
+  stroke-width: 1.8;
+  filter: blur(0.4px);
+}
+.cw-edge-comet-6 {
+  --cw-comet-animation: cw-comet-6;
+  stroke: var(--cw-comet-6);
+  stroke-dasharray: 6 134;
+  stroke-width: 2.0;
+  filter: blur(0.4px);
 }
 .cw-workspace[data-edge-motion="true"] .cw-edge-motion path {
-  animation: var(--cw-beam-animation) 2s linear infinite;
+  animation: var(--cw-comet-animation) 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 .cw-workspace[data-edge-motion="false"] .cw-edge-motion {
   display: none;
 }
-@keyframes cw-edge-glow-flow {
+/* The centre travels from 20 before the source to 20 past the target: offset = d / 2 - centre. */
+@keyframes cw-comet-glow {
   from {
-    stroke-dashoffset: 20;
+    stroke-dashoffset: 37;
+  }
+  to {
+    stroke-dashoffset: -103;
+  }
+}
+@keyframes cw-comet-1 {
+  from {
+    stroke-dashoffset: 40;
   }
   to {
     stroke-dashoffset: -100;
   }
 }
-@keyframes cw-edge-trail-flow {
+@keyframes cw-comet-2 {
   from {
-    stroke-dashoffset: 12;
+    stroke-dashoffset: 36;
+  }
+  to {
+    stroke-dashoffset: -104;
+  }
+}
+@keyframes cw-comet-3 {
+  from {
+    stroke-dashoffset: 32;
   }
   to {
     stroke-dashoffset: -108;
   }
 }
-@keyframes cw-edge-head-flow {
+@keyframes cw-comet-4 {
   from {
-    stroke-dashoffset: 4;
+    stroke-dashoffset: 28.5;
   }
   to {
-    stroke-dashoffset: -116;
+    stroke-dashoffset: -111.5;
+  }
+}
+@keyframes cw-comet-5 {
+  from {
+    stroke-dashoffset: 25.5;
+  }
+  to {
+    stroke-dashoffset: -114.5;
+  }
+}
+@keyframes cw-comet-6 {
+  from {
+    stroke-dashoffset: 23;
+  }
+  to {
+    stroke-dashoffset: -117;
   }
 }
 .cw-interaction-overlay {
@@ -180,7 +256,7 @@
   .cw-workspace[data-edge-motion="true"] .cw-edge-motion path {
     animation: none;
   }
-  .cw-reference-edge .react-flow__edge-path {
+  .cw-reference-edge {
     transition: none;
   }
 }
@@ -1672,19 +1748,16 @@
 .cw-reference-edge.is-pending .react-flow__edge-path {
   stroke-dasharray: 7 5;
 }
-.cw-reference-edge {
-  color: #6995ff;
-}
 .cw-reference-port {
   position: absolute;
   z-index: 8;
   display: grid;
   place-items: center;
-  width: 20px;
+  width: 14px;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
-  height: 20px;
+  height: 14px;
   padding: 0;
   transform: translate(-50%, -50%);
   border: 1px solid #fff;

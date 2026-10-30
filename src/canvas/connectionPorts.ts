@@ -1,8 +1,8 @@
 import type { Point, Rect } from "./model.ts";
 
 export type PortSide = "top" | "right" | "bottom" | "left";
-export const REFERENCE_PORT_SIZE = 20;
-export const REFERENCE_PORT_MAX_SIZE = 32;
+export const REFERENCE_PORT_SIZE = 14;
+export const REFERENCE_PORT_MAX_SIZE = 22;
 
 /** Apply one scale to the circle, border and icon, including at the screen-size cap. */
 export function referencePortMetrics(zoom: number) {

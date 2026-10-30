@@ -20,6 +20,14 @@ export type ReferenceEdge = Edge<{
   targetBounds?: Rect;
   bidirectional?: boolean;
 }>;
+/** The first and last points of an SVG path: the edge's source and target ends. */
+function pathEnds(path: string) {
+  const numbers = path.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(Number);
+  if (!numbers || numbers.length < 4) return null;
+  const end = numbers.length;
+  return [numbers[0], numbers[1], numbers[end - 2], numbers[end - 1]];
+}
+
 export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
   const path =
     props.data?.sourceBounds && props.data.targetBounds
@@ -30,37 +38,47 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
         )
       : getBezierPath(props)[0];
   const emphasized = Boolean(props.data?.emphasized || props.selected);
+  // Brightening from source to target shows the direction without an arrow.
+  const ends = pathEnds(path);
+  const fade = `edge-fade-${props.id}`;
   return (
     <g
       data-reference-state={props.data?.state ?? "pending"}
       className={`cw-reference-edge is-${props.data?.state ?? "pending"} ${emphasized ? "is-emphasized" : ""}`}
     >
       <title>{props.data?.description ?? "参考连线"}</title>
-      <defs>
-        <marker
-          id={`arrow-${props.id}`}
-          viewBox="0 0 8 8"
-          refX="8"
-          refY="4"
-          markerWidth="8"
-          markerHeight="8"
-          orient="auto"
-          markerUnits="userSpaceOnUse"
-        >
-          <path d="M0,0 L8,4 L0,8 Z" fill="currentColor" />
-        </marker>
-      </defs>
+      {ends && (
+        <defs>
+          <linearGradient
+            id={fade}
+            gradientUnits="userSpaceOnUse"
+            x1={ends[0]}
+            y1={ends[1]}
+            x2={ends[2]}
+            y2={ends[3]}
+          >
+            <stop offset="0" stopColor="currentColor" stopOpacity="0.3" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="1" />
+          </linearGradient>
+        </defs>
+      )}
       <BaseEdge
         id={props.id}
         path={path}
         interactionWidth={24}
-        markerEnd={`url(#arrow-${props.id})`}
+        style={ends ? { stroke: `url(#${fade})` } : undefined}
       />
       {emphasized && (
         <g className="cw-edge-motion" aria-hidden="true">
-          <path className="cw-edge-glow" d={path} pathLength={100} />
-          <path className="cw-edge-trail" d={path} pathLength={100} />
-          <path className="cw-edge-head" d={path} pathLength={100} />
+          {/* Nested segments of decreasing length and increasing width
+              share one centre, drawing a spindle that tapers at both ends. */}
+          <path className="cw-edge-comet-glow" d={path} pathLength={100} />
+          <path className="cw-edge-comet-1" d={path} pathLength={100} />
+          <path className="cw-edge-comet-2" d={path} pathLength={100} />
+          <path className="cw-edge-comet-3" d={path} pathLength={100} />
+          <path className="cw-edge-comet-4" d={path} pathLength={100} />
+          <path className="cw-edge-comet-5" d={path} pathLength={100} />
+          <path className="cw-edge-comet-6" d={path} pathLength={100} />
         </g>
       )}
     </g>

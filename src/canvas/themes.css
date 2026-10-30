@@ -187,8 +187,11 @@
 :root[data-theme="light"] .cw-connection-preview {
   stroke: #597db6;
 }
-:root[data-theme="light"] .cw-reference-edge .react-flow__edge-path {
-  stroke: #8998b1;
+:root[data-theme="light"] .cw-reference-edge {
+  color: #8998b1;
+}
+:root[data-theme="light"] .cw-reference-edge.is-emphasized {
+  color: #1f6fe5;
 }
 :root[data-theme="light"] ::selection {
   background: #c3d7f5;
