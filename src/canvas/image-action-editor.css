@@ -1,7 +1,7 @@
 .image-action-editor {
   width: min(640px, calc(100vw - 32px));
   box-sizing: border-box;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid #ffffff1c;
   border-radius: 15px;
   background: #242426;
@@ -27,8 +27,8 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 30px;
-  padding: 5px 9px;
+  min-height: 28px;
+  padding: 4px 7px;
   color: inherit;
   background: #ffffff08;
   border: 1px solid #ffffff0e;
@@ -73,7 +73,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-bottom: 9px;
+  margin-bottom: 6px;
 }
 .iae-header strong {
   font-size: 13px;
@@ -97,8 +97,9 @@
   gap: 7px;
 }
 .iae-brush-tools {
-  overflow-x: auto;
-  padding: 2px 0 7px;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px 0 6px;
 }
 .iae-brush-tools > * {
   flex-shrink: 0;
@@ -169,8 +170,13 @@
   display: block;
   resize: vertical;
   width: 100%;
-  min-height: 64px;
-  max-height: 180px;
+  min-height: 112px;
+  max-height: 240px;
+  border: 0;
+  background: #ffffff04;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 10px;
 }
 .iae-hint,
 .iae-error {
@@ -187,8 +193,8 @@
   gap: 8px;
   align-items: center;
   border-top: 1px solid #ffffff0b;
-  padding-top: 9px;
-  margin-top: 9px;
+  padding-top: 6px;
+  margin-top: 6px;
 }
 .iae-service-note {
   color: #9f99ad;
@@ -435,5 +441,168 @@
   .iae-actions button {
     padding: 4px 6px;
     font-size: 11px;
+  }
+}
+
+.iae-brush-tools > button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.iae-brush-settings {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+}
+.iae-brush-settings .iae-range {
+  min-width: 0;
+  font-size: 11px;
+  gap: 4px;
+}
+.iae-brush-settings .iae-range input {
+  width: 72px;
+  max-width: 100px;
+}
+.iae-brush-settings .iae-color {
+  font-size: 11px;
+}
+.iae-brush-settings input[type="color"] {
+  width: 23px;
+  height: 23px;
+}
+.iae-selection-query {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.iae-selection-query input {
+  flex: 1;
+  width: 0;
+}
+.iae-selection-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  color: #c9b8ff;
+}
+.iae-selection-box {
+  position: absolute;
+  border: 1px solid #b39aff;
+  background: #b39aff26;
+  pointer-events: none;
+}
+.iae-actions {
+  flex-wrap: nowrap;
+}
+.iae-actions .iae-generate {
+  min-height: 32px;
+  padding-inline: 14px;
+}
+@media (max-width: 520px) {
+  .iae-brush-settings {
+    margin-left: 0;
+  }
+  .iae-prompt textarea {
+    min-height: 104px;
+  }
+  .iae-service-note {
+    flex-basis: 160px;
+  }
+}
+
+/* Cutout has no description field: keep its tools and confirmation on one rail. */
+.image-action-editor.iae-cutout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 6px;
+}
+.iae-cutout .iae-header {
+  grid-column: 3;
+  grid-row: 1;
+  margin: 0;
+}
+.iae-cutout .iae-header strong,
+.iae-cutout .iae-header > span,
+.iae-cutout .iae-service-note {
+  display: none;
+}
+.iae-cutout .iae-brush-tools {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 0;
+}
+.iae-cutout .iae-brush-tools > button {
+  width: 28px;
+  height: 28px;
+}
+.iae-cutout .iae-brush-settings .iae-range input {
+  width: 56px;
+}
+.iae-cutout .iae-brush-settings .iae-range output {
+  display: none;
+}
+.iae-cutout .iae-footer {
+  display: contents;
+}
+.iae-cutout .iae-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
+.iae-cutout > .iae-hint,
+.iae-cutout > .iae-error,
+.iae-cutout > .iae-selection-status,
+.iae-cutout > .iae-selection-query {
+  grid-column: 1 / -1;
+}
+@media (max-width: 600px) {
+  .iae-cutout .iae-brush-tools {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .iae-cutout .iae-header {
+    grid-row: 2;
+  }
+  .iae-cutout .iae-actions {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+  .iae-cutout .iae-brush-settings {
+    margin-left: 0;
+  }
+  .iae-cutout .iae-actions .iae-generate {
+    padding-inline: 8px;
+  }
+}
+
+.image-action-editor .iae-model {
+  max-width: min(220px, 40%);
+  height: 28px;
+  padding: 3px 6px;
+  background: transparent;
+  border: 0;
+  text-overflow: ellipsis;
+}
+.image-action-editor:not(.iae-cutout) .iae-footer {
+  position: sticky;
+  bottom: -10px;
+  z-index: 2;
+  padding-bottom: 4px;
+  background: #242426;
+}
+.iae-service-note:empty {
+  display: none;
+}
+@media (max-width: 520px) {
+  .iae-footer .iae-service-note {
+    flex-basis: auto;
+    font-size: 10px;
+  }
+  .iae-model {
+    flex: 1;
   }
 }

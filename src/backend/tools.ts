@@ -67,6 +67,8 @@ export interface ToolRequest {
   sources: readonly ToolSourceInput[];
   parameters: ToolParameters;
   maskDataUrl?: string;
+  annotatedDataUrl?: string;
+  modelConfigIds?: Record<string, string>;
   boxes?: readonly { x: number; y: number; width: number; height: number }[];
 }
 
@@ -74,19 +76,31 @@ export interface ToolRequest {
 export function useToolCatalog(connected: boolean, revision: unknown) {
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [error, setError] = useState("");
+  const [selectionPreview, setSelectionPreview] = useState<{
+    available: boolean;
+    reason?: string;
+  }>({ available: false });
   const refresh = useCallback(async () => {
     try {
-      const value = await request<{ tools: ToolCatalogEntry[] }>("/tools");
+      const value = await request<{
+        tools: ToolCatalogEntry[];
+        selectionPreview?: { available: boolean; reason?: string };
+      }>("/tools");
       setTools(value.tools);
+      setSelectionPreview(value.selectionPreview ?? { available: false });
       setError("");
     } catch (failure) {
       setTools([]);
+      setSelectionPreview({ available: false });
       setError(errorMessage(failure));
     }
   }, []);
   useEffect(() => {
     if (connected) void refresh();
-    else setTools([]);
+    else {
+      setTools([]);
+      setSelectionPreview({ available: false });
+    }
   }, [connected, revision, refresh]);
   const capabilities: ToolCapabilities = Object.fromEntries(
     tools.map((entry) => [
@@ -95,15 +109,16 @@ export function useToolCatalog(connected: boolean, revision: unknown) {
         available: entry.available,
         reason: entry.reason,
         fields: entry.fields,
+        models: entry.models,
         parametersConfirmed: entry.parametersConfirmed,
       },
     ]),
   );
-  return { tools, capabilities, error, refresh };
+  return { tools, capabilities, selectionPreview, error, refresh };
 }
 
 /** Sources and masks become project assets once; identical files are reused. */
-async function uploadAsset(
+export async function uploadAsset(
   projectId: string,
   known: BackendAsset[],
   blob: Blob,
@@ -160,6 +175,15 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
         signal,
       )
     : undefined;
+  const annotationAssetId = value.annotatedDataUrl
+    ? await uploadAsset(
+        projectId,
+        known,
+        await (await fetch(value.annotatedDataUrl, { signal })).blob(),
+        "改图标注",
+        signal,
+      )
+    : undefined;
   signal.throwIfAborted();
   const task = await request<ToolTask>(
     `/projects/${projectId}/tool-tasks`,
@@ -168,8 +192,10 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       tool: value.tool,
       sourceAssetIds,
       ...(maskAssetId ? { maskAssetId } : {}),
+      ...(annotationAssetId ? { annotationAssetId } : {}),
       boxes: value.boxes ?? [],
       parameters: value.parameters,
+      ...(value.modelConfigIds ? { modelConfigIds: value.modelConfigIds } : {}),
     }),
   );
   return { projectId, taskId: task.id };

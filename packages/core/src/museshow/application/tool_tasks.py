@@ -6,15 +6,19 @@ Results are stored as project assets; the canvas places them as linked nodes.
 """
 
 import asyncio
+import base64
 from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
-from museshow.application.tool_operations import TOOLS, Source, ToolContext
+from PIL import Image
+
+from museshow.application.tool_operations import TOOLS, Source, ToolContext, select_image_objects
 from museshow.domain.capabilities import LABELS
 from museshow.domain.generation import GenerationError
 from museshow.domain.projects import ProjectError, identifier
 from museshow.infrastructure.local_projects import child, read_json, write_json
 from museshow.integrations.model_adapters import adapter_for, capabilities_of
+from museshow.media import processing as media
 
 ACTIVE = {'queued', 'running'}
 MAX_SOURCES = 20
@@ -59,8 +63,11 @@ class ToolTasks:
             if spec.recipe is None or missing:
                 entry['reason'] = f"需要接入具备「{'、'.join(LABELS[item] for item in missing or needs)}」能力的模型。"
             tools.append(entry)
+        selection = {'available': 'image.segment' in served}
+        if not selection['available']:
+            selection['reason'] = '接入图像分割模型后可自动识别选区；仍可手动画选区。'
         return {'capabilities': {item: [{'id': config['id'], 'label': _model_label(config)} for config in configs]
-                                 for item, configs in served.items()}, 'tools': tools}
+                                 for item, configs in served.items()}, 'tools': tools, 'selectionPreview': selection}
 
     def _model(self, capability, chosen):
         candidates = self.providers().get(capability, [])
@@ -69,6 +76,50 @@ class ToolTasks:
             raise ProjectError(f'没有可用的「{LABELS[capability]}」模型，请在“模型接入”中添加。', 409)
         config = self.configs.resolve(public['id'], public['kind'])
         return config, adapter_for(config, self.transport, self.poll_interval)
+
+    async def selection_preview(self, project_id, value, session):
+        """Transient masks for one owned source asset; never creates tasks or output assets."""
+        source_id = identifier(str(value['sourceAssetId']))
+
+        def read():
+            directory = self._directory(project_id, session)
+            records = self.assets._records(directory, project_id)
+            if source_id not in records or records[source_id]['kind'] != 'image':
+                raise ProjectError('来源图片不存在，请重新上传。', 409)
+            return media.open_image(child(child(directory, 'assets'), source_id).read_bytes())
+
+        image = await asyncio.to_thread(read)
+        config, adapter = self._model('image.segment', value.get('modelConfigId'))
+
+        async def segment(request):
+            return await adapter.segment(config, request)
+
+        async def progress(_):
+            pass
+
+        chat = None
+        if self.providers().get('text.chat'):
+            async def chat(request):
+                chat_config, chat_adapter = self._model('text.chat', None)
+                return await chat_adapter.chat(chat_config, request)
+
+        context = ToolContext(sources=[], mask=None, boxes=[], parameters={}, image_model=None, video_model=None,
+                              progress=progress, segment_model=segment, chat_model=chat)
+        async with self.limit:
+            instances = await select_image_objects(context, image, value.get('prompt', ''), value.get('boxes') or [])
+
+        def encode():
+            result = []
+            for index, (mask, score, label, box) in enumerate(instances):
+                # White paint on transparency matches editor masks; grayscale PNGs
+                # would otherwise cover the whole image when drawn into an RGBA canvas.
+                rgba = Image.new('RGBA', image.size, (255, 255, 255, 0))
+                rgba.putalpha(mask)
+                result.append({'id': str(index), 'label': label, 'score': score,
+                               'box': {'x': box[0], 'y': box[1], 'width': box[2] - box[0], 'height': box[3] - box[1]},
+                               'maskDataUrl': 'data:image/png;base64,' + base64.b64encode(media.png(rgba)).decode()})
+            return {'sourceAssetId': source_id, 'width': image.width, 'height': image.height, 'instances': result}
+        return await asyncio.to_thread(encode)
 
     # Storage -------------------------------------------------------------------
 
@@ -108,14 +159,17 @@ class ToolTasks:
         if spec.recipe is None:
             raise ProjectError(f"该工具需要接入具备「{'、'.join(LABELS[item] for item in spec.requires({}))}」能力的模型。", 409)
         parameters = value.get('parameters') or {}
+        mask_id = identifier(str(value['maskAssetId'])) if value.get('maskAssetId') else None
+        annotation_id = identifier(str(value['annotationAssetId'])) if value.get('annotationAssetId') else None
         needs = spec.requires(parameters)
+        if spec.id == 'cutout' and not mask_id:
+            needs = ('image.segment',) if 'image.segment' in self.providers() else ('image.cutout',)
         chosen = value.get('modelConfigIds') or {}
         for capability in needs:
             self._model(capability, chosen.get(capability))  # Fail before accepting the task.
         source_ids = [identifier(str(item)) for item in value.get('sourceAssetIds') or []]
         if not source_ids or len(source_ids) > MAX_SOURCES or len(set(source_ids)) != len(source_ids):
             raise ProjectError('请提供 1–20 个不重复的来源素材。', 422)
-        mask_id = identifier(str(value['maskAssetId'])) if value.get('maskAssetId') else None
         directory = self._directory(project_id, session)
         path = child(self._folder(directory), task_id + '.json')
         if path.is_file():
@@ -124,15 +178,18 @@ class ToolTasks:
                 raise ProjectError('工具任务标识已使用。', 409)
             return existing, directory, None
         records = self.assets._records(directory, project_id)
-        for asset_id in [*source_ids, *([mask_id] if mask_id else [])]:
+        for asset_id in [*source_ids, *([mask_id] if mask_id else []), *([annotation_id] if annotation_id else [])]:
             if asset_id not in records:
                 raise ProjectError('来源素材不存在，请重新上传后提交。', 409)
         if records[source_ids[0]]['kind'] not in spec.sources:
             raise ProjectError('来源素材类型与工具不匹配。', 422)
         if mask_id and records[mask_id]['kind'] != 'image':
             raise ProjectError('选区必须是图片。', 422)
+        if annotation_id and records[annotation_id]['kind'] != 'image':
+            raise ProjectError('标注必须是图片。', 422)
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
-                'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'boxes': value.get('boxes') or [], 'parameters': parameters,
+                'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
+                'boxes': value.get('boxes') or [], 'parameters': parameters,
                 'modelConfigIds': {item: chosen[item] for item in needs if chosen.get(item)}, 'requires': list(needs),
                 'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None}
         self._write(directory, task)
@@ -163,6 +220,7 @@ class ToolTasks:
                     return Source(record['kind'], child(child(directory, 'assets'), asset_id).read_bytes(), record['name'])
                 sources = await asyncio.to_thread(lambda: [read(item) for item in task['sourceAssetIds']])
                 mask = (await asyncio.to_thread(read, task['maskAssetId'])).data if task['maskAssetId'] else None
+                annotation = (await asyncio.to_thread(read, task['annotationAssetId'])).data if task.get('annotationAssetId') else None
 
                 async def progress(message):
                     await self._update(directory, task, phase=message)
@@ -201,10 +259,11 @@ class ToolTasks:
                     config, adapter = self._model('video.matting', task['modelConfigIds'].get('video.matting'))
                     return await adapter.track(config, request)
 
-                keeps_layout = True
+                keeps_layout, edit_max_images = True, 1
                 if 'image.edit' in task['requires']:
                     _, painter = self._model('image.edit', task['modelConfigIds'].get('image.edit'))
                     keeps_layout = bool(getattr(painter, 'strength', False))
+                    edit_max_images = int(getattr(painter, 'max_images', 1))
                 limits = (4.0, 15.0)
                 if 'video.edit' in task['requires']:
                     _, editor = self._model('video.edit', task['modelConfigIds'].get('video.edit'))
@@ -218,7 +277,9 @@ class ToolTasks:
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],
                                       image_model=image_model, video_model=video_model, progress=progress, cutout_model=cutout_model,
                                       edit_model=edit_model, edit_seconds=limits, chat_model=chat_model,
-                                      segment_model=segment_model, track_model=track_model, edit_keeps_layout=keeps_layout)
+                                      segment_model=segment_model, track_model=track_model, edit_keeps_layout=keeps_layout,
+                                      annotation=annotation, edit_max_images=edit_max_images,
+                                      segment_available='image.segment' in task['requires'])
                 outputs = await spec.recipe(context)
                 await progress('正在保存结果')
                 saved = []

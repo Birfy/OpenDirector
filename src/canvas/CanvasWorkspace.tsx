@@ -1,3 +1,5 @@
+import { previewImageSelection } from "../backend/imageSelections";
+import { imageAnnotationPayload } from "./imageActionPayload";
 import { lockedNodeIds } from "./hierarchy";
 import {
   lazy,
@@ -484,6 +486,12 @@ function Workspace() {
   const [help, setHelp] = useState(false);
   const [jobs, setJobs, readJobs] = useGenerationJobs(doc.id, setToast);
   const backendCatalog = useBackendModels();
+  const selectionSource = useRef<{
+    documentId: string;
+    nodeId: string;
+    src: string;
+    assetId: string;
+  } | null>(null);
   const toolCatalog = useToolCatalog(
     backendCatalog.connected,
     backendCatalog.models,
@@ -2478,6 +2486,14 @@ function Workspace() {
               tool: task.tool,
               sources,
               parameters: task.parameters,
+              modelConfigIds:
+                typeof task.parameters.imageModelConfigId === "string" &&
+                task.parameters.imageModelConfigId
+                  ? { "image.edit": task.parameters.imageModelConfigId }
+                  : undefined,
+              annotatedDataUrl: sources[0]
+                ? await imageAnnotationPayload(task, sources[0].src, signal)
+                : undefined,
               maskDataUrl: task.selection?.maskDataUrl,
               boxes: task.selection?.boxes,
             },
@@ -4236,6 +4252,47 @@ function Workspace() {
                 }
                 unavailableReason={
                   toolCatalog.capabilities[activeAction.tool]?.reason
+                }
+                models={
+                  toolCatalog.tools.find(
+                    (item) => item.id === activeAction.tool,
+                  )?.models["image.edit"]
+                }
+                selectionUnavailableReason={toolCatalog.selectionPreview.reason}
+                onPreviewSelection={
+                  toolCatalog.selectionPreview.available && actionNode.data.src
+                    ? async (query, signal) => {
+                        const src = actionNode.data.src!;
+                        const cached = selectionSource.current;
+                        const result = await previewImageSelection(
+                          {
+                            documentId: doc.id,
+                            documentTitle: doc.title,
+                            source: {
+                              kind: "image",
+                              title: actionNode.data.title,
+                              src,
+                            },
+                            sourceAssetId:
+                              cached?.documentId === doc.id &&
+                              cached.nodeId === actionNode.id &&
+                              cached.src === src
+                                ? cached.assetId
+                                : undefined,
+                            ...query,
+                          },
+                          signal,
+                        );
+                        signal.throwIfAborted();
+                        selectionSource.current = {
+                          documentId: doc.id,
+                          nodeId: actionNode.id,
+                          src,
+                          assetId: result.sourceAssetId,
+                        };
+                        return result;
+                      }
+                    : undefined
                 }
                 onClose={closeAction}
               />

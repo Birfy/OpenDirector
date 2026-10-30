@@ -329,14 +329,16 @@
   max-width: calc(100vw - 40px);
   box-sizing: border-box;
   border: 1px solid #ffffff0e;
-  border-radius: 24px;
-  padding: 18px;
+  border-radius: 18px;
+  padding: 14px;
   background: #202020;
   color: #e9e9ed;
   box-shadow: 0 12px 38px #0005;
   font-family: inherit;
   cursor: default;
   isolation: isolate;
+  container-type: inline-size;
+  container-name: composer;
 }
 .cw-composer button,
 .cw-composer select,
@@ -358,22 +360,6 @@
 .cw-popover button:disabled {
   opacity: 0.45;
 }
-.cw-creation-mode-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 12px 0;
-}
-.cw-creation-mode-field {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  color: #9295a3;
-}
-.cw-creation-mode-field select,
-.cw-creation-mode-field input,
 .cw-duration-controls select {
   min-width: 0;
   max-width: 100%;
@@ -384,25 +370,6 @@
   color: #e2e1e9;
   font-size: 11px;
 }
-.cw-mode-segments {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 7px;
-  background: #202126;
-}
-.cw-mode-segments button {
-  padding: 5px 9px;
-  border: 0;
-  border-radius: 5px;
-  color: #9d9fab;
-  background: transparent;
-  font-size: 11px;
-}
-.cw-mode-segments button.cw-is-active {
-  color: #e7e3fc;
-  background: #4a465b;
-}
 .cw-frame-slots {
   display: flex;
   align-items: flex-start;
@@ -412,9 +379,9 @@
 .cw-frame-slot {
   position: relative;
   order: 0;
-  flex: 0 0 54px;
-  width: 54px;
-  height: 54px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
   box-sizing: border-box;
   overflow: hidden;
   border: 1px solid #ffffff0a;
@@ -470,7 +437,7 @@
   flex: 0 0 28px;
   width: 28px;
   height: 28px;
-  margin-top: 13px;
+  margin-top: 8px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -481,26 +448,18 @@
   background: #ffffff08;
   color: #e9e9ed;
 }
-.cw-video-composer-body > :is(.cw-reference-strip, .cw-frame-slots) {
-  flex: 0 0 64px;
-  height: 64px;
-  box-sizing: border-box;
-}
 .cw-voice-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 13px 13px 0;
-  padding: 8px 10px;
-  border: 1px solid #4a475c;
-  border-radius: 7px;
-  background: #34313f;
-  color: #c7c0e5;
-  font-size: 11px !important;
-}
-.cw-voice-trigger strong {
-  color: #e4e0f1;
-  font-weight: 500;
+  gap: 5px;
+  height: 28px;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c7c7d2;
+  font-size: 12px !important;
 }
 .cw-voices-popover {
   width: 330px;
@@ -561,10 +520,10 @@
 .cw-composer-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
   padding: 0;
-  min-height: 150px;
+  min-height: 112px;
 }
 .cw-reference-strip {
   display: flex;
@@ -583,9 +542,10 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  flex: 0 0 54px;
-  width: 54px;
-  height: 54px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 1px solid #ffffff0a;
   border-radius: 7px;
   background: #ffffff05;
@@ -601,9 +561,9 @@
 }
 .cw-reference-chip {
   position: relative;
-  flex: 0 0 48px;
-  width: 48px;
-  height: 54px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   overflow: hidden;
   border: 1px solid #53545e;
@@ -634,15 +594,15 @@
 }
 .cw-workspace .cw-composer .cw-prompt-input {
   display: block;
-  flex: 1;
+  flex: 0 0 auto;
   width: 100%;
   min-width: 0;
-  min-height: 78px;
-  height: 88px;
+  min-height: 112px;
+  height: 112px;
   max-height: 240px;
   resize: none;
   box-sizing: border-box;
-  padding: 2px 1px;
+  padding: 2px 18px 2px 1px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -656,20 +616,30 @@
   color: #7f828d;
 }
 .cw-composer-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 8px 0 0;
+  min-height: 32px;
+}
+.cw-composer-options {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
-  padding: 12px 0 0;
-  min-height: 40px;
+  min-width: 0;
+  min-height: 32px;
 }
 .cw-model-select {
   position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 32px;
-  padding: 0 8px;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 4px;
   color: #c7c7d2;
   border-radius: 6px;
 }
@@ -680,15 +650,17 @@
   color: #b2b1e2;
   pointer-events: none;
 }
-.cw-model-select select {
+.cw-composer-options .cw-model-select select {
   appearance: none;
-  max-width: 160px;
+  min-width: 0;
+  max-width: 180px;
   outline: none;
   border: 0;
   background: transparent;
   color: #d7d8e1;
-  padding: 6px 14px 6px 0;
-  font-size: 11px;
+  padding: 4px 16px 4px 0;
+  font-size: 12px;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 .cw-model-select > svg:last-child {
@@ -701,19 +673,19 @@
   background: #303137;
   color: #e3e3ea;
 }
-.cw-parameter-trigger,
-.cw-reference-trigger {
+.cw-composer-options .cw-parameter-trigger,
+.cw-composer-options .cw-reference-trigger {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0 5px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #a3a5b0;
-  font-size: 11px !important;
+  font-size: 12px;
   white-space: nowrap;
 }
 .cw-parameter-trigger:hover,
@@ -723,19 +695,43 @@
   background: #383940;
   color: #e1e1e9;
 }
-.cw-reference-trigger {
-  font-size: 16px !important;
+.cw-composer-options .cw-reference-trigger {
+  flex: 0 0 28px;
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
 }
-.cw-reference-trigger span {
-  font-size: 11px;
+.cw-generation-mode-controls {
+  display: contents;
 }
-.cw-footer-spacer {
-  flex: 1;
+.cw-composer-options .cw-generation-mode-controls select,
+.cw-composer-options .cw-generation-mode-controls input {
+  min-width: 0;
+  max-width: min(150px, 100%);
+  height: 28px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.cw-generation-mode-controls input {
+  width: 105px;
+}
+.cw-generation-mode-controls option {
+  background: #292929;
+  color: #e4e4e7;
+}
+.cw-generation-mode-controls :is(select, input, button):hover:not(:disabled) {
+  background: #36373e;
 }
 .cw-run-button {
-  width: 35px;
-  height: 35px;
-  flex: 0 0 35px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -943,26 +939,26 @@
   .cw-composer {
     width: calc(100vw - 30px);
   }
-  .cw-composer-footer {
+}
+@container composer (max-width: 420px) {
+  .cw-composer-options {
     gap: 2px;
-    flex-wrap: wrap;
   }
   .cw-model-select {
-    padding-left: 4px;
+    padding: 0 2px;
   }
-  .cw-model-select select {
-    max-width: 135px;
-    font-size: 10px;
+  .cw-composer-options .cw-model-select select {
+    max-width: 130px;
+    font-size: 11px;
   }
-  .cw-reference-trigger span {
-    display: none;
-  }
-  .cw-parameter-trigger {
+  .cw-composer-options .cw-parameter-trigger {
     padding: 0 4px;
-    font-size: 10px !important;
+    font-size: 11px;
   }
-  .cw-reference-strip {
-    max-width: 112px;
+  .cw-composer-options .cw-generation-mode-controls select,
+  .cw-composer-options .cw-generation-mode-controls input {
+    max-width: min(120px, 100%);
+    font-size: 11px;
   }
 }
 .cw-domain-card {
@@ -1291,46 +1287,6 @@
   border-radius: calc(var(--cw-node-radius) - 1px);
 }
 
-.cw-generation-mode-controls {
-  display: contents;
-}
-.cw-generation-mode-controls select,
-.cw-generation-mode-controls input {
-  min-width: 0;
-  max-width: 150px;
-  height: 32px;
-  border: 0;
-  border-radius: 6px;
-  padding: 4px 6px;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-}
-.cw-generation-mode-controls input {
-  width: 105px;
-}
-.cw-generation-mode-controls option {
-  background: #292929;
-  color: #e4e4e7;
-}
-.cw-generation-mode-controls .cw-voice-trigger {
-  width: auto;
-  margin: 0;
-  padding: 0 6px;
-  border: 0;
-  background: transparent;
-}
-.cw-composer-footer .cw-model-select {
-  padding: 0 4px;
-}
-.cw-composer-footer .cw-model-select select {
-  font-size: 12px;
-  max-width: 190px;
-}
-.cw-composer-footer .cw-parameter-trigger {
-  font-size: 12px !important;
-  padding: 0 4px;
-}
 .cw-agent-parameters label {
   display: flex;
   align-items: center;

@@ -310,6 +310,7 @@ class ToolTaskCreate(Model):
     tool: str = Field(min_length=1, max_length=64, pattern=r'^[a-z0-9-]+$')
     sourceAssetIds: list[UUID] = Field(min_length=1, max_length=20)
     maskAssetId: UUID | None = None
+    annotationAssetId: UUID | None = None
     boxes: list[ToolBox] = Field(default_factory=list, max_length=100)
     parameters: dict[str, str | float | int | bool] = Field(default_factory=dict, max_length=64)
     # Optional explicit model per capability; otherwise the first configured provider serves it.
@@ -320,3 +321,10 @@ class ToolTaskCreate(Model):
         if any(len(key) > 64 or (isinstance(value, str) and len(value) > 100_000) for key, value in self.parameters.items()):
             raise ValueError('parameters')
         return self
+
+
+class ImageSelectionCreate(Model):
+    sourceAssetId: UUID
+    prompt: str = Field(default='', max_length=2000)
+    boxes: list[ToolBox] = Field(default_factory=list, max_length=64)
+    modelConfigId: UUID | None = None

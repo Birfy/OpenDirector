@@ -98,6 +98,7 @@ export interface ToolCapability {
   /** Adapter-supplied fields own dynamic model/option constraints. */
   fields?: readonly ToolField[];
   parametersConfirmed?: boolean;
+  models?: Readonly<Record<string, readonly { id: string; label: string }[]>>;
 }
 export type ToolCapabilities = Partial<Record<CanvasToolId, ToolCapability>>;
 const prompt: ToolField = {
@@ -203,7 +204,11 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "smart-edit",
     "智能改图",
     "通过提示词与标记修改图像；绘图工具受模型能力限制。",
-    [dynamic("model", "模型"), prompt, choice("resolution", "清晰度", ["2K"])],
+    [
+      dynamic("imageModelConfigId", "模型"),
+      prompt,
+      choice("resolution", "清晰度", ["2K"]),
+    ],
     `${runtime}:6020`,
   ),
   tool(
@@ -319,7 +324,11 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "panorama",
     "720 全景",
     "从单张图片生成 2:1 全景；模型和清晰度由服务提供。",
-    [dynamic("model", "模型"), dynamic("resolution", "清晰度"), prompt],
+    [
+      dynamic("imageModelConfigId", "模型"),
+      dynamic("resolution", "清晰度"),
+      prompt,
+    ],
     `${runtime}:4898`,
   ),
   tool(
@@ -618,12 +627,19 @@ export function toolFields(
   tool: CanvasToolDefinition,
   capability?: ToolCapability,
 ): readonly ToolField[] {
-  if (!capability?.fields) return tool.fields;
-  const overridden = new Set(capability.fields.map((field) => field.key));
+  const fields = capability?.fields ?? [];
+  const overridden = new Set(fields.map((field) => field.key));
   return [
     ...tool.fields.filter((field) => !overridden.has(field.key)),
-    ...capability.fields,
-  ];
+    ...fields,
+  ].map((field) => {
+    const models = capability?.models?.["image.edit"];
+    if (field.key !== "imageModelConfigId" || !models) return field;
+    return {
+      ...field,
+      options: models.map((model) => ({ value: model.id, label: model.label })),
+    };
+  });
 }
 export function initialToolParameters(
   tool: CanvasToolDefinition,

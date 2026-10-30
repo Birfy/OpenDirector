@@ -13,7 +13,7 @@ export function backendProjectId(documentId: string) {
 }
 
 let active: string | null = null;
-let opening: Promise<string> | null = null;
+let opening: Promise<unknown> | null = null;
 let heartbeat: number | undefined;
 
 function keepAlive() {
@@ -45,38 +45,61 @@ function keepAlive() {
   });
 }
 
-/** Opening again renews a lease that lapsed while the page was suspended. */
-export async function openBackendProject(documentId: string, _title: string) {
+function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
+  const task = (opening ?? Promise.resolve()).catch(() => {}).then(operation);
+  opening = task;
+  return task.finally(() => {
+    if (opening === task) opening = null;
+  });
+}
+
+/** Both creating and opening a project move the server's single session lease. */
+function activateBackendProject<T>(
+  documentId: string,
+  activate: () => Promise<T>,
+) {
   const id = backendProjectId(documentId);
-  if (opening) await opening.catch(() => {});
-  const task = (async () => {
-    if (active && active !== id) {
-      if (creationEnabled()) creationClient(active).close();
-      else await flushChatDraft(active);
-    }
+  return serializeSessionChange(async () => {
+    const previous = active;
+    if (previous && previous !== id && !creationEnabled())
+      await flushChatDraft(previous);
+    const value = await activate();
+    active = id;
+    if (previous && previous !== id && creationEnabled())
+      creationClient(previous).close();
+    keepAlive();
+    return value;
+  });
+}
+
+/** Creation acquires the new lease too, so drafts must flush before its request. */
+export function createBackendProject<T>(
+  documentId: string,
+  create: () => Promise<T>,
+) {
+  return activateBackendProject(documentId, create);
+}
+
+/** Opening again renews a lease that lapsed while the page was suspended. */
+export function openBackendProject(documentId: string, _title: string) {
+  const id = backendProjectId(documentId);
+  return activateBackendProject(id, async () => {
     await request(
       `${creationEnabled() ? "/creation" : ""}/projects/${id}/open`,
       { method: "POST" },
     );
-    active = id;
-    keepAlive();
     return id;
-  })();
-  opening = task;
-  try {
-    return await task;
-  } finally {
-    if (opening === task) opening = null;
-  }
+  });
 }
 
 /** Pause lease renewal while the current project directory is renamed. */
-export async function releaseBackendProject() {
-  if (opening) await opening.catch(() => {});
-  if (active && !creationEnabled()) await flushChatDraft(active);
-  active = null;
-  await request(
-    `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
-    { method: "DELETE" },
-  );
+export function releaseBackendProject() {
+  return serializeSessionChange(async () => {
+    if (active && !creationEnabled()) await flushChatDraft(active);
+    await request(
+      `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
+      { method: "DELETE" },
+    );
+    active = null;
+  });
 }

@@ -1,12 +1,16 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type PointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { CanvasIcon } from "./CanvasIcon";
+import { TooltipButton } from "./TooltipButton";
+import { SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
 import type { LinkedMediaResult } from "./linkedResults";
 import {
@@ -146,6 +150,8 @@ function VideoActionSession({
   const [probing, setProbing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [moreAnchor, setMoreAnchor] = useState<HTMLButtonElement | null>(null);
+  const moreId = useId();
   const [frames, setFrames] = useState<
     { id: string; seconds: number; output: LinkedMediaResult }[]
   >([]);
@@ -649,22 +655,53 @@ function VideoActionSession({
     field: string,
     values: readonly [ToolValue, string][],
   ) => (
-    <fieldset className="cw-va-choices">
-      <legend>{label}</legend>
-      <div>
+    <label className="cw-va-setting">
+      <span>{label}</span>
+      <select
+        aria-label={label}
+        value={String(parameters[field] ?? "")}
+        onChange={(event) => {
+          const selected = values.find(
+            ([value]) => String(value) === event.target.value,
+          );
+          if (selected) changeParameter(field, selected[0]);
+        }}
+      >
         {values.map(([value, label]) => (
-          <button
-            type="button"
-            key={String(value)}
-            aria-pressed={parameters[field] === value}
-            onClick={() => changeParameter(field, value)}
-          >
+          <option key={String(value)} value={String(value)}>
             {label}
-          </button>
+          </option>
         ))}
-      </div>
-    </fieldset>
+      </select>
+    </label>
   );
+  const promptField =
+    tool === "video-edit"
+      ? {
+          key: "prompt",
+          label: "编辑描述",
+          placeholder: "描述希望修改的视频内容…",
+        }
+      : tool === "video-partial-reshoot"
+        ? {
+            key: "prompt",
+            label: "重拍描述",
+            placeholder: "描述所选片段需要怎样变化…",
+          }
+        : tool === "video-matting"
+          ? {
+              key: "prompt",
+              label: "抠像对象",
+              placeholder:
+                "默认抠出人物；可写多个对象，用逗号分隔，如：人物，狗",
+            }
+          : tool === "audio-separation" && parameters.mode === "description"
+            ? {
+                key: "description",
+                label: "声音描述",
+                placeholder: "例如：雨声、脚步声或画面中的人声…",
+              }
+            : null;
   const playback = (
     <video
       ref={bindVideo}
@@ -786,21 +823,32 @@ function VideoActionSession({
           <strong>{definition.title}</strong>
           <span>{node.data.title}</span>
         </div>
-        <button
-          type="button"
+        <TooltipButton
           className="cw-va-icon-button"
-          aria-label={`关闭${definition.title}`}
+          label={`关闭${definition.title}`}
           onClick={close}
         >
-          ×
-        </button>
+          <CanvasIcon name="close" size={16} />
+        </TooltipButton>
       </header>
       <div className="cw-va-body">
+        {promptField && (
+          <label className="cw-va-prompt">
+            <span>{promptField.label}</span>
+            <textarea
+              rows={4}
+              value={String(parameters[promptField.key] ?? "")}
+              placeholder={promptField.placeholder}
+              onChange={(event) =>
+                changeParameter(promptField.key, event.target.value)
+              }
+            />
+          </label>
+        )}
         <div className="cw-va-transport">
-          <button
-            type="button"
+          <TooltipButton
             className="cw-va-icon-button"
-            aria-label={
+            label={
               playing
                 ? "暂停预览"
                 : selectingRange
@@ -811,7 +859,7 @@ function VideoActionSession({
             onClick={() => void togglePlayback()}
           >
             {playing ? "Ⅱ" : "▶"}
-          </button>
+          </TooltipButton>
           <span>{timeLabel(position)}</span>
           <input
             aria-label="视频播放位置"
@@ -1060,24 +1108,6 @@ function VideoActionSession({
               : "选框默认覆盖底部字幕带，可拖动到字幕实际位置；声音保持不变。"}
           </p>
         )}
-        {(tool === "video-edit" || tool === "video-partial-reshoot") && (
-          <label className="cw-va-prompt">
-            {tool === "video-partial-reshoot" ? "重拍描述" : "编辑描述"}
-            <textarea
-              autoFocus={false}
-              rows={3}
-              value={String(parameters.prompt ?? "")}
-              placeholder={
-                tool === "video-partial-reshoot"
-                  ? "描述所选片段需要怎样变化…"
-                  : "描述希望修改的视频内容…"
-              }
-              onChange={(event) =>
-                changeParameter("prompt", event.target.value)
-              }
-            />
-          </label>
-        )}
         {tool === "video-upscale" &&
           choices("输出清晰度", "resolution", [
             ["2K", "2K"],
@@ -1093,20 +1123,6 @@ function VideoActionSession({
             [30, "30 FPS"],
             [60, "60 FPS"],
           ])}
-        {tool === "video-matting" && (
-          <label className="cw-va-prompt">
-            抠像对象
-            <textarea
-              autoFocus={false}
-              rows={2}
-              value={String(parameters.prompt ?? "")}
-              placeholder="默认抠出人物；可写多个对象，用逗号分隔，如：人物，狗"
-              onChange={(event) =>
-                changeParameter("prompt", event.target.value)
-              }
-            />
-          </label>
-        )}
         {tool === "video-matting" &&
           choices("输出背景", "background", [
             ["black", "黑色"],
@@ -1125,30 +1141,14 @@ function VideoActionSession({
             <span>确认擦除视频画面中的字幕</span>
           </label>
         )}
-        {tool === "audio-separation" && (
-          <>
-            {choices("需要分离的声音", "mode", [
-              ["voice", "人声"],
-              ["backgroundSound", "背景声"],
-              ["soundEffects", "音效"],
-              ["all", "全部"],
-              ["description", "按描述"],
-            ])}
-            {parameters.mode === "description" && (
-              <label className="cw-va-prompt">
-                声音描述
-                <textarea
-                  rows={2}
-                  value={String(parameters.description ?? "")}
-                  placeholder="例如：雨声、脚步声或画面中的人声…"
-                  onChange={(event) =>
-                    changeParameter("description", event.target.value)
-                  }
-                />
-              </label>
-            )}
-          </>
-        )}
+        {tool === "audio-separation" &&
+          choices("需要分离的声音", "mode", [
+            ["voice", "人声"],
+            ["backgroundSound", "背景声"],
+            ["soundEffects", "音效"],
+            ["all", "全部"],
+            ["description", "按描述"],
+          ])}
         {tool === "extract-audio" && (
           <p className="cw-va-hint">提取所选范围的原音轨，保存为 WAV。</p>
         )}
@@ -1216,25 +1216,25 @@ function VideoActionSession({
           </>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                onDraftChange(task());
-                setNotice("设置已保存。");
+            <TooltipButton
+              className="cw-va-icon-button cw-va-more"
+              label={`${definition.title}更多操作`}
+              aria-haspopup="menu"
+              aria-expanded={Boolean(moreAnchor)}
+              aria-controls={moreAnchor ? moreId : undefined}
+              onClick={(event) =>
+                setMoreAnchor(moreAnchor ? null : event.currentTarget)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setMoreAnchor(event.currentTarget);
+                }
               }}
             >
-              保存设置
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const value = task();
-                onDraftChange(value);
-                onImportResults(value);
-              }}
-            >
-              导入结果
-            </button>
+              <CanvasIcon name="more" size={16} />
+            </TooltipButton>
             <button
               type="button"
               className="cw-va-primary"
@@ -1253,6 +1253,42 @@ function VideoActionSession({
           </>
         )}
       </footer>
+      {moreAnchor && (
+        <SelectionToolbarMenu
+          anchor={moreAnchor}
+          id={moreId}
+          label={`${definition.title}更多操作`}
+          onClose={() => setMoreAnchor(null)}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="cw-selection-menu-item"
+            onClick={() => {
+              onDraftChange(task());
+              setNotice("设置已保存。");
+              moreAnchor.focus({ preventScroll: true });
+              setMoreAnchor(null);
+            }}
+          >
+            保存设置
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cw-selection-menu-item"
+            onClick={() => {
+              const value = task();
+              onDraftChange(value);
+              moreAnchor.focus({ preventScroll: true });
+              setMoreAnchor(null);
+              onImportResults(value);
+            }}
+          >
+            导入结果
+          </button>
+        </SelectionToolbarMenu>
+      )}
     </section>
   );
 }

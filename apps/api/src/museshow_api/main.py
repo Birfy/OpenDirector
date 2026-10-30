@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,7 +35,7 @@ from museshow_api.chat import Chat
 from museshow_api.project_creation import ProjectCreation
 from museshow_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRequest, Conversation, Draft, GenerateNode, ModelConfigInput, ModelConfigPublic, NodeCreate, NodePatch, NodeText, ProjectCreate, ProjectRename, Session, SessionClose, TextAssetCreate
 from museshow_api.models import ProjectFromMessage
-from museshow_api.models import ToolTaskCreate
+from museshow_api.models import ToolTaskCreate, ImageSelectionCreate
 from museshow_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
 from museshow_api.models import ModelCapabilityRequest
 
@@ -292,6 +293,28 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.get('/api/tools')
     def tool_catalog():
         return tools.catalog()
+
+    @app.post('/api/projects/{project_id}/image-selections')
+    async def image_selection(project_id: UUID, value: ImageSelectionCreate, request: Request,
+                              x_museshow_session: str = Header()):
+        # Fetch abort closes the request. Cancel the local upstream HTTP operation
+        # rather than leaving superseded previews running in the background.
+        work = asyncio.create_task(tools.selection_preview(str(project_id), value.model_dump(mode='json'),
+                                                          identifier(x_museshow_session)))
+
+        async def disconnected():
+            while not await request.is_disconnected():
+                await asyncio.sleep(0.2)
+
+        disconnect = asyncio.create_task(disconnected())
+        try:
+            done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
+            return await work if work in done else Response(status_code=499)
+        finally:
+            for task in (work, disconnect):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(work, disconnect, return_exceptions=True)
 
     @app.post('/api/projects/{project_id}/tool-tasks', status_code=202)
     async def submit_tool_task(project_id: UUID, value: ToolTaskCreate, x_museshow_session: str = Header()):

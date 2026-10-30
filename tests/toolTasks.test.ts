@@ -1,6 +1,60 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { waitForToolTask } from "../src/backend/tools.ts";
+import { submitToolTask, waitForToolTask } from "../src/backend/tools.ts";
+
+test("tool submission forwards the selected model after uploading its source", async () => {
+  const fetch = globalThis.fetch;
+  const windowDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "window",
+  );
+  const projectId = crypto.randomUUID();
+  const modelId = crypto.randomUUID();
+  const sourceId = crypto.randomUUID();
+  let submitted: Record<string, unknown> | undefined;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { setInterval: () => 1, addEventListener: () => {} },
+  });
+  globalThis.fetch = (async (url, options) => {
+    const path = String(url);
+    if (path.startsWith("data:")) return fetch(url, options);
+    if (path.endsWith("/open")) return new Response(null, { status: 204 });
+    if (path.endsWith("/assets")) return Response.json([]);
+    if (path.includes("/assets/")) return Response.json({ id: sourceId });
+    if (path.endsWith("/tool-tasks")) {
+      submitted = JSON.parse(String(options?.body));
+      return Response.json({ id: "selected-model-task" });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  }) as typeof globalThis.fetch;
+  try {
+    await submitToolTask(
+      {
+        documentId: projectId,
+        documentTitle: "改图测试",
+        tool: "smart-edit",
+        sources: [
+          {
+            kind: "image",
+            title: "原图",
+            src: "data:image/png;base64,aW1hZ2U=",
+          },
+        ],
+        parameters: { prompt: "换成红色外套" },
+        modelConfigIds: { "image.edit": modelId },
+      },
+      new AbortController().signal,
+    );
+    assert.deepEqual(submitted?.modelConfigIds, { "image.edit": modelId });
+    assert.deepEqual(submitted?.sourceAssetIds, [sourceId]);
+  } finally {
+    globalThis.fetch = fetch;
+    if (windowDescriptor)
+      Object.defineProperty(globalThis, "window", windowDescriptor);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});
 
 test("a status read stalled in transit is abandoned and retried instead of hanging the follow loop", async () => {
   const fetch = globalThis.fetch;

@@ -7,6 +7,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { useImageMask, type PreviewSelection } from "./useImageMask";
+import { SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { loadLayerImage } from "./layerRenderer";
@@ -55,6 +57,9 @@ export interface ImageActionEditorProps {
   onGenerate?: (task: CanvasToolTask) => void;
   /** Why the connected services cannot run this tool, from the tool catalog. */
   unavailableReason?: string;
+  onPreviewSelection?: PreviewSelection;
+  selectionUnavailableReason?: string;
+  models?: readonly { id: string; label: string }[];
 }
 const IMAGE_ACTIONS: readonly CanvasToolId[] = [
   "smart-edit",
@@ -128,6 +133,9 @@ export function ImageActionEditor({
   onClose,
   onGenerate,
   unavailableReason,
+  onPreviewSelection,
+  selectionUnavailableReason,
+  models = [],
 }: ImageActionEditorProps) {
   const definition = CANVAS_TOOLS.find((item) => item.id === tool)!;
   const initialDraft = useRef(
@@ -147,6 +155,20 @@ export function ImageActionEditor({
     ...initialDraft.current?.parameters,
     ...(tool === "cutout" ? { selectionMode: "manual" } : {}),
   }));
+  const [editMode, setEditMode] = useState<"annotation" | "selection">(
+    "annotation",
+  );
+  const [selectionTool, setSelectionTool] = useState<"paint" | "quick" | "box">(
+    "paint",
+  );
+  const [selectionPrompt, setSelectionPrompt] = useState("");
+  const [showSelectionPrompt, setShowSelectionPrompt] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
+  const [boxDrag, setBoxDrag] = useState<{
+    start: ImagePoint;
+    end: ImagePoint;
+  } | null>(null);
+  const boxRef = useRef<{ start: ImagePoint; end: ImagePoint } | null>(null);
   const [source, setSource] = useState<HTMLImageElement | null>(null);
   const [baseMask, setBaseMask] = useState<HTMLImageElement | null>(null);
   const [history, setHistory] = useState<{
@@ -171,7 +193,10 @@ export function ImageActionEditor({
   const canvas = useRef<HTMLCanvasElement>(null);
   const emitDraft = useRef(onDraftChange);
   emitDraft.current = onDraftChange;
-  const maskMode = tool === "cutout" || tool === "inpainting-remove";
+  const maskMode =
+    tool === "cutout" ||
+    tool === "inpainting-remove" ||
+    (tool === "smart-edit" && editMode === "selection");
   const annotation = tool === "smart-edit" || tool === "annotation";
   const localOnly = tool === "annotation";
   const drawing = annotation || maskMode;
@@ -188,14 +213,26 @@ export function ImageActionEditor({
   };
   const yaw = numberValue(parameters, "yaw", 0),
     pitch = numberValue(parameters, "pitch", tool === "lighting" ? 30 : 0);
-  const hasMask =
-    !!baseMask ||
-    history.current.some((stroke) => ["brush", "fill"].includes(stroke.tool));
+  const selection = useImageMask({
+    size,
+    initialMask: baseMask,
+    ready,
+    preview: onPreviewSelection,
+    autoSelect: tool === "cutout",
+  });
+  const hasMask = selection.hasMask;
+  const modelMissing =
+    Boolean(parameters.imageModelConfigId) &&
+    !models.some((model) => model.id === parameters.imageModelConfigId);
   const change = (values: ToolParameters) => {
     setParameters((current) => ({ ...current, ...values }));
     setNotice("");
   };
   const record = (stroke: ImageInkStroke) => {
+    if (maskMode) {
+      selection.record(stroke);
+      return;
+    }
     const strokes = ["clear", "fill"].includes(stroke.tool)
       ? [stroke]
       : [...history.current, stroke];
@@ -239,7 +276,9 @@ export function ImageActionEditor({
         const selection = saved?.selection;
         let mask: HTMLImageElement | null = null;
         if (
-          maskMode &&
+          (tool === "cutout" ||
+            tool === "inpainting-remove" ||
+            tool === "smart-edit") &&
           selection?.maskDataUrl &&
           selection.sourceNodeId === node.id &&
           selection.width === imageSize.width &&
@@ -293,7 +332,7 @@ export function ImageActionEditor({
     return () => {
       cancelled = true;
     };
-  }, [node.id, node.data.src, tool, maskMode, annotation]);
+  }, [node.id, node.data.src, tool]);
 
   useLayoutEffect(() => {
     if (!mediaContainer) return;
@@ -324,9 +363,10 @@ export function ImageActionEditor({
     target.height = Math.round(size.height * scale);
     const ctx = context(target);
     ctx.scale(target.width / size.width, target.height / size.height);
-    if (maskMode && baseMask)
-      ctx.drawImage(baseMask, 0, 0, size.width, size.height);
-    paintImageInk(ctx, strokes, size, maskMode);
+    if (maskMode) {
+      if (selection.mask) ctx.drawImage(selection.mask, 0, 0);
+      if (preview && ink) paintImageInk(ctx, [ink], size, true);
+    } else paintImageInk(ctx, strokes, size);
     if (preview && maskMode) {
       ctx.globalCompositeOperation = "source-in";
       ctx.fillStyle = "rgba(137, 110, 255, .62)";
@@ -343,6 +383,8 @@ export function ImageActionEditor({
   }, [
     source,
     baseMask,
+    selection.mask,
+    maskMode,
     history.current,
     ink,
     mediaContainer,
@@ -363,18 +405,14 @@ export function ImageActionEditor({
         outputHeight: output.height,
       };
     }
-    const selection = {
+    const taskSelection = {
       sourceNodeId: node.id,
       ...size,
-      ...(maskMode && hasMask
-        ? (() => {
-            const mask = makeCanvas(size);
-            paintLayer(mask, history.current);
-            return { maskDataUrl: mask.toDataURL("image/png") };
-          })()
+      ...((hasMask || (tool === "cutout" && selection.edited)) && selection.mask
+        ? { maskDataUrl: selection.mask.toDataURL("image/png") }
         : {}),
     };
-    return createCanvasToolTask(tool, [node.id], values, selection);
+    return createCanvasToolTask(tool, [node.id], values, taskSelection);
   };
   const taskBuilder = useRef(makeTask);
   taskBuilder.current = makeTask;
@@ -406,7 +444,7 @@ export function ImageActionEditor({
       }
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [parameters, history.current, baseMask, ready]);
+  }, [parameters, history.current, selection.mask, ready]);
   const withTask = (run: (task: CanvasToolTask) => void) => {
     try {
       const task = makeTask();
@@ -420,7 +458,7 @@ export function ImageActionEditor({
     if (ready) withTask(() => onClose());
     else onClose();
   };
-  const undo = () =>
+  const undoAnnotation = () =>
     setHistory((state) =>
       state.past.length
         ? {
@@ -430,7 +468,7 @@ export function ImageActionEditor({
           }
         : state,
     );
-  const redo = () =>
+  const redoAnnotation = () =>
     setHistory((state) =>
       state.future.length
         ? {
@@ -441,6 +479,10 @@ export function ImageActionEditor({
         : state,
     );
 
+  const undo = maskMode ? selection.undo : undoAnnotation;
+  const redo = maskMode ? selection.redo : redoAnnotation;
+  const canUndo = maskMode ? selection.canUndo : history.past.length > 0;
+  const canRedo = maskMode ? selection.canRedo : history.future.length > 0;
   const pointerPoint = (
     event: ReactPointerEvent<HTMLCanvasElement>,
   ): ImagePoint => {
@@ -471,7 +513,21 @@ export function ImageActionEditor({
       return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.focus({ preventScroll: true });
+    if (maskMode) selection.cancel();
     const point = pointerPoint(event);
+    if (maskMode && selectionTool === "quick") {
+      selection.toggleAt(point);
+      return;
+    }
+    if (maskMode && selectionTool === "box") {
+      selection.cancel();
+      pointerId.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      boxRef.current = { start: point, end: point };
+      setBoxDrag(boxRef.current);
+      return;
+    }
     if (activeInk === "text") {
       if (!text.trim()) {
         setNotice("先填写标记文字，再点击图片放置。");
@@ -487,7 +543,15 @@ export function ImageActionEditor({
     setInk(next);
   };
   const moveInk = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (pointerId.current !== event.pointerId || !inkRef.current) return;
+    if (pointerId.current !== event.pointerId) return;
+    if (boxRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      boxRef.current = { ...boxRef.current, end: pointerPoint(event) };
+      setBoxDrag(boxRef.current);
+      return;
+    }
+    if (!inkRef.current) return;
     event.preventDefault();
     event.stopPropagation();
     const point = pointerPoint(event),
@@ -510,6 +574,24 @@ export function ImageActionEditor({
   ) => {
     if (pointerId.current !== event.pointerId) return;
     event.stopPropagation();
+    if (commit && boxRef.current) {
+      const { start, end } = boxRef.current;
+      const width = Math.abs(end.x - start.x),
+        height = Math.abs(end.y - start.y);
+      if (width >= 2 && height >= 2)
+        void selection.recognize({
+          boxes: [
+            {
+              x: Math.min(start.x, end.x),
+              y: Math.min(start.y, end.y),
+              width,
+              height,
+            },
+          ],
+        });
+    }
+    boxRef.current = null;
+    setBoxDrag(null);
     if (commit && inkRef.current) record(inkRef.current);
     pointerId.current = null;
     inkRef.current = null;
@@ -532,7 +614,7 @@ export function ImageActionEditor({
       ctx.drawImage(overlay, 0, 0);
       const suffix =
         tool === "cutout"
-          ? "手工抠图"
+          ? "抠图"
           : tool === "inpainting-remove"
             ? "透明擦除"
             : "本地标记";
@@ -562,8 +644,7 @@ export function ImageActionEditor({
   const exportMask = () => {
     if (!size || !hasMask) return;
     try {
-      const mask = makeCanvas(size);
-      paintLayer(mask, history.current);
+      const mask = selection.mask!;
       const anchor = document.createElement("a");
       anchor.href = mask.toDataURL("image/png");
       anchor.download = `${tool}-mask.png`;
@@ -681,6 +762,14 @@ export function ImageActionEditor({
             onWheel={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
               event.stopPropagation();
+              if (
+                (event.metaKey || event.ctrlKey) &&
+                event.key.toLowerCase() === "z"
+              ) {
+                event.preventDefault();
+                if (event.shiftKey) redo();
+                else undo();
+              }
               if (event.key === "Escape") {
                 event.preventDefault();
                 close();
@@ -690,6 +779,7 @@ export function ImageActionEditor({
             {drawing && (
               <canvas
                 ref={canvas}
+                tabIndex={0}
                 className={`iae-ink ${maskMode ? "iae-ink-mask" : ""}`}
                 aria-label={
                   maskMode ? "在原图上涂抹选区蒙版" : "在原图上绘制标记"
@@ -705,6 +795,27 @@ export function ImageActionEditor({
                 onPointerUp={(event) => finishInk(event, true)}
                 onPointerCancel={(event) => finishInk(event, false)}
                 onLostPointerCapture={(event) => finishInk(event, false)}
+              />
+            )}
+            {boxDrag && rect && size && (
+              <div
+                className="iae-selection-box"
+                style={{
+                  left:
+                    rect.x +
+                    (Math.min(boxDrag.start.x, boxDrag.end.x) / size.width) *
+                      rect.width,
+                  top:
+                    rect.y +
+                    (Math.min(boxDrag.start.y, boxDrag.end.y) / size.height) *
+                      rect.height,
+                  width:
+                    (Math.abs(boxDrag.end.x - boxDrag.start.x) / size.width) *
+                    rect.width,
+                  height:
+                    (Math.abs(boxDrag.end.y - boxDrag.start.y) / size.height) *
+                    rect.height,
+                }}
               />
             )}
             {tool === "outpaint" && (
@@ -822,6 +933,16 @@ export function ImageActionEditor({
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
+          if (
+            (event.metaKey || event.ctrlKey) &&
+            event.key.toLowerCase() === "z" &&
+            !(event.target instanceof HTMLInputElement) &&
+            !(event.target instanceof HTMLTextAreaElement)
+          ) {
+            event.preventDefault();
+            if (event.shiftKey) redo();
+            else undo();
+          }
           if (event.key === "Escape") {
             event.preventDefault();
             close();
@@ -830,7 +951,29 @@ export function ImageActionEditor({
       >
         <header className="iae-header">
           <strong>{definition.title}</strong>
-          <span>{maskMode ? "手工选区" : ""}</span>
+          {tool === "smart-edit" && (
+            <div className="iae-segment" aria-label="改图模式">
+              <button
+                aria-pressed={!maskMode}
+                onClick={() => {
+                  setEditMode("annotation");
+                  setActiveInk("brush");
+                }}
+              >
+                标记
+              </button>
+              <button
+                aria-pressed={maskMode}
+                onClick={() => {
+                  setEditMode("selection");
+                  setActiveInk("brush");
+                }}
+              >
+                局部选区{hasMask ? " · 已选" : ""}
+              </button>
+            </div>
+          )}
+          {selection.pending && <span role="status">正在识别选区…</span>}
           <TooltipButton label="关闭编辑" onClick={close}>
             <CanvasIcon name="close" size={16} />
           </TooltipButton>
@@ -861,63 +1004,103 @@ export function ImageActionEditor({
                 <TooltipButton
                   key={item.tool}
                   label={item.label}
-                  showTooltip={false}
-                  aria-pressed={activeInk === item.tool}
-                  onClick={() => setActiveInk(item.tool as ImageInkTool)}
+                  aria-pressed={
+                    activeInk === item.tool &&
+                    (!maskMode || selectionTool === "paint")
+                  }
+                  onClick={() => {
+                    setSelectionTool("paint");
+                    setActiveInk(item.tool as ImageInkTool);
+                  }}
                 >
                   <CanvasIcon name={item.icon} size={16} />
-                  <span>{item.label}</span>
                 </TooltipButton>
               ))}
+              {maskMode && (
+                <>
+                  <TooltipButton
+                    label="自动选择主体"
+                    disabled={
+                      !onPreviewSelection || !ready || selection.pending
+                    }
+                    onClick={() => void selection.recognize()}
+                  >
+                    <CanvasIcon name="rail-subject" size={17} />
+                  </TooltipButton>
+                  <TooltipButton
+                    label="快速选择：点击对象添加或移除"
+                    aria-pressed={selectionTool === "quick"}
+                    disabled={!onPreviewSelection}
+                    onClick={() => setSelectionTool("quick")}
+                  >
+                    <CanvasIcon name="cursor" size={17} />
+                  </TooltipButton>
+                  <TooltipButton
+                    label="框选识别"
+                    aria-pressed={selectionTool === "box"}
+                    disabled={!onPreviewSelection}
+                    onClick={() => setSelectionTool("box")}
+                  >
+                    <CanvasIcon name="crop" size={17} />
+                  </TooltipButton>
+                  <TooltipButton
+                    label="按描述选择"
+                    aria-expanded={showSelectionPrompt}
+                    disabled={!onPreviewSelection}
+                    onClick={() => setShowSelectionPrompt(!showSelectionPrompt)}
+                  >
+                    <CanvasIcon name="search" size={17} />
+                  </TooltipButton>
+                </>
+              )}
               <span className="iae-separator" />
               <TooltipButton
-                label="撤销标记"
-                disabled={!history.past.length}
+                label={maskMode ? "撤销选区" : "撤销标记"}
+                disabled={!canUndo}
                 onClick={undo}
               >
                 <CanvasIcon name="undo" size={16} />
               </TooltipButton>
               <TooltipButton
-                label="重做标记"
-                disabled={!history.future.length}
+                label={maskMode ? "重做选区" : "重做标记"}
+                disabled={!canRedo}
                 onClick={redo}
               >
                 <CanvasIcon name="redo" size={16} />
               </TooltipButton>
-              {maskMode && (
-                <button type="button" onClick={() => specialStroke("fill")}>
-                  全选
-                </button>
-              )}
               <TooltipButton
-                label="清除所有标记"
+                label={maskMode ? "清空选区" : "清除所有标记"}
                 onClick={() => specialStroke("clear")}
               >
                 <CanvasIcon name="trash" size={16} />
               </TooltipButton>
-            </div>
-            <div className="iae-row">
-              <label className="iae-range">
-                {activeInk === "text" ? "字号" : "笔刷"}
-                <input
-                  aria-label="笔刷或文字像素尺寸"
-                  type="range"
-                  min={1}
-                  max={160}
-                  value={brushSize}
-                  onChange={(event) => setBrushSize(Number(event.target.value))}
-                />
-                <output>{brushSize}px</output>
-              </label>
-              {!maskMode && (
-                <label className="iae-color">
-                  颜色
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(event) => setColor(event.target.value)}
-                  />
-                </label>
+              {(!maskMode || selectionTool === "paint") && (
+                <div className="iae-brush-settings">
+                  <label className="iae-range">
+                    {activeInk === "text" ? "字号" : "笔刷"}
+                    <input
+                      aria-label="笔刷或文字像素尺寸"
+                      type="range"
+                      min={1}
+                      max={160}
+                      value={brushSize}
+                      onChange={(event) =>
+                        setBrushSize(Number(event.target.value))
+                      }
+                    />
+                    <output>{brushSize}px</output>
+                  </label>
+                  {!maskMode && (
+                    <label className="iae-color">
+                      颜色
+                      <input
+                        type="color"
+                        value={color}
+                        onChange={(event) => setColor(event.target.value)}
+                      />
+                    </label>
+                  )}
+                </div>
               )}
             </div>
             {activeInk === "text" && (
@@ -947,14 +1130,38 @@ export function ImageActionEditor({
                 </button>
               </div>
             )}
-            {maskMode && (
+            {maskMode && showSelectionPrompt && (
+              <form
+                className="iae-selection-query"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void selection.recognize({ prompt: selectionPrompt });
+                }}
+              >
+                <input
+                  aria-label="要选择的对象"
+                  placeholder="描述要选择的对象，如人物、衣服"
+                  value={selectionPrompt}
+                  onChange={(event) => setSelectionPrompt(event.target.value)}
+                />
+                <button disabled={!selectionPrompt.trim() || selection.pending}>
+                  识别
+                </button>
+              </form>
+            )}
+            {maskMode && !onPreviewSelection && (
               <p className="iae-hint">
-                {tool === "cutout"
-                  ? onGenerate
-                    ? "直接点“生成”由模型识别主体；先涂抹主体所在区域可限定范围，或涂抹后“应用手工抠图”。"
-                    : "涂抹需要保留的区域；橡皮移除选区。自动识别需要接入具备主体抠图能力的模型。"
-                  : "涂抹需要消除的区域；内容填补需要 AI 服务。"}
+                {selectionUnavailableReason ??
+                  "连接 SAM 3 后可自动识别；也可直接涂抹选区。"}
               </p>
+            )}
+            {maskMode && selectionTool === "box" && (
+              <p className="iae-hint">
+                拖框圈住要识别的对象，再用画笔或橡皮修正。
+              </p>
+            )}
+            {maskMode && selectionTool === "quick" && (
+              <p className="iae-hint">点击已识别对象，添加或移除选区。</p>
             )}
           </>
         )}
@@ -962,7 +1169,7 @@ export function ImageActionEditor({
           <label className="iae-prompt">
             <span>提示词</span>
             <textarea
-              rows={2}
+              rows={3}
               placeholder={
                 tool === "outpaint"
                   ? "描述扩展区域的内容（选填）"
@@ -1253,6 +1460,16 @@ export function ImageActionEditor({
             </div>
           </>
         )}
+        {selection.pending && (
+          <div className="iae-selection-status" role="status">
+            智能识别选区中… <button onClick={selection.cancel}>取消</button>
+          </div>
+        )}
+        {selection.message && maskMode && (
+          <p className="iae-hint" role="status">
+            {selection.message}
+          </p>
+        )}
         {error && (
           <p className="iae-error" role="alert">
             {error}
@@ -1264,79 +1481,181 @@ export function ImageActionEditor({
           </p>
         )}
         <footer className="iae-footer">
+          {models.length > 0 && tool !== "cutout" && (
+            <select
+              className="iae-model"
+              aria-label="编辑模型"
+              value={String(parameters.imageModelConfigId ?? "")}
+              onChange={(event) =>
+                change({ imageModelConfigId: event.target.value })
+              }
+            >
+              <option value="">{models[0]!.label} · 自动</option>
+              {modelMissing && (
+                <option value={String(parameters.imageModelConfigId)} disabled>
+                  原模型已不可用，请重新选择
+                </option>
+              )}
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+          )}
           <span className="iae-service-note">
-            {!ready && !error
-              ? "正在读取原图…"
-              : localOnly
-                ? "本地标注，保留原图"
-                : onGenerate
-                  ? "由已连接服务处理"
-                  : (unavailableReason ?? "尚未连接此功能的 AI 服务")}
+            {modelMissing
+              ? "原编辑模型已不可用，请重新选择"
+              : !ready && !error
+                ? "正在读取原图…"
+                : tool === "cutout"
+                  ? hasMask
+                    ? "保留选区，输出透明背景"
+                    : "选择要保留的主体"
+                  : localOnly
+                    ? "本地标注"
+                    : !onGenerate
+                      ? (unavailableReason ?? "请连接编辑模型")
+                      : hasMask
+                        ? "局部编辑"
+                        : ""}
           </span>
           <div className="iae-actions">
-            {drawing && (
-              <button
-                type="button"
-                disabled={!ready || (maskMode && !hasMask)}
-                onClick={applyLocal}
+            <TooltipButton
+              label="更多编辑操作"
+              aria-haspopup="menu"
+              aria-expanded={!!menuAnchor}
+              aria-controls={menuAnchor ? "image-action-more" : undefined}
+              onClick={(event) =>
+                setMenuAnchor(menuAnchor ? null : event.currentTarget)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMenuAnchor(event.currentTarget);
+                }
+              }}
+            >
+              <CanvasIcon name="more" size={17} />
+            </TooltipButton>
+            {menuAnchor && (
+              <SelectionToolbarMenu
+                anchor={menuAnchor}
+                id="image-action-more"
+                label="更多编辑操作"
+                onClose={() => setMenuAnchor(null)}
               >
-                {tool === "cutout"
-                  ? "应用手工抠图"
-                  : tool === "inpainting-remove"
-                    ? "本地擦为透明"
-                    : localOnly
-                      ? "确认标注"
-                      : "应用本地标记"}
-              </button>
-            )}
-            {maskMode && (
-              <button
-                type="button"
-                disabled={!ready || !hasMask}
-                onClick={exportMask}
-              >
-                导出蒙版
-              </button>
+                {drawing && tool !== "cutout" && !maskMode && (
+                  <button
+                    type="button"
+                    className="cw-selection-menu-item"
+                    role="menuitem"
+                    disabled={!ready}
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      applyLocal();
+                    }}
+                  >
+                    应用本地标记
+                  </button>
+                )}
+                {tool === "inpainting-remove" && (
+                  <button
+                    type="button"
+                    className="cw-selection-menu-item"
+                    role="menuitem"
+                    disabled={!hasMask}
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      applyLocal();
+                    }}
+                  >
+                    本地擦为透明
+                  </button>
+                )}
+                {hasMask && (
+                  <button
+                    type="button"
+                    className="cw-selection-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      exportMask();
+                    }}
+                  >
+                    导出蒙版
+                  </button>
+                )}
+                {maskMode && (
+                  <button
+                    type="button"
+                    className="cw-selection-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      specialStroke("fill");
+                    }}
+                  >
+                    全选
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="cw-selection-menu-item"
+                  role="menuitem"
+                  disabled={!ready}
+                  onClick={() => {
+                    setMenuAnchor(null);
+                    withTask(() => setNotice("设置已保存。"));
+                  }}
+                >
+                  保存设置
+                </button>
+                {!localOnly && (
+                  <button
+                    type="button"
+                    className="cw-selection-menu-item"
+                    role="menuitem"
+                    disabled={!ready}
+                    onClick={() => {
+                      setMenuAnchor(null);
+                      withTask(onImportResults);
+                    }}
+                  >
+                    导入结果
+                  </button>
+                )}
+              </SelectionToolbarMenu>
             )}
             <button
               type="button"
-              disabled={!ready}
-              onClick={() =>
-                withTask(() => setNotice("设置已保存到当前图片节点。"))
+              className="iae-generate"
+              disabled={
+                !ready ||
+                selection.pending ||
+                (tool === "cutout"
+                  ? !hasMask
+                  : localOnly
+                    ? false
+                    : !onGenerate ||
+                      modelMissing ||
+                      (tool === "inpainting-remove" && !hasMask) ||
+                      (tool === "smart-edit" &&
+                        !String(parameters.prompt ?? "").trim()) ||
+                      (tool === "lighting" &&
+                        !/^#[\da-f]{6}$/.test(String(parameters.lightColor))))
               }
+              onClick={() => {
+                if (tool === "cutout" || localOnly) applyLocal();
+                else if (onGenerate) withTask(onGenerate);
+              }}
             >
-              保存设置
+              <CanvasIcon
+                name={tool === "cutout" ? "check" : "sparkle"}
+                size={15}
+              />
+              {tool === "cutout" ? "完成抠图" : localOnly ? "确认标注" : "生成"}
             </button>
-            {!localOnly && (
-              <button
-                type="button"
-                disabled={!ready}
-                onClick={() => withTask(onImportResults)}
-              >
-                导入结果
-              </button>
-            )}
-            {!localOnly && (
-              <button
-                type="button"
-                className="iae-generate"
-                disabled={
-                  !ready ||
-                  !onGenerate ||
-                  // Automatic cutout needs no selection; a stroke only narrows it.
-                  (maskMode && !hasMask && tool !== "cutout") ||
-                  (tool === "lighting" &&
-                    !/^#[\da-f]{6}$/.test(String(parameters.lightColor)))
-                }
-                onClick={() => onGenerate && withTask(onGenerate)}
-                title={
-                  !onGenerate ? "连接真实服务后可生成" : "提交当前编辑任务"
-                }
-              >
-                <CanvasIcon name="sparkle" size={15} />
-                生成
-              </button>
-            )}
           </div>
         </footer>
       </section>

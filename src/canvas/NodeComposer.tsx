@@ -245,9 +245,7 @@ export function NodeComposer({
       running={running}
       onEscape={() => setPanel(null)}
     >
-      <div
-        className={`cw-composer-body${mode === "video" ? " cw-video-composer-body" : ""}`}
-      >
+      <div className="cw-composer-body">
         {firstLast && (
           <div className="cw-frame-slots" aria-label="首尾帧参考">
             {(
@@ -356,7 +354,7 @@ export function NodeComposer({
             </TooltipButton>
           </div>
         )}
-        {!firstLast && !reading && !music && (
+        {!firstLast && !reading && !music && incomingNodes.length > 0 && (
           <div className="cw-reference-strip">
             <TooltipButton
               type="button"
@@ -398,6 +396,7 @@ export function NodeComposer({
           pickerRef={mentions}
           options={mentionOptions}
           referencesDisabled={running}
+          autoGrow
           className="cw-prompt-input"
           aria-label={reading ? "朗读文本" : "生成提示词"}
           value={prompt}
@@ -431,194 +430,208 @@ export function NodeComposer({
       </div>
 
       <div className="cw-composer-footer">
-        <div className="cw-model-select">
-          <select
-            aria-label="生成模型"
-            value={
-              backend ? `config:${settings.modelConfigId}` : settings.model
-            }
-            disabled={running}
-            onChange={(event) => chooseModel(event.target.value)}
-          >
-            {backend && !config && (
-              <option value={`config:${settings.modelConfigId}`}>
-                {settings.model}（配置不可用）
-              </option>
-            )}
-            {serviceModels.length > 0 && (
-              <optgroup label="本地服务">
-                {serviceModels.map((item) => (
-                  <option key={item.id} value={`config:${item.id}`}>
-                    {modelLabel(item)}
+        <div className="cw-composer-options">
+          <div className="cw-model-select">
+            <select
+              aria-label="生成模型"
+              title={settings.model}
+              value={
+                backend ? `config:${settings.modelConfigId}` : settings.model
+              }
+              disabled={running}
+              onChange={(event) => chooseModel(event.target.value)}
+            >
+              {backend && !config && (
+                <option value={`config:${settings.modelConfigId}`}>
+                  {settings.model}（配置不可用）
+                </option>
+              )}
+              {serviceModels.length > 0 && (
+                <optgroup label="本地服务">
+                  {serviceModels.map((item) => (
+                    <option key={item.id} value={`config:${item.id}`}>
+                      {modelLabel(item)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="即梦参考目录 · 未连接">
+                {(backend ? choices : currentModels).map((model) => (
+                  <option key={model} value={model}>
+                    {model}
                   </option>
                 ))}
               </optgroup>
-            )}
-            <optgroup label="即梦参考目录 · 未连接">
-              {(backend ? choices : currentModels).map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-          <CanvasIcon name="chevronDown" size={12} />
-        </div>
-        <button
-          type="button"
-          className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
-          aria-label="生成参数"
-          aria-expanded={panel === "parameters"}
-          onClick={(event) => togglePanel("parameters", event.currentTarget)}
-        >
-          <CanvasIcon name="sliders" size={15} />
-          <span>
-            {mode === "audio"
-              ? music
-                ? `${settings.durationSeconds} 秒`
-                : reading
-                  ? "文本朗读"
-                  : "全能配音"
-              : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${duration ? `${settings.durationSeconds} 秒` : "服务默认时长"}` : ` · ${settings.count} 张`}`}
-          </span>
-        </button>
-        <div className="cw-generation-mode-controls">
-          {mode === "image" && (
-            <select
-              aria-label="图片创作预设"
-              value={settings.imagePreset ?? "none"}
-              disabled={running}
-              onChange={(event) =>
-                updateSettings({
-                  imagePreset: event.target
-                    .value as ComposerSettings["imagePreset"],
-                })
-              }
-            >
-              <option value="none">自由创作</option>
-              <option
-                value="product-views"
-                disabled={settings.model !== "Seedream 5.0 Pro"}
-              >
-                产品三视图
-              </option>
             </select>
-          )}
-          {mode === "video" && (
-            <select
-              aria-label="视频创作模式"
-              value={settings.videoMode ?? "reference"}
-              disabled={running}
-              onChange={(event) =>
-                updateSettings({
-                  videoMode: event.target
-                    .value as ComposerSettings["videoMode"],
-                })
-              }
-            >
-              {videoModes.map(([value, label]) => (
+            <CanvasIcon name="chevronDown" size={12} />
+          </div>
+          <button
+            type="button"
+            className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
+            aria-label="生成参数"
+            aria-expanded={panel === "parameters"}
+            onClick={(event) => togglePanel("parameters", event.currentTarget)}
+          >
+            <CanvasIcon name="sliders" size={15} />
+            <span>
+              {mode === "audio"
+                ? music
+                  ? `${settings.durationSeconds} 秒`
+                  : reading
+                    ? "文本朗读"
+                    : "全能配音"
+                : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${duration ? `${settings.durationSeconds} 秒` : "服务默认时长"}` : ` · ${settings.count} 张`}`}
+            </span>
+          </button>
+          <div className="cw-generation-mode-controls">
+            {mode === "image" && (
+              <select
+                aria-label="图片创作预设"
+                value={settings.imagePreset ?? "none"}
+                disabled={running}
+                onChange={(event) =>
+                  updateSettings({
+                    imagePreset: event.target
+                      .value as ComposerSettings["imagePreset"],
+                  })
+                }
+              >
+                <option value="none">自由创作</option>
                 <option
-                  key={value}
-                  value={value}
-                  disabled={modeUnsupported(value)}
-                  title={
-                    value === "first-last" &&
+                  value="product-views"
+                  disabled={settings.model !== "Seedream 5.0 Pro"}
+                >
+                  产品三视图
+                </option>
+              </select>
+            )}
+            {mode === "video" && (
+              <select
+                aria-label="视频创作模式"
+                value={settings.videoMode ?? "reference"}
+                disabled={running}
+                onChange={(event) =>
+                  updateSettings({
+                    videoMode: event.target
+                      .value as ComposerSettings["videoMode"],
+                  })
+                }
+              >
+                {videoModes.map(([value, label]) => (
+                  <option
+                    key={value}
+                    value={value}
+                    disabled={modeUnsupported(value)}
+                    title={
+                      value === "first-last" &&
+                      frameImageLimitIssue(
+                        { ...settings, videoMode: "first-last" },
+                        incomingNodes,
+                      )
+                        ? FRAME_IMAGE_LIMIT_MESSAGE
+                        : undefined
+                    }
+                  >
+                    {value === "first-last" &&
                     frameImageLimitIssue(
                       { ...settings, videoMode: "first-last" },
                       incomingNodes,
                     )
-                      ? FRAME_IMAGE_LIMIT_MESSAGE
-                      : undefined
-                  }
-                >
-                  {value === "first-last" &&
-                  frameImageLimitIssue(
-                    { ...settings, videoMode: "first-last" },
-                    incomingNodes,
-                  )
-                    ? `${label}（最多 2 张图片，请先断开多余连线）`
-                    : label}
-                </option>
-              ))}
-            </select>
-          )}
-          {mode === "audio" && !backend && (
-            <>
-              <select
-                aria-label="音频创作类型"
-                value={settings.audioCreationType ?? "audio"}
-                disabled={running}
-                onChange={(event) =>
-                  updateSettings({
-                    audioCreationType: event.target
-                      .value as ComposerSettings["audioCreationType"],
-                  })
-                }
-              >
-                <option value="audio">音频生成</option>
-                <option value="music">音乐生成</option>
+                      ? `${label}（最多 2 张图片，请先断开多余连线）`
+                      : label}
+                  </option>
+                ))}
               </select>
-              {!music && (
+            )}
+            {mode === "audio" && !backend && (
+              <>
                 <select
-                  aria-label="音频创作模式"
-                  value={settings.audioMode ?? "unified"}
+                  aria-label="音频创作类型"
+                  value={settings.audioCreationType ?? "audio"}
                   disabled={running}
                   onChange={(event) =>
                     updateSettings({
-                      audioMode: event.target
-                        .value as ComposerSettings["audioMode"],
+                      audioCreationType: event.target
+                        .value as ComposerSettings["audioCreationType"],
                     })
                   }
                 >
-                  <option value="unified">全能配音</option>
-                  <option value="tts">文本朗读</option>
+                  <option value="audio">音频生成</option>
+                  <option value="music">音乐生成</option>
                 </select>
-              )}
-            </>
-          )}
-          {mode === "audio" && backend && (
-            <input
-              aria-label="服务音色"
-              value={settings.voiceName ?? ""}
-              placeholder="默认音色"
-              disabled={running}
-              spellCheck={false}
-              onChange={(event) =>
-                updateSettings({
-                  voiceName: event.target.value.trim() || undefined,
-                })
-              }
-            />
-          )}
-          {reading && !backend && (
-            <button
+                {!music && (
+                  <select
+                    aria-label="音频创作模式"
+                    value={settings.audioMode ?? "unified"}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSettings({
+                        audioMode: event.target
+                          .value as ComposerSettings["audioMode"],
+                      })
+                    }
+                  >
+                    <option value="unified">全能配音</option>
+                    <option value="tts">文本朗读</option>
+                  </select>
+                )}
+              </>
+            )}
+            {mode === "audio" && backend && (
+              <input
+                aria-label="服务音色"
+                value={settings.voiceName ?? ""}
+                placeholder="默认音色"
+                disabled={running}
+                spellCheck={false}
+                onChange={(event) =>
+                  updateSettings({
+                    voiceName: event.target.value.trim() || undefined,
+                  })
+                }
+              />
+            )}
+            {reading && !backend && (
+              <button
+                type="button"
+                className="cw-voice-trigger"
+                aria-label="语音库"
+                aria-expanded={panel === "voices"}
+                onClick={(event) => togglePanel("voices", event.currentTarget)}
+              >
+                <CanvasIcon name="audio" size={15} />
+                <span>{settings.voiceName || "语音库"}</span>
+                <CanvasIcon name="chevronDown" size={12} />
+              </button>
+            )}
+          </div>
+          {!firstLast && !reading && !music && incomingNodes.length === 0 && (
+            <TooltipButton
               type="button"
-              className="cw-voice-trigger"
-              aria-label="语音库"
-              aria-expanded={panel === "voices"}
-              onClick={(event) => togglePanel("voices", event.currentTarget)}
+              className="cw-reference-trigger"
+              aria-label="添加参考素材"
+              label="添加参考素材"
+              onClick={onPickReference}
             >
-              <CanvasIcon name="audio" size={15} />
-              <span>{settings.voiceName || "语音库"}</span>
-              <CanvasIcon name="chevronDown" size={12} />
-            </button>
+              <CanvasIcon name="plus" size={16} />
+            </TooltipButton>
+          )}
+          {!reading && !music && (
+            <TooltipButton
+              type="button"
+              className="cw-reference-trigger"
+              aria-label="引用已连接节点"
+              label="引用已连接节点"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setPanel(null);
+                mentions.current?.openPicker();
+              }}
+            >
+              @
+            </TooltipButton>
           )}
         </div>
-        {!reading && !music && (
-          <button
-            type="button"
-            className="cw-reference-trigger"
-            aria-label="引用已连接节点"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              setPanel(null);
-              mentions.current?.openPicker();
-            }}
-          >
-            @ <span>引用</span>
-          </button>
-        )}
-        <span className="cw-footer-spacer" />
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}

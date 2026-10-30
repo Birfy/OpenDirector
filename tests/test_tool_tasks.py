@@ -111,7 +111,8 @@ def test_catalog_reports_availability_by_capability(project):
     tools = {item['id']: item for item in configured['tools']}
     assert tools['outpaint']['available'] and tools['dynamic-poster']['available'] and tools['video-subtitle-erasure']['available']
     assert tools['outpaint']['models']['image.edit'][0]['label'] == 'Z-Image-Turbo'
-    assert not tools['cutout']['available'] and '主体抠图' in tools['cutout']['reason']
+    assert tools['cutout']['available']  # A confirmed/manual mask is applied locally.
+    assert not configured['selectionPreview']['available']
     assert not tools['layer-decompose']['available'] and '图像分割' in tools['layer-decompose']['reason']
     assert {'image.edit', 'video.first_frame', 'audio.speech', 'text.chat'} <= set(configured['capabilities'])
     assert any(field['key'] == 'preset' and field['options'] for field in tools['image-presets']['fields'])
@@ -476,6 +477,153 @@ def test_layer_decompose_by_boxes_and_description_without_an_editor(project):
     task = run(store, configs, transport, project_id, session,
                {'tool': 'layer-decompose', 'sourceAssetIds': [source], 'parameters': {'mode': 'description', 'prompt': '吉他'}})
     assert task['status'] == 'failed' and '吉他' in task['error']
+
+
+def test_selection_preview_returns_alpha_masks_without_output_assets(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    log = []
+    answers = {'person': [(0.9, (0, 0, 32, 48))], 'animal': [(0.6, (0, 0, 32, 48))],
+               'vehicle': [(0.8, (40, 10, 60, 30))]}
+    tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
+                      transport=httpx.MockTransport(segmentation_server(log, answers)))
+    preview = asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': source}, session))
+    assert preview['sourceAssetId'] == source and (preview['width'], preview['height']) == (64, 48)
+    assert [item['label'] for item in preview['instances']] == ['人物', '交通工具']
+    assert [item['score'] for item in preview['instances']] == [0.9, 0.8]
+    mask = Image.open(io.BytesIO(base64.b64decode(preview['instances'][0]['maskDataUrl'].split(',', 1)[1])))
+    assert mask.mode == 'RGBA' and mask.getpixel((10, 20)) == (255, 255, 255, 255)
+    assert mask.getpixel((50, 20))[3] == 0
+    with store.transaction() as db:
+        directory = store._owner(db, project_id)
+    assert set(tools.assets._records(directory, project_id)) == {source}
+    assert not child(directory, 'tool-tasks').exists() and tools.catalog()['selectionPreview']['available']
+
+
+def test_selection_preview_checks_source_authority_and_box_bounds(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    log = []
+    tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
+                      transport=httpx.MockTransport(segmentation_server(log, {})))
+    with pytest.raises(ProjectError):
+        asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': source}, str(uuid4())))
+    with pytest.raises(ProjectError, match='来源图片不存在'):
+        asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': str(uuid4())}, session))
+    with pytest.raises(ProjectError, match='选框必须位于原图内'):
+        asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': source,
+                    'boxes': [{'x': 60, 'y': 0, 'width': 20, 'height': 10}]}, session))
+    assert not log
+
+
+def test_selection_preview_cancellation_closes_upstream_work(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+
+    async def check():
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+
+        async def provider(_):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
+                          transport=httpx.MockTransport(provider))
+        preview = asyncio.create_task(tools.selection_preview(project_id, {'sourceAssetId': source, 'prompt': 'person'}, session))
+        await asyncio.wait_for(entered.wait(), 2)
+        preview.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await preview
+        assert cancelled.is_set() and not tools.jobs
+    asyncio.run(check())
+
+
+def test_cutout_applies_exact_user_mask_without_any_model(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    mask = upload(store, project_id, session, 'mask.png', base64.b64decode(box_mask((64, 48), (10, 8, 30, 32))))
+    task = run(store, configure(store), None, project_id, session,
+               {'tool': 'cutout', 'sourceAssetIds': [source], 'maskAssetId': mask})
+    assert task['status'] == 'succeeded' and task['requires'] == []
+    result = output_rgba(store, project_id, task)
+    assert result.getpixel((10, 8)) == (0, 0, 255, 255)
+    assert result.getpixel((9, 8))[3] == 0 and result.getpixel((30, 20))[3] == 0
+
+
+def test_cutout_uses_sam_when_no_rgba_editor_is_configured(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    log = []
+    task = run(store, configure(store, SAM3), httpx.MockTransport(segmentation_server(log, {'person': [(0.9, (10, 8, 30, 32))]})),
+               project_id, session, {'tool': 'cutout', 'sourceAssetIds': [source], 'parameters': {'prompt': '人物'}})
+    assert task['status'] == 'succeeded' and task['requires'] == ['image.segment']
+    assert log == ['person'] and output_rgba(store, project_id, task).getpixel((20, 20)) == (0, 0, 255, 255)
+    assert output_rgba(store, project_id, task).getpixel((5, 5))[3] == 0
+
+
+def test_smart_edit_uses_visual_annotation_and_keeps_unselected_pixels(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    annotation = upload(store, project_id, session, 'marked.png', png(color='green'))
+    mask = upload(store, project_id, session, 'mask.png', base64.b64decode(box_mask((64, 48), (10, 8, 30, 32))))
+    calls = []
+    task = run(store, configure(store, ('image', 'http://gpu:8210/v1', 'Qwen/Qwen-Image-2.1')),
+               httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'smart-edit', 'sourceAssetIds': [source], 'maskAssetId': mask,
+                'annotationAssetId': annotation, 'parameters': {'prompt': '改成红色'}})
+    assert task['status'] == 'succeeded', task['error']
+    assert calls[0].count(b'name="image"') == 2 and '第二张图'.encode() in calls[0]
+    result = output_rgba(store, project_id, task)
+    assert result.getpixel((20, 20)) == (255, 0, 0, 255)
+    assert result.getpixel((9, 8)) == (0, 0, 255, 255) and result.getpixel((30, 20)) == (0, 0, 255, 255)
+
+
+def test_smart_edit_reads_editor_text_strokes_and_honours_selected_model(project):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    configs = configure(store, ZIMAGE)
+    chosen = configs.save('image', 'http://gpu:8210/v1', 'Qwen/Qwen-Image-2.1', '', connection_type='self_hosted', protocol='openai')
+    calls = []
+    document = {'version': 1, 'sourceNodeId': str(uuid4()), 'width': 64, 'height': 48,
+                'strokes': [{'tool': 'text', 'text': '  换成红色外套  ', 'points': [{'x': 20, 'y': 20}], 'size': 20, 'color': '#fff'}]}
+    task = run(store, configs, httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'smart-edit', 'sourceAssetIds': [source], 'modelConfigIds': {'image.edit': chosen['id']},
+                'parameters': {'annotationDocument': json.dumps(document)}})
+    assert task['status'] == 'succeeded', task['error']
+    assert '换成红色外套'.encode() in calls[0] and b'Qwen/Qwen-Image-2.1' in calls[0]
+    assert task['modelConfigIds'] == {'image.edit': chosen['id']}
+
+
+def test_selection_api_uses_owned_source_and_accepts_only_supported_prompts(project, monkeypatch):
+    from fastapi.testclient import TestClient
+    from museshow.domain.capabilities import Segment
+    from museshow.integrations.model_adapters import VllmOmniSegmentation
+    from museshow_api.main import create_app
+
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'blue.png', png())
+    configure(store, SAM3)
+    calls = []
+
+    async def segment(self, config, request):
+        calls.append(request)
+        return [Segment(base64.b64decode(box_mask((64, 48), (12, 10, 30, 30))), (12, 10, 30, 30), 0.9)]
+
+    monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
+    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+        path = f'/api/projects/{project_id}/image-selections'
+        response = client.post(path, json={'sourceAssetId': source, 'boxes': [{'x': 10, 'y': 8, 'width': 22, 'height': 24}]})
+        assert response.status_code == 200, response.text
+        assert response.json()['instances'][0]['box'] == {'x': 12, 'y': 10, 'width': 18, 'height': 20}
+        assert calls[0].boxes == ((10.0, 8.0, 32.0, 32.0),)
+        assert client.post(path, json={'sourceAssetId': source, 'points': [[12, 12]]}).status_code == 422
+        assert client.post(path, json={'sourceAssetId': source, 'boxes': [{'x': 0, 'y': 0, 'width': -1, 'height': 4}]}).status_code == 422
+        assert client.post(path, json={'sourceAssetId': source}, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+    assert len(calls) == 1
 
 
 def tracking_server(log, *, empty=False):

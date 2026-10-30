@@ -39,6 +39,8 @@ interface Props extends Omit<
   inputRef: RefObject<HTMLTextAreaElement | null>;
   pickerRef: Ref<ReferenceMentionHandle>;
   referencesDisabled?: boolean;
+  /** Fit prompt text between the textarea's CSS min/max-height bounds. */
+  autoGrow?: boolean;
   onChoose?: (
     option: MentionOption,
     signal: AbortSignal,
@@ -56,6 +58,7 @@ export function ReferenceMentionInput({
   inputRef,
   pickerRef,
   referencesDisabled,
+  autoGrow = false,
   onChoose,
   onOpen,
   loading,
@@ -96,6 +99,28 @@ export function ReferenceMentionInput({
   );
   const selected = Math.min(active, Math.max(0, shown.length - 1));
   const unavailable = disabled || referencesDisabled;
+
+  const fitHeight = () => {
+    const input = inputRef.current;
+    if (!input || !autoGrow) return;
+    const scrollTop = input.scrollTop;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+    input.scrollTop = scrollTop;
+  };
+  useLayoutEffect(fitHeight, [value, autoGrow]);
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input || !autoGrow) return;
+    let width = input.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth === width) return;
+      width = input.clientWidth;
+      fitHeight();
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [autoGrow, inputRef]);
 
   useEffect(() => {
     alive.current = true;

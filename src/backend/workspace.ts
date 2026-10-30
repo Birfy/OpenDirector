@@ -1,5 +1,9 @@
 import { ApiError, json, request } from "./api.ts";
-import { openBackendProject, releaseBackendProject } from "./projects.ts";
+import {
+  createBackendProject,
+  openBackendProject,
+  releaseBackendProject,
+} from "./projects.ts";
 import { createDocument, type CanvasDocument } from "../canvas/model.ts";
 import { parseDocument, serializeDocument } from "../canvas/storage.ts";
 import {
@@ -90,12 +94,15 @@ export async function saveWorkspaceDocument(document: CanvasDocument) {
 
 export async function createWorkspaceProject(name: string, id: string) {
   if (creationEnabled()) {
+    // Unified creation does not acquire a lease; projection.open does that.
     await creationClient(id).command("project.create", { name });
     return (await listWorkspaceProjects()).projects.find(
       (project) => project.id === id,
     )!;
   }
-  return request<WorkspaceProject>("/projects", json("POST", { id, name }));
+  return createBackendProject(id, () =>
+    request<WorkspaceProject>("/projects", json("POST", { id, name })),
+  );
 }
 
 /** JSON imports/examples become independent filesystem projects. */
@@ -122,7 +129,8 @@ export async function importWorkspaceDocument(document: CanvasDocument) {
 
 let initialization: Promise<CanvasDocument> | undefined;
 export function initializeWorkspace() {
-  // React StrictMode replays mount effects; creation must happen only once.
+  // StrictMode's concurrent mount effects share in-flight work. A later mount
+  // must reread the current project, not reinstall the first empty document.
   initialization ??= (async () => {
     let { projects } = await listWorkspaceProjects();
     let selected: string | undefined =
@@ -164,9 +172,8 @@ export function initializeWorkspace() {
     );
     await saveWorkspaceDocument(document);
     return document;
-  })().catch((error) => {
+  })().finally(() => {
     initialization = undefined;
-    throw error;
   });
   return initialization;
 }

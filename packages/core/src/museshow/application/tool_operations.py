@@ -41,9 +41,12 @@ class ToolContext:
 
     def __init__(self, *, sources, mask, boxes, parameters, image_model, video_model, progress, video_submitted=None, cutout_model=None,
                  edit_model=None, edit_seconds=(4.0, 15.0), chat_model=None, segment_model=None, track_model=None,
-                 edit_keeps_layout=True):
+                 edit_keeps_layout=True, annotation=None, edit_max_images=1, segment_available=False):
         self.sources: list[Source] = sources
         self.mask: bytes | None = mask
+        self.annotation: bytes | None = annotation
+        self.edit_max_images = edit_max_images
+        self.segment_available = segment_available
         self.boxes: list[dict] = boxes
         self.parameters: dict = parameters
         self._image, self._video, self._cutout, self._edit = image_model, video_model, cutout_model, edit_model
@@ -77,10 +80,10 @@ class ToolContext:
     async def progress(self, message):
         await self._progress(message)
 
-    async def edit(self, image: Image.Image, prompt: str, strength: float) -> Image.Image:
+    async def edit(self, image: Image.Image, prompt: str, strength: float, *, references=()) -> Image.Image:
         """Image-to-image at the source's aspect; the result is resampled back to the source size."""
         result = await self._image(ImageRequest(prompt=prompt, width=image.width, height=image.height,
-                                                image=media.rgb_png(image), strength=strength))
+                                                image=media.rgb_png(image), strength=strength, references=tuple(references)))
         return media.resize(media.open_image(result.data), image.width, image.height)
 
     async def reframe(self, image: Image.Image, width: int, height: int, prompt: str) -> Image.Image:
@@ -244,14 +247,29 @@ async def smart_edit(ctx: ToolContext):
     notes = []
     try:
         document = json.loads(ctx.parameters.get('annotationDocument') or '{}')
-        notes = [stroke.get('text', '').strip() for stroke in document.get('strokes', []) if stroke.get('type') == 'text']
+        notes = [stroke.get('text', '').strip() for stroke in document.get('strokes', []) if stroke.get('tool') == 'text']
     except (ValueError, AttributeError):
         pass
     instruction = '；'.join(item for item in [prompt, *notes] if item)
     if not instruction:
         raise ProjectError('请描述要如何修改图片。', 422)
     await ctx.progress('正在按描述改图')
-    edited = await ctx.edit(image, instruction + '。保持未提及的内容不变', 0.78)
+    input_image, references = image, ()
+    if ctx.annotation:
+        marked = media.open_image(ctx.annotation)
+        if marked.size != image.size:
+            raise ProjectError('标注图片尺寸必须与原图一致。', 422)
+        if ctx.edit_max_images > 1:
+            references = (media.rgb_png(marked),)
+            instruction += '。第二张图是第一张图上的编辑标记，请根据标记理解位置与意图'
+        else:
+            input_image = marked
+            instruction += '。图上的笔画、箭头与文字是编辑指示'
+        instruction += '，完成修改后移除这些辅助标记'
+    edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78, references=references)
+    if ctx.mask:
+        # A selection is an exact editing boundary: pixels outside it stay original.
+        edited = media.blend(image, edited, media.mask_from(ctx.mask, image.size))
     return [image_output(edited, '智能改图')]
 
 
@@ -289,13 +307,18 @@ async def image_hd(ctx: ToolContext):
 
 async def cutout(ctx: ToolContext):
     image = _source_image(ctx)
-    await ctx.progress('正在识别并抠出主体')
-    lifted = await ctx.cutout(image, ctx.text('prompt'))
-    alpha = lifted.getchannel('A')
     if ctx.mask:
-        # A rough stroke limits the result to the subject the user pointed at.
-        hint = media.mask_from(ctx.mask, image.size).filter(ImageFilter.MaxFilter(max(3, (min(image.size) // 40) | 1)))
-        alpha = ImageChops.multiply(alpha, media.feather(hint, 2))
+        await ctx.progress('正在应用选区')
+        alpha = media.mask_from(ctx.mask, image.size)
+    elif ctx.segment_available:
+        found = await select_image_objects(ctx, image, ctx.text('prompt'), ctx.boxes)
+        alpha = Image.new('L', image.size, 0)
+        for mask, _, _, _ in found:
+            alpha = ImageChops.lighter(alpha, mask)
+    else:
+        await ctx.progress('正在识别并抠出主体')
+        lifted = await ctx.cutout(image, ctx.text('prompt'))
+        alpha = lifted.getchannel('A')
     if alpha.getextrema()[1] < 16:
         raise ProjectError('没有识别到可抠出的主体，请换一张图或涂抹主体所在区域后重试。', 422)
     # Keep the original pixels; the model contributes only the matte.
@@ -320,45 +343,57 @@ def _area(mask: Image.Image) -> int:
     return mask.histogram()[255]
 
 
-def _distinct(found, size, limit=16):
+def _distinct(found, size, limit=16, *, with_scores=False, preserve_order=False):
     """Highest-scoring instances first; one that mostly repeats a kept layer or is a speck is dropped."""
     kept = []
-    for mask, score, label in sorted(found, key=lambda item: -item[1]):
+    for mask, score, label in (found if preserve_order else sorted(found, key=lambda item: -item[1])):
         mask = mask.point(lambda value: 255 if value >= 128 else 0)
         area = _area(mask)
         if area < size[0] * size[1] * 0.002:
             continue
-        if any(_area(ImageChops.multiply(mask, other)) > 0.6 * min(area, other_area) for other, other_area, _ in kept):
+        if any(_area(ImageChops.multiply(mask, other)) > 0.6 * min(area, other_area) for other, other_area, _, _ in kept):
             continue
-        kept.append((mask, area, label))
+        kept.append((mask, area, label, score))
         if len(kept) == limit:
             break
-    return [(mask, label) for mask, _, label in kept]
+    return [(mask, score, label) if with_scores else (mask, label) for mask, _, label, score in kept]
+
+
+async def select_image_objects(ctx: ToolContext, image: Image.Image, prompt='', boxes=()):
+    """Reusable SAM instances for editor previews and automatic cutout.
+
+    Exemplar boxes can match similar objects elsewhere, so only the best overlapping
+    instance is selected for each user box. No point-prompt semantics are invented.
+    """
+    found = []
+    if boxes:
+        for index, item in enumerate(boxes, 1):
+            target = (item['x'], item['y'], item['x'] + item['width'], item['y'] + item['height'])
+            if target[0] < 0 or target[1] < 0 or target[2] > image.width or target[3] > image.height:
+                raise ProjectError('选框必须位于原图内。', 422)
+            await ctx.progress(f'正在识别框选对象（{index}/{len(boxes)}）')
+            instances = await ctx.segment(image, boxes=(target,))
+            best = max(instances, key=lambda item: _overlap(item[2], target), default=None)
+            if best is not None and _overlap(best[2], target) >= 0.3:
+                found.append((best[0], best[1], f'对象 {index}'))
+    else:
+        for concept, label in await ctx.concepts(prompt, SMART_LAYERS):
+            await ctx.progress(f'正在识别「{label}」')
+            found += [(mask, score, label) for mask, score, _ in await ctx.segment(image, concept)]
+    return [(mask, score, label, mask.getbbox())
+            for mask, score, label in _distinct(found, image.size, with_scores=True, preserve_order=bool(boxes))]
 
 
 async def layer_decompose(ctx: ToolContext):
     image = _source_image(ctx)
     mode = ctx.choice('mode', ('smart', 'boxes', 'description'), 'smart')
-    found = []
-    if mode == 'boxes':
-        if not ctx.boxes:
-            raise ProjectError('框选拆分需要提供原图中的矩形选区。', 422)
-        for index, item in enumerate(ctx.boxes, 1):
-            await ctx.progress(f'正在识别框选对象（{index}/{len(ctx.boxes)}）')
-            target = (item['x'], item['y'], item['x'] + item['width'], item['y'] + item['height'])
-            # An exemplar box returns every similar object; keep the one the box encloses.
-            segments = await ctx.segment(image, boxes=(target,))
-            best = max(segments, key=lambda segment: _overlap(segment[2], target), default=None)
-            if best is not None and _overlap(best[2], target) >= 0.3:
-                found.append((best[0], 2.0 - index / 1000, f'对象 {index}'))
-    else:
-        text = ctx.text('prompt')
-        if mode == 'description' and not text:
-            raise ProjectError('按描述拆分需要填写拆分描述。', 422)
-        for concept, label in await ctx.concepts(text if mode == 'description' else '', SMART_LAYERS):
-            await ctx.progress(f'正在识别「{label}」')
-            found += [(mask, score, label) for mask, score, _ in await ctx.segment(image, concept)]
-    layers = _distinct(found, image.size)
+    if mode == 'boxes' and not ctx.boxes:
+        raise ProjectError('框选拆分需要提供原图中的矩形选区。', 422)
+    text = ctx.text('prompt') if mode == 'description' else ''
+    if mode == 'description' and not text:
+        raise ProjectError('按描述拆分需要填写拆分描述。', 422)
+    found = await select_image_objects(ctx, image, text, ctx.boxes if mode == 'boxes' else ())
+    layers = [(mask, label) for mask, _, label, _ in found]
     if not layers:
         raise ProjectError('没有识别到可分离的对象，请换一种描述或框选对象后重试。', 422)
     holes = Image.new('L', image.size, 0)
@@ -759,8 +794,8 @@ TOOLS: dict[str, ToolSpec] = {item.id: item for item in [
     ToolSpec('video-upscale', ('video',), _needs(), video_upscale, note='本地 Lanczos 插值放大，不调用模型。'),
     ToolSpec('video-frame-interpolation', ('video',), _needs(), frame_interpolation,
              (_select('fps', '输出帧率', [(30, '30 fps'), (60, '60 fps')], 60),), note='本地运动补偿插帧，不调用模型。'),
-    ToolSpec('cutout', ('image',), _needs('image.cutout'), cutout,
-             note='由模型识别主体；先涂抹主体所在区域可限定抠图范围。'),
+    ToolSpec('cutout', ('image',), _needs(), cutout,
+             note='按选区保留原图像素并输出透明背景；自动识别使用图像分割或主体抠图模型。'),
     ToolSpec('layer-decompose', ('image',), _needs('image.segment'), layer_decompose,
              note='智能拆分识别人物、动物、车辆、商品等常见对象；按描述拆分可写多个对象，用逗号分隔。'
                   '接入图片编辑模型时会补全背景。'),

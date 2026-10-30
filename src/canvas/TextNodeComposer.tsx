@@ -72,43 +72,46 @@ export function TextNodeComposer({
       onEscape={() => setPanel(null)}
     >
       <div className="cw-composer-body">
-        <div className="cw-reference-strip">
-          <TooltipButton
-            type="button"
-            className="cw-add-reference"
-            aria-label="添加参考素材"
-            label="添加参考素材"
-            onClick={onPickReference}
-          >
-            <CanvasIcon name="plus" size={20} />
-          </TooltipButton>
-          {incoming.map((reference) => (
-            <button
+        {incoming.length > 0 && (
+          <div className="cw-reference-strip">
+            <TooltipButton
               type="button"
-              className="cw-reference-chip"
-              key={reference.id}
-              title={reference.data.title}
-              onClick={() => insert(reference)}
+              className="cw-add-reference"
+              aria-label="添加参考素材"
+              label="添加参考素材"
+              onClick={onPickReference}
             >
-              {reference.type === "image" && reference.data.src ? (
-                <img
-                  src={reference.data.src}
-                  alt={reference.data.title}
-                  draggable={false}
-                />
-              ) : (
-                <CanvasIcon name={reference.type} size={22} />
-              )}
-              <span>{reference.data.title}</span>
-            </button>
-          ))}
-        </div>
+              <CanvasIcon name="plus" size={20} />
+            </TooltipButton>
+            {incoming.map((reference) => (
+              <button
+                type="button"
+                className="cw-reference-chip"
+                key={reference.id}
+                title={reference.data.title}
+                onClick={() => insert(reference)}
+              >
+                {reference.type === "image" && reference.data.src ? (
+                  <img
+                    src={reference.data.src}
+                    alt={reference.data.title}
+                    draggable={false}
+                  />
+                ) : (
+                  <CanvasIcon name={reference.type} size={22} />
+                )}
+                <span>{reference.data.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <ReferenceMentionInput
           key={node.id}
           inputRef={input}
           pickerRef={mentions}
           options={mentionOptions}
           referencesDisabled={running}
+          autoGrow
           className="cw-prompt-input"
           aria-label="文本生成提示词"
           spellCheck={false}
@@ -140,57 +143,71 @@ export function TextNodeComposer({
         />
       </div>
       <div className="cw-composer-footer">
-        <div className="cw-model-select">
-          <select
-            aria-label="Agent 模型"
-            value={selected ?? ""}
-            disabled={running}
-            onChange={(event) => update({ modelConfigId: event.target.value })}
+        <div className="cw-composer-options">
+          <div className="cw-model-select">
+            <select
+              aria-label="Agent 模型"
+              title={model ? modelLabel(model) : "选择 Agent 模型"}
+              value={selected ?? ""}
+              disabled={running}
+              onChange={(event) =>
+                update({ modelConfigId: event.target.value })
+              }
+            >
+              {!agents.length && <option value="">选择 Agent 模型</option>}
+              {selected && !model && (
+                <option value={selected}>原 Agent 模型不可用</option>
+              )}
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {modelLabel(agent)}
+                </option>
+              ))}
+            </select>
+            <CanvasIcon name="chevronDown" size={12} />
+          </div>
+          <button
+            type="button"
+            className="cw-parameter-trigger"
+            aria-label="Agent 参数"
+            aria-expanded={panel === "parameters"}
+            onClick={(event) => toggle("parameters", event.currentTarget)}
           >
-            {!agents.length && <option value="">选择 Agent 模型</option>}
-            {selected && !model && (
-              <option value={selected}>原 Agent 模型不可用</option>
-            )}
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {modelLabel(agent)}
-              </option>
-            ))}
-          </select>
-          <CanvasIcon name="chevronDown" size={12} />
+            <CanvasIcon name="sliders" size={15} />
+            <span>
+              {
+                { auto: "自动", low: "低", medium: "中", high: "高" }[
+                  settings.thinking
+                ]
+              }{" "}
+              · {settings.maxTokens}
+            </span>
+          </button>
+          {incoming.length === 0 && (
+            <TooltipButton
+              type="button"
+              className="cw-reference-trigger"
+              aria-label="添加参考素材"
+              label="添加参考素材"
+              onClick={onPickReference}
+            >
+              <CanvasIcon name="plus" size={16} />
+            </TooltipButton>
+          )}
+          <TooltipButton
+            type="button"
+            className="cw-reference-trigger"
+            aria-label="引用已连接节点"
+            label="引用已连接节点"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setPanel(null);
+              mentions.current?.openPicker();
+            }}
+          >
+            @
+          </TooltipButton>
         </div>
-        <button
-          type="button"
-          className="cw-parameter-trigger"
-          aria-label="Agent 参数"
-          aria-expanded={panel === "parameters"}
-          onClick={(event) => toggle("parameters", event.currentTarget)}
-        >
-          <CanvasIcon name="sliders" size={15} />
-          <span>
-            {
-              { auto: "自动", low: "低", medium: "中", high: "高" }[
-                settings.thinking
-              ]
-            }{" "}
-            · {settings.maxTokens}
-          </span>
-        </button>
-        <span className="cw-agent-mode">Agent 生成</span>
-        <button
-          type="button"
-          className="cw-reference-trigger"
-          aria-label="引用已连接节点"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            setPanel(null);
-            mentions.current?.openPicker();
-          }}
-        >
-          {" "}
-          @{" "}
-        </button>
-        <span className="cw-footer-spacer" />
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}

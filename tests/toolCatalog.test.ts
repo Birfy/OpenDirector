@@ -344,3 +344,31 @@ test("video edit uses actual 4–30 second source metadata and rejects invented 
     ).some((error) => error.includes("尚未接入")),
   );
 });
+
+test("panorama uses connected editing models and rejects a removed selection", () => {
+  const definition = CANVAS_TOOLS.find((tool) => tool.id === "panorama")!;
+  const capability = {
+    available: true,
+    parametersConfirmed: true,
+    models: { "image.edit": [{ id: "editor-1", label: "Image editor" }] },
+    fields: [
+      {
+        key: "resolution",
+        label: "清晰度",
+        type: "select" as const,
+        default: "2K",
+        options: [{ value: "2K", label: "2K" }],
+      },
+    ],
+  };
+  const parameters = initialToolParameters(definition, capability);
+  assert.equal(parameters.imageModelConfigId, "editor-1");
+  const task = createCanvasToolTask("panorama", [source.nodeId], parameters);
+  assert.deepEqual(validateToolTask(task, [source], capability), []);
+  assert.ok(
+    validateToolTask(task, [source], {
+      ...capability,
+      models: { "image.edit": [] },
+    }).some((error) => error.includes("可用选项")),
+  );
+});
