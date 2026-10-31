@@ -128,13 +128,13 @@
   gap: 10px;
 }
 .cw-domain-dialog .cw-domain-primary {
-  border-color: #c5a4dd;
-  color: #2c1c37;
-  background: #c5a4dd;
+  border-color: var(--cw-control-accent);
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent);
 }
 .cw-domain-dialog .cw-domain-primary:hover:not(:disabled) {
-  color: #211329;
-  background: #dcc0ef;
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent-hover);
 }
 .cw-domain-section-heading {
   display: flex;

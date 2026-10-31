@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { CanvasIcon } from "./CanvasIcon";
+import { ControlSlider } from "./ControlSlider";
 import { TooltipButton } from "./TooltipButton";
 import { SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
@@ -861,9 +862,8 @@ function VideoActionSession({
             {playing ? "Ⅱ" : "▶"}
           </TooltipButton>
           <span>{timeLabel(position)}</span>
-          <input
+          <ControlSlider
             aria-label="视频播放位置"
-            type="range"
             min={0}
             max={Math.max(0, duration - 0.001)}
             step="0.01"

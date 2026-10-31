@@ -273,6 +273,7 @@ import "@xyflow/react/dist/style.css";
 import "./workspace.css";
 import "./settings.css";
 import "./themes.css";
+import "./control-theme.css";
 
 type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 type Panel = "assets" | "search" | "history" | null;
@@ -4783,8 +4784,6 @@ function Workspace() {
               width: selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
               transform: selectionPresentation.composerTransform,
-              background: "#1e2028",
-              border: "1px solid #ffffff20",
             }}
             data-interacting={
               interacting ||

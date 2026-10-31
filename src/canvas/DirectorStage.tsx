@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { CanvasNode } from "./model";
+import { ControlSlider } from "./ControlSlider";
 import {
   createLocalStage,
   parseLocalStageValue,
@@ -1050,9 +1051,8 @@ export function DirectorStage({
                   在此记录关键帧
                 </button>
               </div>
-              <input
+              <ControlSlider
                 aria-label="舞台播放位置"
-                type="range"
                 min={0}
                 max={stage.duration}
                 step={0.01}

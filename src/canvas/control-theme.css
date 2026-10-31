@@ -1,0 +1,586 @@
+/* Shared accents also reach body portals, lazy editors and media overlays. */
+:root {
+  --cw-control-accent: #a78bd4;
+  --cw-control-accent-hover: #bfa2ed;
+  --cw-control-on-accent: #21182d;
+  --cw-control-track: #4e465b;
+  --cw-control-thumb: #f5edff;
+  --cw-control-active: #a78bd424;
+  --cw-control-highlight: #e0cff5;
+}
+:root[data-theme="light"] {
+  --cw-control-surface: #ffffff;
+  --cw-control-fill: #f3f7ff;
+  --cw-control-fg: #263750;
+  --cw-control-muted: #687d99;
+  --cw-control-border: #d5e2f5;
+  --cw-control-hover: #edf4ff;
+  --cw-control-active: #e3eeff;
+  --cw-control-accent: #3d6bd6;
+  --cw-control-accent-hover: #2f58bb;
+  --cw-control-on-accent: #ffffff;
+  --cw-control-highlight: #2456b9;
+  --cw-control-track: #dae5f7;
+  --cw-control-thumb: #ffffff;
+  --cw-control-notice-bg: #edf4ff;
+  --cw-control-shadow: 0 10px 32px #294f831a;
+  --settings-background: #f3f7ff;
+  --settings-surface: #ffffff;
+  --settings-text: #263750;
+  --settings-muted: #687d99;
+  --settings-border: #d5e2f5;
+  --settings-hover: #edf4ff;
+  --settings-active: #e3eeff;
+  --settings-input: #f8faff;
+  --panel-bg: #ffffff;
+  --text-primary: #263750;
+}
+
+/* Surfaces, including dialogs mounted outside .cw-workspace. */
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-selection-menu,
+    .cw-node-action-dock,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-creation-assets,
+    .model-picker-panel,
+    .chat-picker-menu,
+    .cw-modal,
+    .cw-project-dialog,
+    .cw-settings-dialog,
+    .cw-side-panel,
+    .cw-tooltip
+  ) {
+  background: var(--cw-control-surface);
+  color: var(--cw-control-fg);
+  border-color: var(--cw-control-border);
+  box-shadow: var(--cw-control-shadow);
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-selection-menu,
+    .cw-node-task-panel,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-creation-assets,
+    .cw-modal,
+    .cw-side-panel
+  )
+  :is(
+    button,
+    input:where(
+      :not(
+        [type="range"],
+        [type="checkbox"],
+        [type="radio"],
+        [type="color"],
+        [type="file"]
+      )
+    ),
+    textarea,
+    select
+  ) {
+  background: var(--cw-control-fill);
+  color: var(--cw-control-fg);
+  border-color: var(--cw-control-border);
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-selection-menu,
+    .cw-composer,
+    .cw-node-task-panel,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-creation-assets,
+    .cw-modal,
+    .cw-side-panel
+  )
+  :is(button, select):hover:not(:disabled):where(
+    :not(
+      .cw-is-active,
+      .is-active,
+      .active,
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      .is-filled
+    )
+  ) {
+  background: var(--cw-control-hover);
+  color: var(--cw-control-fg);
+  border-color: #b5ccef;
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-selection-menu,
+    .cw-composer,
+    .cw-node-task-panel,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-creation-assets,
+    .cw-modal,
+    .cw-side-panel
+  )
+  :is(
+    .cw-is-active,
+    .is-active,
+    .active,
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-filled
+  ) {
+  background: var(--cw-control-active);
+  color: #2456b9;
+  border-color: #8eafea;
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-selection-menu,
+    .cw-composer,
+    .cw-node-task-panel,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-creation-assets,
+    .cw-modal,
+    .cw-settings-dialog,
+    .cw-side-panel
+  )
+  :is(input, textarea, select, button, summary):focus-visible {
+  outline-color: #719be8;
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-popover,
+    .cw-composer,
+    .cw-node-task-panel,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .lb-dialog,
+    .cw-settings-dialog,
+    .cw-side-panel
+  )
+  :is(input[type="range"], input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--cw-control-accent);
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-composer,
+    .cw-popover,
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .lb-dialog,
+    .cw-settings-dialog,
+    .cw-side-panel,
+    .cw-assistant-panel
+  )
+  option {
+  color: var(--cw-control-fg);
+  background: var(--cw-control-surface);
+}
+
+/* Headings and secondary labels in the older advanced editor forms. */
+:root[data-theme="light"]
+  :is(
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .lb-dialog
+  )
+  :is(h2, h3, h4, strong, label, output) {
+  color: var(--cw-control-fg);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-field-label,
+    .cw-parameter-unknown,
+    .cw-reference-role,
+    .cw-selection-menu-item small,
+    .cw-grid-split-options p,
+    .cw-grid-split-options header span,
+    .cw-domain-header p,
+    .cw-domain-section-heading > span,
+    .cw-domain-footer > span,
+    .cw-model-empty,
+    .cw-model-list small,
+    .cw-video-config > summary,
+    .iae-header > span,
+    .iae-hint,
+    .iae-service-note,
+    .iae-range output,
+    .cw-video-action-editor > header span,
+    .cw-va-field-label,
+    .cw-video-action-editor > footer > span,
+    .cw-node-task-panel header span,
+    .cw-editor-description,
+    .cw-editor-preview-meta,
+    .cw-editor-footer > span,
+    .cw-editor-empty,
+    .cw-editor-section-title > span,
+    .lb-header h2 small,
+    .lb-inspector h3 > span,
+    .lb-layer-name small,
+    .lb-footer span,
+    .cw-local-media-controls,
+    .cw-local-media-controls > span,
+    .cw-tooltip kbd
+  ) {
+  color: var(--cw-control-muted);
+}
+
+:root[data-theme="light"]
+  :is(
+    .cw-editor-eyebrow,
+    .cw-editor-header h2 > span,
+    .cw-editor-loading,
+    .cw-editor-select,
+    .cw-editor-slider > span,
+    .cw-editor-local-note,
+    .cw-editor-local-note > span,
+    .cw-domain-note,
+    .cw-domain-status,
+    .cw-resource-empty,
+    .cw-resource-audio,
+    .cw-subject-auxiliary > div > span,
+    .cw-stack-switcher > span,
+    .cw-timeline-transport output > span,
+    .cw-timeline-track-label > span,
+    .cw-timeline-drag-status,
+    .cw-timeline-snap,
+    .cw-timeline-zoom,
+    .cw-capability-help,
+    .lb-eyebrow,
+    .lb-brush,
+    .lb-empty,
+    .lb-mask-info,
+    .lb-hint,
+    .cw-va-transport,
+    .cw-va-range-values,
+    .cw-va-frame-actions > span,
+    .cw-va-crop-settings > span,
+    .cw-va-hint,
+    .cw-va-unavailable,
+    .iae-selection-status,
+    .cw-card-timeline-meta,
+    .cw-card-track,
+    .cw-domain-card-empty,
+    .cw-card-stack-controls small
+  ) {
+  color: var(--cw-control-muted);
+}
+:root[data-theme="light"]
+  :is(.cw-stack-preview pre, .cw-timeline-clip > small) {
+  color: var(--cw-control-fg);
+}
+
+/* Nested form plates and sticky footers must follow their parent surface. */
+:root[data-theme="light"]
+  :is(
+    .cw-domain-header,
+    .cw-domain-footer,
+    .cw-editor-header,
+    .cw-editor-footer,
+    .lb-stage-footer,
+    .lb-footer,
+    .cw-node-task-panel > footer,
+    .image-action-editor:not(.iae-cutout) .iae-footer,
+    .cw-video-action-editor > footer
+  ) {
+  background: var(--cw-control-surface);
+  border-color: var(--cw-control-border);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-subject-main,
+    .cw-subject-auxiliary,
+    .cw-subject-voice,
+    .cw-stack-preview,
+    .cw-stack-members > div,
+    .cw-tool-field,
+    .cw-editor-preview-panel,
+    .cw-editor-controls,
+    .cw-editor-preview,
+    .cw-editor-preview.is-empty,
+    .lb-stage,
+    .lb-surface,
+    .lb-inspector,
+    .lb-layer-thumb,
+    .lb-ai-note,
+    .lb-inspector .lb-ai-note,
+    .lb-message,
+    .iae-segment,
+    .iae-expansion-label,
+    .cw-model-list li,
+    .cw-timeline-library,
+    .cw-timeline-inspector,
+    .cw-timeline-tracks,
+    .cw-timeline-scroll,
+    .cw-timeline-ruler,
+    .cw-timeline-track-label,
+    .cw-timeline-ruler > span,
+    .cw-local-image-surface,
+    .cw-local-video-preview
+  ) {
+  background: var(--cw-control-fill);
+  color: var(--cw-control-fg);
+  border-color: var(--cw-control-border);
+}
+:root[data-theme="light"]
+  :is(.cw-stack-members > div.selected, .lb-layer-row.is-selected) {
+  background: var(--cw-control-active);
+  border-color: #8eafea;
+}
+:root[data-theme="light"] .cw-timeline-track-lane {
+  background: repeating-linear-gradient(
+      90deg,
+      transparent 0 calc(var(--cw-ruler-step, 80px) - 1px),
+      #dce7f6 calc(var(--cw-ruler-step, 80px) - 1px) var(--cw-ruler-step, 80px)
+    )
+    #f8faff;
+}
+:root[data-theme="light"] .cw-timeline-dialog .cw-timeline-clip {
+  background: #dce9ff;
+  color: #284d88;
+  border-color: #8eafea;
+}
+:root[data-theme="light"] .cw-timeline-dialog .cw-timeline-clip.audio {
+  background: #e0f1f7;
+  color: #276379;
+}
+:root[data-theme="light"] .cw-va-time-range {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      #9dbbe34d 0,
+      #9dbbe34d 1px,
+      transparent 1px,
+      transparent 10%
+    ),
+    #e8f0fc;
+  border-color: var(--cw-control-border);
+}
+:root[data-theme="light"] .cw-va-range-handle::after {
+  background: var(--cw-control-accent);
+}
+:root[data-theme="light"] .cw-va-range-fill {
+  background: #caddff;
+  border-color: #8eafea;
+}
+:root[data-theme="light"] .cw-va-range-fill > span {
+  color: #2456b9;
+}
+
+/* The composer includes both floating controls and media thumbnails. Only
+   placeholders are recoloured; image/video pixels and caption gradients stay. */
+:root[data-theme="light"] .cw-composer {
+  --chat-surface: #f0f5ff;
+  --chat-border: #d5e2f5;
+  --chat-text: #263750;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-domain-card,
+    .cw-domain-card-preview,
+    .cw-card-open,
+    .cw-card-track > span,
+    .cw-card-stack-controls button
+  ) {
+  background: var(--cw-control-fill);
+  color: var(--cw-control-fg);
+  border-color: var(--cw-control-border);
+}
+:root[data-theme="light"] .cw-card-track i {
+  background: #8eafea;
+}
+:root[data-theme="light"] .cw-card-subject > span {
+  color: var(--cw-control-fg);
+}
+:root[data-theme="light"] .cw-selection-toolbar button[aria-expanded="true"] {
+  background: var(--cw-control-active);
+  color: #2456b9;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .lb-dialog
+  )
+  :where(p, small) {
+  color: var(--cw-control-muted);
+}
+:root[data-theme="light"] .cw-composer :is(.cw-reference-chip, .cw-frame-slot) {
+  background: var(--cw-control-fill);
+  color: var(--cw-control-muted);
+  border-color: var(--cw-control-border);
+}
+:root[data-theme="light"] .cw-composer .cw-reference-remove {
+  background: #ffffff;
+  color: #526c91;
+  border-color: #b5c9e6;
+}
+:root[data-theme="light"]
+  .cw-composer
+  .cw-reference-remove:hover:not(:disabled) {
+  background: var(--cw-control-active);
+  color: #2456b9;
+}
+:root[data-theme="light"]
+  .cw-composer
+  :is(.cw-model-select, .cw-generation-mode-controls select):hover {
+  background: var(--cw-control-hover);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-composer .cw-audio-toggle,
+    .cw-model-section,
+    .cw-video-config,
+    .lb-inspector section,
+    .cw-video-action-editor > header
+  ) {
+  color: var(--cw-control-muted);
+  border-color: var(--cw-control-border);
+}
+
+/* Reference and model menus have local tokens because they can be portals. */
+:root[data-theme="light"] .cw-reference-mention-picker {
+  --mention-surface: #ffffff;
+  --mention-subtle: #f2f7ff;
+  --mention-active: #e6f0ff;
+  --mention-text: #263750;
+  --mention-muted: #687d99;
+  border-color: var(--cw-control-border);
+  box-shadow: var(--cw-control-shadow);
+}
+:root[data-theme="light"]
+  .cw-reference-mention-picker
+  [role="tab"][aria-selected="true"] {
+  color: #2456b9;
+  box-shadow: 0 1px 4px #294f831a;
+}
+:root[data-theme="light"] .cw-assistant-panel {
+  --chat-composer: #f8faff;
+  --chat-surface: #f0f5ff;
+  --chat-border: #d5e2f5;
+  --chat-hover: #edf4ff;
+}
+:root[data-theme="light"] .cw-lib-dialog {
+  --cw-lib-border: #d5e2f5;
+  --cw-lib-raised: #f3f7ff;
+  --cw-lib-hover: #edf4ff;
+  --cw-lib-active: #e3eeff;
+  --cw-lib-active-fg: #2456b9;
+  --cw-lib-input: #f8faff;
+  --cw-lib-button: #f3f7ff;
+}
+
+/* Primary actions retain white text; warnings keep a semantic contrast. */
+:root[data-theme="light"]
+  :is(
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .lb-dialog,
+    .cw-selection-menu,
+    .cw-composer
+  )
+  :is(
+    .cw-domain-primary,
+    .cw-editor-apply,
+    .iae-generate,
+    .cw-va-primary,
+    .cw-node-task-primary,
+    .lb-primary,
+    .is-primary,
+    .cw-run-button:not(:disabled)
+  ) {
+  color: #ffffff;
+  background: var(--cw-control-accent);
+  border-color: var(--cw-control-accent);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-domain-dialog,
+    .cw-image-editor,
+    .image-action-editor,
+    .cw-video-action-editor,
+    .cw-node-task-panel,
+    .lb-dialog,
+    .cw-selection-menu,
+    .cw-composer
+  )
+  :is(
+    .cw-domain-primary,
+    .cw-editor-apply,
+    .iae-generate,
+    .cw-va-primary,
+    .cw-node-task-primary,
+    .lb-primary,
+    .is-primary,
+    .cw-run-button
+  ):hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--cw-control-accent-hover);
+  border-color: var(--cw-control-accent-hover);
+}
+:root[data-theme="light"] .cw-assistant-send:not(:disabled) {
+  color: #ffffff;
+  background: var(--cw-control-accent);
+}
+:root[data-theme="light"]
+  :is(
+    .iae-error,
+    .cw-va-error,
+    .cw-domain-error,
+    .cw-editor-error,
+    .lb-message.is-error
+  ) {
+  color: #a33749;
+  border-color: #f1ced5;
+  background: #fff2f5;
+}
+:root[data-theme="light"]
+  :is(.cw-domain-overlay, .cw-image-editor-overlay, .lb-overlay) {
+  background: #29456b30;
+}
+:root[data-theme="light"]
+  :is(.cw-settings-dialog, .cw-project-dialog, .cw-creation-assets)::backdrop {
+  background: #29456b30;
+}

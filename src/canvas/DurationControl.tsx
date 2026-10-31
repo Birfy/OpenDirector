@@ -1,10 +1,5 @@
-import {
-  useEffect,
-  useId,
-  useState,
-  type CSSProperties,
-  type PointerEvent,
-} from "react";
+import { useEffect, useId, useState, type PointerEvent } from "react";
+import { ControlSlider } from "./ControlSlider";
 
 /** Display scale and model-supported seconds are independent. */
 export function DurationControl({
@@ -94,8 +89,7 @@ export function DurationControl({
         </span>
       )}
       <div className="cw-duration-slider">
-        <input
-          type="range"
+        <ControlSlider
           aria-label="创作时长"
           min={min}
           max={max}
@@ -105,11 +99,6 @@ export function DurationControl({
           aria-valuetext={`${value} 秒`}
           aria-description={limit}
           aria-describedby={notice ? noticeId : undefined}
-          style={
-            {
-              "--duration-progress": `${span > 0 ? Math.max(0, Math.min(100, ((value - min) / span) * 100)) : 0}%`,
-            } as CSSProperties
-          }
           onChange={(event) => choose(Number(event.target.value))}
           onPointerDown={pointerHint}
           onPointerMove={(event) => {
