@@ -24,7 +24,8 @@ export function AssetsPanel({
   onToggle,
   onChanged,
   onNotice,
-  onInsert,
+  onState,
+  disabled = false,
   reloadKey,
 }: {
   query: string;
@@ -32,39 +33,30 @@ export function AssetsPanel({
   onToggle: (item: LibraryItem) => void;
   onChanged: () => void;
   onNotice: (message: string) => void;
-  /** Copies the chosen assets onto the current canvas. */
-  onInsert?: (items: LibraryItem[]) => Promise<void>;
+  /** Report the current page so the dialog can validate its single selection. */
+  onState: (items: LibraryItem[], busy: boolean) => void;
+  disabled?: boolean;
   reloadKey: number;
 }) {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [kind, setKind] = useState<LibraryMediaKind | "">("");
   const [busy, setBusy] = useState(false);
-  const [inserting, setInserting] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
-
-  const chosen = items.filter(
-    (item) => selected.has(item.id) && item.mediaKind !== null,
+  useEffect(
+    () => onState(items, busy || Boolean(error)),
+    [items, busy, error, onState],
   );
-
-  const insertIntoCanvas = async () => {
-    if (!chosen.length || !onInsert) return;
-    setInserting(true);
-    setError("");
-    try {
-      await onInsert(chosen);
-      onNotice(`已放入 ${chosen.length} 个素材到当前画布`);
-    } catch (reason) {
-      setError(errorMessage(reason));
-    } finally {
-      setInserting(false);
-    }
-  };
-
   useEffect(() => {
     let active = true;
     setBusy(true);
-    listItems({ kind: "asset", state: "active", query, mediaKind: kind || undefined })
+    setError("");
+    listItems({
+      kind: "asset",
+      state: "active",
+      query,
+      mediaKind: kind || undefined,
+    })
       .then((rows) => {
         if (active) setItems(rows);
       })
@@ -96,7 +88,9 @@ export function AssetsPanel({
   };
 
   const remove = async () => {
-    const ids = items.filter((item) => selected.has(item.id)).map((item) => item.id);
+    const ids = items
+      .filter((item) => selected.has(item.id))
+      .map((item) => item.id);
     if (!ids.length) return;
     setBusy(true);
     try {
@@ -116,7 +110,11 @@ export function AssetsPanel({
         <button
           type="button"
           className={kind === "" ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"}
-          onClick={() => setKind("")}
+          disabled={disabled}
+          onClick={() => {
+            onChanged();
+            setKind("");
+          }}
         >
           全部
         </button>
@@ -124,8 +122,14 @@ export function AssetsPanel({
           <button
             key={category.key}
             type="button"
-            className={kind === category.key ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"}
-            onClick={() => setKind(category.key)}
+            className={
+              kind === category.key ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"
+            }
+            disabled={disabled}
+            onClick={() => {
+              onChanged();
+              setKind(category.key);
+            }}
           >
             {category.label}
           </button>
@@ -138,21 +142,19 @@ export function AssetsPanel({
             hidden
             onChange={(event) => void upload(event.target.files)}
           />
-          <button type="button" onClick={() => input.current?.click()} disabled={busy}>
+          <button
+            type="button"
+            onClick={() => input.current?.click()}
+            disabled={disabled || busy}
+          >
             上传素材
           </button>
           <button
             type="button"
-            onClick={() => void insertIntoCanvas()}
-            disabled={busy || !chosen.length}
-            title={chosen.length ? undefined : "先选中要放到画布的素材"}
-          >
-            {inserting ? "正在放入画布…" : "放入当前画布"}
-          </button>
-          <button
-            type="button"
             onClick={() => void remove()}
-            disabled={busy || !items.some((item) => selected.has(item.id))}
+            disabled={
+              disabled || busy || !items.some((item) => selected.has(item.id))
+            }
           >
             移入回收站
           </button>
@@ -179,6 +181,7 @@ export function AssetsPanel({
                 : undefined
             }
             selected={selected.has(item.id)}
+            disabled={disabled || busy}
             onSelect={() => onToggle(item)}
           />
         ))}

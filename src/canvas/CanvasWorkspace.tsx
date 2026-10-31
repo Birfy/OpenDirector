@@ -84,10 +84,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
-import {
-  AssetLibraryDialog,
-  type LibraryTab,
-} from "./library/AssetLibraryDialog";
+import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
 import {
   itemBlob,
   itemToResource,
@@ -149,6 +146,16 @@ const DirectorStage = lazy(() =>
 );
 import { readEditorResource, classifyImportFile } from "./editorMedia";
 import { assertUpload } from "./uploadPolicy.ts";
+import {
+  SubjectImportDialog,
+  type SubjectImportChoice,
+  type SubjectImportTab,
+} from "./library/SubjectImportDialog";
+import {
+  copyCanvasSource,
+  copySubjectAsset,
+  type CanvasSource,
+} from "../backend/canvasSources";
 import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
 import {
   copyLibrarySubjects,
@@ -487,9 +494,14 @@ function Workspace() {
   );
   const [panel, setPanel] = useState<Panel>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [subjectImport, setSubjectImport] = useState<{
+    projectId: string;
+    nodeId: string;
+    slot: SubjectMediaSlot;
+    tab: SubjectImportTab;
+    identity: string;
+  } | null>(null);
   const [subjectLibraryBusy, setSubjectLibraryBusy] = useState(false);
-  const [libraryInitialTab, setLibraryInitialTab] =
-    useState<LibraryTab>("assets");
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
   const [toolRevision, setToolRevision] = useState(0);
@@ -843,30 +855,23 @@ function Workspace() {
   };
 
   /** Copies a picked resource onto the current canvas as independent nodes. */
-  const importCanvasResource = (resource: CanvasResource) => {
-    if (subjectTarget.current) {
-      applySubjectResource(subjectTarget.current, resource);
-      return;
-    }
-    const target = referenceTarget.current;
+  const importCanvasResource = async (resource: CanvasResource) => {
+    const current = historyRef.current.present;
     const where = center();
     const node = createNode(
       resource.kind,
       { x: where.x - 160, y: where.y - 140 },
       resourceNodeData(resource),
     );
-    const linked =
-      target && doc.nodes.some((item) => item.id === target)
-        ? referenceEdges([node.id], target, [node])
-        : { commands: [], issue: "" };
-    command({
-      type: "batch",
-      commands: [{ type: "add-nodes", nodes: [node] }, ...linked.commands],
-    });
+    const next = applyCommand(current, { type: "add-nodes", nodes: [node] });
+    if (!(await persist(next)))
+      throw new Error(saveError.current || "导入未能保存。");
+    if (historyRef.current.present.id !== current.id) return;
+    change((latest) => mergeLibrarySubjectImport(latest, current, next));
     setSelected([node.id]);
     referenceTarget.current = null;
     setPanel(null);
-    notify(`素材已复制到当前画布，可独立编辑。${linked.issue}`);
+    notify("素材已复制到当前画布，可独立编辑。");
   };
 
   const insertLibraryItems = async (items: LibraryItem[]) => {
@@ -915,7 +920,7 @@ function Workspace() {
             }),
           );
         }
-        importCanvasResource(resource);
+        await importCanvasResource(resource);
         placed += 1;
       } catch (reason) {
         issues.push(`${item.name}：${String(reason)}`);
@@ -941,23 +946,10 @@ function Workspace() {
       });
     return saveQueue.current;
   }, []);
-  const importLibrarySubjects = async (
-    items: LibraryItem[],
-    targetId?: string,
-  ) => {
+  const importLibrarySubjects = async (items: LibraryItem[]) => {
     if (subjectLibraryBusy || switchPending.current)
       throw new Error("请等待当前操作完成。");
     const projectId = historyRef.current.present.id;
-    const beforeTarget = targetId
-      ? subjectImportSelection(historyRef.current.present, selectedRef.current)
-      : null;
-    if (
-      targetId &&
-      (beforeTarget?.issue || beforeTarget?.node?.id !== targetId)
-    )
-      throw new Error(
-        beforeTarget?.issue ?? "画布选择已变化，请重新选择主体。",
-      );
     setSubjectLibraryBusy(true);
     try {
       if (
@@ -971,19 +963,6 @@ function Workspace() {
       const current = historyRef.current.present;
       if (current.id !== projectId || switchPending.current)
         throw new Error("项目已切换，本次导入未应用。");
-      if (targetId) {
-        const latest = subjectImportSelection(current, selectedRef.current);
-        if (
-          latest.issue ||
-          latest.node?.id !== targetId ||
-          !beforeTarget?.node ||
-          subjectTargetIdentity(latest.node) !==
-            subjectTargetIdentity(beforeTarget.node)
-        )
-          throw new Error(
-            latest.issue ?? "目标主体或选择已变化，本次导入未应用。",
-          );
-      }
       const operation = librarySubjectCommand(
         current,
         copies.map((copy) => ({
@@ -991,7 +970,7 @@ function Workspace() {
           subject: copy.subject,
         })),
         center(),
-        targetId,
+        undefined,
         (subject, width) =>
           measureSubjectNodeHeight(
             subject,
@@ -1006,26 +985,145 @@ function Workspace() {
           saveError.current || "主体导入未能保存，画布内容保持原状。",
         );
       if (historyRef.current.present.id !== projectId) return;
-      change((latest) =>
-        mergeLibrarySubjectImport(latest, current, next, targetId),
-      );
+      change((latest) => mergeLibrarySubjectImport(latest, current, next));
       const previousIds = new Set(current.nodes.map((node) => node.id));
       setSelected(
-        targetId
-          ? [targetId]
-          : next.nodes
-              .filter((node) => !previousIds.has(node.id))
-              .map((node) => node.id),
+        next.nodes
+          .filter((node) => !previousIds.has(node.id))
+          .map((node) => node.id),
       );
-      subjectTarget.current = null;
-      notify(
-        targetId
-          ? "已替换选中主体内容，可撤销。"
-          : `已导入 ${copies.length} 个主体到画布。`,
-      );
+      notify(`已导入 ${copies.length} 个主体到画布。`);
     } finally {
       setSubjectLibraryBusy(false);
     }
+  };
+
+  const confirmSubjectImport = async (choice: SubjectImportChoice) => {
+    const intent = subjectImport;
+    if (!intent || subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    const assertTarget = () => {
+      const current = historyRef.current.present;
+      const { node, issue } = subjectImportSelection(current, [intent.nodeId]);
+      if (
+        current.id !== intent.projectId ||
+        issue ||
+        !node ||
+        subjectTargetIdentity(node) !== intent.identity
+      )
+        throw new Error(issue || "目标主体已变化，请重新打开导入界面。");
+      return { current, node };
+    };
+    assertTarget();
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("请先保存当前画布。");
+      let source: import("./model").SubjectData;
+      const complete =
+        choice.tab === "subjects" ||
+        (choice.tab === "canvas" && choice.item.kind === "subject");
+      if (choice.tab === "subjects")
+        source = (
+          await copyLibrarySubjects(intent.projectId, [choice.item])
+        )[0]!.subject;
+      else {
+        const copied =
+          choice.tab === "assets"
+            ? {
+                resource: await copySubjectAsset(
+                  intent.projectId,
+                  choice.item,
+                  intent.slot,
+                ),
+                subject: undefined,
+              }
+            : await copyCanvasSource(
+                intent.projectId,
+                intent.projectId,
+                choice.item as CanvasSource,
+                intent.slot,
+              );
+        const { node } = assertTarget();
+        source = complete
+          ? copied.subject!
+          : subjectWithResource(
+              node.data.subject,
+              copied.resource,
+              intent.slot,
+            );
+      }
+      const { current, node } = assertTarget();
+      const next = applyCommand(
+        current,
+        librarySubjectCommand(
+          current,
+          [{ title: node.data.title, subject: source }],
+          center(),
+          node.id,
+          (subject, width) =>
+            measureSubjectNodeHeight(
+              subject,
+              width,
+              getComputedStyle(root.current!).fontFamily,
+            ),
+        ),
+      );
+      if (!(await persist(next)))
+        throw new Error(saveError.current || "主体导入未能保存。");
+      if (historyRef.current.present.id === intent.projectId)
+        change((latest) =>
+          mergeLibrarySubjectImport(latest, current, next, node.id),
+        );
+      notify("已导入主体内容，可撤销。");
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+  const importCanvasSource = async (
+    originProjectId: string,
+    source: CanvasSource,
+  ) => {
+    const projectId = historyRef.current.present.id;
+    if (
+      !(await persistCurrentDocument(() => historyRef.current.present, persist))
+    )
+      throw new Error("请先保存画布。");
+    const copied = await copyCanvasSource(
+      projectId,
+      originProjectId,
+      source,
+      "main",
+      false,
+    );
+    if (historyRef.current.present.id !== projectId)
+      throw new Error("项目已切换。");
+    if (copied.kind === "subject") {
+      const current = historyRef.current.present;
+      const next = applyCommand(
+        current,
+        librarySubjectCommand(
+          current,
+          [{ title: copied.title, subject: copied.subject }],
+          center(),
+          undefined,
+          (subject, width) =>
+            measureSubjectNodeHeight(
+              subject,
+              width,
+              getComputedStyle(root.current!).fontFamily,
+            ),
+        ),
+      );
+      if (!(await persist(next)))
+        throw new Error(saveError.current || "导入失败。");
+      change((latest) => mergeLibrarySubjectImport(latest, current, next));
+    } else await importCanvasResource(copied.resource);
   };
 
   const backupLibrarySubject = async () => {
@@ -1079,7 +1177,7 @@ function Workspace() {
       setPreview(null);
       editorOrigin.current = null;
       referenceTarget.current = null;
-      subjectTarget.current = null;
+
       uploadTarget.current = null;
       setArrivingNodes(new Set());
       setHistory(createHistory(next));
@@ -1997,39 +2095,6 @@ function Workspace() {
       notify(errorMessage(error));
     }
   };
-  const subjectTarget = useRef<string | null>(null);
-  const applySubjectResource = (id: string, resource: CanvasResource) => {
-    const target = historyRef.current.present.nodes.find(
-      (n) => n.id === id && n.type === "subject",
-    );
-    if (!target || lockedIds.has(id)) {
-      notify("主体已移除或锁定。");
-      return;
-    }
-    if (!["image", "video", "audio"].includes(resource.kind)) {
-      notify("主体需要图片、视频或音频素材。");
-      return;
-    }
-    command({
-      type: "update-node",
-      id,
-      patch: {
-        data: {
-          subject: {
-            description: "",
-            category: "character",
-            auxiliaries: [],
-            ...target.data.subject,
-            ...(resource.kind === "audio"
-              ? { voice: resource }
-              : { main: resource }),
-          },
-        },
-      },
-    });
-    subjectTarget.current = null;
-    setPanel(null);
-  };
   const openFilePicker = (
     id: string | null = null,
     subjectSlot?: SubjectMediaSlot,
@@ -2071,7 +2136,7 @@ function Workspace() {
               ? "image/*"
               : subjectSlot === "voice"
                 ? "audio/*"
-                : "image/*,video/*,audio/*"
+                : "image/*,video/*"
             : selected && ["image", "video", "audio"].includes(selected.type)
               ? `${selected.type}/*`
               : "";
@@ -2116,8 +2181,31 @@ function Workspace() {
               expected?.node.type,
             );
           validate(classifyImportFile(file).kind);
-          const resource = await readEditorResource(file, signal);
+          let resource = await readEditorResource(file, signal);
           validate(resource.kind);
+          if (expected?.node.type === "subject") {
+            // Validate the slot before registering, then retain the canonical
+            // project resource so a later projection cannot change its identity.
+            subjectWithResource(
+              expected.node.data.subject,
+              resource,
+              expected.subjectSlot,
+            );
+            if (creationEnabled()) {
+              const ref = await creationClient(importDocumentId).importBlob(
+                file,
+                file.name,
+                resource.kind,
+              );
+              resource =
+                await workspaceProjection(importDocumentId).resource(ref);
+              subjectWithResource(
+                expected.node.data.subject,
+                resource,
+                expected.subjectSlot,
+              );
+            }
+          }
           return resource;
         },
         controller.signal,
@@ -3852,14 +3940,36 @@ function Workspace() {
     ) => {
       if (lockedIds.has(id)) return;
       if (source === "file") {
-        openFilePicker(id, slot);
+        openFilePicker(id, slot ?? "main");
         return;
       }
       referenceTarget.current = null;
-      subjectTarget.current = id;
-      if (source === "import") setSelected([id]);
-      setLibraryInitialTab(source === "import" ? "subjects" : "assets");
-      setLibraryOpen(true);
+
+      void (async () => {
+        if (
+          !(await persistCurrentDocument(
+            () => historyRef.current.present,
+            persist,
+          ))
+        )
+          throw new Error("请先保存画布。");
+        const current = historyRef.current.present;
+        const { node, issue } = subjectImportSelection(current, [id]);
+        if (issue || !node) throw new Error(issue || "目标主体已移除。");
+        setSelected([id]);
+        setSubjectImport({
+          projectId: current.id,
+          nodeId: id,
+          slot: slot ?? "main",
+          tab:
+            source === "import"
+              ? "subjects"
+              : source === "canvas"
+                ? "canvas"
+                : "assets",
+          identity: subjectTargetIdentity(node),
+        });
+      })().catch((error) => notify(errorMessage(error)));
     },
     select: (id: string, event: React.MouseEvent) => {
       if (pointerGesture.current.blocksClick(event.detail)) return;
@@ -4233,7 +4343,14 @@ function Workspace() {
           interacting ||
           panning ||
           references.connecting ||
-          Boolean(editing || preview || activeAction || menu)
+          Boolean(
+            editing ||
+            preview ||
+            activeAction ||
+            menu ||
+            libraryOpen ||
+            subjectImport,
+          )
         }
       >
         <CanvasActionsContext.Provider value={actions}>
@@ -5471,7 +5588,6 @@ function Workspace() {
               onClick={() => {
                 setPanel(null);
                 referenceTarget.current = null;
-                subjectTarget.current = null;
               }}
             />
           </div>
@@ -5487,7 +5603,7 @@ function Workspace() {
               </p>
               <button
                 className="cw-wide-button"
-                onClick={() => openFilePicker(subjectTarget.current)}
+                onClick={() => openFilePicker()}
               >
                 <CanvasIcon name="upload" />
                 上传本地素材
@@ -5500,15 +5616,6 @@ function Workspace() {
                     <button
                       key={n.id}
                       onClick={() => {
-                        if (subjectTarget.current) {
-                          const resource = resourceFromNode(n);
-                          if (resource)
-                            applySubjectResource(
-                              subjectTarget.current,
-                              resource,
-                            );
-                          return;
-                        }
                         if (
                           referenceTarget.current &&
                           referenceTarget.current !== n.id &&
@@ -5552,16 +5659,6 @@ function Workspace() {
                   <button
                     key={title}
                     onClick={() => {
-                      if (subjectTarget.current) {
-                        applySubjectResource(subjectTarget.current, {
-                          id: crypto.randomUUID(),
-                          kind: "image",
-                          title,
-                          src: studyImage(i, title),
-                          mimeType: "image/svg+xml",
-                        });
-                        return;
-                      }
                       const target = referenceTarget.current;
                       const n = addNode("image", undefined, {
                         title,
@@ -6284,14 +6381,34 @@ function Workspace() {
   return (
     <>
       {workspace}
+      {subjectImport && (
+        <SubjectImportDialog
+          projectId={subjectImport.projectId}
+          targetId={subjectImport.nodeId}
+          initialTab={subjectImport.tab}
+          slot={subjectImport.slot}
+          targetIssue={
+            doc.id !== subjectImport.projectId
+              ? "项目已切换。"
+              : (subjectImportSelection(doc, [subjectImport.nodeId]).issue ??
+                (() => {
+                  const target = doc.nodes.find(
+                    (node) => node.id === subjectImport.nodeId,
+                  );
+                  return target &&
+                    subjectTargetIdentity(target) !== subjectImport.identity
+                    ? "目标主体已变化，请重新打开导入界面。"
+                    : null;
+                })())
+          }
+          busy={subjectLibraryBusy || switching || projectRenaming}
+          onClose={() => setSubjectImport(null)}
+          onConfirm={confirmSubjectImport}
+        />
+      )}
       {libraryOpen && (
         <AssetLibraryDialog
           currentId={doc.id}
-          initialTab={libraryInitialTab}
-          subjectTarget={{
-            id: subjectImportSelection(doc, selected).node?.id,
-            issue: subjectImportSelection(doc, selected).issue,
-          }}
           subjectBusy={subjectLibraryBusy || switching || projectRenaming}
           backupSubjectIssue={
             single?.type === "subject" &&
@@ -6300,15 +6417,13 @@ function Workspace() {
               ? null
               : "请在画布中仅选中一个有内容的主体。"
           }
-          onImportSubjects={importLibrarySubjects}
+          onImportSubjects={(items) => importLibrarySubjects(items)}
           onBackupSubject={backupLibrarySubject}
           onClose={() => {
             setLibraryOpen(false);
-            setLibraryInitialTab("assets");
             referenceTarget.current = null;
-            subjectTarget.current = null;
           }}
-          onImport={importCanvasResource}
+          onImportCanvas={importCanvasSource}
           onInsert={insertLibraryItems}
         />
       )}

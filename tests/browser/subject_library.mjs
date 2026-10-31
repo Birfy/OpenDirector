@@ -42,13 +42,17 @@ try {
     headers: { "X-OpenDirector-Request": "1" },
   });
   assert.equal((await health.json()).isolated, true);
-  for (const unified of [false, true]) {
+  for (const unified of [false, true].filter(
+    (value) =>
+      !process.env.SUBJECT_TEST_MODE ||
+      (process.env.SUBJECT_TEST_MODE === "unified") === value,
+  )) {
     const libraryHeaders = {
       "X-OpenDirector-Request": "1",
       "Content-Type": "application/json",
     };
     const previousSubjects = await (
-      await page.request.get(base + "/api/library/subjects", {
+      await page.request.get(base + "/api/library/items?state=active", {
         headers: libraryHeaders,
       })
     ).json();
@@ -219,6 +223,7 @@ try {
       await (await import("/src/backend/projects.ts")).releaseBackendProject();
       return {
         id: savedDocument.id,
+        projectTitle: savedDocument.title,
         images: nodes.map((n) => n.id),
         video: film.id,
         blank: blank.id,
@@ -239,34 +244,43 @@ try {
     );
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
-    const dialog = page.getByRole("dialog", { name: "资产库", exact: true });
-    const add = () =>
-      dialog.getByRole("button", { name: "导入画布", exact: true });
-    const replace = () =>
-      dialog.getByRole("button", { name: "导入选中主体", exact: true });
-    const close = async () => {
-      await dialog
-        .getByRole("button", { name: "关闭资产库", exact: true })
-        .click();
-      await dialog.waitFor({ state: "hidden" });
-    };
-    const open = async () => {
+    const library = page.getByRole("dialog", { name: "资产库", exact: true });
+    const picker = page.getByRole("dialog", { name: "导入主体", exact: true });
+    const check = (dialog, title) =>
+      dialog.getByRole("checkbox", { name: `选择：${title}`, exact: true });
+    const confirm = () =>
+      picker.getByRole("button", { name: "确定", exact: true });
+    const closePicker = () =>
+      picker.getByRole("button", { name: "关闭主体导入", exact: true }).click();
+    const openLibrary = async (tab = "assets") => {
       await page
         .getByRole("toolbar", { name: "画布创作工具", exact: true })
         .getByRole("button", { name: "资产库", exact: true })
         .click();
-      await dialog.getByRole("tab", { name: "主体", exact: true }).click();
-      await dialog.waitFor();
+      await library.waitFor();
+      if (tab !== "assets")
+        await library
+          .getByRole("tab", {
+            name: tab === "subjects" ? "主体" : "画布",
+            exact: true,
+          })
+          .click();
     };
-    const choose = (title) =>
-      dialog
-        .getByRole("checkbox", { name: `选择：${title}`, exact: true })
+    const closeLibrary = () =>
+      library.getByRole("button", { name: "关闭资产库", exact: true }).click();
+    const openSubject = async (id) => {
+      const card = node(id);
+      await card.locator(".cw-subject-main,.cw-subject-video").first().hover();
+      await card
+        .getByRole("button", { name: "导入主体内容", exact: true })
         .click();
+      await picker.waitFor();
+    };
     const read = async () => {
       const response = await page.request.get(
         base +
           `/api/${unified ? "creation/projects/" + fixture.id : "projects/" + fixture.id + "/workspace"}`,
-        { headers: { "X-OpenDirector-Request": "1" } },
+        { headers: libraryHeaders },
       );
       assert.equal(response.status(), 200);
       const saved = await response.json();
@@ -282,9 +296,27 @@ try {
               title: item.title,
               subject:
                 item.binding.role === "editor"
-                  ? saved.editorDocuments.find(
-                      (doc) => doc.id === item.binding.objectRef.id,
-                    )?.data
+                  ? (() => {
+                      const data = saved.editorDocuments.find(
+                        (doc) => doc.id === item.binding.objectRef.id,
+                      )?.data;
+                      if (!data) return undefined;
+                      const resource = (ref) =>
+                        ref
+                          ? {
+                              ...ref,
+                              ...saved.assets.find(
+                                (asset) => asset.id === ref.assetId,
+                              )?.metadata,
+                            }
+                          : undefined;
+                      return {
+                        ...data,
+                        main: resource(data.main),
+                        auxiliaries: data.auxiliaries.map(resource),
+                        voice: resource(data.voice),
+                      };
+                    })()
                   : undefined,
             },
           })),
@@ -293,165 +325,184 @@ try {
         ),
       };
     };
-    const waitCount = async (count) => {
+    const waitForSaved = async (predicate) => {
       for (let i = 0; i < 100; i++) {
-        const saved = await read();
-        if (saved.nodes.length === count) return saved;
+        const state = await read();
+        if (predicate(state)) return state;
         await page.waitForTimeout(100);
       }
-      throw new Error("Imported subject count did not persist");
+      throw new Error("Expected saved state was not reached");
     };
-    const selected = async (ids) => {
-      await page.waitForFunction((ids) => {
-        const actual = [
-          ...document.querySelectorAll(".react-flow__node.selected"),
-        ].map((el) => el.getAttribute("data-id"));
-        return (
-          actual.length === ids.length && ids.every((id) => actual.includes(id))
-        );
-      }, ids);
-    };
-    // Empty-subject import selects its own destination and opens the subjects tab.
-    await node(fixture.blank)
-      .getByRole("button", { name: "导入主体", exact: true })
-      .click();
-    await dialog.waitFor();
-    assert.equal(
-      await dialog.getByRole("button", { name: "关闭", exact: true }).count(),
-      0,
-    );
-    assert.equal(await add().isDisabled(), true);
-    assert.equal(await replace().isDisabled(), true);
-    await close();
+    // Back up complete library subjects through the global library's management action.
     for (const [id, title] of [
       [fixture.images[2], fixture.title],
       [fixture.video, fixture.videoTitle],
     ]) {
       await node(id)
-        .locator(
-          id === fixture.video ? ".cw-subject-video" : ".cw-subject-main",
-        )
+        .locator(".cw-subject-main,.cw-subject-video")
+        .first()
         .click({ position: { x: 8, y: 8 } });
-      await selected([id]);
-      await open();
-      await dialog
+      await openLibrary("subjects");
+      await library
         .getByRole("button", { name: "加入选中主体", exact: true })
         .click();
-      await dialog
-        .getByRole("checkbox", { name: `选择：${title}`, exact: true })
-        .waitFor();
-      await close();
+      await check(library, title).waitFor();
+      await closeLibrary();
     }
-    // Library selection alone controls creation; replacement also needs one canvas subject.
-    await page.mouse.click(1430, 910);
-    await selected([]);
-    await open();
-    await choose(fixture.title);
-    assert.equal(await add().isEnabled(), true);
-    assert.equal(await replace().isDisabled(), true);
-    await choose(fixture.videoTitle);
-    assert.equal(await replace().isDisabled(), true);
-    await add().click();
-    await dialog.waitFor({ state: "hidden" });
-    let saved = await waitCount(fixture.originalCount + 2);
-    const copies = saved.nodes.filter(
-      (item) => item.data.subject?.librarySource,
+    const upload = async (name, payload, mime) => {
+      const response = await page.request.post(
+        base + "/api/library/items/upload?name=" + encodeURIComponent(name),
+        { headers: { ...libraryHeaders, "Content-Type": mime }, data: payload },
+      );
+      assert.equal(response.status(), 200, await response.text());
+      return response.json();
+    };
+    const pictureA = await upload(
+      "Selector picture A.png",
+      Buffer.from(fixture.uploads[0], "base64"),
+      "image/png",
     );
-    assert.equal(copies.length, 2);
-    assert.ok(
-      copies.some((item) => item.data.subject.auxiliaries.length === 2),
+    const pictureB = await upload(
+      "Selector picture B.png",
+      Buffer.from(fixture.uploads[1], "base64"),
+      "image/png",
     );
-    if (!unified) {
-      const response = await page.request.get(
-        base + `/api/projects/${fixture.id}/workspace`,
-        {
-          headers: libraryHeaders,
-        },
+    const wav = (seconds) =>
+      execFileSync("ffmpeg", [
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=8000:cl=mono",
+        "-t",
+        String(seconds),
+        "-f",
+        "wav",
+        "pipe:1",
+      ]);
+    const voice15 = await upload("Voice 15.wav", wav(15), "audio/wav");
+    const voice16 = await upload("Voice 16.wav", wav(16), "audio/wav");
+    // Every blank-node entry opens the independent selector at the appropriate tab.
+    for (const [entry, tab] of [
+      ["导入主体", "主体"],
+      ["从资产库选择", "资产库"],
+      ["从画布选择", "当前画布"],
+    ]) {
+      await node(fixture.blank)
+        .getByRole("button", { name: entry, exact: true })
+        .click();
+      await picker.waitFor();
+      assert.equal(
+        await picker
+          .getByRole("tab", { name: tab, exact: true })
+          .getAttribute("aria-selected"),
+        "true",
       );
-      const wire = (await response.json()).document;
-      assert.equal(wire.version, 2);
-      assert.ok(wire.mediaSources.some((src) => src.length > 64 * 1024));
-      assert.ok(
-        wire.nodes.some((item) =>
-          item.data.subject?.main?.src?.startsWith("opendirector-media:"),
-        ),
+      assert.equal(
+        await picker
+          .getByRole("button", { name: "本地添加", exact: true })
+          .count(),
+        0,
       );
-      // Backing up a copied subject must resolve its shared bytes as well.
-      const copy = copies.find(
-        (item) => item.data.subject.main.kind === "image",
-      );
-      const backup = await page.request.post(
-        base + "/api/library/subjects/from-canvas",
-        {
-          headers: libraryHeaders,
-          data: { projectId: fixture.id, nodeId: copy.id },
-        },
-      );
-      assert.equal(backup.status(), 200, await backup.text());
-      const backedUp = await backup.json();
-      await page.request.post(base + "/api/library/items/trash", {
-        headers: libraryHeaders,
-        data: { itemIds: [backedUp.id] },
-      });
+      assert.equal(await confirm().isDisabled(), true);
+      assert.equal(await library.count(), 0);
+      await closePicker();
     }
-    await page.waitForTimeout(1100);
-    await page.getByRole("button", { name: "撤销", exact: true }).click();
-    await waitCount(fixture.originalCount);
-    await page.getByRole("button", { name: "重做", exact: true }).click();
-    await waitCount(fixture.originalCount + 2);
-    // A blank destination is filled without renaming it or changing its annotation.
     await node(fixture.blank)
-      .getByRole("button", { name: "导入主体", exact: true })
+      .getByRole("button", { name: "从资产库选择", exact: true })
       .click();
-    await choose(fixture.title);
-    assert.equal(await replace().isEnabled(), true);
-    await replace().click();
-    await dialog.waitFor({ state: "hidden" });
-    saved = await read();
-    let target = saved.nodes.find((item) => item.id === fixture.blank);
-    assert.equal(target.data.title, "Blank destination");
-    assert.equal(target.data.subject.description, "");
-    assert.equal(target.data.subject.auxiliaries.length, 2);
-    // Replacing a populated subject clears retained assembly, keeps outgoing reference,
-    // and preserves the target's presentation and user annotation.
-    await node(fixture.images[1]).locator(".cw-subject-main").click();
-    await selected([fixture.images[1]]);
-    await open();
-    await choose(fixture.title);
-    assert.equal(await replace().isEnabled(), true);
-    const old = await read(),
-      before = old.nodes.find((item) => item.id === fixture.images[1]);
-    await replace().click();
-    await dialog.waitFor({ state: "hidden" });
-    saved = await read();
-    target = saved.nodes.find((item) => item.id === fixture.images[1]);
-    assert.equal(target.data.title, before.data.title);
+    await check(picker, pictureA.name).click();
+    await check(picker, pictureB.name).click();
     assert.equal(
-      target.data.subject.description,
-      before.data.subject.description,
+      await check(picker, pictureA.name).getAttribute("aria-checked"),
+      "false",
     );
-    assert.ok(target.data.subject.librarySource);
+    assert.equal(await check(picker, voice15.name).isDisabled(), true);
+    await picker.getByRole("tab", { name: "主体", exact: true }).click();
+    assert.equal(await confirm().isDisabled(), true);
+    await picker.getByRole("tab", { name: "资产库", exact: true }).click();
+    await check(picker, pictureB.name).click();
+    await confirm().click();
+    await picker.waitFor({ state: "hidden" });
+    let state = await waitForSaved((state) =>
+      Boolean(
+        state.nodes.find((item) => item.id === fixture.blank).data.subject.main,
+      ),
+    );
+    const targetBefore = state.nodes.find((item) => item.id === fixture.blank);
+    assert.equal(targetBefore.data.title, "Blank destination");
+    assert.equal(targetBefore.data.subject.main.kind, "image");
+    // The global library always creates a node, even when a populated subject is selected.
+    await openLibrary();
     assert.equal(
-      saved.edges.filter(
-        (edge) =>
-          edge.target === fixture.images[1] ||
-          edge.sourceId === fixture.ordinary,
-      ).length,
+      await library
+        .getByRole("button", { name: "导入选中主体", exact: true })
+        .count(),
       0,
     );
+    assert.equal(
+      await library
+        .getByRole("button", { name: "放入当前画布", exact: true })
+        .count(),
+      0,
+    );
+    await check(library, pictureA.name).click();
+    await check(library, pictureB.name).click();
+    assert.equal(
+      await check(library, pictureA.name).getAttribute("aria-checked"),
+      "false",
+    );
+    await library
+      .getByRole("button", { name: "导入画布", exact: true })
+      .click();
+    await library.waitFor({ state: "hidden" });
+    state = await waitForSaved(
+      (state) => state.nodes.length === fixture.originalCount + 1,
+    );
+    assert.deepEqual(
+      state.nodes.find((item) => item.id === fixture.blank).data.subject,
+      targetBefore.data.subject,
+    );
+    await openLibrary("subjects");
+    await check(library, fixture.title).click();
+    await check(library, fixture.videoTitle).click();
+    assert.equal(
+      await check(library, fixture.title).getAttribute("aria-checked"),
+      "false",
+    );
+    await library
+      .getByRole("button", { name: "导入画布", exact: true })
+      .click();
+    await library.waitFor({ state: "hidden" });
+    await waitForSaved(
+      (state) => state.nodes.length === fixture.originalCount + 2,
+    );
+    // Whole-subject replacement clears old assembly and remains one undo step.
+    await openSubject(fixture.images[1]);
+    await check(picker, fixture.title).click();
+    await confirm().click();
+    await picker.waitFor({ state: "hidden" });
+    await waitForSaved((state) =>
+      Boolean(
+        state.nodes.find((item) => item.id === fixture.images[1]).data.subject
+          .librarySource,
+      ),
+    );
     await page.waitForTimeout(1100);
     await page.getByRole("button", { name: "撤销", exact: true }).click();
-    await page.waitForFunction(
-      (id) =>
-        document
-          .querySelector(
-            `.react-flow__node[data-id="${id}"] .cw-subject-main img`,
-          )
-          ?.getAttribute("alt")
-          ?.includes("main") === false,
-      fixture.images[1],
+    await waitForSaved(
+      (state) =>
+        !state.nodes.find((item) => item.id === fixture.images[1]).data.subject
+          .librarySource,
     );
     await page.getByRole("button", { name: "重做", exact: true }).click();
+    await waitForSaved((state) =>
+      Boolean(
+        state.nodes.find((item) => item.id === fixture.images[1]).data.subject
+          .librarySource,
+      ),
+    );
     await page.waitForFunction(
       (id) =>
         document
@@ -462,95 +513,107 @@ try {
           ?.includes("main") === true,
       fixture.images[1],
     );
-    // Image -> video would invalidate the existing audio downstream; reject it.
-    await node(fixture.images[1]).locator(".cw-subject-main").click();
-    await open();
-    await choose(fixture.videoTitle);
-    await replace().click();
-    await dialog.getByRole("status").filter({ hasText: "不兼容" }).waitFor();
+    await openSubject(fixture.images[1]);
+    await check(picker, fixture.videoTitle).click();
+    await confirm().click();
+    await picker.getByRole("status").filter({ hasText: "不兼容" }).waitFor();
+    await closePicker();
+    // Current-canvas sources retain full subjects and support single selection without new nodes or edges.
+    await openSubject(fixture.blank);
+    await picker.getByRole("tab", { name: "当前画布", exact: true }).click();
+    await check(picker, "Ordinary image").click();
+    await check(picker, fixture.title).click();
     assert.equal(
-      (await read()).nodes.find((item) => item.id === fixture.images[1]).data
-        .subject.main.kind,
-      "image",
+      await check(picker, "Ordinary image").getAttribute("aria-checked"),
+      "false",
     );
-    await close();
-    for (const id of [fixture.locked, fixture.ordinary]) {
-      await node(id)
-        .locator(
-          id === fixture.ordinary ? ".cw-image-preview" : ".cw-subject-main",
-        )
-        .click();
-      await selected([id]);
-      await open();
-      await choose(fixture.title);
-      assert.equal(await replace().isDisabled(), true);
-      assert.equal(await add().isEnabled(), true);
-      await close();
-    }
-    await page.getByRole("button", { name: "缩放选项", exact: true }).click();
-    await page.getByRole("button", { name: /适应所有内容/ }).click();
-    await page.waitForTimeout(350);
-    await node(fixture.images[0]).locator(".cw-subject-main").click();
-    await page.keyboard.down("Shift");
-    await node(fixture.video)
-      .locator(".cw-subject-video")
-      .click({ position: { x: 8, y: 8 } });
-    await page.keyboard.up("Shift");
-    await selected([fixture.images[0], fixture.video]);
-    await open();
-    await choose(fixture.title);
-    assert.equal(await replace().isDisabled(), true);
-    // Searching clears old invisible choices; deleting library entries does not affect copies.
-    await dialog
-      .getByRole("searchbox", { name: "搜索资产库", exact: true })
-      .fill("no matching subject");
-    assert.equal(await add().isDisabled(), true);
-    await dialog
-      .getByRole("searchbox", { name: "搜索资产库", exact: true })
-      .fill("");
-    await choose(fixture.title);
-    await choose(fixture.videoTitle);
-    await dialog
-      .getByRole("button", { name: "移入回收站", exact: true })
+    await confirm().click();
+    await picker.waitFor({ state: "hidden" });
+    state = await waitForSaved(
+      (state) =>
+        state.nodes.find((item) => item.id === fixture.blank).data.subject
+          .auxiliaries.length === 2,
+    );
+    assert.equal(state.nodes.length, fixture.originalCount + 2);
+    // Voice slot allows 15s and blocks 16s; it keeps the image and auxiliary slots.
+    await node(fixture.blank)
+      .getByRole("button", { name: "添加主体声音", exact: true })
       .click();
-    await page.waitForFunction(
-      () =>
-        document.querySelectorAll('.cw-lib-grid [role="checkbox"]').length ===
-        0,
+    await picker.waitFor();
+    await check(picker, voice15.name).waitFor();
+    assert.equal(await check(picker, voice16.name).isDisabled(), true);
+    await check(picker, voice15.name).click();
+    await confirm().click();
+    await picker.waitFor({ state: "hidden" });
+    state = await waitForSaved((state) =>
+      Boolean(
+        state.nodes.find((item) => item.id === fixture.blank).data.subject
+          .voice,
+      ),
     );
-    assert.equal(await add().isDisabled(), true);
-    await close();
-    const purge = await page.request.delete(base + "/api/library/trash", {
-      headers: { "X-OpenDirector-Request": "1" },
+    assert.equal(
+      state.nodes.find((item) => item.id === fixture.blank).data.subject.voice
+        .durationSeconds,
+      15,
+    );
+    assert.equal(
+      state.nodes.find((item) => item.id === fixture.blank).data.subject
+        .auxiliaries.length,
+      2,
+    );
+    // Browse current canvas through the global library and copy a node independently.
+    await openLibrary("canvases");
+    await library
+      .getByRole("button", { name: fixture.projectTitle, exact: true })
+      .click();
+    await check(library, "Ordinary image").click();
+    await library
+      .getByRole("button", { name: "导入画布", exact: true })
+      .click();
+    await library.waitFor({ state: "hidden" });
+    await waitForSaved(
+      (state) => state.nodes.length === fixture.originalCount + 3,
+    );
+    // Library deletion does not break already imported owned media or provenance.
+    const subjects = await (
+      await page.request.get(base + "/api/library/subjects", {
+        headers: libraryHeaders,
+      })
+    ).json();
+    await page.request.post(base + "/api/library/items/trash", {
+      headers: libraryHeaders,
+      data: { itemIds: subjects.map((item) => item.id) },
     });
-    assert.equal(purge.status(), 200);
+    await page.request.delete(base + "/api/library/trash", {
+      headers: libraryHeaders,
+    });
     await page.reload();
     await page.getByText("已保存到本机", { exact: true }).waitFor();
-    const after = await waitCount(fixture.originalCount + 2);
-    assert.equal(
-      after.nodes.filter((item) => item.data.subject?.librarySource).length,
-      4,
+    state = await waitForSaved(
+      (state) => state.nodes.length === fixture.originalCount + 3,
     );
-    for (const copy of copies) {
-      const image = node(copy.id).locator("img").first(),
-        video = node(copy.id).locator("video");
-      if (await image.count())
-        assert.equal(
-          await image.evaluate((el) => el.complete && el.naturalWidth > 0),
-          true,
-        );
-      else assert.ok(await video.evaluate((el) => el.readyState >= 1));
-    }
+    assert.equal(
+      state.nodes.find((item) => item.id === fixture.blank).data.subject.voice
+        .durationSeconds,
+      15,
+    );
+    assert.equal(
+      await node(fixture.blank)
+        .locator(".cw-subject-main img")
+        .evaluate((img) => img.complete && img.naturalWidth > 0),
+      true,
+    );
     console.log(
       JSON.stringify({
         mode: unified ? "unified" : "workspace",
-        emptyAndInvalidSelections: true,
-        batchCreate: true,
-        replaceBlankAndPopulated: true,
+        independentSelector: true,
+        entryTabs: true,
+        singleSelection: true,
+        globalCreateOnly: true,
+        fullCanvasSubject: true,
+        voice15Accepted16Rejected: true,
         oneStepUndoRedo: true,
-        incompatibleDownstreamRejected: true,
-        independentAfterLibraryPurge: true,
-        sourceIdentityRetained: true,
+        independentAfterPurge: true,
       }),
     );
   }
@@ -558,7 +621,7 @@ try {
   console.log(JSON.stringify({ passed: true, pageErrors: errors }));
 } catch (error) {
   await page.screenshot({
-    path: "/tmp/opendirector-subject-library-failure.png",
+    path: "/tmp/opendirector-subject-picker-failure.png",
   });
   throw error;
 } finally {

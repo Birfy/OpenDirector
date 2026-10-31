@@ -1,123 +1,71 @@
-/** 「画布」: a read-only projection of every canvas. Never uploads or deletes (L3). */
-import { useEffect, useMemo, useState } from "react";
-import { errorMessage } from "../../backend/api";
+/** Read-only node browsing; opening another project never acquires its edit lease. */
+import { useEffect, useState } from "react";
+import { errorMessage, headers, responseError } from "../../backend/api";
 import {
   listWorkspaceProjects,
-  readWorkspaceDocument,
   type WorkspaceProject,
 } from "../../backend/workspace";
-import { projectAssets } from "../projectAssets";
-import type { CanvasResource } from "../model";
-import { CANVAS_CATEGORIES } from "./libraryClient";
+import {
+  canvasSources,
+  canvasSourceMedia,
+  type CanvasSource,
+} from "../../backend/canvasSources";
 import { MediaCard } from "./MediaCard";
-
-type CanvasCategory = (typeof CANVAS_CATEGORIES)[number]["key"];
-
-const ICONS: Record<string, "image" | "video" | "audio" | "text" | "subject" | "layers" | "file"> = {
-  image: "image",
-  video: "video",
-  audio: "audio",
-  text: "text",
-  subject: "subject",
-  timeline: "layers",
-  file: "file",
-};
-
-/** Canvas media can be backed up whenever some bytes are reachable. */
-export function canBackUp(resource: CanvasResource): boolean {
-  return Boolean(resource.assetId || resource.src);
-}
-
-/**
- * Media kinds the canvas projection can produce. `text` covers text and file
- * nodes; `subject` and `timeline` are node-derived and only exist on a canvas,
- * never in the library, so each category maps explicitly (design R3).
- */
-function resourceCategory(resource: CanvasResource): CanvasCategory | null {
-  if (resource.kind === "image") return "image";
-  if (resource.kind === "video") return "video";
-  if (resource.kind === "audio") return "audio";
-  if (resource.kind === "text") return "text";
-  if (resource.kind === "file") return "text";
-  return null;
-}
+import { CanvasSourceCard } from "./CanvasSourceCard";
+import { CANVAS_CATEGORIES } from "./libraryClient";
+import { backUpLibrarySubject } from "../../backend/subjectLibrary";
+import { addInlineFromCanvas, withMediaSuffix } from "./libraryClient";
 
 export function CanvasesPanel({
   currentId,
   query,
   selected,
   onToggle,
-  onImport,
   onNotice,
   onCanvasChanged,
-  onAddToAssets,
+  onState,
+  disabled = false,
 }: {
   currentId: string;
   query: string;
   selected: Set<string>;
-  onToggle: (resource: CanvasResource) => void;
-  onImport: (resource: CanvasResource) => void;
+  onToggle: (item: CanvasSource) => void;
   onNotice: (message: string) => void;
-  /** Switching canvases must clear the selection: ids are positional
-   *  (`asset-0`, `asset-1`), so the first item of every canvas collides. */
   onCanvasChanged: () => void;
-  /** Backs up the selected canvas media into「资产」 (invariant L1). */
-  onAddToAssets: (
-    projectId: string,
-    resources: CanvasResource[],
-  ) => Promise<void>;
+  onState: (projectId: string, items: CanvasSource[], loading: boolean) => void;
+  disabled?: boolean;
 }) {
-  const [projects, setProjects] = useState<WorkspaceProject[]>([]);
-  const [openId, setOpenId] = useState("");
-  const [resources, setResources] = useState<CanvasResource[]>([]);
-  const [nodeCount, setNodeCount] = useState(0);
-  const [category, setCategory] = useState<CanvasCategory | "">("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
+  const [projects, setProjects] = useState<WorkspaceProject[]>([]),
+    [openId, setOpenId] = useState("");
+  const [items, setItems] = useState<CanvasSource[]>([]),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [category, setCategory] = useState("");
   useEffect(() => {
     let active = true;
-    setBusy(true);
     listWorkspaceProjects()
-      .then((result) => {
-        if (active) setProjects(result.projects);
+      .then((value) => {
+        if (active) setProjects(value.projects);
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));
-      })
-      .finally(() => {
-        if (active) setBusy(false);
       });
     return () => {
       active = false;
     };
   }, []);
-
   useEffect(() => {
+    let active = true;
+    setItems([]);
+    setError("");
     if (!openId) {
-      setResources([]);
-      setNodeCount(0);
+      setBusy(false);
       return;
     }
-    const project = projects.find((item) => item.id === openId);
-    if (!project) return;
-    let active = true;
     setBusy(true);
-    setError("");
-    readWorkspaceDocument(project)
-      .then((document) => {
-        if (!active) return;
-        // projectAssets() numbers resources per document (`asset-0`, ...),
-        // so namespace them by canvas; otherwise a selection made in one
-        // canvas would match the same positional id in another.
-        setResources(
-          projectAssets(document).map((resource) => ({
-            ...resource,
-            id: `${project.id}:${resource.id}`,
-          })),
-        );
-        setNodeCount(document.nodes.length);
+    canvasSources(openId)
+      .then((value) => {
+        if (active) setItems(value);
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));
@@ -128,54 +76,51 @@ export function CanvasesPanel({
     return () => {
       active = false;
     };
-  }, [openId, projects]);
-
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return resources.filter(
-      (resource) =>
-        (!category || resourceCategory(resource) === category) &&
-        (!needle || resource.title.toLowerCase().includes(needle)),
-    );
-  }, [resources, category, query]);
-
-  const chosen = useMemo(
-    () => visible.filter((resource) => selected.has(resource.id)),
-    [visible, selected],
+  }, [openId]);
+  const visible = items.filter(
+    (item) =>
+      (!category || item.kind === category) &&
+      item.title.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const backedUp = chosen.filter(canBackUp);
-  const notBackedUp = chosen.length - backedUp.length;
-
-  const addToAssets = async () => {
-    if (!openId || !backedUp.length) return;
-    setSaving(true);
-    setError("");
+  useEffect(
+    () => onState(openId, visible, busy || Boolean(error)),
+    [openId, items, category, query, busy, error, onState],
+  );
+  const chosen = visible.find((item) => selected.has(item.nodeId));
+  const backup = async () => {
+    if (!chosen) return;
+    setBusy(true);
     try {
-      await onAddToAssets(openId, backedUp);
-      const skipped = notBackedUp
-        ? `，${notBackedUp} 个素材没有可读取的内容已跳过`
-        : "";
-      onNotice(`已加入 ${backedUp.length} 个素材到资产${skipped}`);
+      if (chosen.kind === "subject")
+        await backUpLibrarySubject(openId, chosen.nodeId);
+      else {
+        const response = await fetch(canvasSourceMedia(openId, chosen), {
+          headers,
+        });
+        if (!response.ok) throw await responseError(response);
+        const blob = await response.blob();
+        const src = URL.createObjectURL(blob);
+        try {
+          await addInlineFromCanvas(
+            src,
+            withMediaSuffix(chosen.title, blob.type),
+            { projectId: openId, mimeType: blob.type },
+          );
+        } finally {
+          URL.revokeObjectURL(src);
+        }
+      }
+      onNotice("已将独立副本加入资产库。");
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
-
   if (!openId)
     return (
       <div className="cw-lib-panel">
-        <div className="cw-lib-tabs">
-          <button type="button" className="cw-lib-tab cw-lib-tab-on">
-            全部
-          </button>
-        </div>
         {error && <p role="alert">{error}</p>}
-        {busy && !projects.length && <p role="status">正在读取画布…</p>}
-        {!busy && !projects.length && (
-          <p className="cw-lib-empty">还没有已保存的画布。</p>
-        )}
         <div className="cw-lib-grid cw-lib-grid-wide">
           {projects.map((project) => (
             <MediaCard
@@ -186,6 +131,7 @@ export function CanvasesPanel({
               icon="layers"
               selectable={false}
               onOpen={() => {
+                if (disabled) return;
                 onCanvasChanged();
                 setOpenId(project.id);
                 setCategory("");
@@ -195,26 +141,29 @@ export function CanvasesPanel({
         </div>
       </div>
     );
-
-  const project = projects.find((item) => item.id === openId);
   return (
     <div className="cw-lib-panel">
       <div className="cw-lib-tabs">
         <button
           type="button"
+          disabled={disabled || busy}
           className="cw-lib-back"
           onClick={() => {
             onCanvasChanged();
             setOpenId("");
-            setError("");
+            setCategory("");
           }}
         >
           ‹ 返回
         </button>
         <button
           type="button"
-          className={category === "" ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"}
-          onClick={() => setCategory("")}
+          disabled={disabled}
+          className={!category ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"}
+          onClick={() => {
+            onCanvasChanged();
+            setCategory("");
+          }}
         >
           全部
         </button>
@@ -222,8 +171,14 @@ export function CanvasesPanel({
           <button
             key={entry.key}
             type="button"
-            className={category === entry.key ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"}
-            onClick={() => setCategory(entry.key)}
+            disabled={disabled}
+            className={
+              category === entry.key ? "cw-lib-tab cw-lib-tab-on" : "cw-lib-tab"
+            }
+            onClick={() => {
+              onCanvasChanged();
+              setCategory(entry.key);
+            }}
           >
             {entry.label}
           </button>
@@ -231,49 +186,31 @@ export function CanvasesPanel({
         <div className="cw-lib-tab-actions">
           <button
             type="button"
-            disabled={!backedUp.length || saving}
-            title={
-              chosen.length && !backedUp.length
-                ? "选中的素材没有可读取的内容，无法加入资产"
-                : undefined
-            }
-            onClick={() => void addToAssets()}
+            disabled={disabled || busy || !chosen}
+            onClick={() => void backup()}
           >
-            {saving ? "正在加入…" : "加入资产"}
-          </button>
-          <button
-            type="button"
-            disabled={!selected.size}
-            onClick={() => {
-              // Strip the canvas namespace before handing the resource to the
-              // canvas importer, so ids stay the shape it expects.
-              for (const resource of visible)
-                if (selected.has(resource.id))
-                  onImport({ ...resource, id: resource.id.split(":").pop()! });
-              onNotice("已复制到当前画布");
-            }}
-          >
-            复制到当前画布
+            加入资产
           </button>
         </div>
       </div>
       <p className="cw-lib-note">
-        {project?.name} · 共 {nodeCount} 个节点（只读，与画布保持一致）
+        {projects.find((project) => project.id === openId)?.name} ·{" "}
+        {items.length} 个有内容的节点 · 只读
       </p>
       {error && <p role="alert">{error}</p>}
-      {busy && !visible.length && <p role="status">正在读取素材…</p>}
-      {!busy && !visible.length && <p className="cw-lib-empty">该画布暂无此类素材。</p>}
+      {busy && <p role="status">正在读取素材…</p>}
+      {!busy && !visible.length && (
+        <p className="cw-lib-empty">该画布暂无此类素材。</p>
+      )}
       <div className="cw-lib-grid">
-        {visible.map((resource) => (
-          <MediaCard
-            key={resource.id}
-            title={resource.title}
-            subtitle={resource.kind === "text" ? resource.text?.slice(0, 20) : undefined}
-            icon={ICONS[resource.kind] ?? "file"}
-            kind={resource.kind}
-            src={resource.src}
-            selected={selected.has(resource.id)}
-            onSelect={() => onToggle(resource)}
+        {visible.map((item) => (
+          <CanvasSourceCard
+            key={item.nodeId}
+            item={item}
+            projectId={openId}
+            selected={selected.has(item.nodeId)}
+            disabled={disabled || busy}
+            onSelect={() => onToggle(item)}
           />
         ))}
       </div>

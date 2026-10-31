@@ -1478,3 +1478,24 @@
   border-radius: 6px;
   padding: 6px;
 }
+
+.cw-subject-replace {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border: 1px solid #ffffff30;
+  border-radius: 6px;
+  background: #171717cc;
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+}
+.cw-subject-main:hover .cw-subject-replace,
+.cw-subject-video:hover .cw-subject-replace,
+.cw-subject-replace:focus-visible { opacity: 1; }
+.cw-subject-replace:disabled { cursor: not-allowed; }

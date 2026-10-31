@@ -107,6 +107,43 @@ class SubjectLibrary:
                 rows.append(dict(**item.model_dump(mode='json'), available=issue is None, issue=issue))
         return rows
 
+    def prepare_media(self, item_id, revision, slot):
+        """Validate actual bytes even when a library item's declared kind is stale."""
+        with self.library.store.lock:
+            item = self.library.get(item_id)
+            if item.kind != 'asset' or item.state != 'active' or item.revision != revision or not item.blob:
+                raise ProjectError('来源资产已变化，请重新选择。', 409)
+            path = self.library.store.blob_path(item.blob)
+            if not path.is_file() or path.is_symlink():
+                raise ProjectError('来源素材缺失。', 410)
+            stat = path.stat()
+            key = (item.blob, slot, stat.st_mtime_ns, stat.st_size)
+            verified = self._verified.get(key)
+            if verified is None:
+                if stat.st_size > 50 * 1024 * 1024:
+                    raise ProjectError('主体素材超过大小限制。', 413)
+                payload = self.library.store.read_blob(item.blob)
+                if hashlib.sha256(payload).hexdigest() != item.blob:
+                    raise ProjectError('来源素材内容已损坏。', 409)
+                verified = self.inspect(path, 'auxiliary:0' if slot == 'auxiliary' else slot)
+                if len(self._verified) >= 1024:
+                    self._verified.pop(next(iter(self._verified)))
+                self._verified[key] = verified
+            kind, facts = verified
+            return dict(slot=slot, sha=item.blob, kind=kind, metadata=facts.model_dump(mode='json'), name=item.name)
+
+    def media_choices(self, slot, query=''):
+        rows = []
+        for item in self.library.list(kind='asset', query=query):
+            row = item.model_dump(mode='json')
+            try:
+                verified = self.prepare_media(item.id, item.revision, slot)
+                row.update(mediaKind=verified['kind'], metadata=verified['metadata'], available=True, issue=None)
+            except ProjectError as error:
+                row.update(available=False, issue=str(error))
+            rows.append(row)
+        return rows
+
     def media(self, item_id, slot, revision):
         prepared = self.prepare([dict(id=item_id, revision=revision)])[0]
         media = next((value for value in prepared['media'] if value['slot'] == slot), None)

@@ -95,3 +95,18 @@ test("voice selection keeps image slots and the user annotation intact", () => {
   assert.deepEqual(next.auxiliaries, subject.auxiliaries);
   assert.equal(next.description, subject.description);
 });
+
+test("subject source choices keep slot roles and the 15 second ceiling", async () => {
+  const { subjectChoiceIssue } = await import("../src/canvas/subjectMedia.ts");
+  assert.equal(subjectChoiceIssue("video", 15, "main"), null);
+  assert.equal(subjectChoiceIssue("audio", 15, "voice"), null);
+  for (const seconds of [0, 16, Infinity]) {
+    assert.ok(subjectChoiceIssue("video", seconds, "main"));
+    assert.ok(subjectChoiceIssue("audio", seconds, "voice"));
+  }
+  assert.ok(subjectChoiceIssue("audio", 1, "main"));
+  assert.ok(subjectChoiceIssue("video", 1, "auxiliary"));
+  assert.ok(subjectChoiceIssue("text", undefined, "main"));
+  assert.equal(subjectChoiceIssue("subject", undefined, "main"), null);
+  assert.ok(subjectChoiceIssue("subject", undefined, "voice"));
+});

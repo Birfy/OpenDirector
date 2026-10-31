@@ -109,8 +109,21 @@ export function MediaCard({
     <div className={className}>
       <div
         className="cw-lib-thumb"
-        onClick={onOpen}
+        onClick={disabled ? undefined : onOpen}
         role={onOpen ? "button" : undefined}
+        aria-label={onOpen ? title : undefined}
+        aria-disabled={onOpen ? disabled : undefined}
+        tabIndex={onOpen ? (disabled ? -1 : 0) : undefined}
+        onKeyDown={
+          onOpen
+            ? (event) => {
+                if (!disabled && (event.key === "Enter" || event.key === " ")) {
+                  event.preventDefault();
+                  onOpen();
+                }
+              }
+            : undefined
+        }
       >
         {item ? (
           <LibraryThumb item={item} />

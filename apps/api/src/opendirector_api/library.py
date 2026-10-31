@@ -1,10 +1,10 @@
-"""Global cross-canvas library endpoints (docs/ASSET-LIBRARY-DESIGN.md §6).
+"""Global library and read-only project sources for independent media imports.
 
-Canvas browsing is deliberately NOT reimplemented here: the frontend projects
-existing project endpoints read-only, so the canvas view can never drift from
-the canvas itself (invariant L3).
+Browsing reads saved project state without taking an editing lease; source
+preparation verifies bytes and preserves node identity until confirmation.
 """
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from opendirector.application.library import Library
 from opendirector.application.subject_library import SubjectLibrary
+from opendirector.application.canvas_sources import CanvasSources
 
 
 class LibrarySelection(BaseModel):
@@ -55,10 +56,46 @@ class SubjectBackup(BaseModel):
     nodeId: UUID
 
 
+class CanvasSourcePreparation(BaseModel):
+    nodeId: str = Field(min_length=1, max_length=200)
+    revision: str = Field(pattern=r'^[0-9a-f]{64}$')
+    slot: Literal['main', 'auxiliary', 'voice'] = 'main'
+    subject: bool = True
+
+
+class SubjectMediaPreparation(BaseModel):
+    revision: int = Field(ge=1, strict=True)
+    slot: Literal['main', 'auxiliary', 'voice'] = 'main'
+
+
 def library_routes(projects):
     router = APIRouter(prefix='/api/library', tags=['Global asset library'])
     library = Library(projects)
     subjects = SubjectLibrary(projects)
+    sources = CanvasSources(projects)
+
+    @router.get('/subject-media')
+    def subject_media_choices(slot: Literal['main', 'auxiliary', 'voice'] = 'main', query: str = Query(default='', max_length=255)):
+        return subjects.media_choices(slot, query)
+
+    @router.get('/canvases/{project_id}/sources')
+    def canvas_sources(project_id: UUID):
+        return sources.list(project_id)
+
+    @router.post('/canvases/{project_id}/prepare')
+    def prepare_canvas_source(project_id: UUID, value: CanvasSourcePreparation):
+        return sources.prepare(project_id, value.nodeId, value.revision, value.slot, value.subject)
+
+    @router.get('/canvases/{project_id}/nodes/{node_id}/media/{slot}')
+    def canvas_source_media(project_id: UUID, node_id: str, slot: str, revision: str = Query(pattern=r'^[0-9a-f]{64}$')):
+        data, value = sources.media(project_id, node_id, revision, slot)
+        src = value.get('src', '')
+        mime = value.get('mimeType') or (src[5:].split(';', 1)[0] if src.startswith('data:') else 'application/octet-stream')
+        return Response(data, media_type=mime, headers={'Cache-Control': 'no-store'})
+
+    @router.post('/items/{item_id}/prepare-subject-media')
+    def prepare_subject_media(item_id: UUID, value: SubjectMediaPreparation):
+        return subjects.prepare_media(item_id, value.revision, value.slot)
 
     @router.get('/subjects')
     def list_subjects(query: str = ''):

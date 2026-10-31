@@ -238,34 +238,49 @@ try {
         ).join(",");
       });
     const originalFingerprint = await mainFingerprint();
-    let choosing = page.waitForEvent("filechooser");
-    await target
-      .getByRole("button", { name: "添加附加图片", exact: true })
-      .click();
-    await (
-      await choosing
-    ).setFiles({ name: "wrong.mp4", mimeType: "video/mp4", buffer: video });
-    await page
-      .locator(".cw-toast")
-      .filter({ hasText: "不支持此素材类型" })
-      .waitFor();
-    assert.equal(await target.locator(".cw-subject-auxiliary img").count(), 0);
-    assert.equal(
-      await target.locator(".cw-subject-main img").getAttribute("src"),
-      mainBefore,
-    );
+    const headers = {
+      "X-OpenDirector-Request": "1",
+      "Content-Type": "image/png",
+    };
+    const uploaded = [];
     for (const [i, content] of fixture.uploads.entries()) {
-      choosing = page.waitForEvent("filechooser");
+      const name = `auxiliary-${fixture.id}-${i}.png`;
+      const response = await page.request.post(
+        base + "/api/library/items/upload?name=" + encodeURIComponent(name),
+        { headers, data: Buffer.from(content, "base64") },
+      );
+      assert.equal(response.status(), 200);
+      uploaded.push(await response.json());
+    }
+    const wrongName = `wrong-${fixture.id}.mp4`;
+    const response = await page.request.post(
+      base + "/api/library/items/upload?name=" + encodeURIComponent(wrongName),
+      { headers: { ...headers, "Content-Type": "video/mp4" }, data: video },
+    );
+    assert.equal(response.status(), 200);
+    const picker = page.getByRole("dialog", { name: "导入主体", exact: true });
+    for (const [i, item] of uploaded.entries()) {
       await target
         .getByRole("button", { name: "添加附加图片", exact: true })
         .click();
-      await (
-        await choosing
-      ).setFiles({
-        name: `auxiliary-${i}.png`,
-        mimeType: "image/png",
-        buffer: Buffer.from(content, "base64"),
-      });
+      await picker.waitFor();
+      assert.equal(
+        await picker
+          .getByRole("button", { name: "本地添加", exact: true })
+          .count(),
+        0,
+      );
+      assert.equal(
+        await picker
+          .getByRole("checkbox", { name: `选择：${wrongName}`, exact: true })
+          .isDisabled(),
+        true,
+      );
+      await picker
+        .getByRole("checkbox", { name: `选择：${item.name}`, exact: true })
+        .click();
+      await picker.getByRole("button", { name: "确定", exact: true }).click();
+      await picker.waitFor({ state: "hidden" });
       await page.waitForFunction(
         ({ id, count }) =>
           document.querySelectorAll(
@@ -355,7 +370,9 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, pageErrors: errors }));
 } catch (error) {
-  await page.screenshot({ path: "/tmp/opendirector-subject-media-failure.png" });
+  await page.screenshot({
+    path: "/tmp/opendirector-subject-media-failure.png",
+  });
   throw error;
 } finally {
   await browser.close();

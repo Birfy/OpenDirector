@@ -205,11 +205,29 @@ try {
     await node(f.blank)
       .getByRole("button", { name: "导入主体", exact: true })
       .click();
+    const subjectPicker = page.getByRole("dialog", {
+      name: "导入主体",
+      exact: true,
+    });
+    await subjectPicker.waitFor();
+    assert.equal(
+      await subjectPicker
+        .getByRole("tab", { name: "主体", exact: true })
+        .getAttribute("aria-selected"),
+      "true",
+    );
+    await subjectPicker
+      .getByRole("button", { name: "关闭主体导入", exact: true })
+      .click();
+    await page
+      .getByRole("toolbar", { name: "画布创作工具", exact: true })
+      .getByRole("button", { name: "资产库", exact: true })
+      .click();
     const library = page.getByRole("dialog", { name: "资产库", exact: true });
     await library.waitFor();
     assert.equal(
       await library
-        .getByRole("tab", { name: "主体", exact: true })
+        .getByRole("tab", { name: "资产", exact: true })
         .getAttribute("aria-selected"),
       "true",
     );

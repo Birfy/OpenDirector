@@ -40,7 +40,7 @@ export function SubjectNodeCard({
           <SubjectVoice
             resource={subject?.voice}
             locked={locked}
-            onAdd={() => actions?.pickSubject?.(id, "file", "voice")}
+            onAdd={() => actions?.pickSubject?.(id, "assets", "voice")}
           />
         )}
       </div>
@@ -69,11 +69,17 @@ export function SubjectNodeCard({
         <SubjectVideo
           resource={main}
           onSelect={(event) => actions?.select(id, event)}
+          onImport={() => actions?.pickSubject?.(id, "import")}
+          locked={locked}
         />
       ) : (
         <div className="cw-subject-media cw-subject-images">
           <div className="cw-subject-main cw-domain-card-preview">
             <img src={main.src} alt={main.title} draggable={false} />
+            <SubjectImportButton
+              locked={locked}
+              onClick={() => actions?.pickSubject?.(id, "import")}
+            />
           </div>
           <div className="cw-subject-auxiliaries" aria-label="附加图片">
             {auxiliaries.map((item) => (
@@ -89,7 +95,9 @@ export function SubjectNodeCard({
                 title="添加附加图片（最多 3 张）"
                 disabled={locked}
                 style={{ gridRow: `span ${3 - auxiliaries.length}` }}
-                onClick={() => actions?.pickSubject?.(id, "file", "auxiliary")}
+                onClick={() =>
+                  actions?.pickSubject?.(id, "assets", "auxiliary")
+                }
               >
                 <CanvasIcon name="plus" size={22} />
               </button>
@@ -137,9 +145,13 @@ function useSubjectPlayer<T extends HTMLMediaElement>(src?: string) {
 function SubjectVideo({
   resource,
   onSelect,
+  onImport,
+  locked,
 }: {
   resource: CanvasResource;
   onSelect: (event: MouseEvent) => void;
+  onImport: () => void;
+  locked: boolean;
 }) {
   const player = useSubjectPlayer<HTMLVideoElement>(resource.src);
   return (
@@ -167,7 +179,29 @@ function SubjectVideo({
           <CanvasIcon name="play" size={19} />
         </button>
       )}
+      <SubjectImportButton locked={locked} onClick={onImport} />
     </div>
+  );
+}
+
+function SubjectImportButton({
+  locked,
+  onClick,
+}: {
+  locked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cw-subject-replace nodrag nopan"
+      aria-label="导入主体内容"
+      title="导入主体内容"
+      disabled={locked}
+      onClick={onClick}
+    >
+      <CanvasIcon name="rail-folder" size={14} />
+    </button>
   );
 }
 

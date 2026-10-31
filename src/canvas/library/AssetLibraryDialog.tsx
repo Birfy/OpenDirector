@@ -1,180 +1,125 @@
-/**
- * Global asset library shell (docs/ASSET-LIBRARY-DESIGN.md §7).
- *
- * Two modes share one dialog:
- *   manage — opened from the canvas「资产库」button; can delete
- *   select — opened to pick references; bottom bar confirms a selection
- */
+/** Global library: every import creates independent canvas nodes. */
 import { useCallback, useEffect, useState } from "react";
 import { CanvasIcon } from "../CanvasIcon";
-import type { CanvasResource } from "../model";
 import { AssetsPanel } from "./AssetsPanel";
-import { CanvasesPanel } from "./CanvasesPanel";
 import { SubjectsPanel } from "./SubjectsPanel";
+import { CanvasesPanel } from "./CanvasesPanel";
 import { TrashPanel } from "./TrashPanel";
-import type { LibraryItem } from "./libraryClient";
 import { errorMessage } from "../../backend/api";
+import type { LibraryItem } from "./libraryClient";
 import type { SubjectLibraryItem } from "../../backend/subjectLibrary";
-import {
-  addFromCanvas,
-  addInlineFromCanvas,
-  withMediaSuffix,
-} from "./libraryClient";
-
-export type LibraryMode = "manage" | "select";
-
+import type { CanvasSource } from "../../backend/canvasSources";
 export type LibraryTab = "assets" | "subjects" | "canvases" | "trash";
-
-const TABS: { key: LibraryTab; label: string }[] = [
+const tabs = [
   { key: "assets", label: "资产" },
   { key: "subjects", label: "主体" },
   { key: "canvases", label: "画布" },
   { key: "trash", label: "回收站" },
-];
-
+] as const;
 export function AssetLibraryDialog({
-  mode = "manage",
   initialTab = "assets",
   currentId,
   onClose,
-  onImport,
   onInsert,
-  onConfirm,
-  subjectTarget,
+  onImportCanvas,
   subjectBusy = false,
   backupSubjectIssue,
   onImportSubjects,
   onBackupSubject,
 }: {
-  mode?: LibraryMode;
   initialTab?: LibraryTab;
   currentId: string;
   onClose: () => void;
-  onImport?: (resource: CanvasResource) => void;
-  /** Copies library items into the current canvas as canvas-owned assets. */
   onInsert?: (items: LibraryItem[]) => Promise<void>;
-  onConfirm?: (items: LibraryItem[]) => void;
-  subjectTarget?: { id?: string; issue: string | null };
+  onImportCanvas?: (projectId: string, item: CanvasSource) => Promise<void>;
   subjectBusy?: boolean;
   backupSubjectIssue?: string | null;
-  onImportSubjects?: (items: LibraryItem[], targetId?: string) => Promise<void>;
+  onImportSubjects?: (items: LibraryItem[]) => Promise<void>;
   onBackupSubject?: () => Promise<void>;
 }) {
-  const [tab, setTab] = useState<LibraryTab>(initialTab);
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  // A single cache of chosen payloads so confirm can hand back objects.
-  const [picked, setPicked] = useState<
-    Map<string, LibraryItem | CanvasResource>
-  >(new Map());
-  const [notice, setNotice] = useState("");
-  const [reload, setReload] = useState(0);
-  const [subjectItems, setSubjectItems] = useState<SubjectLibraryItem[]>([]);
-  const [subjectsLoading, setSubjectsLoading] = useState(true);
-  const [working, setWorking] = useState(false);
+  const [tab, setTab] = useState<LibraryTab>(initialTab),
+    [query, setQuery] = useState(""),
+    [selected, setSelected] = useState<Set<string>>(new Set());
+  const [items, setItems] = useState<LibraryItem[]>([]),
+    [canvasItems, setCanvasItems] = useState<CanvasSource[]>([]),
+    [canvasId, setCanvasId] = useState("");
+  const [loading, setLoading] = useState(true),
+    [working, setWorking] = useState(false),
+    [notice, setNotice] = useState(""),
+    [reload, setReload] = useState(0);
   const busy = working || subjectBusy;
-  const reportSubjects = useCallback(
-    (items: SubjectLibraryItem[], loading: boolean) => {
-      setSubjectItems(items);
-      setSubjectsLoading(loading);
-    },
-    [],
-  );
-  const chosenSubjects = subjectItems.filter((item) => selected.has(item.id));
-  const sourceIssue = busy
-    ? "正在处理，请稍候。"
-    : subjectsLoading
-      ? "正在读取主体。"
-      : !chosenSubjects.length
-        ? "请先选择主体。"
-        : chosenSubjects.length !== selected.size
-          ? "所选主体已失效，请重新选择。"
-          : (chosenSubjects.find((item) => !item.available)?.issue ?? null);
-  const replaceIssue =
-    sourceIssue ??
-    (chosenSubjects.length !== 1 ? "只能选择一个库中主体。" : null) ??
-    subjectTarget?.issue ??
-    (!subjectTarget?.id ? "请在画布中仅选中一个主体节点。" : null);
-  const importSubjects = async (replace: boolean) => {
-    if (!onImportSubjects || (replace ? replaceIssue : sourceIssue)) return;
-    setWorking(true);
-    setNotice("");
-    try {
-      await onImportSubjects(
-        chosenSubjects,
-        replace ? subjectTarget?.id : undefined,
-      );
-      onClose();
-    } catch (error) {
-      setNotice(errorMessage(error));
-    } finally {
-      setWorking(false);
-    }
-  };
-  const backupSubject = async () => {
-    if (!onBackupSubject || busy || backupSubjectIssue) return;
-    setWorking(true);
-    try {
-      await onBackupSubject();
-      reset();
-      setReload((value) => value + 1);
-      setNotice("已将选中主体的完整副本加入主体库。");
-    } catch (error) {
-      setNotice(errorMessage(error));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const reset = useCallback(() => {
-    setSelected(new Set());
-    setPicked(new Map());
-  }, []);
-
+  const reset = useCallback(() => setSelected(new Set()), []);
   useEffect(() => {
     reset();
     setNotice("");
+    setItems([]);
+    setCanvasItems([]);
+    setLoading(true);
   }, [tab, query, reset]);
-
-  const toggle = useCallback((entry: LibraryItem | CanvasResource) => {
-    const id = entry.id;
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    setPicked((current) => {
-      const next = new Map(current);
-      if (next.has(id)) next.delete(id);
-      else next.set(id, entry);
-      return next;
-    });
+  const toggle = useCallback(
+    (entry: { id: string }) =>
+      setSelected((current) =>
+        current.has(entry.id) ? new Set() : new Set([entry.id]),
+      ),
+    [],
+  );
+  const report = useCallback((rows: LibraryItem[], pending: boolean) => {
+    setItems(rows);
+    setLoading(pending);
   }, []);
-
+  const reportCanvas = useCallback(
+    (projectId: string, rows: CanvasSource[], pending: boolean) => {
+      setCanvasId(projectId);
+      setCanvasItems(rows);
+      setLoading(pending);
+    },
+    [],
+  );
   const changed = useCallback(() => {
     reset();
     setReload((value) => value + 1);
   }, [reset]);
-
-  // Panels take this by reference, so it must stay stable across renders;
-  // a new identity every render would restart their fetch effect in a loop
-  // and discard every in-flight result (which happened: the grid stayed
-  // empty and `busy` never cleared after uploading or deleting).
-  const notifyPanel = useCallback((message: string) => setNotice(message), []);
-
-  const confirm = () => {
-    const chosen = [...selected]
-      .map((id) => picked.get(id))
-      .filter((entry): entry is LibraryItem | CanvasResource => Boolean(entry));
-    if (!chosen.length) return;
-    const library = chosen.filter(
-      (entry): entry is LibraryItem => "kind" in entry,
-    );
-    if (library.length && onConfirm) onConfirm(library);
-    onClose();
+  const notify = useCallback((message: string) => setNotice(message), []);
+  const chosen = items.find((item) => selected.has(item.id));
+  const canvasChoice = canvasItems.find((item) => selected.has(item.nodeId));
+  const issue = busy
+    ? "正在处理，请稍候。"
+    : loading
+      ? "正在读取素材。"
+      : tab === "canvases"
+        ? !canvasChoice
+          ? "请选择一个节点。"
+          : null
+        : !chosen
+          ? "请选择一项素材。"
+          : tab === "subjects" && !(chosen as SubjectLibraryItem).available
+            ? (chosen as SubjectLibraryItem).issue || "所选主体不可用。"
+            : null;
+  const run = async (action: () => Promise<void>, close = true) => {
+    if (busy) return;
+    setWorking(true);
+    setNotice("");
+    try {
+      await action();
+      if (close) onClose();
+      else changed();
+    } catch (error) {
+      setNotice(errorMessage(error));
+    } finally {
+      setWorking(false);
+    }
   };
-
+  const insert = () => {
+    if (issue) return;
+    void run(async () => {
+      if (tab === "subjects" && chosen && onImportSubjects)
+        await onImportSubjects([chosen]);
+      else if (tab === "canvases" && canvasChoice && onImportCanvas)
+        await onImportCanvas(canvasId, canvasChoice);
+      else if (chosen && onInsert) await onInsert([chosen]);
+      else throw new Error("无法导入该来源。");
+    });
+  };
   return (
     <div
       className="cw-lib-overlay"
@@ -188,7 +133,7 @@ export function AssetLibraryDialog({
       <div className="cw-lib-dialog">
         <header className="cw-lib-header">
           <nav className="cw-lib-top" role="tablist" aria-label="资产库分区">
-            {TABS.map((entry) => (
+            {tabs.map((entry) => (
               <button
                 key={entry.key}
                 type="button"
@@ -196,7 +141,14 @@ export function AssetLibraryDialog({
                 aria-selected={tab === entry.key}
                 disabled={busy}
                 className={tab === entry.key ? "cw-lib-top-on" : undefined}
-                onClick={() => setTab(entry.key)}
+                onClick={() => {
+                  if (tab === entry.key) return;
+                  reset();
+                  setItems([]);
+                  setCanvasItems([]);
+                  setLoading(true);
+                  setTab(entry.key);
+                }}
               >
                 {entry.label}
               </button>
@@ -210,7 +162,13 @@ export function AssetLibraryDialog({
               aria-label="搜索资产库"
               value={query}
               disabled={busy}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                reset();
+                setItems([]);
+                setCanvasItems([]);
+                setLoading(true);
+                setQuery(event.target.value);
+              }}
             />
           </div>
           <button
@@ -223,7 +181,6 @@ export function AssetLibraryDialog({
             ×
           </button>
         </header>
-
         <div className="cw-lib-body">
           {tab === "assets" && (
             <AssetsPanel
@@ -231,8 +188,9 @@ export function AssetLibraryDialog({
               selected={selected}
               onToggle={toggle}
               onChanged={changed}
-              onNotice={notifyPanel}
-              onInsert={onInsert}
+              onNotice={notify}
+              onState={report}
+              disabled={busy}
               reloadKey={reload}
             />
           )}
@@ -242,16 +200,15 @@ export function AssetLibraryDialog({
               selected={selected}
               onToggle={toggle}
               onChanged={changed}
-              onNotice={notifyPanel}
-              reloadKey={reload}
-              onState={reportSubjects}
+              onNotice={notify}
+              onState={report}
               disabled={busy}
-              onBackup={() => void backupSubject()}
+              reloadKey={reload}
+              onBackup={() => {
+                if (onBackupSubject) void run(onBackupSubject, false);
+              }}
               backupIssue={
-                busy
-                  ? "正在处理，请稍候。"
-                  : (backupSubjectIssue ??
-                    (!onBackupSubject ? "无法保存主体。" : null))
+                busy ? "正在处理，请稍候。" : (backupSubjectIssue ?? null)
               }
             />
           )}
@@ -260,33 +217,11 @@ export function AssetLibraryDialog({
               currentId={currentId}
               query={query}
               selected={selected}
-              onToggle={toggle}
-              onImport={(resource) => onImport?.(resource)}
-              onNotice={notifyPanel}
+              onToggle={(item) => toggle({ id: item.nodeId })}
+              onNotice={notify}
               onCanvasChanged={reset}
-              onAddToAssets={async (projectId, resources) => {
-                // L1: each entry is a byte copy, never a link back to the
-                // canvas, so deleting the canvas media cannot break the library.
-                for (const resource of resources) {
-                  // Canvas titles have no extension; add one so the item can be
-                  // copied back onto a canvas later (the backend checks suffix).
-                  const name = withMediaSuffix(
-                    resource.title,
-                    resource.mimeType,
-                  );
-                  if (resource.assetId)
-                    await addFromCanvas(projectId, resource.assetId, name);
-                  else if (resource.src)
-                    // Media embedded in the document has no asset id; the
-                    // browser already holds its bytes.
-                    await addInlineFromCanvas(resource.src, name, {
-                      projectId,
-                      mimeType: resource.mimeType,
-                    });
-                }
-                reset();
-                setReload((value) => value + 1);
-              }}
+              onState={reportCanvas}
+              disabled={busy}
             />
           )}
           {tab === "trash" && (
@@ -295,55 +230,28 @@ export function AssetLibraryDialog({
               selected={selected}
               onToggle={toggle}
               onChanged={changed}
-              onNotice={notifyPanel}
+              onNotice={notify}
               reloadKey={reload}
             />
           )}
         </div>
-
         <footer className="cw-lib-footer">
           <span role="status">
-            {notice ||
-              (busy
-                ? "正在处理主体，请稍候…"
-                : `已选择 ${selected.size} 个${tab === "subjects" ? "主体" : "素材"}`)}
+            {notice || (busy ? "正在处理…" : `已选择 ${selected.size} 项`)}
           </span>
           <div>
-            {tab === "subjects" ? (
-              <>
-                <button
-                  type="button"
-                  disabled={Boolean(sourceIssue) || !onImportSubjects}
-                  title={sourceIssue ?? "为所选主体创建独立的画布节点。"}
-                  onClick={() => void importSubjects(false)}
-                >
-                  导入画布
-                </button>
-                <button
-                  type="button"
-                  disabled={Boolean(replaceIssue) || !onImportSubjects}
-                  title={
-                    replaceIssue ??
-                    "替换选中主体的媒体，保留名称和描述，可撤销。"
-                  }
-                  onClick={() => void importSubjects(true)}
-                >
-                  导入选中主体
-                </button>
-              </>
-            ) : (
-              <button type="button" disabled={busy} onClick={onClose}>
+            {tab === "trash" ? (
+              <button type="button" onClick={onClose}>
                 关闭
               </button>
-            )}
-            {tab !== "subjects" && mode === "select" && (
+            ) : (
               <button
                 type="button"
-                className="cw-lib-primary"
-                disabled={!selected.size}
-                onClick={confirm}
+                disabled={Boolean(issue)}
+                title={issue ?? "创建独立的画布节点"}
+                onClick={insert}
               >
-                确认
+                导入画布
               </button>
             )}
           </div>
