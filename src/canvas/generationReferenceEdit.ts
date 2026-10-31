@@ -19,7 +19,9 @@ export function referenceContentCommand(
   if (!target) throw new Error("目标节点已不存在。");
   const desired = new Set(
     content.flatMap((part) =>
-      part.type === "reference" && part.nodeId ? [part.nodeId] : [],
+      part.type === "reference" && part.binding !== "asset" && part.nodeId
+        ? [part.nodeId]
+        : [],
     ),
   );
   const commands: CanvasCommand[] = [
@@ -44,7 +46,8 @@ export function referenceContentCommand(
     working = applyCommand(working, remove);
   }
   const next = content.map((part) => {
-    if (part.type !== "reference" || !part.nodeId) return part;
+    if (part.type !== "reference" || part.binding === "asset" || !part.nodeId)
+      return part;
     const existing = working.edges.find(
       (edge) =>
         edge.intent !== "post_edit_result" &&

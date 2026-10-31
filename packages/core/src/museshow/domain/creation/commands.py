@@ -104,6 +104,12 @@ class SpecRestore(Contract):
     referencePolicy: Literal['follow_current', 'pinned'] = 'follow_current'
 
 
+class NodeVersionApply(Contract):
+    itemId: UUID
+    asset: AssetRef
+    referencePolicy: Literal['follow_current', 'pinned'] = 'follow_current'
+
+
 class SpecPromptWrite(Contract):
     specId: UUID
     prompt: str = Field(max_length=20000)
@@ -180,7 +186,7 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
-        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.configure', 'canvas.attachEditor'}:
+        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.configure', 'canvas.attachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
             required = [('canvas_item', item.itemId) for item in payload.items]
@@ -232,6 +238,7 @@ _COMMANDS = (
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate),
     ('CanvasHideCommand', 'canvas.hide', CanvasHide),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize),
+    ('NodeVersionApplyCommand', 'canvas.applyVersion', NodeVersionApply),
     ('CanvasConfigureCommand', 'canvas.configure', CanvasConfigure),
     ('CanvasEditorAttachCommand', 'canvas.attachEditor', CanvasEditorAttach),
     ('SpecCreateCommand', 'generationSpec.create', SpecWrite),
@@ -320,7 +327,7 @@ class CommandReceipt(Contract):
 class Query(Contract):
     queryId: UUID
     projectId: UUID
-    type: Literal['project.get', 'object.get', 'asset.search', 'asset.usage', 'generationSpec.versions', 'job.get']
+    type: Literal['project.get', 'object.get', 'asset.search', 'asset.usage', 'generationSpec.versions', 'canvas.versions', 'job.get']
     objectId: UUID | None = None
     revision: Revision | None = None
     text: str = Field(default='', max_length=1000)
@@ -329,7 +336,7 @@ class Query(Contract):
 
     @model_validator(mode='after')
     def target(self):
-        if self.type in {'object.get', 'generationSpec.versions', 'job.get'} and self.objectId is None:
+        if self.type in {'object.get', 'generationSpec.versions', 'canvas.versions', 'job.get'} and self.objectId is None:
             raise ValueError('Object query needs a stable object ID')
         return self
 

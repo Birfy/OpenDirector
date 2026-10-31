@@ -31,6 +31,9 @@ export function resourceNodeData(
 ): Partial<CanvasNodeData> {
   return {
     src: resource.src,
+    backendAssetId: resource.assetId,
+    ...(resource.text !== undefined ? { text: resource.text } : {}),
+    byteSize: resource.byteSize,
     title: resource.title,
     mimeType: resource.mimeType,
     assetState: "ready",

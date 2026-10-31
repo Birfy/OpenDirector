@@ -17,6 +17,7 @@ import {
   currentReferences,
   referencePart,
   referenceIds,
+  fingerprintMatches,
   validContent,
   type ReferenceAsset,
   type ReferenceContent,
@@ -169,7 +170,10 @@ export function ChatReferenceEditor({
         const src = latest.current.previews[part.assetId];
         const metadataOnly =
           asset && metadataOnlyKinds.includes(assetKind(asset));
-        chip.title = part.name + (metadataOnly ? "（仅传递素材信息）" : "");
+        chip.title =
+          part.name +
+          (part.binding === "asset" ? "（固定版本）" : "") +
+          (metadataOnly ? "（仅传递素材信息）" : "");
         chip.querySelector("[data-reference-info]")?.remove();
         if (metadataOnly) {
           const hint = document.createElement("small");
@@ -180,7 +184,12 @@ export function ChatReferenceEditor({
         chip.classList.toggle(
           "is-unavailable",
           !asset ||
-            !!(part.fingerprint && asset.fingerprint !== part.fingerprint),
+            (part.binding === "asset"
+              ? asset.fileAvailable === false
+              : asset.available === false) ||
+            !!(
+              part.fingerprint && !fingerprintMatches(asset, part.fingerprint)
+            ),
         );
         chip.querySelector("img")?.remove();
         if (src) {
@@ -379,6 +388,8 @@ export function ChatReferenceEditor({
           part.assetId,
           part.nodeId,
           part.referenceId,
+          part.sourceRole,
+          part.fingerprint,
           part.binding,
         ]);
         let assets = resolved.get(key);
@@ -813,7 +824,7 @@ export function ChatReferenceEditor({
                         (asset) =>
                           asset.id === part.assetId &&
                           (!part.fingerprint ||
-                            asset.fingerprint === part.fingerprint),
+                            fingerprintMatches(asset, part.fingerprint)),
                       )),
               )
             ) {

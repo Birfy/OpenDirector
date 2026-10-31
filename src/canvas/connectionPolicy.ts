@@ -64,7 +64,11 @@ export function canStartReference(node: CanvasNode): boolean {
 }
 
 export function canSourceReference(node: CanvasNode): boolean {
-  return canStartReference(node) && Boolean(referenceMaterial(node));
+  if (!canStartReference(node) || node.data.assetState === "missing")
+    return false;
+  if (node.type === "text") return Boolean(node.data.text?.trim());
+  if (node.type === "subject") return Boolean(node.data.subject?.main?.src);
+  return Boolean(node.data.src);
 }
 
 /** A prospective target may be empty; a prospective source cannot provide material. */
@@ -189,7 +193,7 @@ export function referenceIssue(
     return "source_type_unsupported";
   if (!nodePorts(b.type).target) return "target_type_unsupported";
   if (!referenceTypeAllowed(a.type, b.type)) return "source_type_unsupported";
-  if (!referenceMaterial(a)) return "source_empty";
+  if (!canSourceReference(a)) return "source_empty";
   if (b.data.mediaRole === "asset") return "target_material";
   const references = document.edges.filter(
     (e) => e.intent !== "post_edit_result",

@@ -60,11 +60,14 @@ export interface GenerationSettings {
 
 /** A retained media snapshot. nodeId records provenance, not ownership of the source. */
 export interface CanvasResource {
+  assetId?: string;
   id: string;
-  kind: "image" | "video" | "audio" | "file";
+  kind: "image" | "video" | "audio" | "text" | "file";
   title: string;
   src?: string;
   mimeType?: string;
+  text?: string;
+  byteSize?: number;
   nodeId?: string;
   durationSeconds?: number;
   width?: number;
@@ -135,9 +138,11 @@ export interface AgentNodeSettings {
 }
 
 export interface CanvasNodeData extends Record<string, unknown> {
+  backendAssetId?: string;
   kind: CanvasNodeKind;
   title: string;
   prompt: string;
+  byteSize?: number;
   promptMentions?: import("./promptMentions.ts").PromptMention[];
   promptContent?: import("./chatReferenceContent.ts").ReferenceContent;
   src?: string;
@@ -579,6 +584,8 @@ function applyCanvasCommand(
         // supply a new layer document or metadata in this same atomic patch.
         base = { ...node.data };
         for (const key of [
+          "backendAssetId",
+          "byteSize",
           "layers",
           "taskDraft",
           "media",
@@ -586,6 +593,13 @@ function applyCanvasCommand(
           "assetState",
         ] as const)
           delete base[key];
+      }
+      if (
+        command.patch.data &&
+        "text" in command.patch.data &&
+        command.patch.data.text !== node.data.text
+      ) {
+        base = { ...base, backendAssetId: undefined, byteSize: undefined };
       }
       let data = command.patch.data ? { ...base, ...command.patch.data } : base;
       if (

@@ -9,20 +9,27 @@ export function assistantReferences(
   for (const node of nodes) {
     const data = node.data;
     if (node.type === "text") {
-      if (data.text || data.prompt)
+      if (data.text?.trim())
         references.push({
+          nodeId: node.id,
+          assetId: data.backendAssetId,
           kind: "text",
           title: data.title,
-          text: data.text || data.prompt,
+          text: data.text,
         });
     } else if (node.type === "subject" && data.subject) {
-      for (const resource of [
-        data.subject.main,
-        ...data.subject.auxiliaries,
-        data.subject.voice,
-      ])
+      for (const [sourceRole, resource] of [
+        ["main", data.subject.main],
+        ...data.subject.auxiliaries.map(
+          (resource, index) => [`auxiliary:${index}`, resource] as const,
+        ),
+        ["voice", data.subject.voice],
+      ] as const)
         if (resource?.src && resource.kind !== "file")
           references.push({
+            nodeId: node.id,
+            sourceRole,
+            assetId: resource.assetId,
             kind: resource.kind,
             title: resource.title,
             src: resource.src,
@@ -32,6 +39,8 @@ export function assistantReferences(
           kind: "text",
           title: data.title,
           text: data.subject.description,
+          nodeId: node.id,
+          sourceRole: "description",
         });
     } else if (
       ["image", "video", "audio"].includes(node.type) &&
@@ -39,19 +48,13 @@ export function assistantReferences(
       data.assetState !== "missing"
     ) {
       references.push({
+        nodeId: node.id,
+        assetId: data.backendAssetId,
         kind: node.type as "image" | "video" | "audio",
         title: data.title,
         src: data.src,
       });
     }
   }
-  return references.filter(
-    (reference, index) =>
-      references.findIndex(
-        (item) =>
-          item.kind === reference.kind &&
-          item.src === reference.src &&
-          item.text === reference.text,
-      ) === index,
-  );
+  return references;
 }

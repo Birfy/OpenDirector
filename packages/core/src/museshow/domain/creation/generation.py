@@ -93,6 +93,7 @@ class ReferenceBase(ProjectEntity):
 class PinnedReference(ReferenceBase):
     binding: Literal['pinned']
     source: AssetRef
+    subjectRole: Literal['main', 'auxiliary', 'voice'] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class FollowingReference(ReferenceBase):

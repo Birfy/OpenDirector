@@ -23,6 +23,12 @@ def resolve_content(content, state, records, *, strict=False, index=None):
     for part in result:
         if part['type'] != 'reference':
             continue
+        if part.get('binding') == 'asset':
+            asset = records.get(part['assetId'])
+            if strict and (not asset or not fingerprint_matches(asset, part.get('fingerprint'))):
+                raise ProjectError('固定参考素材缺失或内容已改变，请重新核对版本。', 409)
+            part.pop('nodeId', None)
+            continue
         owner = nodes.get(part.get('nodeId')) if part.get('nodeId') else owners.get(part['assetId'])
         if owner:
             part['nodeId'] = owner['id']

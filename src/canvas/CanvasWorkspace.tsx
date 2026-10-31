@@ -2,7 +2,10 @@ import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { referenceContentCommand } from "./generationReferenceEdit.ts";
-import { incomingReferenceNodes } from "./generationReferenceContent.ts";
+import {
+  generationContent,
+  incomingReferenceNodes,
+} from "./generationReferenceContent.ts";
 import type { GenerationReferenceControls } from "./GenerationReferenceEditor";
 import { lockedNodeIds } from "./hierarchy";
 import {
@@ -131,7 +134,9 @@ const DirectorStage = lazy(() =>
     default: module.DirectorStage,
   })),
 );
-import { readEditorResource } from "./editorMedia";
+import { readEditorResource, classifyImportFile } from "./editorMedia";
+import { assertUpload } from "./uploadPolicy.ts";
+import { sameNodeData } from "./dataBoundary.ts";
 import { readImportBatch } from "./importBatch";
 import { useGenerationJobs } from "./useGenerationJobs";
 import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
@@ -162,7 +167,12 @@ import { expectedDuration, recordDuration } from "./generationDurations";
 import { useAssistantLayout } from "./useAssistantLayout";
 import { SettingsDialog } from "./SettingsDialog";
 import { useTheme } from "./theme";
-import { errorMessage, request as apiRequest } from "../backend/api.ts";
+import { fingerprintMatches } from "./chatReferenceContent.ts";
+import {
+  errorMessage,
+  assetBlob,
+  request as apiRequest,
+} from "../backend/api.ts";
 import {
   cancelGeneration,
   recoverGeneration,
@@ -552,6 +562,9 @@ function Workspace() {
   const pasteCount = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
+  const uploadSource = useRef<{ projectId: string; node: CanvasNode } | null>(
+    null,
+  );
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const assistantLayout = useAssistantLayout(root, assistantOpen, () => {
@@ -664,6 +677,12 @@ function Workspace() {
         : null;
     },
     prepareAsset: async (asset, signal) => {
+      const bytes = creationEnabled()
+        ? await creationClient(doc.id).blob(asset.id)
+        : await assetBlob(doc.id, asset.id, signal);
+      signal.throwIfAborted();
+      if (!fingerprintMatches(asset, await fingerprint(bytes)))
+        throw new Error("参考素材文件已改变，请重新核对版本。");
       if (creationEnabled()) {
         const client = creationClient(doc.id);
         const record = client.snapshot.assets.find(
@@ -676,13 +695,12 @@ function Workspace() {
           : { src: await client.mediaUrl(record.id, { signal }) };
       }
       const src = `/api/data/${doc.id}/assets/${asset.id}`;
-      if (asset.kind !== "text") return { src };
-      const response = await fetch(src, { signal });
-      if (!response.ok) throw new Error("参考文本读取失败。");
-      return { text: await response.text() };
+      return asset.kind === "text" ? { text: await bytes.text() } : { src };
     },
     onChange: (content, sources) => {
       const current = historyRef.current.present;
+      if (current.id !== doc.id || lockedNodeIds(current.nodes).has(target.id))
+        throw new Error("项目或目标锁定状态已变化，本批引用未插入。");
       const edit = referenceContentCommand(
         current,
         target.id,
@@ -1768,11 +1786,42 @@ function Workspace() {
       notify("请先解锁节点或所属分组。");
       return;
     }
+    const selected = historyRef.current.present.nodes.find(
+      (node) => node.id === id,
+    );
+    if (
+      selected?.data.src &&
+      selected.data.mediaRole === "generation" &&
+      selected.type !== "text"
+    ) {
+      notify("生成节点不能上传替换本体素材，请新建素材节点。");
+      return;
+    }
+    if (id && generationByNode.has(id)) {
+      notify("节点正在生成，请先等待或取消任务。");
+      return;
+    }
     uploadTarget.current = id;
+    uploadSource.current = selected
+      ? { projectId: historyRef.current.present.id, node: selected }
+      : null;
+    if (fileInput.current) {
+      fileInput.current.multiple = !id;
+      fileInput.current.accept =
+        selected?.type === "text"
+          ? ".txt,.md,.markdown"
+          : selected?.type === "subject"
+            ? "image/*,video/*,audio/*"
+            : selected && ["image", "video", "audio"].includes(selected.type)
+              ? `${selected.type}/*`
+              : "";
+    }
     fileInput.current?.click();
   };
   const importFiles = async (files: File[], point?: Point) => {
     const target = uploadTarget.current;
+    const expected = target ? uploadSource.current : null;
+    uploadSource.current = null;
     uploadTarget.current = null;
     let refTarget = referenceTarget.current;
     const importDocumentId = historyRef.current.present.id;
@@ -1781,14 +1830,41 @@ function Workspace() {
     importAbort.current?.abort();
     importAbort.current = controller;
     try {
+      if (target && files.length !== 1)
+        throw new Error("替换单个节点时请选择一个文件。");
+      if (
+        target &&
+        (!expected ||
+          expected.projectId !== importDocumentId ||
+          expected.node.id !== target)
+      )
+        throw new Error("上传目标已变化，请重新选择节点。");
       const nodes: CanvasNode[] = [];
       const commands: CanvasCommand[] = [];
       const origin = point ?? center();
       const { successes, failures } = await readImportBatch(
         files,
-        readEditorResource,
+        async (file, signal) => {
+          const validate = (kind: CanvasResource["kind"]) =>
+            assertUpload(
+              kind,
+              !target
+                ? "create"
+                : expected!.node.type === "subject"
+                  ? kind === "audio"
+                    ? "subject-voice"
+                    : "subject-main"
+                  : "replace",
+              expected?.node.type,
+            );
+          validate(classifyImportFile(file).kind);
+          const resource = await readEditorResource(file, signal);
+          validate(resource.kind);
+          return resource;
+        },
         controller.signal,
       );
+      if (target && failures.length) throw new Error(failures[0]!.message);
       for (const { index: i, value: resource } of successes) {
         const kind = resource.kind;
         const data = resourceNodeData(resource);
@@ -1821,7 +1897,7 @@ function Workspace() {
           commands.push({
             type: "update-node",
             id: target,
-            patch: { type: kind, data },
+            patch: { data },
           });
           continue;
         }
@@ -1833,6 +1909,18 @@ function Workspace() {
         nodes.push(node);
       }
       if (controller.signal.aborted) return;
+      if (target && expected) {
+        const latest = historyRef.current.present.nodes.find(
+          (node) => node.id === target,
+        );
+        if (
+          !latest ||
+          latest.type !== expected.node.type ||
+          !sameNodeData(latest.data, expected.node.data) ||
+          lockedNodeIds(historyRef.current.present.nodes).has(target)
+        )
+          throw new Error("节点内容、类型或锁定状态已变化，本次上传未应用。");
+      }
       if (historyRef.current.present.id !== importDocumentId) {
         notify("已切换项目，本次素材导入已取消。");
         return;
@@ -2125,6 +2213,8 @@ function Workspace() {
     const resource = await readEditorResource(result.file, signal);
     return {
       kind: result.kind,
+      assetId: result.assetId,
+      byteSize: result.file.size,
       src: resource.src!,
       mimeType: resource.mimeType || result.file.type,
       title: resource.title,
@@ -2191,7 +2281,12 @@ function Workspace() {
           taskId: item.taskId,
           output:
             item.kind === "text"
-              ? { kind: "text", title: item.title, text: item.text }
+              ? {
+                  kind: "text",
+                  title: item.title,
+                  text: item.text,
+                  assetId: item.assetId,
+                }
               : await mediaOutput(item.result),
         });
       }
@@ -2842,6 +2937,28 @@ function Workspace() {
         });
     }
   }, [jobs, ready, backendCatalog.connected, doc.id, change, persist, notify]);
+  const pinnedSubmissionInputs = (node: CanvasNode) =>
+    (node.data.promptContent ?? []).flatMap((part) => {
+      if (part.type !== "reference" || part.binding !== "asset") return [];
+      const asset = referenceAssets.assets.find(
+        (asset) => asset.id === part.assetId,
+      );
+      if (
+        !asset ||
+        !["text", "image", "video", "audio"].includes(asset.kind ?? "")
+      )
+        throw new Error("固定参考元数据尚未加载，请重新打开引用选择器。");
+      return [
+        {
+          binding: "asset" as const,
+          assetId: asset.id,
+          fingerprint: part.fingerprint,
+          referenceId: part.referenceId,
+          kind: asset.kind as "image" | "video" | "audio" | "text",
+          title: part.name,
+        },
+      ];
+    });
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const settings = getNodeGenerationSettings(node);
     const config = backendModel(settings, backendCatalog.models);
@@ -2855,6 +2972,8 @@ function Workspace() {
     const request: GenerationRequest = {
       documentId: document.id,
       documentTitle: document.title,
+      nodeId: node.id,
+      promptContent: generationContent(node, incoming),
       config,
       kind: settings.mode,
       prompt: settings.prompt,
@@ -2866,12 +2985,26 @@ function Workspace() {
       aspectRatio: settings.aspectRatio,
       resolution: settings.resolution,
       voice: serviceVoice(settings),
-      references: references.map(({ node: item }) => ({
-        kind: item.data.kind as "image" | "video" | "audio" | "text",
-        title: item.data.title,
-        src: item.data.src,
-        text: item.data.text,
-      })),
+      references: [
+        ...assistantReferences(incoming).map((input) => ({
+          ...input,
+          contextOnly: !references.some(
+            ({ node: item }) =>
+              item.id === input.nodeId &&
+              item.data.kind === input.kind &&
+              (input.kind === "text" || item.data.src === input.src),
+          ),
+        })),
+        ...pinnedSubmissionInputs(node).map((input) => ({
+          ...input,
+          contextOnly:
+            settings.mode === "audio" ||
+            (settings.mode === "video" &&
+              settings.videoMode === "first-last" &&
+              input.kind === "image" &&
+              references.some((ref) => ref.role === "firstFrame")),
+        })),
+      ],
     };
     const origin: ResultSource = {
       documentId: document.id,
@@ -2889,7 +3022,7 @@ function Workspace() {
     const batchId = count > 1 ? crypto.randomUUID() : undefined;
     for (let index = 0; index < count; index++)
       void runServiceTask(
-        { ...request, batchId },
+        { ...request, batchId, executionSlot: index },
         origin,
         settings.prompt || node.data.title,
         index === 0 ? "replace" : "additional",
@@ -2971,6 +3104,8 @@ function Workspace() {
         {
           documentId: current.id,
           documentTitle: current.title,
+          nodeId: node.id,
+          promptContent: generationContent(node, incoming),
           config,
           kind: "text",
           prompt: node.data.prompt,
@@ -2978,7 +3113,10 @@ function Workspace() {
           videoMode: "first_frame",
           thinking: settings.thinking,
           maxTokens: settings.maxTokens,
-          references: assistantReferences(incoming),
+          references: [
+            ...assistantReferences(incoming),
+            ...pinnedSubmissionInputs(node),
+          ],
         },
         {
           documentId: current.id,
@@ -2994,7 +3132,11 @@ function Workspace() {
 
     const settings = getNodeGenerationSettings(node);
     if (settings.modelConfigId) {
-      runServiceGeneration(node, incoming);
+      try {
+        runServiceGeneration(node, incoming);
+      } catch (error) {
+        notify(errorMessage(error));
+      }
       return;
     }
     const blocked = generationBlocker(settings, incoming);
@@ -3116,7 +3258,7 @@ function Workspace() {
       const outputs: LinkedMediaResult[] = [];
       for (const file of files) {
         const resource = await readEditorResource(file, controller.signal);
-        if (resource.kind === "file")
+        if (resource.kind === "file" || resource.kind === "text")
           throw new Error("结果必须是实际图片、视频或音频文件。");
         if (binding.expectedKind && resource.kind !== binding.expectedKind)
           throw new Error(

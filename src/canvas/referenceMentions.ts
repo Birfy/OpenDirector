@@ -1,5 +1,5 @@
 import type { CanvasNode } from "./model.ts";
-import { referenceMaterial } from "./connectionPolicy.ts";
+import { canSourceReference } from "./connectionPolicy.ts";
 
 export const REFERENCE_CATEGORIES = [
   { id: "all", label: "全部" },
@@ -72,7 +72,7 @@ export function nodeMentionOptions(
 ): MentionOption[] {
   return nodes.flatMap((node) => {
     const category = REFERENCE_CATEGORIES.find((item) => item.id === node.type);
-    if (!category || !referenceMaterial(node)) return [];
+    if (!category || !canSourceReference(node)) return [];
     const image = node.type === "subject" ? node.data.subject?.main : undefined;
     return [
       {

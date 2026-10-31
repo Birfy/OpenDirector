@@ -33,6 +33,10 @@ export function referenceInsertion(
   deduplicate = false,
 ) {
   for (const asset of added) {
+    if (asset.fileAvailable === false)
+      throw new Error(`“${asset.name}”的文件已缺失或改变，整批未插入。`);
+    if (asset.available === false && asset.binding !== "asset")
+      throw new Error(`“${asset.name}”已不可用，整批未插入。`);
     if (!rules.allowedKinds.includes(assetKind(asset)))
       throw new Error(`“${asset.name}”的类型不支持引用，整批未插入。`);
     if (rules.availableIds && !rules.availableIds.includes(asset.id))

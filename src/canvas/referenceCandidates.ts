@@ -2,6 +2,12 @@ import type { CanvasNode } from "./model.ts";
 import { nodeMentionOptions, type MentionOption } from "./referenceMentions.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
 
+export function assetOptionId(
+  asset: Pick<ReferenceAsset, "id" | "nodeId" | "sourceRole">,
+) {
+  return `asset:${asset.id}${asset.nodeId ? `@${asset.nodeId}:${asset.sourceRole ?? ""}` : ""}`;
+}
+
 /** One inventory entry per logical source; identical independent sources stay distinct. */
 export function referenceCandidates(
   nodes: readonly CanvasNode[],
@@ -16,15 +22,13 @@ export function referenceCandidates(
     if (!["image", "video", "audio", "text"].includes(asset.kind ?? ""))
       continue;
     const owner = nodes.find(
-      (node) =>
-        node.id === asset.nodeId ||
-        node.data.src?.split(/[?#]/)[0].endsWith(`/assets/${asset.id}`),
+      (node) => node.id === asset.nodeId || node.id === asset.logicalNodeId,
     );
     if (owner) continue;
     options.push({
-      id: `asset:${asset.id}`,
+      id: assetOptionId(asset),
       kind: asset.kind as MentionOption["kind"],
-      title: asset.name,
+      title: asset.nodeTitle || asset.name,
       detail: "项目素材",
       disabledReason:
         asset.size >

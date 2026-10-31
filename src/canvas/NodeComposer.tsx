@@ -15,6 +15,7 @@ import {
 } from "./generationCatalog.ts";
 import {
   backendBlocker,
+  referenceBudgetIssue,
   backendModel,
   backendResolutions,
   backendDurations,
@@ -393,20 +394,7 @@ export function NodeComposer({
             const frameIssue = frameImageLimitIssue(settings, sources);
             if (frameIssue) return frameIssue;
             if (!config) return null;
-            const references = backendReferences(settings, sources, config);
-            for (const [kind, maximum] of [
-              ["image", config.inputRules.maxImages],
-              ["video", config.inputRules.maxVideos],
-              ["audio", config.inputRules.maxAudios],
-            ] as const)
-              if (
-                references.filter(
-                  (ref) =>
-                    ref.role !== "continuation" && ref.node.type === kind,
-                ).length > maximum
-              )
-                return "参考数量超出当前模型限制";
-            return null;
+            return referenceBudgetIssue(sources, config, settings);
           }}
           onUpdate={onUpdate}
           running={running}

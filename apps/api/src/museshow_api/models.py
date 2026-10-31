@@ -157,6 +157,10 @@ class ChatRequest(Model):
 
 
 class NodeCreate(Model):
+    title: str = Field(default="", max_length=255)
+    logicalNodeId: str | None = Field(default=None, min_length=1, max_length=255, exclude_if=lambda value: value is None)
+    sourceRole: str | None = Field(default=None, max_length=100, exclude_if=lambda value: value is None)
+
     id: UUID
     kind: NodeKind
     x: Coordinate | None = None
@@ -255,12 +259,20 @@ class GenerationInputs(Model):
 
 
 class GenerateNode(Model):
+    logicalNodeId: str | None = Field(default=None, min_length=1, max_length=255)
     id: UUID
     modelConfigId: UUID
     expectedRevision: int = Field(ge=1)
 
 
     inputs: GenerationInputs | None = None
+
+
+class ReferenceSourceBind(Model):
+    assetId: UUID
+    fingerprint: str = Field(pattern=r'^sha256:[0-9a-f]{64}$')
+    expectedRevision: int = Field(ge=1)
+    discardInputs: bool = False
 
 
 class SessionClose(Model):

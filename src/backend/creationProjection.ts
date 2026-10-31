@@ -64,6 +64,8 @@ export class CreationProjection {
     )!;
     return {
       id: asset.id,
+      assetId: asset.id,
+      byteSize: asset.metadata.size,
       kind: asset.kind as CanvasResource["kind"],
       title: title ?? asset.name,
       src: await this.client.mediaUrl(asset.id).catch(() => undefined),
@@ -259,6 +261,8 @@ export class CreationProjection {
             node.data.assetState = "missing";
           }
           node.data.mimeType = asset.metadata.mimeType;
+          node.data.byteSize = asset.metadata.size;
+          node.data.backendAssetId = asset.id;
           node.data.mediaRole =
             item.binding.role === "material" ? "asset" : "generation";
           node.data.media = {

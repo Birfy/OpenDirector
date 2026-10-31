@@ -9,16 +9,13 @@ import {
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { errorMessage, request } from "../backend/api";
-import { uploadReferences } from "../backend/generation";
+import { prepareReferences, fingerprint } from "../backend/generation";
+import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import type { BackendModels } from "../backend/models";
 import { isGenerationModel } from "../backend/rules";
 import type { CanvasNode } from "./model";
 import { assistantReferences } from "./assistantReferences";
-import {
-  creationEnabled,
-  creationClient,
-  currentAsset,
-} from "../backend/creationClient.ts";
+import { creationEnabled, creationClient } from "../backend/creationClient.ts";
 import { pendingCanvasReferences } from "./pendingCanvasReferences.ts";
 import {
   contentText,
@@ -249,63 +246,9 @@ export function useAssistantChat(
   };
   const upload = (
     files: File[],
+    prepare: (files: File[], signal: AbortSignal) => Promise<ReferenceAsset[]>,
     commit?: (assets: ReferenceAsset[]) => boolean | Promise<boolean>,
-  ) =>
-    add(
-      async (signal) => {
-        if (creationEnabled())
-          throw new Error("该工程的助手对话尚未接入，请在画布中上传素材。");
-        if (current.current.assets.length + files.length > 64)
-          throw new Error("每次最多添加 64 份参考素材。");
-        for (const file of files) {
-          if (
-            !/^(image|video|audio|text)\//.test(file.type) &&
-            !/\.(txt|md|markdown)$/i.test(file.name)
-          )
-            throw new Error(
-              `不支持 ${file.name}，请上传图片、视频、音频或文本。`,
-            );
-          if (
-            file.size >
-            (file.type.startsWith("image/") ? 32 : 50) * 1024 * 1024
-          )
-            throw new Error(
-              `${file.name} 超过大小限制：图片 32 MB，其他素材 50 MB。`,
-            );
-        }
-        const assets: ChatAsset[] = [];
-        try {
-          for (const file of files) {
-            const result = await request<{
-              asset: ChatAsset | null;
-              matches: ChatAsset[];
-            }>(`/data/${projectId}/assets/${crypto.randomUUID()}`, {
-              method: "PUT",
-              signal,
-              headers: {
-                "X-Asset-Name": encodeURIComponent(file.name),
-                "Content-Type": "application/octet-stream",
-              },
-              body: file,
-            });
-            if (!result.asset)
-              throw new Error(
-                `${file.name} 与多份项目素材相同，请通过 @ 选择具体素材。`,
-              );
-            assets.push(attachment(result.asset));
-          }
-        } catch (reason) {
-          if (alive.current && !signal.aborted && assets.length) {
-            if (commit) await commit(assets);
-            else addAssets(assets);
-          }
-          throw reason;
-        }
-        return assets;
-      },
-      undefined,
-      commit,
-    );
+  ) => add((signal) => prepare(files, signal), undefined, commit);
   const addNodes = (
     nodes: CanvasNode[],
     signal?: AbortSignal,
@@ -323,89 +266,34 @@ export function useAssistantChat(
           );
         if (creationEnabled()) {
           const client = creationClient(projectId);
-          const snapshot = await client.refresh();
-          const ids = new Set<string>();
-          for (const selected of nodes) {
-            const item = snapshot.canvasItems.find(
-              (item) => item.id === selected.id,
+          await client.refresh();
+          const catalog = await loadReferenceCatalog(projectId, signal);
+          const selected = nodes.flatMap((node) => {
+            const assets = catalog.filter(
+              (asset) => asset.nodeId === node.id && asset.available,
             );
-            if (!item) throw new Error("所选节点已不存在，整批未插入。");
-            if (item.kind === "subject" && item.binding.role === "editor") {
-              const binding = item.binding;
-              const doc = snapshot.editorDocuments.find(
-                (doc) => doc.id === binding.objectRef.id,
-              );
-              if (
-                doc?.kind !== "subject" ||
-                ![doc.data.main, ...doc.data.auxiliaries, doc.data.voice].some(
-                  Boolean,
-                )
-              )
-                throw new Error("主体尚无已保存的素材，整批未插入。");
-              for (const ref of [
-                doc.data.main,
-                ...doc.data.auxiliaries,
-                doc.data.voice,
-              ])
-                if (ref) ids.add(ref.assetId);
-            } else {
-              const asset = currentAsset(snapshot, item);
-              if (!asset)
-                throw new Error("所选节点尚无已保存的资产，整批未插入。");
-              ids.add(asset.id);
-            }
-          }
-          const assets = snapshot.assets.filter((asset) => ids.has(asset.id));
-          if (assets.length !== ids.size)
-            throw new Error("参考素材已不可用，整批未插入。");
-          if (
-            new Set([
-              ...current.current.assets.map((asset) => asset.id),
-              ...ids,
-            ]).size > 64
-          )
-            throw new Error("每次最多添加 64 份参考素材。");
-          // Reuse canonical assets; preparing references does not execute the
-          // Agent loop or write old-format nodes, uploads or chat records.
-          for (const asset of assets) {
+            if (!assets.length)
+              throw new Error("所选节点尚无可用素材，整批未插入。");
+            return assets;
+          });
+          for (const asset of selected) {
             signal.throwIfAborted();
-            await client.blob(asset.id);
-            signal.throwIfAborted();
+            if (
+              (await fingerprint(await client.blob(asset.id))) !==
+              asset.fingerprint
+            )
+              throw new Error("参考内容已变化，整批未插入。");
           }
-          return assets.map((asset) => ({
-            id: asset.id,
-            name: asset.name,
-            type: asset.metadata.mimeType,
-            size: asset.metadata.size,
-            fingerprint: asset.fingerprint,
-            ...(nodes.length === 1 && nodes[0]!.type !== "subject"
-              ? { nodeId: nodes[0]!.id }
-              : {}),
-          }));
+          return selected;
         }
         const references = assistantReferences(nodes);
         if (references.length > 64)
           throw new Error("每次最多添加 64 份参考素材，整批未插入。");
         if (!references.length)
           throw new Error("所选节点没有可用素材，请先添加文本或上传素材。");
-        const ids = await uploadReferences(projectId, references, signal);
-        const assets = await request<ProjectChatAsset[]>(
-          `/projects/${projectId}/assets?current_only=true`,
-          { signal },
+        return (await prepareReferences(projectId, references, signal)).map(
+          (value) => value.asset,
         );
-        const inventory = await request<{
-          referenceSources: { id: string; assetId: string }[];
-        }>(`/projects/${projectId}/canvas`, { signal });
-        return ids.map((id) => {
-          const asset = assets.find((item) => item.id === id);
-          if (!asset) throw new Error("参考素材已不可用，请重新选择。");
-          return {
-            ...attachment(asset),
-            nodeId: inventory.referenceSources?.find(
-              (source) => source.assetId === id,
-            )?.id,
-          };
-        });
       },
       signal,
       commit,

@@ -6,6 +6,7 @@ export type ContentPart =
       type: "reference";
       assetId: string;
       referenceId?: string;
+      sourceRole?: string;
       binding?: "asset";
       nodeId?: string | null;
       name: string;
@@ -14,13 +15,19 @@ export type ContentPart =
 export type ReferenceContent = ContentPart[];
 export type ReferenceAsset = ChatAsset & {
   referenceId?: string;
+  sourceRole?: string;
   binding?: "asset";
   kind?: string;
   nodeTitle?: string;
+  logicalNodeId?: string;
   nodeId?: string;
   fingerprintAliases?: string[];
   onCanvas?: boolean;
   available?: boolean;
+  fileAvailable?: boolean;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
 };
 export function fingerprintMatches(asset: ReferenceAsset, value: string) {
   return (
@@ -56,9 +63,12 @@ export function normalizeContent(parts: ReferenceContent): ReferenceContent {
       result.push({
         type: "reference",
         assetId: part.assetId,
+        ...(part.sourceRole ? { sourceRole: part.sourceRole } : {}),
         ...(part.referenceId ? { referenceId: part.referenceId } : {}),
         ...(part.binding === "asset" ? { binding: "asset" as const } : {}),
-        ...(part.nodeId ? { nodeId: part.nodeId } : {}),
+        ...(part.binding !== "asset" && part.nodeId
+          ? { nodeId: part.nodeId }
+          : {}),
         name: part.name,
         fingerprint: part.fingerprint ?? null,
       });
@@ -135,9 +145,12 @@ export function referencePart(asset: ReferenceAsset): ContentPart {
   return {
     type: "reference",
     assetId: asset.id,
+    ...(asset.sourceRole ? { sourceRole: asset.sourceRole } : {}),
     ...(asset.referenceId ? { referenceId: asset.referenceId } : {}),
     ...(asset.binding === "asset" ? { binding: "asset" } : {}),
-    ...(asset.nodeId ? { nodeId: asset.nodeId } : {}),
+    ...(asset.binding !== "asset" && asset.nodeId
+      ? { nodeId: asset.nodeId }
+      : {}),
     name: asset.nodeTitle || asset.name,
     fingerprint: asset.fingerprint,
   };
@@ -151,7 +164,15 @@ export function currentReferences(
   return content.map((part) => {
     if (part.type === "text" || part.binding === "asset") return part;
     const asset = part.nodeId
-      ? assets.find((asset) => asset.nodeId === part.nodeId)
+      ? (assets.find(
+          (asset) =>
+            asset.nodeId === part.nodeId &&
+            asset.sourceRole === part.sourceRole,
+        ) ??
+        (!part.sourceRole &&
+        assets.filter((asset) => asset.nodeId === part.nodeId).length === 1
+          ? assets.find((asset) => asset.nodeId === part.nodeId)
+          : undefined))
       : assets.find((asset) => asset.id === part.assetId);
     return asset
       ? {

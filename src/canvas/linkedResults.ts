@@ -39,6 +39,8 @@ export function captureEditorSource(
   };
 }
 export interface LinkedMediaResult {
+  assetId?: string;
+  byteSize?: number;
   kind: "image" | "video" | "audio";
   src: string;
   mimeType: string;
@@ -135,6 +137,8 @@ export function applyGenerationResults(
       patch: {
         data: {
           src: first.src,
+          backendAssetId: first.assetId,
+          byteSize: first.byteSize,
           mimeType: first.mimeType,
           assetState: "ready",
           mediaRole: "generation",
@@ -545,7 +549,7 @@ export function placeToolResults(
 
 export type ServiceResult =
   | LinkedMediaResult
-  | { kind: "text"; title: string; text: string };
+  | { kind: "text"; title: string; text: string; assetId?: string };
 
 /** Results made outside a canvas source (such as by the assistant) start right of the content. */
 export function appendServiceResults(
@@ -594,9 +598,15 @@ function placeResults(
         y: start.y + Math.floor(index / 4) * 400,
       },
       output.kind === "text"
-        ? { title: output.title, text: output.text }
+        ? {
+            title: output.title,
+            text: output.text,
+            backendAssetId: output.assetId,
+          }
         : {
             src: output.src,
+            backendAssetId: output.assetId,
+            byteSize: output.byteSize,
             title: output.title,
             mimeType: output.mimeType,
             assetState: "ready",

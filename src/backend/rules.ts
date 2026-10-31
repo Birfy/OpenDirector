@@ -1,3 +1,4 @@
+import { nodeByteSize } from "../canvas/uploadPolicy.ts";
 import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
 import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 export { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
@@ -23,6 +24,9 @@ export interface InputRules {
   profile: string;
   allowedKinds: string[];
   maxImages: number;
+  imageBytes?: number;
+  videoBytes?: number;
+  requestBytes?: number;
   maxVideos: number;
   maxAudios: number;
   videoModes: BackendVideoMode[];
@@ -329,5 +333,51 @@ export function backendBlocker(
   ] as const)
     if (count(kind) > limit)
       return `参考${LABELS[kind]}超过当前模型上限（${limit} 个）。`;
+  return null;
+}
+
+/** The same budget applies to following nodes, pinned assets and expanded subjects. */
+export function referenceBudgetIssue(
+  sources: readonly CanvasNode[],
+  config: ModelConfig,
+  settings?: GenerationSettings,
+) {
+  const usable = settings
+    ? backendReferences(settings, sources, config)
+        .filter((ref) => ref.role !== "continuation")
+        .map((ref) => ref.node)
+    : sources.flatMap((node) =>
+        node.type === "subject" ? subjectReferenceNodes(node) : [node],
+      );
+  let total = 0;
+  const seen = new Set<string>();
+  for (const source of usable) {
+    const key = `${source.id}:${source.type}:${source.data.src ?? source.data.text ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const size = nodeByteSize(source);
+    const limit =
+      source.type === "text"
+        ? 64 * 1024
+        : source.type === "image"
+          ? (config.inputRules.imageBytes ?? 32 * 1024 * 1024)
+          : source.type === "video"
+            ? (config.inputRules.videoBytes ?? 50 * 1024 * 1024)
+            : 50 * 1024 * 1024;
+    if (size > limit) return "参考文件超过当前模型的大小限制";
+    total += size;
+  }
+  if (total > (config.inputRules.requestBytes ?? Infinity))
+    return "参考总大小超过当前模型的请求预算";
+  for (const [kind, maximum] of [
+    ["image", config.inputRules.maxImages],
+    ["video", config.inputRules.maxVideos],
+    ["audio", config.inputRules.maxAudios],
+  ] as const)
+    if (
+      !(config.kind === "agent" && kind !== "image") &&
+      usable.filter((source) => source.type === kind).length > maximum
+    )
+      return "参考数量超出当前模型限制";
   return null;
 }

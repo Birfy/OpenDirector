@@ -2324,6 +2324,7 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
                 "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
                 "canvas.configure": "#/$defs/CanvasConfigureCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
@@ -2395,6 +2396,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasMaterializeCommand"
+              },
+              {
+                "$ref": "#/$defs/NodeVersionApplyCommand"
               },
               {
                 "$ref": "#/$defs/CanvasConfigureCommand"
@@ -6092,6 +6096,86 @@
         "title": "NodeCapabilities",
         "type": "object"
       },
+      "NodeVersionApply": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "referencePolicy": {
+            "default": "follow_current",
+            "enum": [
+              "follow_current",
+              "pinned"
+            ],
+            "title": "Referencepolicy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "asset"
+        ],
+        "title": "NodeVersionApply",
+        "type": "object"
+      },
+      "NodeVersionApplyCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.applyVersion",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/NodeVersionApply"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "NodeVersionApplyCommand",
+        "type": "object"
+      },
       "ObjectVersion": {
         "additionalProperties": false,
         "properties": {
@@ -6234,6 +6318,23 @@
           },
           "source": {
             "$ref": "#/$defs/AssetRef"
+          },
+          "subjectRole": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "auxiliary",
+                  "voice"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subjectrole"
           }
         },
         "required": [
@@ -6925,6 +7026,7 @@
               "asset.search",
               "asset.usage",
               "generationSpec.versions",
+              "canvas.versions",
               "job.get"
             ],
             "title": "Type",
@@ -10432,6 +10534,7 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
             "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
             "canvas.configure": "#/$defs/CanvasConfigureCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
@@ -10503,6 +10606,9 @@
           },
           {
             "$ref": "#/$defs/CanvasMaterializeCommand"
+          },
+          {
+            "$ref": "#/$defs/NodeVersionApplyCommand"
           },
           {
             "$ref": "#/$defs/CanvasConfigureCommand"
@@ -13077,6 +13183,7 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
                 "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
                 "canvas.configure": "#/$defs/CanvasConfigureCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
@@ -13148,6 +13255,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasMaterializeCommand"
+              },
+              {
+                "$ref": "#/$defs/NodeVersionApplyCommand"
               },
               {
                 "$ref": "#/$defs/CanvasConfigureCommand"
@@ -17030,6 +17140,89 @@
         "title": "NodeCapabilities",
         "type": "object"
       },
+      "NodeVersionApply": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "referencePolicy": {
+            "default": "follow_current",
+            "enum": [
+              "follow_current",
+              "pinned"
+            ],
+            "title": "Referencepolicy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "asset",
+          "referencePolicy"
+        ],
+        "title": "NodeVersionApply",
+        "type": "object"
+      },
+      "NodeVersionApplyCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.applyVersion",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/NodeVersionApply"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "NodeVersionApplyCommand",
+        "type": "object"
+      },
       "ObjectVersion": {
         "additionalProperties": false,
         "properties": {
@@ -17176,6 +17369,23 @@
           },
           "source": {
             "$ref": "#/$defs/AssetRef"
+          },
+          "subjectRole": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "auxiliary",
+                  "voice"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subjectrole"
           }
         },
         "required": [
@@ -17901,6 +18111,7 @@
               "asset.search",
               "asset.usage",
               "generationSpec.versions",
+              "canvas.versions",
               "job.get"
             ],
             "title": "Type",
@@ -21593,6 +21804,7 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
             "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
             "canvas.configure": "#/$defs/CanvasConfigureCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
@@ -21664,6 +21876,9 @@
           },
           {
             "$ref": "#/$defs/CanvasMaterializeCommand"
+          },
+          {
+            "$ref": "#/$defs/NodeVersionApplyCommand"
           },
           {
             "$ref": "#/$defs/CanvasConfigureCommand"

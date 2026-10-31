@@ -1,3 +1,4 @@
+import { assertUpload } from "./uploadPolicy.ts";
 import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasResource, SubjectData } from "./model";
 import { copySubject, subjectError } from "./dataBoundary";
@@ -55,6 +56,14 @@ export function SubjectEditor({
       loading.current?.abort();
       const controller = new AbortController();
       loading.current = controller;
+      assertUpload(
+        resource.kind,
+        requestedSlot === "main"
+          ? "subject-main"
+          : requestedSlot === "voice"
+            ? "subject-voice"
+            : "subject-auxiliary",
+      );
       const resolved = await withMediaDuration(resource, controller.signal);
       if (!active.current) return;
       const current = subjectRef.current;

@@ -3,6 +3,9 @@ import type { CanvasResource } from "./model";
 const aborted = () => new DOMException("素材读取已取消。", "AbortError");
 
 const mediaExtensions: Readonly<Record<string, string>> = {
+  txt: "text/plain",
+  md: "text/markdown",
+  markdown: "text/markdown",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
@@ -43,7 +46,10 @@ export function classifyImportFile(file: Pick<File, "name" | "type">): {
       ? "video"
       : mimeType.startsWith("audio/")
         ? "audio"
-        : "file";
+        : mimeType.startsWith("text/") &&
+            ["txt", "md", "markdown"].includes(extension)
+          ? "text"
+          : "file";
   return { kind, mimeType };
 }
 
@@ -52,6 +58,24 @@ export async function readEditorResource(
   signal?: AbortSignal,
 ): Promise<CanvasResource> {
   const { kind, mimeType } = classifyImportFile(file);
+  if (kind === "text") {
+    if (file.size > 1024 * 1024) throw new Error("文本文件应不超过 1 MiB。");
+    const bytes = await file.arrayBuffer();
+    signal?.throwIfAborted();
+    const text = new TextDecoder("utf-8", { fatal: true })
+      .decode(bytes)
+      .replace(/^\uFEFF/, "");
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(text))
+      throw new Error("文本文件包含无效的二进制内容。");
+    return {
+      id: crypto.randomUUID(),
+      kind,
+      title: file.name,
+      text,
+      byteSize: file.size,
+      mimeType,
+    };
+  }
   const src = await new Promise<string>((resolve, reject) => {
     if (signal?.aborted) {
       reject(aborted());
@@ -91,6 +115,7 @@ export async function readEditorResource(
       title: file.name,
       src,
       mimeType,
+      byteSize: file.size,
     },
     signal,
   );
@@ -102,7 +127,7 @@ export async function withMediaDuration(
   signal?: AbortSignal,
 ): Promise<CanvasResource> {
   if (signal?.aborted) throw aborted();
-  if (resource.kind === "file") return resource;
+  if (resource.kind === "file" || resource.kind === "text") return resource;
   if (resource.kind === "image" && resource.width && resource.height)
     return resource;
   const hasDuration =

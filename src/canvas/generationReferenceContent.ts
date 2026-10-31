@@ -1,3 +1,4 @@
+import { nodeByteSize } from "./uploadPolicy.ts";
 import type { CanvasDocument, CanvasNode, CanvasNodeData } from "./model.ts";
 import { referenceMaterial } from "./connectionPolicy.ts";
 import {
@@ -12,6 +13,42 @@ export function generationPrompt(node: CanvasNode) {
   return node.type === "audio" && node.data.promptContent !== undefined
     ? contentText(node.data.promptContent, true)
     : node.data.prompt;
+}
+
+/** Server acknowledgements canonicalize labels/assets without changing intent. */
+export function generationEditIdentity(
+  node: CanvasNode,
+  content: ReferenceContent,
+) {
+  const { prompt: _projection, ...settings } = node.data.settings ?? {};
+  return JSON.stringify({
+    kind: node.type,
+    title: node.data.title,
+    src: node.data.src,
+    text: node.data.text,
+    settings: Object.fromEntries(
+      Object.entries(settings).sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    agentSettings: node.data.agentSettings
+      ? Object.fromEntries(
+          Object.entries(node.data.agentSettings).sort(([a], [b]) =>
+            a.localeCompare(b),
+          ),
+        )
+      : undefined,
+    content: content.map((part) =>
+      part.type === "text"
+        ? part
+        : part.binding === "asset"
+          ? {
+              binding: "asset",
+              assetId: part.assetId,
+              fingerprint: part.fingerprint,
+              referenceId: part.referenceId,
+            }
+          : { nodeId: part.nodeId, referenceId: part.referenceId },
+    ),
+  });
 }
 
 /** Match provider numbering to first inline occurrence, then relationship order. */
@@ -45,14 +82,44 @@ export function incomingReferenceNodes(
 }
 
 /** Editor identities follow logical sources, independent of a file's current URL. */
+const sourceFingerprints = new WeakMap<
+  CanvasNodeData,
+  { facts: unknown[]; digest: string; size: number }
+>();
+
 export function nodeReferenceAsset(
   node: CanvasNode,
   referenceId?: string,
 ): ReferenceAsset {
-  const material = referenceMaterial(node) ?? "";
-  let hash = 2166136261;
-  for (let i = 0; i < material.length; i++)
-    hash = Math.imul(hash ^ material.charCodeAt(i), 16777619);
+  // Dragging and viewport changes recreate node wrappers, but keep their data.
+  // Compare content facts before reading/serializing potentially large media.
+  // Retain primitive facts too so in-place source edits cannot leave a stale digest.
+  const data = node.data;
+  const facts: unknown[] = [node.type, data.assetState, data.byteSize];
+  if (node.type === "subject")
+    facts.push(
+      data.subject?.main?.src,
+      ...(data.subject?.auxiliaries.map((resource) => resource.src) ?? []),
+      data.subject?.voice?.src,
+    );
+  else facts.push(node.type === "text" ? data.text : data.src);
+  let cached = sourceFingerprints.get(data);
+  if (
+    !cached ||
+    cached.facts.length !== facts.length ||
+    facts.some((fact, index) => fact !== cached!.facts[index])
+  ) {
+    const material = referenceMaterial(node) ?? "";
+    let hash = 2166136261;
+    for (let i = 0; i < material.length; i++)
+      hash = Math.imul(hash ^ material.charCodeAt(i), 16777619);
+    cached = {
+      facts,
+      digest: `${material.length}:${hash >>> 0}`,
+      size: nodeByteSize(node),
+    };
+    sourceFingerprints.set(data, cached);
+  }
   return {
     id: `node:${node.id}`,
     nodeId: node.id,
@@ -61,8 +128,8 @@ export function nodeReferenceAsset(
     nodeTitle: (node.data.title || "参考").slice(0, 255),
     kind: node.type,
     type: `${node.type}/reference`,
-    size: 0,
-    fingerprint: `source:${node.id}:${material.length}:${hash >>> 0}`,
+    size: cached.size,
+    fingerprint: `source:${node.id}:${cached.digest}`,
   };
 }
 

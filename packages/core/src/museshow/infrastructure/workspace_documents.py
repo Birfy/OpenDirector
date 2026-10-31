@@ -77,6 +77,11 @@ class WorkspaceDocuments:
         with self.store.transaction() as db:
             directory = self.store._owner(db, project_id, session)
             current = self._read(directory, project_id)
+            previous_nodes = {node.get('id'): node for node in (current['document'] or {}).get('nodes', []) + (current['document'] or {}).get('hiddenNodes', []) if isinstance(node, dict)}
+            for node in document.get('nodes', []) + document.get('hiddenNodes', []):
+                previous = previous_nodes.get(node.get('id')) if isinstance(node, dict) else None
+                if previous and previous.get('type') and node.get('type') != previous['type']:
+                    raise ProjectError('上传或替换素材不能改变已有节点类型。', 422)
             document = {**deepcopy(document), 'title': directory.name}
             # A lost response can safely retry the same bytes.
             if document == current['document']:

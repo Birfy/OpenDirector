@@ -6,11 +6,12 @@ from museshow.application.creation_canvas import CreationCanvas, current_asset, 
 from museshow.domain.creation.base import Contract, digest
 from museshow.domain.creation.project import ProjectSnapshot, asset_references
 from museshow.domain.creation.validation import ContractError
+from museshow.domain.projects import ProjectError
 
 EDITABLE = {'canvasItems', 'generationSpecs', 'references', 'editorDocuments'}
 ABSENT = object()
 UNDOABLE = {'creation.batch', 'canvas.show', 'canvas.hide', 'canvas.move', 'canvas.update', 'canvas.configure',
-    'canvas.materialize', 'canvas.attachEditor', 'generationSpec.update', 'generationSpec.restore',
+    'canvas.materialize', 'canvas.applyVersion', 'canvas.attachEditor', 'generationSpec.update', 'generationSpec.restore',
     'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'result.select', 'editor.save', 'generationSpec.setPrompt'}
 
 
@@ -70,6 +71,35 @@ class CreationHistory:
                 states[record.command.payload.targetCommandId] = 'undone' if kind == 'history.undo' else 'applied'
         return states
 
+    def reference_catalog(self, project_id):
+        snapshot = self.projects.snapshot(project_id)
+        current, _, historical = self._inventory(snapshot)
+        listed = {a.id for a in snapshot.assets if a.id not in historical or a.id in current}
+        owners = {}
+        for item in snapshot.canvasItems:
+            asset = current_asset(snapshot, item)
+            if asset:
+                owners.setdefault(asset.id, []).append(dict(nodeId=str(item.id), nodeTitle=item.title))
+            if item.kind == 'subject' and item.binding.role == 'editor':
+                doc = next(doc for doc in snapshot.editorDocuments if doc.id == item.binding.objectRef.id)
+                for role, ref in [('main', doc.data.main), *[(f'auxiliary:{index}', ref) for index, ref in enumerate(doc.data.auxiliaries)], ('voice', doc.data.voice)]:
+                    if ref:
+                        owners.setdefault(ref.assetId, []).append(dict(nodeId=str(item.id), nodeTitle=item.title, sourceRole=role))
+        from museshow.application.creation_assets import CreationAssets
+        service = CreationAssets(self.projects)
+        result = []
+        for asset in snapshot.assets:
+            file_available = True
+            try:
+                service.reference_available(project_id, asset.id)
+            except (ContractError, ProjectError, OSError, ValueError):
+                file_available = False
+            available = file_available and (asset.id in listed or asset.id in owners)
+            for owner in owners.get(asset.id, [{}]):
+                result.append(dict(id=str(asset.id), name=asset.name, kind=asset.kind, type=asset.metadata.mimeType,
+                    size=asset.metadata.size, width=asset.metadata.width, height=asset.metadata.height, durationSeconds=asset.metadata.durationSeconds, fingerprint=asset.fingerprint, available=available, fileAvailable=file_available, **owner))
+        return result
+
     def operations(self, project_id):
         states = self.states(project_id)
         return [dict(commandId=r.command.commandId, type=r.command.type, state=states[r.command.commandId], cursor=r.snapshot.eventCursor)
@@ -102,6 +132,9 @@ class CreationHistory:
         if command.type == 'asset.delete':
             return self._delete(command, session=session, source=source)
         def apply(before):
+            if command.type == 'canvas.applyVersion':
+                from museshow.application.creation_node_versions import apply_node_version
+                return apply_node_version(self, before, command)
             if command.type == 'generationSpec.restore':
                 return self._restore(before, command)
             states = self.states(command.projectId)
@@ -169,6 +202,10 @@ class CreationHistory:
                         put(actual, path, restore)
             return self._revisions(before, data)
         return self.projects.commit(command, apply, session=session, source=source)
+
+    def node_versions(self, project_id, item_id):
+        from museshow.application.creation_node_versions import node_versions
+        return node_versions(self.projects, project_id, item_id)
 
     @staticmethod
     def _revisions(before, data):
@@ -321,14 +358,28 @@ class CreationHistory:
             return self._revisions(before, data)
         return self.projects.commit(command, apply, session=session, source=source, deletes=files)
 
-    def asset_list(self, project_id, *, text='', usage='all', offset=0, limit=100):
-        snapshot = self.projects.snapshot(project_id)
+    def _inventory(self, snapshot):
         current = {asset.id for item in snapshot.canvasItems if (asset := current_asset(snapshot, item)) is not None}
         current_results = {result.asset.assetId: spec.id for spec in snapshot.generationSpecs for result in snapshot.results if spec.currentResultId == result.id}
         current.update(current_results)
-        visible = visible_item_ids(snapshot)
         historical = {r.asset.assetId for r in snapshot.results}
         historical.update(source.assetId for asset in snapshot.assets for source in asset.provenance.sources)
+        # Every adopted manual/uploaded sibling is a version, including a newer
+        # sibling after applying an older version. Hidden current owners stay live.
+        for record in self.projects.history(snapshot.project.id):
+            historical.update(asset.id for item in record.snapshot.canvasItems if (asset := current_asset(record.snapshot, item)) is not None)
+            for doc in record.snapshot.editorDocuments:
+                if doc.kind == 'subject':
+                    historical.update(ref.assetId for ref in asset_references(doc))
+        for doc in snapshot.editorDocuments:
+            if doc.kind == 'subject':
+                current.update(ref.assetId for ref in asset_references(doc))
+        return current, current_results, historical
+
+    def asset_list(self, project_id, *, text='', usage='all', offset=0, limit=100):
+        snapshot = self.projects.snapshot(project_id)
+        current, current_results, historical = self._inventory(snapshot)
+        visible = visible_item_ids(snapshot)
         order = {a.id: n for n, a in enumerate(snapshot.assets)}
         listed = []
         for asset in snapshot.assets:

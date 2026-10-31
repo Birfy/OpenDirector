@@ -78,9 +78,17 @@ def creation_routes(projects: CreationProjects, generation=None):
     def operations(project_id: UUID):
         return history.operations(project_id)
 
+    @router.get('/projects/{project_id}/reference-catalog')
+    def reference_catalog(project_id: UUID):
+        return history.reference_catalog(project_id)
+
     @router.get('/projects/{project_id}/specs/{spec_id}/versions')
     def versions(project_id: UUID, spec_id: UUID):
         return history.versions(project_id, spec_id)
+
+    @router.get('/projects/{project_id}/items/{item_id}/versions')
+    def node_versions(project_id: UUID, item_id: UUID):
+        return history.node_versions(project_id, item_id)
 
     @router.get('/projects/{project_id}/asset-list')
     def asset_list(project_id: UUID, text: str = Query(default='', max_length=1000),

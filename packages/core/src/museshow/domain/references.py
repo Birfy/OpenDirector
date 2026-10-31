@@ -17,6 +17,10 @@ class ReferencePart(BaseModel):
     model_config = ConfigDict(extra='forbid')
     type: Literal['reference']
     assetId: UUID
+    binding: Literal["asset"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    referenceId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    transmission: Literal["context_only"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    sourceRole: str | None = Field(default=None, max_length=100, exclude_if=lambda value: value is None)
     nodeId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     name: str = Field(min_length=1, max_length=255)
     fingerprint: str | None = Field(default=None, max_length=1000)
@@ -34,6 +38,8 @@ def project_content(content, *, speech=False):
         if part.type == 'text':
             text.append(part.text)
         else:
+            if part.transmission == 'context_only':
+                continue
             asset_id = str(part.assetId)
             if asset_id not in references:
                 references.append(asset_id)

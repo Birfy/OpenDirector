@@ -34,7 +34,12 @@ import {
   type TimelineLibraryKind,
   type TimelineLibrarySource,
 } from "./timeline";
-import { readEditorResource, withMediaDuration } from "./editorMedia";
+import { assertUpload } from "./uploadPolicy.ts";
+import {
+  classifyImportFile,
+  readEditorResource,
+  withMediaDuration,
+} from "./editorMedia";
 import { EditorModal } from "./EditorModal";
 import { CanvasIcon } from "./CanvasIcon";
 import "./timeline-editor.css";
@@ -491,7 +496,10 @@ export function TimelineEditor({
     try {
       for (const file of [...files]) {
         try {
-          imported.push(await readEditorResource(file, controller.signal));
+          assertUpload(classifyImportFile(file).kind, "timeline");
+          const resource = await readEditorResource(file, controller.signal);
+          assertUpload(resource.kind, "timeline");
+          imported.push(resource);
         } catch (error) {
           if (!ownsLoad(controller)) return;
           failures.push(

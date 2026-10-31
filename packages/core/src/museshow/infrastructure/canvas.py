@@ -9,7 +9,7 @@ from museshow.domain.references import replace_inputs, reference_content, projec
 from museshow.domain.canvas import CanvasNode, CanvasState, lock_role, require_role
 from museshow.domain.canvas_layout import append_position, arrange
 from museshow.infrastructure.canvas_history import capture, migrate_history, public_state, record, replay
-from museshow.infrastructure.canvas_assets import current_asset_ids, listed_asset_ids, remember_asset_groups, require_current_assets, logical_nodes
+from museshow.infrastructure.canvas_assets import current_asset_ids, listed_asset_ids, remember_asset_groups, require_current_assets, require_node_references, logical_nodes
 from museshow.infrastructure.canvas_references import sync_references, resolve_content, resolve_inputs, edge_records, input_changes
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow.integrations.reference_inputs import generation_references
@@ -134,7 +134,7 @@ class CanvasProjects:
                     "inputChanges": input_changes(state, records, tasks),
                     "availableAssetIds": sorted(current_asset_ids(directory)),
                     "visibleAssetIds": sorted(node['assetId'] for node in state['nodes'] if node['assetId']),
-                    "referenceSources": [{key: node[key] for key in ('id', 'title', 'assetId')} for node in logical_nodes(state) if node['assetId']],
+                    "referenceSources": [{key: node[key] for key in ('id', 'title', 'assetId', 'kind', 'role', 'revision', 'sourceRole', 'logicalNodeId') if key in node} for node in logical_nodes(state) if node['assetId']],
                     "listedAssetIds": sorted(listed_asset_ids(state, records, tasks))}
 
     @staticmethod
@@ -190,7 +190,7 @@ class CanvasProjects:
                     node['id'] = restored_id
                     node['assetIds'] = [asset_id for asset_id in group['assetIds'] if asset_id in records]
             self._check_assets(node, records)
-            require_current_assets(directory, node['referenceIds'])
+            require_node_references(directory, node)
             if not explicit:
                 node.update(self.next_position(state, node['kind'], records, node['assetId']))
             state["nodes"].append(node)
@@ -361,7 +361,10 @@ class CanvasProjects:
         with self.store.transaction() as db:
             directory = self.store._owner(db, identifier(project_id), session)
             state, records = self._sync(directory, project_id)
-            node = self._node(state, node_id)
+            node = (next((item for item in logical_nodes(state) if item['id'] == node_id), None)
+                    if set(changes) <= {'title', 'expectedRevision'} else self._node(state, node_id))
+            if node is None:
+                raise ProjectError('参考来源不存在。', 404)
             expected = changes.get("expectedRevision", node["revision"])
             updates = {key: value for key, value in changes.items() if key != "expectedRevision"}
             if 'role' in updates and updates['role'] != node['role']:
@@ -384,7 +387,7 @@ class CanvasProjects:
             self._check_assets(value, records, allow_missing_references=True)
             if set(value['referenceIds']) - set(node['referenceIds']) - records.keys():
                 raise ProjectError('节点引用的资产不存在。', 409)
-            require_current_assets(directory, value['referenceIds'], retained=node['referenceIds'])
+            require_node_references(directory, value, retained=node['referenceIds'])
             before = capture(state) if remember else None
             if changed & {'prompt', 'promptContent', 'referenceIds', 'modelConfigId', 'videoMode'}:
                 value.update(resolve_inputs(value, {**state, 'nodes': [value if item['id'] == node_id else item for item in state['nodes']]}, records))
@@ -499,6 +502,10 @@ class CanvasProjects:
     @staticmethod
     def _retain_output(state, project_id, node_id, asset_id):
         state['knownAssetIds'] = list(dict.fromkeys([*state['knownAssetIds'], asset_id]))
+        group = state['assetGroups'].get(node_id)
+        if group and not any(item['id'] == node_id for item in state['nodes']) and group.get('node'):
+            node = group['node']
+            group.update({key: node[key] for key in ('role', 'assetId', 'assetIds')})
         # A file saved before the owning node's commit may be projected by a
         # concurrent snapshot. Reconcile it instead of retaining two nodes.
         projection_id = str(uuid5(UUID(project_id), asset_id))
@@ -509,7 +516,9 @@ class CanvasProjects:
         with self.store.transaction() as db:
             directory = self.store._owner(db, identifier(project_id), session)
             state = self._read(directory)
-            node = self._node(state, identifier(node_id))
+            node = next((item for item in logical_nodes(state) if item['id'] == identifier(node_id)), None)
+            if node is None:
+                raise ProjectError('参考来源不存在。', 404)
             require_role(node, 'material')
             if not discard_inputs:
                 self.require_no_generation_inputs(node)
@@ -526,6 +535,42 @@ class CanvasProjects:
             self._write(directory, state)
             return asset
 
+    def bind_reference_source(self, project_id, node_id, asset_id, fingerprint, expected_revision, session, *, discard_inputs=False):
+        """Legacy workspace bridge: follow an existing canonical asset without copying it.
+
+        This is a material-source operation, not generation adoption or a role
+        conversion. The selected logical identity, including hidden sources, is retained.
+        """
+        from hashlib import sha256
+        with self.store.transaction() as db:
+            directory = self.store._owner(db, project_id, session)
+            state, records = self._sync(directory, project_id)
+            node = next((item for item in logical_nodes(state) if item['id'] == node_id), None)
+            if node is None:
+                raise ProjectError('参考来源不存在。', 404)
+            require_role(node, 'material')
+            if node['revision'] != expected_revision:
+                raise ProjectError('参考来源已变化，请刷新后重试。', 409, code='revision_conflict')
+            if not discard_inputs:
+                self.require_no_generation_inputs(node)
+            asset = records.get(asset_id)
+            if not asset or asset['kind'] != node['kind']:
+                raise ProjectError('参考素材类型与逻辑来源不匹配。', 409)
+            file = child(child(directory, 'assets'), asset_id)
+            if not file.is_file() or asset['fingerprint'] != fingerprint or 'sha256:' + sha256(file.read_bytes()).hexdigest() != fingerprint:
+                raise ProjectError('参考文件缺失或内容已改变。', 409)
+            if node['assetId'] == asset_id:
+                return dict(node=node, asset=asset)
+            before = capture(state)
+            lock_role(node, 'material')
+            if asset_id not in node['assetIds']:
+                node['assetIds'].append(asset_id)
+            node.update(assetId=asset_id, revision=node['revision'] + 1)
+            self._retain_output(state, project_id, node_id, asset_id)
+            record(state, before, '更新工作区参考来源', records=records)
+            self._write(directory, state)
+            return dict(node=node, asset=asset)
+
     def save_text(self, project_id, node_id, asset_id, text, name, session, *, agent_run=None, create=False, expected_revision=None, remember=False, discard_inputs=False):
         # Validate before a new node or retained asset can be created.
         inspect_asset(asset_name(name), text.encode("utf-8"))
@@ -533,7 +578,7 @@ class CanvasProjects:
             directory = self.store._owner(db, project_id, session)
             state = self._read(directory)
             records = self.assets._records(directory, project_id)
-            node = next((item for item in state["nodes"] if item["id"] == node_id), None)
+            node = next((item for item in logical_nodes(state) if item["id"] == node_id), None)
             if node is None and create:
                 node = CanvasNode(id=node_id, kind="text", title=name, **self.next_position(state, 'text', records)).model_dump(mode="json")
                 state["nodes"].append(node)
@@ -551,7 +596,7 @@ class CanvasProjects:
                 inputs = agent_run.get('inputs') or {}
                 node.update(replace_inputs(node, {'prompt': inputs.get('prompt', ''), 'promptContent': inputs.get('promptContent'),
                     'referenceIds': agent_run['referenceIds'], 'modelConfigId': agent_run['modelConfigId']}, records))
-                require_current_assets(directory, node['referenceIds'])
+                require_node_references(directory, node)
             CanvasState.model_validate(state)
             asset = self.assets.import_file(project_id, asset_id, name, text.encode("utf-8"), session, source="generated" if agent_run else "manual", agent_run=agent_run, expected_kind="text")
             if asset_id not in node["assetIds"]:

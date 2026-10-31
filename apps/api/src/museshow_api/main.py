@@ -30,7 +30,7 @@ from museshow.infrastructure.model_configs import connection_fields, model_field
 from museshow.domain.input_rules import input_rules
 from museshow.integrations.model_capabilities import read_video_capabilities
 from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow_api.models import ApplyCanvasVersion
+from museshow_api.models import ReferenceSourceBind, ApplyCanvasVersion
 from museshow_api.models import AssetBatchDelete, AssetSelection
 from museshow_api.chat import Chat
 from museshow_api.project_creation import ProjectCreation
@@ -288,6 +288,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         data = await asset_bytes(request)
         return await run_in_threadpool(canvas.upload, str(project_id), str(node_id), str(x_asset_id), unquote(x_asset_name), data,
                                        identifier(x_museshow_session), expected_revision=x_node_revision, discard_inputs=x_discard_inputs)
+
+    @app.put('/api/projects/{project_id}/canvas/nodes/{node_id}/source')
+    def bind_reference_source(project_id: UUID, node_id: UUID, value: ReferenceSourceBind, x_museshow_session: str = Header()):
+        return canvas.bind_reference_source(str(project_id), str(node_id), str(value.assetId), value.fingerprint,
+            value.expectedRevision, identifier(x_museshow_session), discard_inputs=value.discardInputs)
 
     @app.post("/api/projects/{project_id}/canvas/nodes/{node_id}/generate")
     async def generate_node(project_id: UUID, node_id: UUID, value: GenerateNode, x_museshow_session: str = Header()):

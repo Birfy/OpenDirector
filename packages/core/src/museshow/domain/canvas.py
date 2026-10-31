@@ -31,6 +31,9 @@ def lock_role(node, role):
 
 
 class CanvasNode(BaseModel):
+    logicalNodeId: str | None = Field(default=None, min_length=1, max_length=255, exclude_if=lambda value: value is None)
+    sourceRole: str | None = Field(default=None, max_length=100, exclude_if=lambda value: value is None)
+
     model_config = ConfigDict(extra="forbid")
     id: UUID
     kind: NodeKind

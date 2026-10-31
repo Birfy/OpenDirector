@@ -1,5 +1,9 @@
+import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
-import { readEditorResource } from "./editorMedia.ts";
+import { useReferenceUploads } from "./useReferenceUploads.tsx";
+import { fingerprintMatches, assetKind } from "./chatReferenceContent.ts";
+import { assertUpload, assertReferenceSize } from "./uploadPolicy.ts";
+import { classifyImportFile, readEditorResource } from "./editorMedia.ts";
 import { resourceNodeData } from "./projectAssets.ts";
 import type { Ref } from "react";
 import { createNode, type CanvasNode, type CanvasNodeData } from "./model.ts";
@@ -10,11 +14,12 @@ import {
 import {
   generationContent,
   generationContentPatch,
+  generationEditIdentity,
   nodeReferenceAsset,
 } from "./generationReferenceContent.ts";
 import { type MentionOption } from "./referenceMentions.ts";
-import { referenceCandidates } from "./referenceCandidates.ts";
-import { referenceMaterial } from "./connectionPolicy.ts";
+import { referenceCandidates, assetOptionId } from "./referenceCandidates.ts";
+import { canSourceReference } from "./connectionPolicy.ts";
 import type {
   ReferenceAsset,
   ReferenceContent,
@@ -67,13 +72,21 @@ export function GenerationReferenceEditor({
   onRun: () => void;
   validate?: (sources: CanvasNode[]) => string | null;
 }) {
+  const uploads = useReferenceUploads(controls?.projectId ?? "");
   const editor = useRef<ChatReferenceEditorHandle>(null);
   const file = useRef<HTMLInputElement>(null);
   const upload = useRef<AbortController | null>(null);
+  const latestNode = useRef(node);
+  latestNode.current = node;
+  const latestContent = useRef<ReferenceContent>([]);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
-  useEffect(() => () => upload.current?.abort(), []);
+  useEffect(
+    () => () => upload.current?.abort(),
+    [controls?.projectId, node.id],
+  );
   const prepared = useRef(new Map<string, CanvasNode>());
+  const preparedPins = useRef(new Map<string, ReferenceAsset>());
   const librarySources = useRef(new Map<string, CanvasNode>());
   const nodes = [
     ...new Map(
@@ -106,8 +119,9 @@ export function GenerationReferenceEditor({
         ? [{ type: "text" as const, text: "\n" }, ...value]
         : []),
     ]);
+  latestContent.current = value;
   const assets: ReferenceAsset[] = nodes
-    .filter((source) => !!referenceMaterial(source))
+    .filter(canSourceReference)
     .map((source) => {
       const part = value.find(
         (part) => part.type === "reference" && part.nodeId === source.id,
@@ -117,7 +131,7 @@ export function GenerationReferenceEditor({
         part?.type === "reference" ? part.referenceId : undefined,
       );
     });
-  assets.push(...(controls?.pinned ?? []));
+  assets.push(...(controls?.pinned ?? []), ...preparedPins.current.values());
   for (const part of value)
     if (
       part.type === "reference" &&
@@ -131,18 +145,58 @@ export function GenerationReferenceEditor({
         binding: part.binding,
         name: part.name,
         fingerprint: part.fingerprint ?? "",
-        size: 0,
+        size:
+          controls?.assets.find((asset) => asset.id === part.assetId)?.size ??
+          0,
+        ...(controls?.assets.some((asset) => asset.id === part.assetId)
+          ? {}
+          : { available: false, fileAvailable: false }),
         type:
           controls?.assets.find((asset) => asset.id === part.assetId)?.type ??
           "text/reference",
       });
   const library = (controls?.assets ?? []).map((asset) => ({
     ...asset,
-    nodeId: asset.nodeId ?? librarySources.current.get(asset.id)?.id,
+    nodeId:
+      asset.nodeId ?? librarySources.current.get(assetOptionId(asset))?.id,
   }));
+  const pinnedSources = (content: ReferenceContent) => [
+    ...new Map(
+      content
+        .flatMap((part) => {
+          if (part.type !== "reference" || part.binding !== "asset") return [];
+          const asset = assets.find((asset) => asset.id === part.assetId);
+          if (!asset) return [];
+          const source = createNode(
+            assetKind(asset) as CanvasNode["type"],
+            undefined,
+            {
+              title: asset.name,
+              src: "inventory",
+              text: "inventory",
+              byteSize: asset.size,
+              media: {
+                width: asset.width ?? undefined,
+                height: asset.height ?? undefined,
+                durationSeconds: asset.durationSeconds ?? undefined,
+              },
+              mediaRole: "asset",
+            },
+          );
+          source.id = `pinned:${asset.id}`;
+          return [source];
+        })
+        .map((source) => [source.id, source]),
+    ).values(),
+  ];
   const check = (source: CanvasNode) => {
     const reason = controls?.issue(source) ?? issue(source);
     if (reason) return reason;
+    try {
+      assertReferenceSize(source.type, nodeReferenceAsset(source).size);
+    } catch (error) {
+      return (error as Error).message;
+    }
     const selected = new Set(
       value.flatMap((part) =>
         part.type === "reference" && part.nodeId ? [part.nodeId] : [],
@@ -153,6 +207,7 @@ export function GenerationReferenceEditor({
         ...nodes.filter(
           (node) => selected.has(node.id) && node.id !== source.id,
         ),
+        ...pinnedSources(value).filter((pin) => pin.id !== source.id),
         source,
       ]) ?? null
     );
@@ -163,7 +218,7 @@ export function GenerationReferenceEditor({
     check,
   ).map((option) => {
     if (!option.id.startsWith("asset:")) return option;
-    const asset = library.find((asset) => `asset:${asset.id}` === option.id)!;
+    const asset = library.find((asset) => assetOptionId(asset) === option.id)!;
     const candidate = {
       ...node,
       id: asset.nodeId ?? asset.id,
@@ -174,6 +229,7 @@ export function GenerationReferenceEditor({
         prompt: "",
         src: "inventory",
         text: "inventory",
+        byteSize: asset.size,
         mediaRole: "asset" as const,
       },
     };
@@ -182,6 +238,56 @@ export function GenerationReferenceEditor({
       disabledReason: option.disabledReason ?? check(candidate),
     };
   });
+  const adoptAsset = async (
+    asset: ReferenceAsset,
+    signal: AbortSignal,
+  ): Promise<ReferenceAsset[]> => {
+    if (!controls) return [];
+    const known = nodes.find(
+      (source) =>
+        source.id === asset.logicalNodeId || source.id === asset.nodeId,
+    );
+    if (known) {
+      const reason = check(known);
+      if (reason) throw new Error(reason);
+      return [
+        nodeReferenceAsset(
+          known,
+          controls.referenceId(known.id) ?? crypto.randomUUID(),
+        ),
+      ];
+    }
+    const retained = librarySources.current.get(assetOptionId(asset));
+    if (retained)
+      return [
+        nodeReferenceAsset(
+          retained,
+          assets.find((asset) => asset.nodeId === retained.id)?.referenceId ??
+            crypto.randomUUID(),
+        ),
+      ];
+    const data = await controls.prepareAsset(asset, signal);
+    signal.throwIfAborted();
+    const source = createNode(asset.kind as CanvasNode["type"], undefined, {
+      ...data,
+      title: asset.name,
+      byteSize: asset.size,
+      backendAssetId: asset.id,
+      media: {
+        width: asset.width ?? undefined,
+        height: asset.height ?? undefined,
+        durationSeconds: asset.durationSeconds ?? undefined,
+      },
+      mediaRole: "asset",
+      assetState: "ready",
+    });
+    source.id = asset.nodeId ?? crypto.randomUUID();
+    const reason = check(source);
+    if (reason) throw new Error(reason);
+    prepared.current.set(source.id, source);
+    librarySources.current.set(assetOptionId(asset), source);
+    return [nodeReferenceAsset(source, crypto.randomUUID())];
+  };
   const choose = async (
     option: MentionOption,
     signal: AbortSignal,
@@ -199,31 +305,9 @@ export function GenerationReferenceEditor({
         ),
       ];
     }
-    const asset = library.find((asset) => `asset:${asset.id}` === option.id);
+    const asset = library.find((asset) => assetOptionId(asset) === option.id);
     if (!asset || !controls) return null;
-    const retained = librarySources.current.get(asset.id);
-    if (retained)
-      return [
-        nodeReferenceAsset(
-          retained,
-          assets.find((asset) => asset.nodeId === retained.id)?.referenceId ??
-            crypto.randomUUID(),
-        ),
-      ];
-    const data = await controls.prepareAsset(asset, signal);
-    signal.throwIfAborted();
-    const source = createNode(asset.kind as CanvasNode["type"], undefined, {
-      ...data,
-      title: asset.name,
-      mediaRole: "asset",
-      assetState: "ready",
-    });
-    source.id = asset.nodeId ?? crypto.randomUUID();
-    const reason = check(source);
-    if (reason) throw new Error(reason);
-    prepared.current.set(source.id, source);
-    librarySources.current.set(asset.id, source);
-    return [nodeReferenceAsset(source, crypto.randomUUID())];
+    return adoptAsset(asset, signal);
   };
   useImperativeHandle(pickerRef, () => ({
     openPicker: () => editor.current?.openPicker(),
@@ -245,24 +329,72 @@ export function GenerationReferenceEditor({
   }));
   const uploadFiles = async (files: File[]) => {
     if (running || upload.current || !files.length) return;
+    let registered = false;
+    const startingData = generationEditIdentity(node, value);
     const abort = new AbortController();
     upload.current = abort;
     setUploading(true);
     setNotice("");
     try {
-      const sources = await Promise.all(
-        files.map(async (file) => {
-          const resource = await readEditorResource(file, abort.signal);
-          const source = createNode(
-            resource.kind as CanvasNode["type"],
-            undefined,
-            resourceNodeData(resource),
+      for (const file of files) {
+        const { kind } = classifyImportFile(file);
+        assertUpload(kind, "reference");
+        const candidate = createNode(kind as CanvasNode["type"], undefined, {
+          src: "inventory",
+          text: "inventory",
+          byteSize: file.size,
+          mediaRole: "asset",
+        });
+        const reason = check(candidate);
+        if (reason) throw new Error(reason);
+      }
+      const uploaded = controls
+        ? await uploads.prepare(files, abort.signal)
+        : null;
+      registered = !!uploaded?.length;
+      const sources = uploaded
+        ? await Promise.all(
+            uploaded.map(async (asset) => {
+              const existing = nodes.find(
+                (source) => source.id === asset.nodeId,
+              );
+              if (existing) return existing;
+              const source = createNode(
+                asset.kind as CanvasNode["type"],
+                undefined,
+                {
+                  ...(await controls!.prepareAsset(asset, abort.signal)),
+                  title: asset.name,
+                  byteSize: asset.size,
+                  backendAssetId: asset.id,
+                  media: {
+                    width: asset.width ?? undefined,
+                    height: asset.height ?? undefined,
+                    durationSeconds: asset.durationSeconds ?? undefined,
+                  },
+                  mediaRole: "asset",
+                  assetState: "ready",
+                },
+              );
+              source.id = asset.nodeId ?? crypto.randomUUID();
+              librarySources.current.set(assetOptionId(asset), source);
+              return source;
+            }),
+          )
+        : await Promise.all(
+            files.map(async (file) => {
+              const resource = await readEditorResource(file, abort.signal);
+              return createNode(
+                resource.kind as CanvasNode["type"],
+                undefined,
+                resourceNodeData(resource),
+              );
+            }),
           );
-          const reason = check(source);
-          if (reason) throw new Error(reason);
-          return source;
-        }),
-      );
+      for (const source of sources) {
+        const reason = check(source);
+        if (reason) throw new Error(reason);
+      }
       const selected = new Set(
         value.flatMap((part) =>
           part.type === "reference" && part.nodeId ? [part.nodeId] : [],
@@ -270,24 +402,36 @@ export function GenerationReferenceEditor({
       );
       const reason = validate?.([
         ...nodes.filter((source) => selected.has(source.id)),
+        ...pinnedSources(value),
         ...sources,
       ]);
       if (reason) throw new Error(reason);
       abort.signal.throwIfAborted();
+      if (
+        generationEditIdentity(latestNode.current, latestContent.current) !==
+        startingData
+      )
+        throw new Error(
+          "节点内容或参数已变化，素材保留在项目素材，本批引用未插入。",
+        );
       for (const source of sources) prepared.current.set(source.id, source);
       setUploading(false);
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve()),
       );
       abort.signal.throwIfAborted();
-      editor.current?.insert(
+      const inserted = editor.current?.insert(
         sources.map((source) =>
           nodeReferenceAsset(source, crypto.randomUUID()),
         ),
       );
+      if (!inserted) throw new Error("本批引用未插入，请检查输入限制。");
     } catch (error) {
       if (!abort.signal.aborted)
-        setNotice(error instanceof Error ? error.message : "参考上传失败");
+        setNotice(
+          (error instanceof Error ? error.message : "参考上传失败") +
+            (registered ? " 素材已保留在项目素材。" : ""),
+        );
     } finally {
       if (!abort.signal.aborted) setUploading(false);
       if (upload.current === abort) upload.current = null;
@@ -306,6 +450,7 @@ export function GenerationReferenceEditor({
   );
   return (
     <>
+      {uploads.dialog}
       <input
         ref={file}
         type="file"
@@ -357,7 +502,7 @@ export function GenerationReferenceEditor({
                 ]),
               ).values(),
             ].filter((source) => selected.has(source.id));
-            const reason = validate?.(sources);
+            const reason = validate?.([...sources, ...pinnedSources(content)]);
             if (reason) throw new Error(reason);
           }
           if (controls)
@@ -369,32 +514,80 @@ export function GenerationReferenceEditor({
         rebindOnPaste
         onPasteReference={async (part, signal) => {
           if (part.binding === "asset" && controls) {
-            const asset = library.find((asset) => asset.id === part.assetId);
-            if (!asset || asset.fingerprint !== part.fingerprint)
+            const inventory = [...library, ...preparedPins.current.values()];
+            const asset =
+              inventory.find((asset) => asset.id === part.assetId) ??
+              (await loadReferenceCatalog(controls.projectId, signal)).find(
+                (asset) => asset.id === part.assetId,
+              );
+            if (
+              !asset ||
+              !part.fingerprint ||
+              !fingerprintMatches(asset, part.fingerprint)
+            )
               throw new Error("固定参考素材已缺失或内容已改变，整批未插入。");
-            await controls.prepareAsset(asset, signal);
+            const data = await controls.prepareAsset(asset, signal);
+            const source = createNode(
+              assetKind(asset) as CanvasNode["type"],
+              undefined,
+              {
+                ...data,
+                title: asset.name,
+                byteSize: asset.size,
+                media: {
+                  width: asset.width ?? undefined,
+                  height: asset.height ?? undefined,
+                  durationSeconds: asset.durationSeconds ?? undefined,
+                },
+                mediaRole: "asset",
+              },
+            );
+            source.id = `pinned:${asset.id}`;
+            const reason = check(source);
+            if (reason) throw new Error(reason);
             const existing = value.find(
               (value) =>
                 value.type === "reference" &&
                 value.binding === "asset" &&
                 value.assetId === part.assetId,
             );
-            return [
-              {
-                ...asset,
-                binding: "asset",
-                referenceId:
-                  existing?.type === "reference"
-                    ? existing.referenceId
-                    : crypto.randomUUID(),
-              },
-            ];
+            const pinned: ReferenceAsset = {
+              ...asset,
+              binding: "asset",
+              referenceId:
+                existing?.type === "reference"
+                  ? existing.referenceId
+                  : crypto.randomUUID(),
+            };
+            preparedPins.current.set(asset.id, pinned);
+            assets.push(pinned);
+            return [pinned];
           }
           const option = options.find(
             (option) =>
               option.id === `node:${part.nodeId}` ||
-              option.id === `asset:${part.assetId}`,
+              option.id ===
+                assetOptionId({
+                  id: part.assetId,
+                  nodeId: part.nodeId ?? undefined,
+                  sourceRole: part.sourceRole,
+                }),
           );
+          if (!option && controls && !part.assetId.startsWith("node:")) {
+            const inventory = await loadReferenceCatalog(
+              controls.projectId,
+              signal,
+            );
+            const asset = inventory.find(
+              (asset) =>
+                asset.available &&
+                (part.nodeId
+                  ? asset.nodeId === part.nodeId &&
+                    asset.sourceRole === part.sourceRole
+                  : asset.id === part.assetId),
+            );
+            if (asset) return adoptAsset(asset, signal);
+          }
           if (!option || option.disabledReason)
             throw new Error(
               option?.disabledReason || "参考来源已不可用，整批未插入。",

@@ -62,7 +62,7 @@ test("cancelling a partial batch rejects the entire commit", async () => {
   );
 });
 
-test("assistant snapshots explicit eligible references and deduplicates media", () => {
+test("assistant snapshots explicit eligible references without conflating independent owners", () => {
   const text = createNode("text", undefined, { text: "selected text" });
   const image = createNode("image", undefined, {
     src: "data:image/png;base64,YQ==",
@@ -80,8 +80,9 @@ test("assistant snapshots explicit eligible references and deduplicates media", 
   ]);
   assert.deepEqual(
     result.map((x) => x.kind),
-    ["text", "image"],
+    ["text", "image", "image"],
   );
+  assert.notEqual(result[1]!.nodeId, result[2]!.nodeId);
   text.data.text = "later";
   assert.equal(result[0]!.text, "selected text");
 });
@@ -332,6 +333,7 @@ test("the first assistant document in a newly created service project is not ski
     assert.equal(synced.results.length, 1);
     assert.deepEqual(synced.results[0], {
       taskId: "new-document",
+      assetId: "new-document",
       kind: "text",
       title: "assistant",
       text: "first result",

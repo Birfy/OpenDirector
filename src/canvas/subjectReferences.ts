@@ -16,6 +16,12 @@ export function subjectReferenceNodes(node: CanvasNode): CanvasNode[] {
             ...node.data,
             kind: resource.kind,
             src: resource.src,
+            byteSize: resource.byteSize,
+            media: {
+              width: resource.width,
+              height: resource.height,
+              durationSeconds: resource.durationSeconds,
+            },
             title: `${node.data.title} / ${resource.title}`,
           },
         },

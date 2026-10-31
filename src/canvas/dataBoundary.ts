@@ -107,11 +107,15 @@ export function isResource(value: unknown): value is CanvasResource {
     record(value) &&
     nonempty(value.id) &&
     typeof value.kind === "string" &&
-    ["image", "video", "audio", "file"].includes(value.kind) &&
+    ["image", "video", "audio", "text", "file"].includes(value.kind) &&
     typeof value.kind === "string" &&
     typeof value.title === "string" &&
     optionalString(value.src) &&
     optionalString(value.mimeType) &&
+    optionalString(value.text) &&
+    (value.assetId === undefined || nonempty(value.assetId)) &&
+    (value.byteSize === undefined ||
+      (finite(value.byteSize) && value.byteSize >= 0)) &&
     (value.nodeId === undefined || nonempty(value.nodeId)) &&
     (value.durationSeconds === undefined ||
       (finite(value.durationSeconds) && value.durationSeconds > 0)) &&
@@ -125,6 +129,9 @@ export function copyResource(value: CanvasResource): CanvasResource {
     id: value.id,
     kind: value.kind,
     title: value.title,
+    ...(value.text !== undefined ? { text: value.text } : {}),
+    ...(value.assetId !== undefined ? { assetId: value.assetId } : {}),
+    ...(value.byteSize !== undefined ? { byteSize: value.byteSize } : {}),
     ...(value.src !== undefined ? { src: value.src } : {}),
     ...(value.mimeType !== undefined ? { mimeType: value.mimeType } : {}),
     ...(value.nodeId !== undefined ? { nodeId: value.nodeId } : {}),
@@ -478,6 +485,15 @@ export function parseNodeData(
     kind,
     title: value.title,
     prompt: value.prompt,
+    ...(typeof value.backendAssetId === "string" && value.backendAssetId
+      ? { backendAssetId: value.backendAssetId }
+      : {}),
+    ...(value.byteSize !== undefined &&
+    typeof value.byteSize === "number" &&
+    Number.isFinite(value.byteSize) &&
+    value.byteSize >= 0
+      ? { byteSize: value.byteSize }
+      : {}),
   };
   if (value.promptContent !== undefined) {
     if (
@@ -493,6 +509,9 @@ export function parseNodeData(
               nonempty(part.name) &&
               part.name.length <= 255 &&
               (part.nodeId == null || nonempty(part.nodeId)) &&
+              (part.sourceRole === undefined ||
+                (typeof part.sourceRole === "string" &&
+                  part.sourceRole.length <= 100)) &&
               (part.referenceId === undefined || nonempty(part.referenceId)) &&
               (part.binding === undefined || part.binding === "asset") &&
               (part.fingerprint == null ||
@@ -696,7 +715,10 @@ const sameOptional = <T>(
   equal: (a: T, b: T) => boolean,
 ) => a === b || (a !== undefined && b !== undefined && equal(a, b));
 const sameResource = (a: CanvasResource, b: CanvasResource) =>
-  a === b ||
+  (a.text === b.text &&
+    a.byteSize === b.byteSize &&
+    a.assetId === b.assetId &&
+    a === b) ||
   (a.id === b.id &&
     a.kind === b.kind &&
     a.title === b.title &&
@@ -729,6 +751,8 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
     (a.kind === b.kind &&
       a.title === b.title &&
       a.prompt === b.prompt &&
+      a.backendAssetId === b.backendAssetId &&
+      a.byteSize === b.byteSize &&
       JSON.stringify(a.promptContent) === JSON.stringify(b.promptContent) &&
       JSON.stringify(a.promptMentions ?? []) ===
         JSON.stringify(b.promptMentions ?? []) &&

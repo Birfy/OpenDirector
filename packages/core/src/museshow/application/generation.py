@@ -22,7 +22,7 @@ from museshow.domain.input_rules import input_rules
 from museshow.domain.video_output import apply_video_resolution
 from museshow.infrastructure.canvas import CanvasProjects
 from museshow.infrastructure.app_settings import AppSettings
-from museshow.infrastructure.canvas_assets import require_current_assets
+from museshow.infrastructure.canvas_assets import require_node_references
 from museshow.infrastructure.local_projects import child
 from museshow.infrastructure.execution import read_generation_task
 from museshow.infrastructure.generation_results import GenerationResults
@@ -103,7 +103,7 @@ class Generation:
             if set(candidate['referenceIds']) - records.keys():
                 raise ProjectError('节点引用的资产不存在。', 409)
             bound = {part['assetId'] for part in candidate.get('promptContent') or [] if part.get('nodeId')}
-            require_current_assets(directory, [key for key in candidate['referenceIds'] if key not in bound], retained=node['referenceIds'])
+            require_node_references(directory, {**candidate, 'referenceIds': [key for key in candidate['referenceIds'] if key not in bound]}, retained=node['referenceIds'])
             node.update(candidate)
             node.update(resolve_inputs(node, state, records, strict=True))
             config = self.configs.resolve(str(value["modelConfigId"]), "agent" if node["kind"] == "text" else node["kind"])
@@ -113,7 +113,7 @@ class Generation:
             if not node["prompt"].strip():
                 raise ProjectError("请输入生成要求；音频节点中请输入要合成的文字。")
             self.canvas._check_assets(node, records)
-            require_current_assets(directory, node['referenceIds'])
+            require_node_references(directory, node)
             reference_inputs = None
             if hasattr(self.provider, 'prepare_inputs'):
                 reference_inputs = self.provider.prepare_inputs(project_id, node, config)
@@ -129,6 +129,8 @@ class Generation:
                     "assetId": None, "adopted": False, "error": None, "errorDetails": None,
                     "createdAt": datetime.now(timezone.utc).isoformat(), "resumeAllowed": False,
                     "phase": "queued", "recovery": "submit"}
+            if value.get('logicalNodeId'):
+                task['logicalNodeId'] = value['logicalNodeId']
             task['adoptionPolicy'] = adoption_policy
             task['videoMode'] = node['videoMode']
             task['referenceInputs'] = reference_inputs

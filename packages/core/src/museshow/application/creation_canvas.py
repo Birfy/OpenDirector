@@ -79,7 +79,7 @@ def resolve_reference(snapshot, reference):
     assets = {a.id: a for a in snapshot.assets}
     source_version, document_version, sources, source_title = None, None, [], ''
     if reference.binding == 'pinned':
-        sources = [(reference.source, None)]
+        sources = [(reference.source, reference.subjectRole)]
     else:
         item = next((i for i in snapshot.canvasItems if i.id == reference.source.id), None)
         if item is None:
@@ -143,7 +143,7 @@ def validate_frame_reference_limit(snapshot):
         for ref in snapshot.references:
             if not ref.active or ref.targetSpecId != spec.id:
                 continue
-            if ref.binding == 'pinned' and ref.source.kind == 'image':
+            if ref.binding == 'pinned' and ref.source.kind == 'image' and ref.subjectRole is None:
                 images.add(('asset', ref.source.assetId))
             elif ref.binding == 'follow_current' and items[ref.source.id].kind == 'image':
                 images.add(('node', ref.source.id))
@@ -478,6 +478,8 @@ class CreationCanvas:
             return snapshot
         if query.type == 'generationSpec.versions':
             return history.versions(query.projectId, query.objectId)
+        if query.type == 'canvas.versions':
+            return history.node_versions(query.projectId, query.objectId)
         if query.type == 'asset.search':
             return history.asset_list(query.projectId, text=query.text, offset=query.offset, limit=query.limit)
         if query.type == 'asset.usage':

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import type { ModelConfig } from "../backend/rules";
-import { modelLabel } from "../backend/rules";
+import { modelLabel, referenceBudgetIssue } from "../backend/rules";
 import { agentNodeSettings, agentGenerationBlocker } from "./textGeneration";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import { ComposerPopover } from "./ComposerPopover";
@@ -109,17 +109,7 @@ export function TextNodeComposer({
           issue={referenceIssue}
           validate={(sources) => {
             if (!model) return null;
-            for (const [kind, maximum] of [
-              ["image", model.inputRules.maxImages],
-              ["video", model.inputRules.maxVideos],
-              ["audio", model.inputRules.maxAudios],
-            ] as const)
-              if (
-                sources.filter((source) => source.type === kind).length >
-                maximum
-              )
-                return "参考数量超出当前 Agent 模型限制";
-            return null;
+            return referenceBudgetIssue(sources, model);
           }}
           onUpdate={onUpdate}
           running={running}

@@ -143,11 +143,12 @@
   --cw-comet-animation: cw-comet-6;
   stroke: var(--cw-comet-6);
   stroke-dasharray: 6 134;
-  stroke-width: 2.0;
+  stroke-width: 2;
   filter: blur(0.4px);
 }
 .cw-workspace[data-edge-motion="true"] .cw-edge-motion path {
-  animation: var(--cw-comet-animation) 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: var(--cw-comet-animation) 1.8s cubic-bezier(0.4, 0, 0.6, 1)
+    infinite;
 }
 .cw-workspace[data-edge-motion="false"] .cw-edge-motion {
   display: none;
@@ -1779,4 +1780,25 @@
 .cw-reference-port > svg {
   display: block;
   pointer-events: none;
+}
+
+/* This dialog is portaled outside the transformed canvas. */
+.cw-reference-source-choice {
+  position: fixed;
+  z-index: 10000;
+}
+.cw-reference-source-choice .cw-modal {
+  display: grid;
+  gap: 12px;
+}
+.cw-reference-source-choice button {
+  text-align: left;
+  color: var(--canvas-text, #eee);
+  padding: 12px;
+  border: 1px solid #ffffff20;
+  border-radius: 8px;
+  background: #ffffff08;
+}
+.cw-reference-source-choice button:focus-visible {
+  outline: 2px solid #ac9fff;
 }

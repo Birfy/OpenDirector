@@ -626,6 +626,10 @@ export function resourceFromNode(node: CanvasNode): CanvasResource | null {
     return null;
   return {
     id: `node:${node.id}`,
+    ...(node.data.backendAssetId ? { assetId: node.data.backendAssetId } : {}),
+    ...(node.data.byteSize !== undefined
+      ? { byteSize: node.data.byteSize }
+      : {}),
     nodeId: node.id,
     kind: node.type as CanvasResource["kind"],
     title: node.data.title,

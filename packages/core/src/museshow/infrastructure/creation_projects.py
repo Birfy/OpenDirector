@@ -365,7 +365,7 @@ class CreationProjects:
             return CreationAssets(self).execute(command, session=session, source=source)
         if command.type == 'project.create':
             return self._create(command, source)
-        if command.type in {'history.undo', 'history.redo', 'generationSpec.restore', 'asset.delete'}:
+        if command.type in {'history.undo', 'history.redo', 'generationSpec.restore', 'canvas.applyVersion', 'asset.delete'}:
             from museshow.application.creation_history import CreationHistory
             return CreationHistory(self).execute(command, session=session, source=source)
         if command.type != 'project.rename':

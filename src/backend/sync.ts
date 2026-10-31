@@ -40,7 +40,13 @@ export function isHandled(projectId: string, taskId: string) {
 }
 
 export type SyncedResult =
-  | { taskId: string; kind: "text"; title: string; text: string }
+  | {
+      taskId: string;
+      kind: "text";
+      title: string;
+      text: string;
+      assetId?: string;
+    }
   | { taskId: string; kind: "media"; result: BackendResult };
 
 const ACTIVE = new Set(["queued", "running"]);
@@ -97,6 +103,7 @@ export async function unsyncedResults(
       const blob = await assetBlob(projectId, asset.id, signal);
       results.push({
         taskId: key,
+        assetId: asset.id,
         kind: "text",
         title: asset.name.replace(/\.(md|txt)$/i, ""),
         text: await blob.text(),

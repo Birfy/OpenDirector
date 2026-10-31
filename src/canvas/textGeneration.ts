@@ -41,7 +41,7 @@ export function agentGenerationBlocker(
 export function applyTextGenerationResult(
   document: CanvasDocument,
   source: ResultSource,
-  output: { kind: "text"; title: string; text: string },
+  output: { kind: "text"; title: string; text: string; assetId?: string },
 ) {
   const target = document.nodes.find((n) => n.id === source.nodeId);
   const error =
@@ -67,6 +67,7 @@ export function applyTextGenerationResult(
       patch: {
         data: {
           text: output.text,
+          backendAssetId: output.assetId,
           mediaRole: "generation",
           generationEvidence: source.referenceInputs
             ? { output: output.text, references: { ...source.referenceInputs } }
