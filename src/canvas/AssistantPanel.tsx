@@ -3,7 +3,7 @@ import { refreshReferenceSources } from "../backend/referenceSources.ts";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useEffect, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
-import museshowLogo from "../assets/museshow-logo.png";
+import openDirectorLogo from "../assets/open_director_logo.png";
 import type { AssistantLayout } from "./useAssistantLayout";
 import type { BackendModels } from "../backend/models";
 import type { ChatAsset, Thinking } from "../backend/chat";
@@ -353,7 +353,7 @@ export function AssistantPanel({
         {!value.messages.length && (
           <div className="cw-assistant-welcome">
             <div className="cw-assistant-avatar">
-              <img src={museshowLogo} alt="" />
+              <img src={openDirectorLogo} alt="" />
             </div>
             <h1>从一个想法开始</h1>
             <p>

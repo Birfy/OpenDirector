@@ -99,7 +99,7 @@ import {
 } from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
 import { persistCurrentDocument } from "./projectManagement";
-import museshowLogo from "../assets/museshow-logo.png";
+import openDirectorLogoAnimation from "../assets/open_director_logo_anim.gif";
 import { ProjectSelector } from "./ProjectSelector";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import {
@@ -4285,7 +4285,7 @@ function Workspace() {
         <div className="cw-project-heading">
           <img
             className="cw-brand"
-            src={museshowLogo}
+            src={openDirectorLogoAnimation}
             alt="OpenDesign"
             draggable={false}
           />
