@@ -19,3 +19,10 @@ __pycache__/
 .pytest_cache/
 /projects/
 /.museshow/
+
+# Local historical documents stay private; shared docs live in these paths.
+/docs/*
+!/docs/README.md
+!/docs/architecture/
+!/docs/development/
+!/docs/guides/
