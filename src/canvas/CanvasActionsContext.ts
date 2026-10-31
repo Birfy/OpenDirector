@@ -27,6 +27,7 @@ export interface CanvasActions {
   generationActivity: (id: string) => NodeGenerationActivity | undefined;
   isArriving: (id: string) => boolean;
   referenceTargetState?: (id: string) => "valid" | "invalid" | null;
+  resizeSubjectDescription?: (id: string, contentHeight: number) => void;
   cycleStack: (id: string, delta: number) => void;
   metadata: (
     id: string,

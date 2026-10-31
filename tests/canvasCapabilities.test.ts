@@ -47,7 +47,8 @@ test("interactive reference policy enforces ports and source capabilities while 
   );
   const [image, video, text, stack, timeline, tool, external] = nodes;
   let doc: CanvasDocument = { ...createDocument(), nodes };
-  assert.deepEqual(nodePorts("timeline"), { source: false, target: false });
+  assert.deepEqual(nodePorts("timeline"), { source: false, target: true });
+  assert.deepEqual(nodePorts("subject"), { source: true, target: true });
   assert.deepEqual(nodePorts("tool"), { source: true, target: false });
   assert.deepEqual(nodePorts("stack"), { source: false, target: false });
   for (const [a, b] of [

@@ -1330,15 +1330,26 @@
   flex-direction: column;
   gap: 8px;
 }
-.cw-subject-empty > header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-}
-.cw-subject-empty > small {
+.cw-node .cw-subject-description {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 20px;
+  padding: 2px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
   color: #777;
   font-size: 11px;
+  line-height: 16px;
+  font-family: inherit;
+}
+.cw-node .cw-subject-description:focus {
+  color: #ddd;
+}
+.cw-node .cw-subject-description::placeholder {
+  color: #777;
 }
 .cw-subject-empty-material {
   flex: 1;

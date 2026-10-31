@@ -18,9 +18,17 @@ from museshow.domain.projects import ProjectError
 COLLECTIONS = {'canvas_item': 'canvasItems', 'generation_spec': 'generationSpecs',
                'reference': 'references', 'editor_document': 'editorDocuments',
                'asset': 'assets', 'job': 'jobs', 'result': 'results'}
-DOWNSTREAM = {'text': {'text', 'image', 'video'}, 'image': {'text', 'image', 'video', 'audio'},
-              'video': {'text', 'video'}, 'audio': {'text', 'video', 'audio'},
+DOWNSTREAM = {'text': {'text', 'image', 'video'}, 'image': {'text', 'image', 'video', 'audio', 'timeline', 'subject'},
+              'video': {'text', 'video', 'timeline', 'subject'}, 'audio': {'text', 'video', 'audio', 'timeline'},
               'subject': {'image', 'video', 'audio'}}
+
+
+def downstream_kinds(snapshot, source):
+    if source.kind == 'subject':
+        doc = next(doc for doc in snapshot.editorDocuments if doc.id == source.binding.objectRef.id)
+        if doc.data.main and doc.data.main.kind == 'video':
+            return {'video'}
+    return DOWNSTREAM.get(source.kind, set())
 
 
 def prompt_projection(data, spec):
@@ -130,6 +138,12 @@ def resolved_inputs(snapshot, spec_id, rules=None):
     mentioned = list(dict.fromkeys(part.referenceId for part in spec.promptContent or () if part.type == 'reference'))
     refs = sorted((r for r in snapshot.references if r.active and r.targetSpecId == spec_id),
         key=lambda r: (mentioned.index(r.id) if r.id in mentioned else len(mentioned), r.order, str(r.id)))
+    items = {item.id: item for item in snapshot.canvasItems}
+    for ref in refs:
+        if ref.binding == 'follow_current':
+            source = items.get(ref.source.id)
+            if source and spec.kind not in downstream_kinds(snapshot, source):
+                raise ContractError('reference_invalid', '来源节点当前内容不支持作为该类型节点的参考。', ref.id)
     return reference_policy(spec, [value for ref in refs for value in resolve_reference(snapshot, ref)], rules,
         selected_frame=any(ref.role == 'first_frame' for ref in refs))
 
@@ -203,6 +217,24 @@ class CreationCanvas:
                     obj['revision'] += 1
         result = ProjectSnapshot.model_validate(data)
         validate_frame_reference_limit(result)
+        previous_inputs = {value.id: value for doc in before.editorDocuments for value in doc.inputConnections}
+        items = {item.id: item for item in result.canvasItems}
+        for doc in result.editorDocuments:
+            for value in doc.inputConnections:
+                # The retained snapshot survives later source changes. New assembly
+                # still requires an editable source of the declared media type.
+                if previous_inputs.get(value.id) == value:
+                    continue
+                source = items.get(value.sourceId)
+                if source is None or source.kind != value.asset.kind or doc.kind not in downstream_kinds(result, source):
+                    raise ContractError('reference_invalid', '该节点类型不能装配到目标节点。', value.sourceId)
+                self._editable(data, value.sourceId)
+                actual = current_asset(result, source)
+                if actual is None or asset_ref(actual) != value.asset:
+                    raise ContractError('reference_invalid', '装配素材与来源节点当前内容不一致，请重新读取。', value.sourceId)
+                if actual.kind in {'video', 'audio'} and actual.metadata.durationSeconds is None:
+                    raise ContractError('invalid_input', '请先读取视频或音频的实际时长，再添加到目标节点。', value.sourceId)
+                self._available(actual)
         return result
 
     @staticmethod
@@ -368,9 +400,11 @@ class CreationCanvas:
                     self._editable(data, source['id'])
             else:
                 source_kind = ref['source']['kind']
-            if spec['kind'] not in DOWNSTREAM.get(source_kind, set()):
-                raise ContractError('reference_invalid', '该节点类型不能作为目标节点的参考。', payload.reference.id)
             snapshot = ProjectSnapshot.model_validate(data)
+            source_item = next((item for item in snapshot.canvasItems if str(item.id) == ref['source'].get('id')), None)
+            allowed = downstream_kinds(snapshot, source_item) if source_item else DOWNSTREAM.get(source_kind, set())
+            if spec['kind'] not in allowed:
+                raise ContractError('reference_invalid', '该节点类型不能作为目标节点的参考。', payload.reference.id)
             for value in resolve_reference(snapshot, payload.reference):
                 self._available(next(asset for asset in snapshot.assets if asset.id == value.asset.assetId))
         elif kind == 'reference.remove':

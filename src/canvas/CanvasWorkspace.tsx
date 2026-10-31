@@ -52,6 +52,7 @@ import {
   type PortSide,
 } from "./useCanvasReferences";
 import { referencePortMetrics, REFERENCE_PORT_SIZE } from "./connectionPorts";
+import { subjectDescriptionLayout } from "./subjectLayout.ts";
 import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
 import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
 import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
@@ -124,7 +125,6 @@ import { CreationAssetList } from "./CreationAssetList.tsx";
 import { portableDocument } from "./portableDocument.ts";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
-import { SubjectEditor } from "./SubjectEditor";
 import { StackEditor } from "./StackEditor";
 import { ToolEditor } from "./ToolEditor";
 import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
@@ -2099,6 +2099,7 @@ function Workspace() {
     [doc.nodes, selected],
   );
   const openEditor = (node: CanvasNode, mode: EditorMode = "default") => {
+    if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
       notify("请先解锁节点或所属分组。");
       return;
@@ -3487,7 +3488,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-canvas-menu,.cw-node-title-input",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-canvas-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;
@@ -3665,7 +3666,27 @@ function Workspace() {
     };
   });
 
+  const resizeSubjectDescription = useCallback(
+    (id: string, contentHeight: number) => {
+      if (!Number.isFinite(contentHeight)) return;
+      const { nodeHeight } = subjectDescriptionLayout(contentHeight);
+      setHistory((current) => {
+        const node = current.present.nodes.find((node) => node.id === id);
+        if (node?.type !== "subject" || node.height === nodeHeight)
+          return current;
+        const present = executeCommand(current, {
+          type: "update-node",
+          id,
+          patch: { height: nodeHeight },
+        }).present;
+        return present === current.present ? current : { ...current, present };
+      });
+    },
+    [],
+  );
+
   const actions = {
+    resizeSubjectDescription,
     referenceTargetState: (id: string): "valid" | "invalid" | null => {
       if (
         !references.connecting ||
@@ -3681,13 +3702,8 @@ function Workspace() {
       source: "file" | "canvas" | "assets" | "import",
     ) => {
       if (lockedIds.has(id)) return;
-      if (source === "file") {
+      if (source === "file" || source === "import") {
         openFilePicker(id);
-        return;
-      }
-      if (source === "import") {
-        const node = doc.nodes.find((n) => n.id === id);
-        if (node) openEditor(node);
         return;
       }
       referenceTarget.current = null;
@@ -3818,8 +3834,17 @@ function Workspace() {
       if (!node) return;
       const actual = Object.fromEntries(
         Object.entries(media).filter(
-          ([, value]) =>
-            typeof value === "number" && Number.isFinite(value) && value > 0,
+          ([key, value]) =>
+            typeof value === "number" &&
+            Number.isFinite(value) &&
+            value > 0 &&
+            // Container duration can differ between browser and server probes.
+            // Registered media uses the server's time bounds for retained clips.
+            !(
+              key === "durationSeconds" &&
+              node.data.backendAssetId &&
+              node.data.media?.durationSeconds !== undefined
+            ),
         ),
       );
       if (
@@ -5199,7 +5224,7 @@ function Workspace() {
                 single.data.src &&
                 menuButton("编辑图片", "crop", () => openEditor(single))}
               {single &&
-                ["timeline", "subject", "stack", "tool", "external"].includes(
+                ["timeline", "stack", "tool", "external"].includes(
                   single.type,
                 ) &&
                 menuButton("打开编辑器", single.type, () => openEditor(single))}
@@ -5825,14 +5850,6 @@ function Workspace() {
           resources={resources}
           onApply={(timeline) => applyEditorData({ timeline })}
           onRender={(result) => editorOutputs([result])}
-          onClose={closeEditor}
-        />
-      )}
-      {editing && editorMode === "default" && editing.type === "subject" && (
-        <SubjectEditor
-          node={editing}
-          resources={resources}
-          onApply={(subject) => applyEditorData({ subject })}
           onClose={closeEditor}
         />
       )}

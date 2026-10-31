@@ -344,6 +344,14 @@ export interface EditorCreateCommandOperationInput {
 
 export interface EditorDocumentBaseInput extends ProjectEntityInput {
   readonly schemaVersion?: 1;
+  readonly inputConnections?: ReadonlyArray<EditorInputConnectionInput>;
+}
+
+export interface EditorInputConnectionInput extends ContractInput {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly slotId: string;
+  readonly asset: AssetRefInput;
 }
 
 export interface EditorRefInput extends ContractInput {
@@ -1569,6 +1577,14 @@ export interface EditorCreateCommandOperation {
 
 export interface EditorDocumentBase extends ProjectEntity {
   readonly schemaVersion: 1;
+  readonly inputConnections: ReadonlyArray<EditorInputConnection>;
+}
+
+export interface EditorInputConnection extends Contract {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly slotId: string;
+  readonly asset: AssetRef;
 }
 
 export interface EditorRef extends Contract {

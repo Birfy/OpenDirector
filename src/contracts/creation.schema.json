@@ -2767,6 +2767,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "director",
             "title": "Kind",
@@ -3008,6 +3016,14 @@
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
           }
         },
         "required": [
@@ -3015,6 +3031,40 @@
           "projectId"
         ],
         "title": "EditorDocumentBase",
+        "type": "object"
+      },
+      "EditorInputConnection": {
+        "additionalProperties": false,
+        "description": "Assembly provenance binds a retained slot, never a generation spec.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sourceId": {
+            "format": "uuid",
+            "title": "Sourceid",
+            "type": "string"
+          },
+          "slotId": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Slotid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "slotId",
+          "asset"
+        ],
+        "title": "EditorInputConnection",
         "type": "object"
       },
       "EditorRef": {
@@ -5187,6 +5237,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "layers",
             "title": "Kind",
@@ -5515,6 +5573,14 @@
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
           },
           "kind": {
             "const": "media_edit",
@@ -8327,6 +8393,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "stack",
             "title": "Kind",
@@ -8629,6 +8703,7 @@
         "properties": {
           "description": {
             "default": "",
+            "description": "User-facing annotation only; not subject media or a generation reference",
             "maxLength": 20000,
             "title": "Description",
             "type": "string"
@@ -8698,6 +8773,14 @@
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
           },
           "kind": {
             "const": "subject",
@@ -9283,6 +9366,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "timeline",
             "title": "Kind",
@@ -9549,6 +9640,14 @@
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
           },
           "kind": {
             "const": "tool",
@@ -13641,6 +13740,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "director",
             "title": "Kind",
@@ -13655,6 +13762,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -13896,15 +14004,58 @@
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
           }
         },
         "required": [
           "id",
           "projectId",
           "revision",
-          "schemaVersion"
+          "schemaVersion",
+          "inputConnections"
         ],
         "title": "EditorDocumentBase",
+        "type": "object"
+      },
+      "EditorInputConnection": {
+        "additionalProperties": false,
+        "description": "Assembly provenance binds a retained slot, never a generation spec.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sourceId": {
+            "format": "uuid",
+            "title": "Sourceid",
+            "type": "string"
+          },
+          "slotId": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Slotid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          }
+        },
+        "required": [
+          "id",
+          "sourceId",
+          "slotId",
+          "asset"
+        ],
+        "title": "EditorInputConnection",
         "type": "object"
       },
       "EditorRef": {
@@ -16197,6 +16348,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "layers",
             "title": "Kind",
@@ -16211,6 +16370,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -16542,6 +16702,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "media_edit",
             "title": "Kind",
@@ -16556,6 +16724,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -19462,6 +19631,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "stack",
             "title": "Kind",
@@ -19476,6 +19653,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -19778,6 +19956,7 @@
         "properties": {
           "description": {
             "default": "",
+            "description": "User-facing annotation only; not subject media or a generation reference",
             "maxLength": 20000,
             "title": "Description",
             "type": "string"
@@ -19855,6 +20034,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "subject",
             "title": "Kind",
@@ -19869,6 +20056,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -20480,6 +20668,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "timeline",
             "title": "Kind",
@@ -20494,6 +20690,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],
@@ -20765,6 +20962,14 @@
             "title": "Schemaversion",
             "type": "integer"
           },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
           "kind": {
             "const": "tool",
             "title": "Kind",
@@ -20779,6 +20984,7 @@
           "projectId",
           "revision",
           "schemaVersion",
+          "inputConnections",
           "kind",
           "data"
         ],

@@ -178,6 +178,24 @@ def test_subject_reference_freezes_document_and_expands_assets(project):
     assert resolved[0].documentVersion.id == doc_id
     assert resolved[0].subjectRole == 'main'
     assert len(store.snapshot(pid).assets) == 1
+    # Subject descriptions are persisted user annotations, not model inputs.
+    from museshow.domain.creation.generation import InputSnapshot
+    from test_creation_contracts import model, model_snapshot
+    config = model()
+    input_spec = store.snapshot(pid).generationSpecs[-1].model_copy(update={'modelConfigId': config.id})
+    before = InputSnapshot(spec=input_spec, model=model_snapshot(config), references=resolved)
+    document = store.snapshot(pid).editorDocuments[-1]
+    note = 'Private subject annotation, excluded from generation'
+    updated = document.model_dump(mode='json')
+    updated['data']['description'] = note
+    assert send(store, pid, 'editor.save', session=session, versions=[ver('editor_document', document)],
+        document=updated).status == 'applied'
+    after = InputSnapshot(spec=input_spec, model=model_snapshot(config), references=resolved_inputs(store.snapshot(pid), spec.id))
+    assert store.snapshot(pid).editorDocuments[-1].data.description == note
+    assert all(reference.asset.kind == 'image' for reference in after.references)
+    assert note not in after.model_dump_json()
+    assert after.references[0].documentVersion.revision > before.references[0].documentVersion.revision
+    assert before.fingerprint() == after.fingerprint()
 
 
 def test_hidden_group_projection_and_show_child_restore_ancestor_identity(project):

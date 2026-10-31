@@ -138,7 +138,8 @@ function sameContent(a: CanvasDocument, b: CanvasDocument): boolean {
         edge.target === other.target &&
         edge.sourceHandle === other.sourceHandle &&
         edge.targetHandle === other.targetHandle &&
-        edge.intent === other.intent
+        edge.intent === other.intent &&
+        edge.assemblySlotId === other.assemblySlotId
       );
     })
   );

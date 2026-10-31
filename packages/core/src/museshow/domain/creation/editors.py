@@ -89,7 +89,8 @@ class TimelineData(Contract):
 
 
 class SubjectData(Contract):
-    description: str = Field(default='', max_length=20000)
+    description: str = Field(default='', max_length=20000,
+        description='User-facing annotation only; not subject media or a generation reference')
     category: str = Field(default='', max_length=100)
     main: AssetRef | None = None
     auxiliaries: tuple[AssetRef, ...] = Field(default=(), max_length=3)
@@ -381,8 +382,39 @@ class MediaEditData(Contract):
     selection: ToolSelection | None = None
 
 
+class EditorInputConnection(Contract):
+    """Assembly provenance binds a retained slot, never a generation spec."""
+    id: UUID
+    sourceId: UUID
+    slotId: Identifier
+    asset: AssetRef
+
+
 class EditorDocumentBase(ProjectEntity):
     schemaVersion: Literal[1] = 1
+    inputConnections: tuple[EditorInputConnection, ...] = ()
+
+    @model_validator(mode='after')
+    def assembly_connections(self):
+        unique([value.id for value in self.inputConnections], 'assembly connection IDs')
+        unique([value.sourceId for value in self.inputConnections], 'assembly source IDs')
+        unique([value.slotId for value in self.inputConnections], 'assembly destination slots')
+        if self.inputConnections and self.kind == 'subject' and self.data.main and self.data.main.kind == 'video' and (self.data.auxiliaries or self.data.voice):
+            raise ValueError('Video subject assembly cannot contain auxiliary images or independent audio')
+        for value in self.inputConnections:
+            if self.kind == 'subject':
+                source = self.data.main if value.slotId == 'main' else next(
+                    (asset for asset in self.data.auxiliaries if str(asset.assetId) == value.slotId), None)
+                allowed = {'image', 'video'}
+            elif self.kind == 'timeline':
+                clip = next((clip for track in self.data.tracks for clip in track.clips if clip.id == value.slotId), None)
+                source = clip.resource.asset if clip else None
+                allowed = {'image', 'video', 'audio'}
+            else:
+                raise ValueError('Only subject and timeline documents accept assembly connections')
+            if source is None or source != value.asset or source.kind not in allowed:
+                raise ValueError('Assembly connection must own an existing compatible retained slot')
+        return self
 
 
 class TimelineDocument(EditorDocumentBase):

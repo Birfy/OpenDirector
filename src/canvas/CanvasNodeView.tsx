@@ -1,10 +1,19 @@
-import { memo, useContext, type MouseEvent } from "react";
+import {
+  memo,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { NodeFrame } from "./NodeFrame";
 import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
+import { subjectDescriptionLayout } from "./subjectLayout.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
@@ -247,18 +256,11 @@ function DomainCard({
   if (kind === "subject" && !data.subject?.main?.src)
     return (
       <div className="cw-subject-empty">
-        <header>
-          <CanvasIcon name="subject" size={14} />
-          <strong>{data.title}</strong>
-          <button
-            className="nodrag nopan"
-            aria-label="编辑主体"
-            onClick={() => actions?.edit(id)}
-          >
-            <CanvasIcon name="pencil" size={12} />
-          </button>
-        </header>
-        <small>{data.subject?.description || "添加描述…"}</small>
+        <SubjectDescription
+          id={id}
+          value={data.subject?.description ?? ""}
+          actions={actions}
+        />
         <div className="cw-subject-empty-material nodrag nopan">
           {(
             [
@@ -348,7 +350,11 @@ function DomainCard({
       )}
       {kind === "subject" && (
         <div className="cw-card-subject">
-          <span>{data.subject?.description || "主体描述尚未填写"}</span>
+          <SubjectDescription
+            id={id}
+            value={data.subject?.description ?? ""}
+            actions={actions}
+          />
           <div>
             {data.subject?.auxiliaries.map((item) => (
               <img
@@ -430,23 +436,112 @@ function DomainCard({
           )}
         </div>
       )}
-      <button
-        className="cw-card-open nodrag nopan"
-        onClick={() => actions?.edit(id)}
-      >
-        <CanvasIcon name="edit" size={13} />
-        {kind === "timeline"
-          ? "打开时间线"
-          : kind === "subject"
-            ? "编辑主体"
+      {kind !== "subject" && (
+        <button
+          className="cw-card-open nodrag nopan"
+          onClick={() => actions?.edit(id)}
+        >
+          <CanvasIcon name="edit" size={13} />
+          {kind === "timeline"
+            ? "打开时间线"
             : kind === "stack"
               ? "管理堆叠"
               : kind === "tool"
                 ? "编辑参数"
                 : "进入导演台"}
-        <CanvasIcon name="chevronRight" size={13} />
-      </button>
+          <CanvasIcon name="chevronRight" size={13} />
+        </button>
+      )}
     </div>
+  );
+}
+
+/** User annotations are edited on the canvas, independently of retained media. */
+function SubjectDescription({
+  id,
+  value,
+  actions,
+}: {
+  id: string;
+  value: string;
+  actions: CanvasActions | null;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  const cancelled = useRef(false);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const resize = actions?.resizeSubjectDescription;
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (!element) return;
+    const measure = () => {
+      if (!element.clientWidth) return;
+      element.style.height = "0px";
+      element.style.overflowY = "hidden";
+      const contentHeight = element.scrollHeight;
+      const { descriptionHeight } = subjectDescriptionLayout(contentHeight);
+      element.style.height = `${descriptionHeight}px`;
+      element.style.overflowY =
+        contentHeight > descriptionHeight ? "auto" : "hidden";
+      resize?.(id, contentHeight);
+    };
+    measure();
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === width) return;
+      width = element.clientWidth;
+      measure();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [draft, id, resize]);
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+  return (
+    <textarea
+      ref={input}
+      className="cw-subject-description nodrag nopan nowheel"
+      aria-label="主体描述"
+      title="仅供查看，不作为生成参考"
+      placeholder="添加描述…"
+      rows={1}
+      maxLength={20000}
+      readOnly={actions?.isLocked(id)}
+      value={draft}
+      onFocus={() => {
+        cancelled.current = false;
+        setEditing(true);
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        const node = actions?.getNode(id);
+        if (
+          !cancelled.current &&
+          node?.type === "subject" &&
+          node.data.subject &&
+          !actions?.isLocked(id) &&
+          draft !== node.data.subject.description
+        )
+          actions?.update(id, {
+            subject: { ...node.data.subject, description: draft },
+          });
+        setEditing(false);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelled.current = true;
+          setDraft(value);
+          event.currentTarget.blur();
+        } else if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 

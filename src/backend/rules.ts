@@ -3,6 +3,7 @@ import type { CanvasNode, GenerationSettings } from "../canvas/model.ts";
 import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 export { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
+import { nodeDownstreamKinds } from "../canvas/connectionPolicy.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
@@ -113,6 +114,8 @@ export function backendReferenceIssue(
   )
     return "首尾帧模式不接收视频或音频参考";
   if (kind === "subject") {
+    if (!nodeDownstreamKinds(node).includes(settings.mode))
+      return "视频主体只能作为视频节点的参考";
     if (settings.mode === "video" && settings.videoMode === "first-last")
       return "首尾帧模式请使用图片节点选择帧素材";
     const resources = subjectReferenceNodes(node);

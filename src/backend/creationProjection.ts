@@ -27,6 +27,7 @@ import {
   parseLocalStageValue,
 } from "../canvas/stageDocument.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
+import { assemblyResource } from "../canvas/editorAssembly.ts";
 import {
   assetReference,
   CreationClient,
@@ -461,6 +462,29 @@ export class CreationProjection {
           referenceState: this.client.referenceStates.get(ref.id),
         }));
     });
+    for (const node of document.nodes) {
+      const item = snapshot.canvasItems.find((item) => item.id === node.id)!;
+      if (item.binding.role !== "editor") continue;
+      const docId = item.binding.objectRef.id;
+      const editor = snapshot.editorDocuments.find((doc) => doc.id === docId)!;
+      for (const connection of editor.inputConnections ?? []) {
+        if (
+          !snapshot.canvasItems.some(
+            (source) => source.id === connection.sourceId,
+          )
+        )
+          continue;
+        const resource = assemblyResource(node, connection.slotId);
+        if (resource) resource.nodeId = connection.sourceId;
+        document.edges.push({
+          id: connection.id,
+          source: connection.sourceId,
+          target: node.id,
+          intent: "assembly_input",
+          assemblySlotId: connection.slotId,
+        });
+      }
+    }
     document.hiddenNodes = document.nodes.filter(
       (node) => !visible.has(node.id),
     );
@@ -542,11 +566,34 @@ export class CreationProjection {
     node: CanvasNode,
     kind: EditorDocument["kind"],
     current?: EditorDocument,
+    edges: CanvasDocument["edges"] = [],
   ): Promise<EditorDocumentInput> {
     const common = {
       id: current?.id ?? crypto.randomUUID(),
       projectId: this.client.id,
       revision: current?.revision ?? 1,
+      inputConnections: await Promise.all(
+        edges
+          .filter(
+            (edge) =>
+              edge.target === node.id && edge.intent === "assembly_input",
+          )
+          .map(async (edge) => {
+            const resource = assemblyResource(node, edge.assemblySlotId);
+            if (!resource)
+              throw new Error("装配连线对应的主体素材或时间线片段已不存在。");
+            const asset = await this.importResource(resource);
+            return {
+              id: edge.id,
+              sourceId: edge.source,
+              asset,
+              slotId:
+                node.type === "subject" && edge.assemblySlotId !== "main"
+                  ? asset.assetId
+                  : edge.assemblySlotId!,
+            };
+          }),
+      ),
     };
     const ref = (resource: CanvasResource) => this.importResource(resource);
     switch (kind) {
@@ -843,6 +890,7 @@ export class CreationProjection {
           node,
           kind as EditorDocument["kind"],
           current,
+          document.edges,
         );
         if (!current)
           operations.push({
@@ -854,6 +902,7 @@ export class CreationProjection {
             old ?? node,
             kind as EditorDocument["kind"],
             current,
+            this.baseline.edges,
           );
           if (!same(doc, previous)) {
             expect("editor_document", current);
@@ -939,6 +988,13 @@ export class CreationProjection {
       }
     const oldEdges = new Map(this.baseline.edges.map((e) => [e.id, e]));
     for (const edge of document.edges) {
+      if (edge.intent === "assembly_input") {
+        if (!oldEdges.has(edge.id)) {
+          const source = items.get(edge.source);
+          if (source) expect("canvas_item", source);
+        }
+        continue;
+      }
       if (edge.intent === "post_edit_result" || oldEdges.has(edge.id)) continue;
       const target = items.get(edge.target),
         current = target && itemSpec(basis, target);

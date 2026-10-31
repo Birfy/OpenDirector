@@ -21,6 +21,11 @@ export function referencePresentation(
   const target = document.nodes.find((n) => n.id === edge.target);
   if (edge.intent === "post_edit_result")
     return { state: "provenance" as const, description: "编辑结果来源" };
+  if (edge.intent === "assembly_input")
+    return {
+      state: "provenance" as const,
+      description: "素材装配来源（保留加入时的素材版本）",
+    };
   const material = source && referenceMaterial(source);
   const evidence = target?.data.generationEvidence;
   const recorded = Boolean(
