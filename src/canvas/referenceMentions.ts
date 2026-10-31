@@ -25,7 +25,7 @@ export interface MentionRange {
   end: number;
 }
 
-/** Match MuseShow: a bare @ at the caret, excluding email/handle fragments. */
+/** Match OpenDirector: a bare @ at the caret, excluding email/handle fragments. */
 export function mentionRange(
   value: string,
   start: number,

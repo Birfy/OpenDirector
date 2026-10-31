@@ -62,7 +62,7 @@ export const CANVAS_CATEGORIES = [
 ] as const;
 
 export function itemContentUrl(item: LibraryItem): string {
-  // Direct <img src> would omit X-MuseShow-Request and get a 403, so media is
+  // Direct <img src> would omit X-OpenDirector-Request and get a 403, so media is
   // fetched with headers and turned into an object URL by useItemContentUrl().
   return `/api/library/items/${item.id}/content`;
 }

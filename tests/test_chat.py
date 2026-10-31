@@ -6,13 +6,13 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow_api.chat import Chat
-from museshow_api.main import create_app
-from museshow_api.models import ChatRequest
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector_api.chat import Chat
+from opendirector_api.main import create_app
+from opendirector_api.models import ChatRequest
 
 
 def chunk(text=None, **changes):
@@ -31,7 +31,7 @@ def setup(tmp_path, provider):
     store = LocalProjects(tmp_path)
     configs = ModelConfigs(tmp_path)
     model = configs.save("agent", "https://api.deepseek.com", "deepseek-flash", "test-private-key")
-    headers = {"X-MuseShow-Request": "1", "X-MuseShow-Session": str(uuid4())}
+    headers = {"X-OpenDirector-Request": "1", "X-OpenDirector-Session": str(uuid4())}
     return store, configs, model, headers, Chat(store, configs, provider)
 
 
@@ -50,10 +50,10 @@ def test_streamed_chat_sends_private_config_and_continues_history(tmp_path):
 
     provider = ChatCompletions(httpx.MockTransport(handler))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    project = store.create("对话项目", str(uuid4()), headers["X-MuseShow-Session"])
+    project = store.create("对话项目", str(uuid4()), headers["X-OpenDirector-Session"])
     owner = project["id"]
     legacy = {"id": str(uuid4()), "role": "assistant", "text": "旧的模拟回复", "assets": [], "model": "openai", "thinking": "auto", "status": "complete"}
-    store.save_conversation(owner, {**empty_conversation(), "messages": [legacy]}, headers["X-MuseShow-Session"])
+    store.save_conversation(owner, {**empty_conversation(), "messages": [legacy]}, headers["X-OpenDirector-Session"])
     with TestClient(create_app(store, provider), headers=headers) as client:
         first = request(model)
         response = client.post(f'/api/data/{owner}/chat', json=first)
@@ -79,7 +79,7 @@ def test_streamed_chat_sends_private_config_and_continues_history(tmp_path):
 def test_upstream_error_is_actionable_and_never_falls_back_to_preview(tmp_path, status):
     provider = ChatCompletions(httpx.MockTransport(lambda _: httpx.Response(status, text="test-private-key")))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    owner = store.create("错误测试", str(uuid4()), headers["X-MuseShow-Session"])["id"]
+    owner = store.create("错误测试", str(uuid4()), headers["X-OpenDirector-Session"])["id"]
     with TestClient(create_app(store, provider), headers=headers) as client:
         response = client.post(f'/api/data/{owner}/chat', json=request(model))
         final = events(response)[-1]
@@ -92,7 +92,7 @@ def test_upstream_error_is_actionable_and_never_falls_back_to_preview(tmp_path, 
 def test_broken_upstream_preserves_partial_reply_and_releases_lock(tmp_path):
     provider = ChatCompletions(httpx.MockTransport(lambda _: httpx.Response(200, text=chunk("部分回复"))))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    owner = store.create("中断测试", str(uuid4()), headers["X-MuseShow-Session"])["id"]
+    owner = store.create("中断测试", str(uuid4()), headers["X-OpenDirector-Session"])["id"]
     with TestClient(create_app(store, provider), headers=headers) as client:
         final = events(client.post(f'/api/data/{owner}/chat', json=request(model)))[-1]
         assert final["error"]
@@ -111,7 +111,7 @@ def test_references_are_read_locally_and_unsupported_files_preserve_draft(tmp_pa
 
     provider = ChatCompletions(httpx.MockTransport(handler))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    session = headers["X-MuseShow-Session"]
+    session = headers["X-OpenDirector-Session"]
     owner = store.create("参考测试", str(uuid4()), session)["id"]
     text_id, image_id, audio_id, unsupported_id = (str(uuid4()) for _ in range(4))
     for asset_id, name, data, media_type in ((text_id, "参考.md", b"reference notes", "text/markdown"),
@@ -148,7 +148,7 @@ def test_stop_or_disconnect_preserves_reply_and_new_draft_without_stale_overwrit
                 closed.append(True)
 
     store, _, model, headers, chat = setup(tmp_path, Provider())
-    session = headers["X-MuseShow-Session"]
+    session = headers["X-OpenDirector-Session"]
     project = store.create("对话项目", str(uuid4()), session)
     stale = store.conversation(project["id"])
 

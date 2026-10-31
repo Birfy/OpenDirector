@@ -26,7 +26,7 @@ Windows 本机建立隧道：
 隧道窗口保持开启，本机端口默认为 18091，云端 HTTP 端口默认为 8091。
 SSH 登录密码与模型服务的 API Token 是不同的凭据。
 
-MuseShow 设置 → 模型接入 → 视频生成：
+OpenDirector 设置 → 模型接入 → 视频生成：
   接入方式：自部署服务
   接口协议：vLLM-Omni
   Base URL：http://127.0.0.1:18091/v1

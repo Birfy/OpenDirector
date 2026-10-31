@@ -11,13 +11,13 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from museshow.application.creation_assets import CreationAssets
-from museshow.domain.creation.commands import parse_command
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.creation_uploads import CreationUploads
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow_api.main import create_app
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.creation_uploads import CreationUploads
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector_api.main import create_app
 
 
 def png(color='purple', size=(13, 7)):
@@ -43,7 +43,7 @@ def app(tmp_path, store):
 @pytest.fixture
 def client(app):
     _, application = app
-    return TestClient(application, headers={'X-MuseShow-Request': '1'})
+    return TestClient(application, headers={'X-OpenDirector-Request': '1'})
 
 
 def upload(client, data=None, name='frame.png', mime='image/png'):
@@ -109,7 +109,7 @@ def test_identical_bytes_are_stored_once(client, tmp_path):
     second = upload(client, payload, 'b.png').json()
     assert first['blob'] == second['blob']
 
-    blobs = list((tmp_path / '.museshow' / 'library' / 'blobs').iterdir())
+    blobs = list((tmp_path / '.opendirector' / 'library' / 'blobs').iterdir())
     assert len(blobs) == 1
 
 
@@ -123,7 +123,7 @@ def test_trash_hides_item_but_keeps_bytes(client, tmp_path):
 
     assert client.get('/api/library/items').json() == []
     assert len(client.get('/api/library/items?state=trashed').json()) == 1
-    assert len(list((tmp_path / '.museshow' / 'library' / 'blobs').iterdir())) == 1
+    assert len(list((tmp_path / '.opendirector' / 'library' / 'blobs').iterdir())) == 1
 
     restored = client.post('/api/library/trash/restore', json={'itemIds': [item['id']]})
     assert restored.json()[0]['state'] == 'active'
@@ -140,11 +140,11 @@ def test_purge_keeps_blobs_still_referenced(client, tmp_path):
     client.post('/api/library/items/trash', json={'itemIds': [second['id']]})
     purged = client.delete(f"/api/library/trash/{second['id']}")
     assert purged.status_code == 200
-    assert len(list((tmp_path / '.museshow' / 'library' / 'blobs').iterdir())) == 1
+    assert len(list((tmp_path / '.opendirector' / 'library' / 'blobs').iterdir())) == 1
 
     client.post('/api/library/items/trash', json={'itemIds': [first['id']]})
     client.delete(f"/api/library/trash/{first['id']}")
-    assert list((tmp_path / '.museshow' / 'library' / 'blobs').iterdir()) == []
+    assert list((tmp_path / '.opendirector' / 'library' / 'blobs').iterdir()) == []
 
 
 def test_purge_rejects_active_items(client):
@@ -174,7 +174,7 @@ def test_inline_canvas_media_is_backed_up_as_a_copy(client, tmp_path):
     assert served.content == payload
 
     # The bytes live in the library, not inside the project directory.
-    assert (tmp_path / '.museshow' / 'library' / 'blobs' / item['blob']).exists()
+    assert (tmp_path / '.opendirector' / 'library' / 'blobs' / item['blob']).exists()
 
 
 def test_inline_backup_rejects_an_empty_body(client):
@@ -207,7 +207,7 @@ def test_canvas_import_is_a_backup_not_a_reference(app, client, store):
 
     served = client.get(f"/api/library/items/{item['id']}/content")
     assert served.status_code == 200
-    library_file = tmp_path / '.museshow' / 'library' / 'blobs' / canvas_blob
+    library_file = tmp_path / '.opendirector' / 'library' / 'blobs' / canvas_blob
     assert library_file.exists()
 
 

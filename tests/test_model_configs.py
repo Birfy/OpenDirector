@@ -5,16 +5,16 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
 
 
 @pytest.fixture
 def api(tmp_path):
     store = LocalProjects(tmp_path)
-    headers = {"X-MuseShow-Request": "1", "X-MuseShow-Session": str(uuid4())}
+    headers = {"X-OpenDirector-Request": "1", "X-OpenDirector-Session": str(uuid4())}
     with TestClient(create_app(store), headers=headers) as client:
         yield client, store
 
@@ -64,7 +64,7 @@ def test_edit_preserves_blank_key_and_stable_id_then_delete(api):
 
 
 def test_validation_and_save_failures_preserve_file_and_hide_request_values(api, monkeypatch):
-    from museshow.infrastructure import model_configs
+    from opendirector.infrastructure import model_configs
 
     client, store = api
     config = client.post("/api/model-configs", json=payload()).json()
@@ -126,14 +126,14 @@ def test_project_selections_and_history_survive_config_changes(api):
 def test_model_config_routes_keep_local_request_protection(api):
     client, _ = api
     assert client.get("/api/model-configs", headers={"Origin": "https://untrusted.example"}).status_code == 403
-    assert client.post("/api/model-configs", json=payload(), headers={"X-MuseShow-Request": ""}).status_code == 403
+    assert client.post("/api/model-configs", json=payload(), headers={"X-OpenDirector-Request": ""}).status_code == 403
 
 
 @pytest.mark.parametrize('kind', ['image', 'video'])
 def test_segmentation_protocol_serves_both_tools_without_generation(api, kind):
-    from museshow.domain.creation.models import ModelConfigPublic, ModelSnapshot
-    from museshow.integrations.model_adapters import capabilities_of
-    from museshow.integrations.providers import GenerationProviders
+    from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
+    from opendirector.integrations.model_adapters import capabilities_of
+    from opendirector.integrations.providers import GenerationProviders
     client, store = api
     response = client.post('/api/model-configs', json=payload(kind, protocol='vllm_omni_segmentation', modelId='facebook/sam3'))
     assert response.status_code == 200, response.text

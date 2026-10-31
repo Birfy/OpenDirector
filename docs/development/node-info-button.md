@@ -18,7 +18,7 @@
 
 勘查结论：
 
-- `apps/api/src/museshow_api/main.py` 共 74 个路由，无节点统计端点；
+- `apps/api/src/opendirector_api/main.py` 共 74 个路由，无节点统计端点；
   探测 `/node-stats`、`/stats`、`/nodes/stats`、`/summary` 均返回 404。
 - `packages/core` 中无按类型聚合节点的实现（`Counter` / `groupby` / `by_kind`
   均无匹配）。

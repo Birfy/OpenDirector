@@ -8,17 +8,17 @@ from uuid import UUID
 from pydantic import ValidationError
 import pytest
 
-from museshow.domain.creation import (
+from opendirector.domain.creation import (
     ContractError, ProjectSnapshot, node_capabilities, parse_command, role_after,
     validate_command, validate_generation,
 )
-from museshow.domain.creation.assets import Asset, AssetRef
-from museshow.domain.creation.canvas import CanvasItemBase
-from museshow.domain.creation.commands import CommandReceipt, command_fingerprint
-from museshow.domain.creation.generation import InputSnapshot, Job, ResultVersion
-from museshow.domain.creation.models import ModelConfigPublic, ModelConfigWrite, ModelSnapshot
-from museshow.domain.creation.project import ViewState
-from museshow.domain.input_rules import input_rules
+from opendirector.domain.creation.assets import Asset, AssetRef
+from opendirector.domain.creation.canvas import CanvasItemBase
+from opendirector.domain.creation.commands import CommandReceipt, command_fingerprint
+from opendirector.domain.creation.generation import InputSnapshot, Job, ResultVersion
+from opendirector.domain.creation.models import ModelConfigPublic, ModelConfigWrite, ModelSnapshot
+from opendirector.domain.creation.project import ViewState
+from opendirector.domain.input_rules import input_rules
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = UUID(int=1)
@@ -69,7 +69,7 @@ def project_example():
         entity(30, kind='subject', data=dict(description='actor', main=image, auxiliaries=[], voice=audio)),
         entity(31, kind='timeline', data=dict(fps=30, width=1920, height=1080, importedAssets=[resource(image)], tracks=[
             dict(id='visual', kind='visual', title='Visual', clips=[dict(id='shot', resource=resource(video), inPoint=0, outPoint=2)]),
-            # Audio extends past the visual cut; that OpenDesign behavior must survive.
+            # Audio extends past the visual cut; that OpenDirector behavior must survive.
             dict(id='audio', kind='audio', title='Audio', clips=[dict(id='music', resource=resource(audio), start=1, inPoint=0, outPoint=4)]),
         ])),
         entity(32, kind='stack', data=dict(nodeIds=[uid(40)], activeIndex=0)),
@@ -271,8 +271,8 @@ def test_snapshot_excludes_selection_credentials_and_wrong_model():
 
 @pytest.mark.parametrize('kind', ['agent', 'image', 'video', 'audio'])
 def test_model_public_contract_accepts_existing_configuration_outputs(tmp_path, kind):
-    from museshow.infrastructure.local_projects import LocalProjects
-    from museshow.infrastructure.model_configs import ModelConfigs
+    from opendirector.infrastructure.local_projects import LocalProjects
+    from opendirector.infrastructure.model_configs import ModelConfigs
     configs = ModelConfigs(LocalProjects(tmp_path).repository)
     value = configs.save(kind, 'https://models.example/v1', 'demo', 'private-key')
     parsed = ModelConfigPublic.model_validate(value)
@@ -283,7 +283,7 @@ def test_model_public_contract_accepts_existing_configuration_outputs(tmp_path, 
 
 @pytest.mark.parametrize('kind', ['image', 'video'])
 def test_shared_generation_contract_rejects_segmentation_models(kind):
-    from museshow.domain.creation.generation import ImageGenerationSpec, VideoGenerationSpec
+    from opendirector.domain.creation.generation import ImageGenerationSpec, VideoGenerationSpec
     sam = model(kind, protocol='vllm_omni_segmentation')
     spec_type = ImageGenerationSpec if kind == 'image' else VideoGenerationSpec
     spec = spec_type(**entity(21, kind=kind, modelConfigId=sam.id, prompt='generate'))
@@ -303,7 +303,7 @@ def test_credential_write_is_separate_and_protocols_are_restricted():
 
 
 def video_spec(**parameters):
-    from museshow.domain.creation.generation import VideoGenerationSpec
+    from opendirector.domain.creation.generation import VideoGenerationSpec
     return VideoGenerationSpec(**entity(65, kind='video', purpose='generation', modelConfigId=uid(20), prompt='A walk', parameters=parameters))
 
 
@@ -313,7 +313,7 @@ def resolved(kind='image', role='reference', **metadata):
 
 
 def test_video_capabilities_and_reference_rules_reuse_existing_profiles():
-    from museshow.domain.creation.generation import ResolvedReference
+    from opendirector.domain.creation.generation import ResolvedReference
     config = model('video', videoAdapter='minimax_h3')
     assert config.inputRules.profile == 'vllm-omni-h3'
     validate_generation(video_spec(durationSeconds=5, resolution='480P'), config)
@@ -329,7 +329,7 @@ def test_video_capabilities_and_reference_rules_reuse_existing_profiles():
 
 
 def test_frame_mode_counts_retained_image_relations_before_transmission_filtering():
-    from museshow.domain.creation.generation import ResolvedReference
+    from opendirector.domain.creation.generation import ResolvedReference
     references = tuple(ResolvedReference(referenceId=uid(80 + index), role='reference',
         asset=asset_ref(asset(18 + index, 'image')), metadata=asset(18 + index, 'image').metadata,
         transmission='context_only') for index in range(3))
@@ -340,7 +340,7 @@ def test_frame_mode_counts_retained_image_relations_before_transmission_filterin
 
 
 def test_seedance_image_reference_resolution_and_audio_duration_constraints():
-    from museshow.domain.creation.generation import ResolvedReference
+    from opendirector.domain.creation.generation import ResolvedReference
     config = model('video', url='https://ark.cn-beijing.volces.com/api/plan/v3', protocol='volcengine', modelId='doubao-seedance-2.0')
     image = ResolvedReference(**resolved())
     audio = ResolvedReference(**{**resolved('audio', durationSeconds=16), 'referenceId': uid(81)})

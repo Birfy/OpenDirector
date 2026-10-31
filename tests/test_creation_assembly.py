@@ -8,10 +8,10 @@ import wave
 from PIL import Image
 import pytest
 
-from museshow.application.creation_assets import CreationAssets
-from museshow.application.creation_canvas import DOWNSTREAM, asset_ref, resolved_inputs
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_canvas import DOWNSTREAM, asset_ref, resolved_inputs
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, ver
 
 

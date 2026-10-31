@@ -7,9 +7,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow.integrations.http_settings import trust_environment
-from museshow.integrations.providers import GenerationProviders
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.integrations.http_settings import trust_environment
+from opendirector.integrations.providers import GenerationProviders
 
 
 @pytest.mark.parametrize('base, equivalent', [
@@ -73,9 +73,9 @@ def test_all_model_kinds_submit_resume_and_cancel_use_direct_connection(monkeypa
         return async_client(**kwargs)
     monkeypatch.setattr(httpx, 'AsyncClient', client)
     prepared = {'prompt': 'test', 'images': [], 'audios': []}
-    monkeypatch.setattr('museshow.integrations.providers.generation_references', lambda *args: prepared)
-    monkeypatch.setattr('museshow.integrations.providers.references', lambda *args: [])
-    monkeypatch.setattr('museshow.integrations.vllm_omni.generation_references', lambda *args: prepared)
+    monkeypatch.setattr('opendirector.integrations.providers.generation_references', lambda *args: prepared)
+    monkeypatch.setattr('opendirector.integrations.providers.references', lambda *args: [])
+    monkeypatch.setattr('opendirector.integrations.vllm_omni.generation_references', lambda *args: prepared)
     def handle(request):
         calls.append((request.method, request.url.path))
         assert request.headers['authorization'] == 'Bearer test-token'

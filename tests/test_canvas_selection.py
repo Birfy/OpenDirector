@@ -6,9 +6,9 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import read_json
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import read_json
+from opendirector_api.main import create_app
 from test_canvas_generation import project
 from test_canvas_history import step
 
@@ -108,12 +108,12 @@ def test_batch_api_validation_and_edit_lease(project):
     store = project[0]
     owner, session, canvas, nodes = setup_nodes(project)
     endpoint = f'/api/projects/{owner["id"]}/canvas'
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         before = (Path(owner['path']) / 'canvas.json').read_bytes()
         for route in ('move', 'remove'):
             assert client.post(endpoint + '/' + route, json={'nodes': []}).status_code == 422
         body = {'nodes': moves(nodes)}
-        assert client.post(endpoint + '/move', json=body, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(endpoint + '/move', json=body, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         assert client.post(endpoint + '/move', json={'nodes': [*moves(nodes), moves(nodes)[0]]}).status_code == 400
         assert client.post(endpoint + '/move', json={'nodes': [{**moves(nodes)[0], 'x': None}]}).status_code == 422
         assert (Path(owner['path']) / 'canvas.json').read_bytes() == before

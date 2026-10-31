@@ -352,7 +352,7 @@ export function exportTimeline(timeline: TimelineData, title: string): string {
   checked(timeline);
   return JSON.stringify(
     {
-      format: "museshow-editable-timeline",
+      format: "opendirector-editable-timeline",
       version: 1,
       title,
       timeUnit: "seconds",
@@ -451,7 +451,7 @@ export function importTimeline(text: string): TimelineData {
     !value ||
     typeof value !== "object" ||
     !("format" in value) ||
-    value.format !== "museshow-editable-timeline" ||
+    value.format !== "opendirector-editable-timeline" ||
     !("version" in value) ||
     value.version !== 1 ||
     !("timeUnit" in value) ||

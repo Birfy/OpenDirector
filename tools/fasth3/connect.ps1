@@ -11,7 +11,7 @@ $sshArgs=@('-N','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=30',
   '-o','ServerAliveCountMax=3','-p',"$SshPort",'-L',"127.0.0.1:${LocalPort}:127.0.0.1:${RemotePort}")
 if ($IdentityFile) { $sshArgs += @('-i',$IdentityFile) }
 $sshArgs += "${User}@${Server}"
-Write-Host "MuseShow Base URL: http://127.0.0.1:$LocalPort/v1"
+Write-Host "OpenDirector Base URL: http://127.0.0.1:$LocalPort/v1"
 Write-Host 'Keep this window open. Ctrl+C closes the tunnel.'
 & ssh @sshArgs
 exit $LASTEXITCODE

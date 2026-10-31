@@ -194,7 +194,7 @@ export class CreationProjection {
         return {
           external: { externalType: "director-stage" },
           localStage: parseLocalStageValue({
-            format: "museshow-local-stage",
+            format: "opendirector-local-stage",
             version: 2,
             ...doc.data,
           }),
@@ -202,7 +202,7 @@ export class CreationProjection {
       case "layers":
         return {
           layers: {
-            format: "museshow-layers",
+            format: "opendirector-layers",
             version: 1,
             ...doc.data,
             layers: await Promise.all(

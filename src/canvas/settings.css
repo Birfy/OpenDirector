@@ -1,4 +1,4 @@
-/* MuseShow's general/model settings layout, with OpenDesign model forms. */
+/* OpenDirector's general/model settings layout, with OpenDirector model forms. */
 .cw-settings-dialog {
   width: min(900px, calc(100vw - 32px));
   height: min(620px, calc(100dvh - 32px));

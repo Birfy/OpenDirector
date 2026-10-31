@@ -90,7 +90,7 @@ try {
     (
       await (
         await page.request.get(base + "/api/creation-test-health", {
-          headers: { "X-MuseShow-Request": "1" },
+          headers: { "X-OpenDirector-Request": "1" },
         })
       ).json()
     ).isolated,
@@ -230,7 +230,7 @@ try {
           (unified
             ? "creation/projects/" + f.id
             : "projects/" + f.id + "/workspace"),
-        { headers: { "X-MuseShow-Request": "1" } },
+        { headers: { "X-OpenDirector-Request": "1" } },
       );
       assert.equal(response.status(), 200);
       const saved = await response.json();
@@ -275,7 +275,7 @@ try {
   );
 } catch (e) {
   await page.screenshot({
-    path: "/tmp/opendesign-node-connections-failure.png",
+    path: "/tmp/opendirector-node-connections-failure.png",
   });
   throw e;
 } finally {

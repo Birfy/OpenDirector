@@ -1,6 +1,6 @@
 ---
 name: git-commit
-description: Create a MuseShow Git commit, or draft its message, from the current staging area only. Inspect git diff --staged first; never stage files or include unstaged work.
+description: Create a OpenDirector Git commit, or draft its message, from the current staging area only. Inspect git diff --staged first; never stage files or include unstaged work.
 ---
 
 # Git Commit
@@ -76,7 +76,7 @@ and docs, choose the type of its main behavior change.
 
 Scopes describe the affected area, independently of the type:
 
-| Scope | MuseShow area |
+| Scope | OpenDirector area |
 |---|---|
 | `web` | Browser workbench, layouts, components, and local interactions. |
 | `api` | HTTP / SSE entrypoints, routes, and request handling. |

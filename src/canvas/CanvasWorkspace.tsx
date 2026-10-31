@@ -3289,7 +3289,7 @@ function Workspace() {
   const generationDraft =
     generationNode && generationSettings
       ? {
-          format: "museshow-generation-request",
+          format: "opendirector-generation-request",
           version: 1,
           status: "draft",
           sourcePage: ORIGINAL_CANVAS_URL,
@@ -4312,7 +4312,7 @@ function Workspace() {
           <img
             className="cw-brand"
             src={openDirectorLogoAnimation}
-            alt="OpenDesign"
+            alt="OpenDirector"
             draggable={false}
           />
           <ProjectSelector

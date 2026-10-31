@@ -36,7 +36,7 @@ export interface ImageLayer {
   mask: MaskStroke[];
 }
 export interface LayerDocument {
-  format: "museshow-layers";
+  format: "opendirector-layers";
   version: 1;
   width: number;
   height: number;
@@ -91,7 +91,7 @@ export function createLayerDocument(
 ): LayerDocument {
   assertLayerSize(width, height);
   return {
-    format: "museshow-layers",
+    format: "opendirector-layers",
     version: 1,
     width,
     height,
@@ -237,8 +237,8 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
   };
   const size = (value: unknown) => finite(value, 1, MAX_LAYER_SIDE);
   const raw = object(value);
-  if (raw.format !== "museshow-layers" || raw.version !== 1)
-    throw new Error("这不是受支持的 MuseShow 图层文件。");
+  if (raw.format !== "opendirector-layers" || raw.version !== 1)
+    throw new Error("这不是受支持的 OpenDirector 图层文件。");
   const width = size(raw.width),
     height = size(raw.height);
   assertLayerSize(width, height);
@@ -327,7 +327,7 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
     };
   });
   return {
-    format: "museshow-layers",
+    format: "opendirector-layers",
     version: 1,
     width,
     height,

@@ -33,7 +33,7 @@ export const assetReference = (asset: Asset): AssetRef => ({
 export const creationPath = (id: string) => `/creation/projects/${id}`;
 const viewClientId = (() => {
   try {
-    const key = "opendesign.creation.viewClientId";
+    const key = "opendirector.creation.viewClientId";
     let id = sessionStorage.getItem(key);
     if (!id) {
       id = crypto.randomUUID();
@@ -83,7 +83,7 @@ export class CreationClient {
     }
   }
   private deliveryKey() {
-    return `opendesign.creation.deliveries:${this.id}`;
+    return `opendirector.creation.deliveries:${this.id}`;
   }
   private saveDeliveries() {
     try {

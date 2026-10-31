@@ -87,14 +87,14 @@ interface Props {
   ref: Ref<ChatReferenceEditorHandle>;
 }
 type Snapshot = { content: ReferenceContent; caret: Caret };
-const CLIPBOARD = "application/x-opendesign-references";
+const CLIPBOARD = "application/x-opendirector-references";
 const defaultRules = {
   allowedKinds: ["image", "video", "audio", "text"],
   maxImages: 64,
   imageBytes: 32 * 1024 * 1024,
 };
 
-/** MuseShow's atomic content model: one reference is one editing position. */
+/** OpenDirector's atomic content model: one reference is one editing position. */
 export function ChatReferenceEditor({
   scope,
   value,

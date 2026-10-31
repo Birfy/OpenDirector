@@ -61,7 +61,7 @@ __pycache__/
 /apps/api/build/
 .pytest_cache/
 /projects/
-/.museshow/
+/.opendirector/
 
 # Local historical documents stay private; shared docs live in these paths.
 /docs/*

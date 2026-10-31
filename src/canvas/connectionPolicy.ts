@@ -241,7 +241,7 @@ export function referenceIssue(
     (capacity[b.type] ?? Infinity)
   )
     return "capacity_exceeded";
-  // Like MuseShow, input references may point to the same node or form a
+  // Like OpenDirector, input references may point to the same node or form a
   // cycle: execution snapshots current outputs without following inputs.
   return null;
 }

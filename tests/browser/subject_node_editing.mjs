@@ -18,7 +18,7 @@ page.on("pageerror", (error) => errors.push(error.message));
 const rows = [];
 try {
   const health = await page.request.get(base + "/api/creation-test-health", {
-    headers: { "X-MuseShow-Request": "1" },
+    headers: { "X-OpenDirector-Request": "1" },
   });
   assert.equal((await health.json()).isolated, true);
   for (const unified of [false, true]) {
@@ -215,7 +215,7 @@ try {
           (unified
             ? "creation/projects/" + f.id
             : "projects/" + f.id + "/workspace"),
-        { headers: { "X-MuseShow-Request": "1" } },
+        { headers: { "X-OpenDirector-Request": "1" } },
       );
       assert.equal(response.status(), 200);
       return response.json();
@@ -358,7 +358,7 @@ try {
     JSON.stringify({ passed: true, modes: rows.length, pageErrors: errors }),
   );
 } catch (error) {
-  await page.screenshot({ path: "/tmp/opendesign-subject-edit-failure.png" });
+  await page.screenshot({ path: "/tmp/opendirector-subject-edit-failure.png" });
   throw error;
 } finally {
   await browser.close();

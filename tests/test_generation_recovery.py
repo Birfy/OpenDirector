@@ -13,12 +13,12 @@ from PIL import Image
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.application.generation import Generation
-from museshow.infrastructure.generation_results import GenerationResults
-from museshow.infrastructure.local_projects import LocalProjects, write_json
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.volcengine import VolcengineGeneration
-from museshow_api.main import create_app
+from opendirector.application.generation import Generation
+from opendirector.infrastructure.generation_results import GenerationResults
+from opendirector.infrastructure.local_projects import LocalProjects, write_json
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.volcengine import VolcengineGeneration
+from opendirector_api.main import create_app
 
 
 def png():
@@ -272,8 +272,8 @@ def test_recovery_api_checks_session_and_keeps_unknown_request_read_only(context
     generation.canvas.task_write(project['id'], task, pinned)
     url = f'/api/projects/{project["id"]}/tasks/{task["id"]}/recover'
     with TestClient(create_app(store, generation_provider=provider), headers={
-            'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
-        assert client.post(url, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+            'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
+        assert client.post(url, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         for _ in range(2):
             response = client.post(url)
             assert response.status_code == 200

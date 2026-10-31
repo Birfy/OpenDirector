@@ -771,7 +771,7 @@ export interface ProjectRestoreCommandInput extends CommandBaseInput {
 }
 
 export interface ProjectSnapshotInput extends ContractInput {
-  readonly format?: "opendesign-project";
+  readonly format?: "opendirector-project";
   readonly formatVersion?: 2;
   readonly project: ProjectInput;
   readonly assets?: ReadonlyArray<AssetInput>;
@@ -2004,7 +2004,7 @@ export interface ProjectRestoreCommand extends CommandBase {
 }
 
 export interface ProjectSnapshot extends Contract {
-  readonly format: "opendesign-project";
+  readonly format: "opendirector-project";
   readonly formatVersion: 2;
   readonly project: Project;
   readonly assets: ReadonlyArray<Asset>;

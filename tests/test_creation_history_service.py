@@ -1,9 +1,9 @@
 from uuid import uuid4
 
-from museshow.application.creation_history import CreationHistory
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
+from opendirector.application.creation_history import CreationHistory
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 

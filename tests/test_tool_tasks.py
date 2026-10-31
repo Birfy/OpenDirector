@@ -9,12 +9,12 @@ import httpx
 import pytest
 from PIL import Image
 
-from museshow.application.tool_tasks import ToolTasks
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects, child
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
+from opendirector.application.tool_tasks import ToolTasks
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects, child
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
 
 ZIMAGE = ('image', 'http://gpu:8210/v1', 'Tongyi-MAI/Z-Image-Turbo')
 H3 = ('video', 'http://gpu:8010/v1', 'MiniMaxAI/MiniMax-H3')
@@ -261,8 +261,8 @@ def mask_part(body, name):
 
 
 def test_h3_edit_masks_follow_its_frame_and_audio_grids():
-    from museshow.domain.capabilities import EditMask
-    from museshow.integrations.model_adapters import VllmOmniVideo
+    from opendirector.domain.capabilities import EditMask
+    from opendirector.integrations.model_adapters import VllmOmniVideo
     frames = VllmOmniVideo.frames(5)
     assert frames == 124 and VllmOmniVideo.canvas(1920, 1080) == (1344, 736)
     picture = VllmOmniVideo.picture_mask(EditMask(1.0, None, 2, 3), frames)
@@ -312,7 +312,7 @@ def test_long_video_edit_runs_piecewise_and_subtitles_default_to_the_bottom_band
 
 
 def test_video_prompts_are_translated_only_when_a_chat_model_is_connected():
-    from museshow.application.tool_operations import ToolContext
+    from opendirector.application.tool_operations import ToolContext
 
     async def chat(request):
         return 'The girl turns toward the sea'
@@ -358,8 +358,8 @@ def test_interrupted_tasks_are_reported_after_restart(project):
 
 
 def test_qwen_image_edits_with_condition_images_on_its_grid_without_strength():
-    from museshow.domain.capabilities import ImageRequest
-    from museshow.domain.input_rules import input_rules
+    from opendirector.domain.capabilities import ImageRequest
+    from opendirector.domain.input_rules import input_rules
     config = {'kind': 'image', 'url': 'http://gpu:8210/v1', 'modelId': 'Qwen/Qwen-Image-2.1', 'protocol': 'openai', 'connectionType': 'self_hosted'}
     rules = input_rules(config)
     assert rules['profile'] == 'vllm-omni-qwen-image' and rules['maxImages'] == 4 and 'image' in rules['allowedKinds']
@@ -600,9 +600,9 @@ def test_smart_edit_reads_editor_text_strokes_and_honours_selected_model(project
 
 def test_selection_api_uses_owned_source_and_accepts_only_supported_prompts(project, monkeypatch):
     from fastapi.testclient import TestClient
-    from museshow.domain.capabilities import Segment
-    from museshow.integrations.model_adapters import VllmOmniSegmentation
-    from museshow_api.main import create_app
+    from opendirector.domain.capabilities import Segment
+    from opendirector.integrations.model_adapters import VllmOmniSegmentation
+    from opendirector_api.main import create_app
 
     store, project_id, session = project
     source = upload(store, project_id, session, 'blue.png', png())
@@ -614,7 +614,7 @@ def test_selection_api_uses_owned_source_and_accepts_only_supported_prompts(proj
         return [Segment(base64.b64decode(box_mask((64, 48), (12, 10, 30, 30))), (12, 10, 30, 30), 0.9)]
 
     monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         path = f'/api/projects/{project_id}/image-selections'
         response = client.post(path, json={'sourceAssetId': source, 'boxes': [{'x': 10, 'y': 8, 'width': 22, 'height': 24}]})
         assert response.status_code == 200, response.text
@@ -622,7 +622,7 @@ def test_selection_api_uses_owned_source_and_accepts_only_supported_prompts(proj
         assert calls[0].boxes == ((10.0, 8.0, 32.0, 32.0),)
         assert client.post(path, json={'sourceAssetId': source, 'points': [[12, 12]]}).status_code == 422
         assert client.post(path, json={'sourceAssetId': source, 'boxes': [{'x': 0, 'y': 0, 'width': -1, 'height': 4}]}).status_code == 422
-        assert client.post(path, json={'sourceAssetId': source}, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(path, json={'sourceAssetId': source}, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
     assert len(calls) == 1
 
 

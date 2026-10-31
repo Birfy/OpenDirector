@@ -251,7 +251,7 @@ export async function serviceNodeId(logicalId: string, role: string) {
   const bytes = new Uint8Array(
     await crypto.subtle.digest(
       "SHA-256",
-      new TextEncoder().encode(`opendesign:${role}:${logicalId}`),
+      new TextEncoder().encode(`opendirector:${role}:${logicalId}`),
     ),
   );
   bytes[6] = (bytes[6]! & 15) | 80;

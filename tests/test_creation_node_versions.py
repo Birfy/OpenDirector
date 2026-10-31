@@ -5,10 +5,10 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.application.creation_canvas import asset_ref, resolved_inputs
-from museshow.application.creation_history import CreationHistory
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.creation_projects import object_index
+from opendirector.application.creation_canvas import asset_ref, resolved_inputs
+from opendirector.application.creation_history import CreationHistory
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.creation_projects import object_index
 from test_creation_canvas_service import project, media, send, text_material, ver
 from test_creation_generation_service import Provider, runtime, configure, anyio_backend
 
@@ -104,7 +104,7 @@ async def test_pin_apply_uses_frozen_assets_and_rejects_tampering_without_partia
 async def test_missing_model_remains_evidence_and_foreign_stale_locked_versions_are_rejected(project):
     store, pid, session = project
     _, _, target, _, _, output, config = await generated(project)
-    from museshow.infrastructure.model_configs import ModelConfigs
+    from opendirector.infrastructure.model_configs import ModelConfigs
     ModelConfigs(store.local.repository).delete(config['id'])
     history = CreationHistory(store)
     rows = history.node_versions(pid, target.id)['versions']
@@ -149,8 +149,8 @@ async def test_active_job_blocks_version_application_and_pin_subject_expansion_k
     from io import BytesIO
     from PIL import Image
     from uuid import UUID
-    from museshow.application.creation_assets import CreationAssets
-    from museshow.infrastructure.model_configs import ModelConfigs
+    from opendirector.application.creation_assets import CreationAssets
+    from opendirector.infrastructure.model_configs import ModelConfigs
     store, pid, session = project
     provider = Provider()
     runner, _ = runtime(project, provider)

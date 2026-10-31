@@ -4,7 +4,7 @@
  * follows elapsed time against how long the same work took before.
  */
 
-const STORAGE_KEY = "opendesign.generation-durations.v1";
+const STORAGE_KEY = "opendirector.generation-durations.v1";
 const DEFAULTS: Record<string, number> = {
   text: 15_000,
   image: 25_000,

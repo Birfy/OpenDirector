@@ -3,12 +3,12 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.application.generation import Generation, _execution_timeout
-from museshow.domain.generation import GenerationError
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.providers import GenerationProviders
+from opendirector.application.generation import Generation, _execution_timeout
+from opendirector.domain.generation import GenerationError
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.providers import GenerationProviders
 
 import httpx
 
@@ -20,7 +20,7 @@ def context(tmp_path, monkeypatch):
     project = store.create('自部署排队', str(uuid4()), session)
     configs = ModelConfigs(tmp_path)
     config = configs.save('video', 'http://127.0.0.1:18092/v1', 'FastH3-Omni', '', connection_type='self_hosted')
-    monkeypatch.setattr('museshow.integrations.asset_metadata.probe', lambda *args: {
+    monkeypatch.setattr('opendirector.integrations.asset_metadata.probe', lambda *args: {
         'kind': 'video', 'durationMs': 4000, 'width': 480, 'height': 832, 'frameRate': 24, 'hasAudio': False})
     return store, session, project, configs, config
 
@@ -77,7 +77,7 @@ def test_timeout_keeps_remote_id_and_explains_cloud_execution_continues(context,
     store, _, project, configs, _ = context
     assert _execution_timeout({'kind': 'video', 'protocol': 'vllm_omni'}) == 14400
     assert _execution_timeout({'kind': 'image'}) == 1800
-    monkeypatch.setattr('museshow.application.generation._execution_timeout', lambda task: 1)
+    monkeypatch.setattr('opendirector.application.generation._execution_timeout', lambda task: 1)
 
     class Provider:
         calls = 0
@@ -173,7 +173,7 @@ def test_queue_wait_is_not_part_of_execution_timeout(context, monkeypatch):
     def execution_timeout(seconds):
         timed.append(seconds)
         return real_timeout(seconds)
-    monkeypatch.setattr('museshow.application.generation.asyncio.timeout', execution_timeout)
+    monkeypatch.setattr('opendirector.application.generation.asyncio.timeout', execution_timeout)
 
     async def run():
         started, release = asyncio.Event(), asyncio.Event()

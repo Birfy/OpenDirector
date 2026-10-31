@@ -5,7 +5,7 @@ import type { ProxyOptions } from "vite";
 // The local API serves projects, model settings and generation tasks.
 const api: Record<string, ProxyOptions> = {
   "/api": {
-    target: process.env.MUSESHOW_API_URL ?? "http://127.0.0.1:8000",
+    target: process.env.OPENDIRECTOR_API_URL ?? "http://127.0.0.1:8000",
     changeOrigin: true,
     configure(proxy) {
       proxy.on("proxyReq", (upstream, _request, response) => {
@@ -28,7 +28,7 @@ const evidence = [
   "**/.toolchain/**",
   "**/.venv/**",
   "**/projects/**",
-  "**/.museshow/**",
+  "**/.opendirector/**",
 ];
 
 export default defineConfig({

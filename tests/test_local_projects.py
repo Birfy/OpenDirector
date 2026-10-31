@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
-from museshow.infrastructure.rename import rename_path
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
+from opendirector.infrastructure.rename import rename_path
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def test_projects_directory_is_lazy_and_independent_of_working_directory(tmp_pat
     assert not (other / "projects").exists()
 
 
-@pytest.mark.parametrize("name", ["", "../逃逸", "CON", "abc.", "a:b", "a\x00b", ".museshow-reserved"])
+@pytest.mark.parametrize("name", ["", "../逃逸", "CON", "abc.", "a:b", "a\x00b", ".opendirector-reserved"])
 def test_invalid_names_never_create_projects(store, name):
     with pytest.raises(ProjectError):
         create(store, name)
@@ -122,7 +122,7 @@ def test_rename_without_noreplace_support_still_never_replaces(tmp_path, monkeyp
     import ctypes
     import errno
 
-    from museshow.infrastructure import rename
+    from opendirector.infrastructure import rename
 
     class Library:
         def __init__(self, *args, **kwargs):
@@ -150,7 +150,7 @@ def test_rename_without_noreplace_support_still_never_replaces(tmp_path, monkeyp
 
 
 def test_rename_rolls_back_if_manifest_write_fails(store, monkeypatch):
-    from museshow.infrastructure import local_projects
+    from opendirector.infrastructure import local_projects
     project = create(store)
     original = local_projects.write_json
 
@@ -172,7 +172,7 @@ def test_rename_rolls_back_if_manifest_write_fails(store, monkeypatch):
 def test_restart_recovers_rename_from_every_directory_stage(store, tmp_path, stage):
     project = create(store)
     old = Path(project["path"])
-    operation = {"old": str(old), "temporary": str(old.parent / ".museshow-rename-test"), "new": str(old.parent / "恢复名称"),
+    operation = {"old": str(old), "temporary": str(old.parent / ".opendirector-rename-test"), "new": str(old.parent / "恢复名称"),
                  "before": read_json(old / "project.json"), "name": "恢复名称"}
     with store.transaction() as db:
         db.execute("INSERT INTO renames VALUES (?,?)", (project["id"], json.dumps(operation)))
@@ -312,7 +312,7 @@ def test_missing_asset_does_not_overwrite_saved_conversation(store):
 
 
 def test_failed_asset_write_leaves_no_partial_file(store, monkeypatch):
-    from museshow.infrastructure import local_projects
+    from opendirector.infrastructure import local_projects
     session = str(uuid4())
     project = create(store, session=session)
     asset_id = str(uuid4())

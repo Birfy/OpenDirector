@@ -6,7 +6,7 @@ const { chromium } = await import(
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:8019";
 const api = process.env.CREATION_API_URL ?? base;
 const headers = {
-  "X-MuseShow-Request": "1",
+  "X-OpenDirector-Request": "1",
   "Content-Type": "application/json",
 };
 async function call(path, body) {

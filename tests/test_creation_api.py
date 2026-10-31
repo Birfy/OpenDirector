@@ -3,15 +3,15 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow_api.main import create_app
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector_api.main import create_app
 
 
 @pytest.fixture
 def api(tmp_path):
     local = LocalProjects(tmp_path)
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': str(uuid4())}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}
     with TestClient(create_app(local), headers=headers) as client:
         yield client, local
 
@@ -35,9 +35,9 @@ def test_create_open_release_rename_and_reopen_via_typed_commands(api):
     client, local = api
     path, command, created = create(client)
     value = client.post(path + '/open').json()
-    assert value['format'] == 'opendesign-project' and value['formatVersion'] == 2
+    assert value['format'] == 'opendirector-project' and value['formatVersion'] == 2
     assert value['project']['name'] == 'New project'
-    session = client.headers['x-museshow-session']
+    session = client.headers['x-opendirector-session']
     assert client.put('/api/creation/sessions/' + session, json={'projectId': command['projectId']}).status_code == 200
     change = rename(command)
     assert client.post(path + '/commands', json=change).status_code == 409
@@ -151,11 +151,11 @@ def test_disk_failure_has_no_premature_event_and_retry_recovers_same_receipt(api
 def test_new_routes_keep_existing_local_request_protection(api):
     client, _ = api
     assert client.get('/api/creation/projects', headers={'Origin': 'https://untrusted.example'}).status_code == 403
-    assert client.get('/api/creation/projects', headers={'X-MuseShow-Request': ''}).status_code == 403
+    assert client.get('/api/creation/projects', headers={'X-OpenDirector-Request': ''}).status_code == 403
 
 
 def test_app_assembly_recovers_a_previously_interrupted_commit(tmp_path):
-    from museshow.domain.creation.commands import parse_command
+    from opendirector.domain.creation.commands import parse_command
     local = LocalProjects(tmp_path)
     storage = CreationProjects(local)
     project_id = str(uuid4())
@@ -168,7 +168,7 @@ def test_app_assembly_recovers_a_previously_interrupted_commit(tmp_path):
         storage.execute(command)
     app = create_app(LocalProjects(tmp_path))
     assert (tmp_path / 'projects/Recovered/project.json').is_file()
-    with TestClient(app, headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1'}) as client:
         path = '/api/creation/projects/' + project_id
         assert client.get(path).json()['project']['name'] == 'Recovered'
         assert client.get(path + '/receipts/' + str(command.commandId)).json()['status'] == 'applied'

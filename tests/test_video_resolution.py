@@ -6,15 +6,15 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import input_rules
-from museshow.domain.projects import ProjectError
-from museshow.domain.video_output import apply_video_resolution, h3_output_size
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.providers import GenerationProviders
-from museshow.integrations.vllm_omni import VllmOmniGeneration
-from museshow_api.models import GenerateNode
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.domain.video_output import apply_video_resolution, h3_output_size
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.providers import GenerationProviders
+from opendirector.integrations.vllm_omni import VllmOmniGeneration
+from opendirector_api.models import GenerateNode
 
 
 @pytest.mark.parametrize('resolution, ratio, expected', [

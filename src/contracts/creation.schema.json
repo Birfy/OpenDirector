@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "projectFormat": "opendesign-project",
+  "projectFormat": "opendirector-project",
   "projectFormatVersion": 2,
   "input": {
     "$defs": {
@@ -6769,8 +6769,8 @@
         "additionalProperties": false,
         "properties": {
           "format": {
-            "const": "opendesign-project",
-            "default": "opendesign-project",
+            "const": "opendirector-project",
+            "default": "opendirector-project",
             "title": "Format",
             "type": "string"
           },
@@ -17944,8 +17944,8 @@
         "additionalProperties": false,
         "properties": {
           "format": {
-            "const": "opendesign-project",
-            "default": "opendesign-project",
+            "const": "opendirector-project",
+            "default": "opendirector-project",
             "title": "Format",
             "type": "string"
           },

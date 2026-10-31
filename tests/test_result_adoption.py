@@ -9,7 +9,7 @@ import wave
 
 import pytest
 
-from museshow.infrastructure.generation_results import GenerationResults
+from opendirector.infrastructure.generation_results import GenerationResults
 from canvas_helpers import setup
 
 

@@ -4,11 +4,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from museshow.application.creation_canvas import resolved_inputs
-from museshow.application.creation_generation import CreationGeneration
-from museshow.application.generation import Generation
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.model_configs import ModelConfigs
+from opendirector.application.creation_canvas import resolved_inputs
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.generation import Generation
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
@@ -108,8 +108,8 @@ async def test_hidden_source_generation_frozen_history_restart_and_idempotent_co
     assert (await runner.execute(command, session=session)) == receipt
     assert len(provider.calls) == 1
     await runner.close()
-    from museshow.infrastructure.creation_projects import CreationProjects
-    from museshow.infrastructure.local_projects import LocalProjects
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    from opendirector.infrastructure.local_projects import LocalProjects
     reopened = CreationProjects(LocalProjects(store.local.repository)).snapshot(pid)
     assert reopened == snapshot
     assert len(reopened.canvasItems) == 2  # No per-request execution node.

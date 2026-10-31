@@ -58,7 +58,7 @@ const NODE_KINDS: CanvasNodeKind[] = [
   "tool",
   "external",
 ];
-const DB_NAME = "museshow-canvas";
+const DB_NAME = "opendirector-canvas";
 const STORE_NAME = "documents";
 const failure = <T>(
   code: CanvasStorageError["code"],

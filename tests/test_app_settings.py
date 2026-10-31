@@ -6,16 +6,16 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.app_settings import AppSettings
-from museshow.infrastructure.local_projects import LocalProjects, read_json
-from museshow_api.main import create_app
+from opendirector.application.generation import Generation
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.app_settings import AppSettings
+from opendirector.infrastructure.local_projects import LocalProjects, read_json
+from opendirector_api.main import create_app
 from canvas_helpers import setup
 
 
 def test_default_and_saved_settings_survive_application_restart(tmp_path):
-    headers = {'X-MuseShow-Request': '1'}
+    headers = {'X-OpenDirector-Request': '1'}
     store = LocalProjects(tmp_path)
     with TestClient(create_app(store), headers=headers) as client:
         assert client.get('/api/settings').json() == {'removeWatermark': True}
@@ -36,17 +36,17 @@ def test_invalid_requests_do_not_change_saved_settings(tmp_path, invalid):
     settings = AppSettings(tmp_path)
     settings.update({'removeWatermark': False})
     before = settings.path.read_bytes()
-    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'}) as client:
         assert client.patch('/api/settings', json=invalid).status_code == 422
         assert settings.path.read_bytes() == before
         assert client.get('/api/settings').json() == {'removeWatermark': False}
 
 
 def test_settings_routes_keep_local_request_protection(tmp_path):
-    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'}) as client:
         assert client.get('/api/settings', headers={'Origin': 'https://untrusted.example'}).status_code == 403
         assert client.get('/api/settings', headers={'Host': 'untrusted.example'}).status_code == 403
-        assert client.patch('/api/settings', json={'removeWatermark': False}, headers={'X-MuseShow-Request': ''}).status_code == 403
+        assert client.patch('/api/settings', json={'removeWatermark': False}, headers={'X-OpenDirector-Request': ''}).status_code == 403
         assert client.get('/api/settings').json() == {'removeWatermark': True}
 
 
@@ -63,19 +63,19 @@ def test_corrupt_settings_are_reported_and_preserved(tmp_path, contents):
 
 
 def test_failed_atomic_replace_preserves_settings_and_removes_temporary_file(tmp_path, monkeypatch):
-    from museshow.infrastructure import local_projects
+    from opendirector.infrastructure import local_projects
 
     settings = AppSettings(tmp_path)
     settings.update({'removeWatermark': False})
     before = settings.path.read_bytes()
     def fail(*args):
         raise OSError('simulated disk failure')
-    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(LocalProjects(tmp_path)), headers={'X-OpenDirector-Request': '1'}) as client:
         monkeypatch.setattr(local_projects.os, 'replace', fail)
         assert client.patch('/api/settings', json={'removeWatermark': True}).status_code == 503
         assert settings.path.read_bytes() == before
         assert client.get('/api/settings').json() == {'removeWatermark': False}
-        assert not list(settings.path.parent.glob('.museshow-*.tmp'))
+        assert not list(settings.path.parent.glob('.opendirector-*.tmp'))
 
 
 @pytest.mark.parametrize('kind', ['image', 'video', 'audio', 'text'])

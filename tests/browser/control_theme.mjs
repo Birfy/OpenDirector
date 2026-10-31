@@ -22,6 +22,9 @@ const video = execFileSync("ffmpeg", [
   "5",
   "-c:v",
   "libx264",
+  // Avoid B-frame composition offsets: the fixture must seek exactly to 0s.
+  "-bf",
+  "0",
   "-threads",
   "1",
   "-pix_fmt",
@@ -41,13 +44,13 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   const health = await (
     await page.request.get(base + "/api/creation-test-health", {
-      headers: { "X-MuseShow-Request": "1" },
+      headers: { "X-OpenDirector-Request": "1" },
     })
   ).json();
   assert.equal(health.isolated, true);
   await page.addInitScript(() => {
-    if (!localStorage.getItem("opendesign.theme.v1"))
-      localStorage.setItem("opendesign.theme.v1", "light");
+    if (!localStorage.getItem("opendirector.theme.v1"))
+      localStorage.setItem("opendirector.theme.v1", "light");
   });
   const bootstrap = (url) =>
     url.origin === new URL(base).origin && url.pathname === "/";
@@ -185,6 +188,8 @@ try {
   await page.unroute(bootstrap);
   await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
+  assert.equal(await page.title(), "OpenDirector · 创作画布");
+  await page.getByRole("img", { name: "OpenDirector", exact: true }).waitFor();
   const checked = [];
   const color = async (locator, prop = "backgroundColor") =>
     locator.evaluate((el, prop) => getComputedStyle(el)[prop], prop);
@@ -242,6 +247,9 @@ try {
       );
     assert.ok(Math.abs((await progress()) - fraction * 100) < 0.1);
     await slider.press("Home");
+    await page.waitForFunction(
+      () => document.querySelector(".cw-va-transport input")?.value === "0",
+    );
     assert.equal(await slider.inputValue(), "0");
     await slider.press("ArrowRight");
     assert.ok(Number(await slider.inputValue()) > 0);
@@ -258,10 +266,14 @@ try {
     assert.ok((await progress()) > 99);
     await slider.press("Home");
   }
-  const select = async (id) =>
-    page
+  const select = async (id) => {
+    // Editors can restore a zoomed viewport; fit before selecting distant nodes.
+    await page.locator(".cw-workspace").focus();
+    await page.keyboard.press("Shift+Digit1");
+    await page
       .locator(`.react-flow__node[data-id="${id}"]`)
       .click({ position: { x: 5, y: 5 } });
+  };
   const toolbar = page.getByRole("toolbar", { name: "节点操作", exact: true });
   await select(fixture.target);
   await light(".cw-composer", "generator composer");
@@ -360,12 +372,8 @@ try {
     .getByRole("button", { name: "关闭编辑器", exact: true })
     .click();
   await select(fixture.subject);
-  await toolbar.getByRole("button", { name: "编辑主体", exact: true }).click();
-  const subject = await light(".cw-domain-dialog", "subject editor");
-  await light(".cw-subject-main", "subject media plate");
-  await subject
-    .getByRole("button", { name: "关闭编辑器", exact: true })
-    .click();
+  // Subjects now edit directly on their canvas card, without a dialog.
+  await light(".cw-domain-card-subject", "subject card");
   await page.getByRole("button", { name: "资产库", exact: true }).click();
   await light(".cw-lib-dialog", "asset library");
   await page.getByRole("button", { name: "关闭资产库", exact: true }).click();
@@ -415,7 +423,7 @@ try {
   assert.deepEqual(errors, []);
   const final = await (
     await page.request.get(base + "/api/creation-test-health", {
-      headers: { "X-MuseShow-Request": "1" },
+      headers: { "X-OpenDirector-Request": "1" },
     })
   ).json();
   assert.equal(final.calls.length, health.calls.length);

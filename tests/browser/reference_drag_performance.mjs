@@ -26,7 +26,7 @@ page.on("pageerror", (e) => errors.push(e.message));
 try {
   const health = await (
     await page.request.get(base + "/api/creation-test-health", {
-      headers: { "X-MuseShow-Request": "1" },
+      headers: { "X-OpenDirector-Request": "1" },
     })
   ).json();
   assert.equal(health.isolated, true);
@@ -199,7 +199,7 @@ try {
       top,
     });
     await fs.writeFile(
-      `/tmp/opendesign-drag-${label}-${kind}.cpuprofile`,
+      `/tmp/opendirector-drag-${label}-${kind}.cpuprofile`,
       JSON.stringify(profile),
     );
   }

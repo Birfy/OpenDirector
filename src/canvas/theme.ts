@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 export type Theme = "dark" | "light";
-export const THEME_KEY = "opendesign.theme.v1";
+export const THEME_KEY = "opendirector.theme.v1";
 
 export function readTheme(): Theme {
   try {

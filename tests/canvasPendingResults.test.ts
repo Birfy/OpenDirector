@@ -348,7 +348,7 @@ test("history polling and reloads learn each successful duration sample only onc
     recordDuration(key, 3000, "second");
     assert.equal(expectedDuration(key, "image"), 1800);
     storage.set(
-      "opendesign.generation-durations.v1.samples",
+      "opendirector.generation-durations.v1.samples",
       JSON.stringify([`${key}:reloaded`]),
     );
     recordDuration(key, 20000, "reloaded");

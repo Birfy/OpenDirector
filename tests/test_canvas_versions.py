@@ -5,9 +5,9 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas_versions import node_history
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas_versions import node_history
+from opendirector_api.main import create_app
 from canvas_helpers import context, close
 
 
@@ -51,7 +51,7 @@ def test_unrecorded_history_never_infers_inputs_and_endpoint_is_project_scoped(t
     assert state['versions'][0]['prompt'] is None and state['versions'][0]['referenceIds'] == []
     other = c.store.create('另一个项目', str(uuid4()), str(uuid4()))
     with TestClient(create_app(c.store, generation_provider=c.provider)) as client:
-        headers = {'X-MuseShow-Request': '1'}
+        headers = {'X-OpenDirector-Request': '1'}
         response = client.get(f'/api/projects/{c.owner}/canvas/nodes/{node["id"]}/versions', headers=headers)
         assert response.status_code == 200 and response.json() == state
         assert 'apiKey' not in response.text and 'private' not in response.text

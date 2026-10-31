@@ -48,7 +48,7 @@ try {
     });
     const health = await (
       await page.request.get(base + "/api/creation-test-health", {
-        headers: { "X-MuseShow-Request": "1" },
+        headers: { "X-OpenDirector-Request": "1" },
       })
     ).json();
     assert.equal(

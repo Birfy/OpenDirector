@@ -1,4 +1,4 @@
-# OpenDesign · 本地创作画布
+# OpenDirector · 本地创作画布
 
 在画布上整理素材、生成图片和视频、编辑媒体，并通过时间线编排和导出视频。
 
@@ -13,8 +13,8 @@
 下载项目并安装依赖：
 
 ```sh
-git clone --branch rea --single-branch https://github.com/ThinkFlowLab/OpenDesign.git
-cd OpenDesign
+git clone --branch rea --single-branch https://github.com/ThinkFlowLab/OpenDirector.git
+cd OpenDirector
 npm ci
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
@@ -24,7 +24,7 @@ npm run build
 启动应用：
 
 ```sh
-.venv/bin/python scripts/museshow.py serve
+.venv/bin/python scripts/opendirector.py serve
 ```
 
 在浏览器打开终端显示的地址，默认是 `http://127.0.0.1:8000`。使用期间保持终端运行，按 `Ctrl+C` 退出。
@@ -34,7 +34,7 @@ Windows 将上述 `.venv/bin/python` 替换为 `.venv\Scripts\python.exe`。如�
 端口被占用时可以更换：
 
 ```sh
-.venv/bin/python scripts/museshow.py serve --port 8001
+.venv/bin/python scripts/opendirector.py serve --port 8001
 ```
 
 ## 创建和管理画布

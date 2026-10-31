@@ -8,8 +8,8 @@ const api = process.env.CREATION_API_URL ?? base;
 const projectId = crypto.randomUUID(),
   seedSession = crypto.randomUUID();
 const headers = {
-  "X-MuseShow-Request": "1",
-  "X-MuseShow-Session": seedSession,
+  "X-OpenDirector-Request": "1",
+  "X-OpenDirector-Session": seedSession,
   "Content-Type": "application/json",
 };
 async function call(path, body, method = body ? "POST" : "GET") {

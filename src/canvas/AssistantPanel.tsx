@@ -52,7 +52,7 @@ function kindOf(asset: ChatAsset) {
         : "text";
 }
 
-/** MuseShow conversation tools in an OpenDesign floating canvas window. */
+/** OpenDirector conversation tools in an OpenDirector floating canvas window. */
 export function AssistantPanel({
   documentId,
   documentTitle,
@@ -357,7 +357,7 @@ export function AssistantPanel({
             </div>
             <h1>从一个想法开始</h1>
             <p>
-              和 OpenDesign 一起构思你的下一部作品。
+              和 OpenDirector 一起构思你的下一部作品。
               <br />
               描述故事，或输入 @ 添加图片、视频、音频与文本参考。
             </p>
@@ -369,7 +369,7 @@ export function AssistantPanel({
             className={`cw-assistant-message is-${message.role}`}
           >
             <div className="cw-assistant-message-heading">
-              {message.role === "user" ? "你" : "OpenDesign"}
+              {message.role === "user" ? "你" : "OpenDirector"}
               {message.role === "assistant" && message.model && (
                 <small>{message.model}</small>
               )}

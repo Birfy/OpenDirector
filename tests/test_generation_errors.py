@@ -7,12 +7,12 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.generation import GenerationError
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow.integrations.volcengine import VolcengineGeneration
+from opendirector.application.generation import Generation
+from opendirector.domain.generation import GenerationError
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.integrations.volcengine import VolcengineGeneration
 
 
 SECRET = 'private-key-never-record'

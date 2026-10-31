@@ -18,7 +18,7 @@ import { createDocument, createNode } from "../src/canvas/model.ts";
 
 function empty(): ProjectSnapshot {
   return {
-    format: "opendesign-project",
+    format: "opendirector-project",
     formatVersion: 2,
     project: { id: crypto.randomUUID(), name: "Test", revision: 1 },
     assets: [],

@@ -11,14 +11,14 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.asset_catalog import AssetCatalog
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.local_projects import read_json, write_json
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.volcengine import VolcengineGeneration
+from opendirector.application.generation import Generation
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.asset_catalog import AssetCatalog
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.local_projects import read_json, write_json
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.volcengine import VolcengineGeneration
 
 
 def png():
@@ -264,13 +264,13 @@ def test_cancel_task_protects_inputs_then_releases_node(project):
 
 def test_canvas_api_checks_session_type_and_creates_no_orphan(project):
     from fastapi.testclient import TestClient
-    from museshow_api.main import create_app
+    from opendirector_api.main import create_app
     store, value, session, _ = project
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         url = f'/api/projects/{value["id"]}/canvas/nodes'
         nid = str(uuid4())
-        assert client.post(url, json={'id': nid, 'kind': 'image'}, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(url, json={'id': nid, 'kind': 'image'}, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         assert client.post(url, json={'id': nid, 'kind': 'image'}).status_code == 200
         assert client.put(url + '/' + nid + '/file', content=b'text', headers={'X-Asset-Name': 'wrong.txt', 'X-Asset-Id': str(uuid4())}).status_code == 400
         assert client.get(f'/api/projects/{value["id"]}/canvas').json()['assets'] == []
@@ -308,7 +308,7 @@ def test_restart_queries_known_video_id_without_resubmitting(project):
 
 
 def test_missing_ffprobe_rejects_media_before_creating_paid_task(project, monkeypatch):
-    from museshow.media import probe
+    from opendirector.media import probe
     store, value, session, canvas = project
     config = ModelConfigs(store.repository).save('video', 'https://ark.test/api/plan/v3', 'seedance', 'private')
     item = node(canvas, value, session, 'video')
@@ -403,7 +403,7 @@ def test_rejected_generation_preserves_inputs_and_creates_no_node(project):
 def test_audio_reference_is_not_appended_to_spoken_body(project):
     store, value, session, _ = project
     asset = AssetCatalog(store).import_file(value['id'], str(uuid4()), '创作说明.md', '年轻女声，温暖。第二镜：不要合并。'.encode(), session)
-    from museshow.integrations.reference_inputs import generation_references
+    from opendirector.integrations.reference_inputs import generation_references
     prepared = generation_references(store, {'kind': 'audio', 'projectId': value['id'], 'prompt': '雨，终于停了。', 'referenceIds': [asset['id']]}, {'url': 'https://speech.test', 'modelId': 'seed-tts-2.0'})
     assert prepared['prompt'] == '雨，终于停了。' and prepared['images'] == []
 

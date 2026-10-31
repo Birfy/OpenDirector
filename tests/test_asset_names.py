@@ -1,6 +1,6 @@
 import pytest
 
-from museshow.media.filenames import with_extension
+from opendirector.media.filenames import with_extension
 
 
 @pytest.mark.parametrize(('name', 'suffix', 'expected'), [
