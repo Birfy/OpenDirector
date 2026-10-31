@@ -1103,12 +1103,12 @@
   place-items: center;
   z-index: 2;
   border-radius: 6px;
-  color: #a6a6ae;
-  background: #25252a;
+  color: var(--cw-dismiss-fg, #a6a6ae);
+  background: var(--cw-dismiss-bg, #25252a);
 }
 .cw-composer-dismiss:hover {
-  background: #45454d;
-  color: white;
+  background: var(--cw-dismiss-hover-bg, #45454d);
+  color: var(--cw-dismiss-hover-fg, white);
 }
 
 .cw-composer-window-controls {
@@ -1127,12 +1127,12 @@
   height: 24px;
   border-radius: 6px;
   padding: 0;
-  color: #a6a6ae;
-  background: #25252a;
+  color: var(--cw-dismiss-fg, #a6a6ae);
+  background: var(--cw-dismiss-bg, #25252a);
 }
 .cw-composer-window-controls button:hover {
-  background: #45454d;
-  color: white;
+  background: var(--cw-dismiss-hover-bg, #45454d);
+  color: var(--cw-dismiss-hover-fg, white);
 }
 .cw-composer-dock[data-expandable="true"]
   .cw-composer-body
@@ -1148,7 +1148,7 @@
   position: fixed;
   inset: 0;
   z-index: 48;
-  background: #0009;
+  background: var(--cw-composer-backdrop, #0009);
 }
 .cw-composer-dock[data-expanded="true"] {
   position: fixed;

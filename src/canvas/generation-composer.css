@@ -73,7 +73,9 @@
 
 .cw-composer .cw-prompt-input[data-empty="true"]::before {
   content: attr(data-placeholder);
-  color: #7f828d;
+  /* The empty-prompt hint is drawn by ::before, not ::placeholder, so it needs
+     the themeable colour here. */
+  color: var(--cw-prompt-hint, #7f828d);
   pointer-events: none;
 }
 

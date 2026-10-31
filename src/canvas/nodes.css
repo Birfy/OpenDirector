@@ -92,7 +92,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #202124;
+  /* Empty media wells stay dark in the default theme; the light theme
+     overrides this so a new node does not read as a hole in the canvas. */
+  background: var(--cw-media-well, #202124);
 }
 .cw-image-preview,
 .cw-video-preview {
@@ -106,7 +108,7 @@
   user-select: none;
 }
 .cw-video-preview {
-  background: #161719;
+  background: var(--cw-media-well, #161719);
 }
 .cw-node-placeholder {
   width: 100%;
@@ -527,18 +529,18 @@
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid #ffffff0a;
+  border: 1px solid var(--cw-add-ref-border, #ffffff0a);
   border-radius: 7px;
-  background: #ffffff05;
-  color: #bfc0c9;
+  background: var(--cw-add-ref-bg, #ffffff05);
+  color: var(--cw-add-ref-fg, #bfc0c9);
 }
 .cw-add-reference span {
   font-size: 10px;
-  color: #898b96;
+  color: var(--cw-add-ref-span, #898b96);
 }
 .cw-add-reference:hover {
-  border-color: #c2c1d0;
-  background: #37383e;
+  border-color: var(--cw-add-ref-hover-border, #c2c1d0);
+  background: var(--cw-add-ref-hover-bg, #37383e);
 }
 .cw-reference-chip {
   position: relative;
@@ -703,8 +705,8 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #f0eff6;
-  color: #25252c;
+  background: var(--cw-run-active-bg, #f0eff6);
+  color: var(--cw-run-active-fg, #25252c);
   transition:
     background 0.15s,
     transform 0.15s;
@@ -714,8 +716,8 @@
   transform: translateY(-1px);
 }
 .cw-run-button:disabled {
-  background: #494a54;
-  color: #888a96;
+  background: var(--cw-run-bg, #494a54);
+  color: var(--cw-run-fg, #888a96);
   transform: none;
 }
 .cw-run-button-cancel {
@@ -1133,8 +1135,11 @@
 }
 
 .cw-node-empty:not(.cw-node-timeline):not(.cw-node-group):not(.cw-node-stack) {
-  background: linear-gradient(135deg, #202020, #171717);
-  border-color: #ffffff12;
+  /* A node with no media yet. The gradient is what paints the well, so it
+     must be themeable: an unthemed dark gradient reads as a hole on the
+     light canvas. */
+  background: var(--cw-node-empty-background, linear-gradient(135deg, #202020, #171717));
+  border-color: var(--cw-node-empty-border, #ffffff12);
   border-radius: var(--cw-node-radius);
 }
 .cw-node-empty .cw-placeholder-symbol {
