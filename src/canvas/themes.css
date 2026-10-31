@@ -326,6 +326,14 @@
 :root[data-theme="light"] .cw-connection-preview {
   stroke: #597db6;
 }
+:root[data-theme="light"] .cw-connection-preview.is-invalid {
+  stroke: #b94040;
+}
+:root[data-theme="light"] .cw-workspace .cw-reference-port {
+  border-color: #3d6bd6;
+  color: #3d6bd6;
+  background: transparent;
+}
 :root[data-theme="light"] .cw-reference-edge {
   color: #8998b1;
 }

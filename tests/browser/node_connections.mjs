@@ -199,7 +199,64 @@ try {
         await port.waitFor();
         return port;
       };
+      if (kind === "image" && targetKind === "subject") {
+        for (const theme of ["light", "dark"]) {
+          await page.evaluate((theme) => {
+            document.documentElement.dataset.theme = theme;
+          }, theme);
+          const port = await showPort();
+          const palette = await port.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              color: style.color,
+              border: style.borderTopColor,
+              background: style.backgroundColor,
+            };
+          });
+          assert.equal(
+            palette.color,
+            theme === "light" ? "rgb(61, 107, 214)" : "rgb(255, 255, 255)",
+          );
+          assert.equal(palette.border, palette.color);
+          assert.equal(palette.background, "rgba(0, 0, 0, 0)");
+          const bounds = await port.boundingBox();
+          await page.mouse.move(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          );
+          await page.mouse.down();
+          await page.mouse.move(bounds.x + 160, bounds.y + 100, { steps: 8 });
+          const motion = page.locator(
+            ".cw-interaction-overlay .cw-edge-comet-1",
+          );
+          await motion.waitFor();
+          const offset = await motion.evaluate(
+            (element) => getComputedStyle(element).strokeDashoffset,
+          );
+          await page.waitForTimeout(200);
+          assert.notEqual(
+            await motion.evaluate(
+              (element) => getComputedStyle(element).strokeDashoffset,
+            ),
+            offset,
+          );
+          await page.emulateMedia({ reducedMotion: "reduce" });
+          assert.equal(
+            await motion
+              .locator("..")
+              .evaluate((element) => getComputedStyle(element).display),
+            "none",
+          );
+          await page.emulateMedia({ reducedMotion: "no-preference" });
+          await page.keyboard.press("Escape");
+          await page.mouse.up();
+          assert.equal(await motion.count(), 0);
+        }
+      }
       await (await showPort()).click();
+      await page
+        .locator('[data-testid="pending-connection"] .cw-edge-comet-1')
+        .waitFor({ state: "attached" });
       for (const [type, name] of Object.entries(names))
         assert.equal(
           await page.getByRole("menuitem", { name, exact: true }).isEnabled(),
@@ -215,6 +272,10 @@ try {
       await page.mouse.move(tr.x + tr.width / 2, tr.y + tr.height / 2, {
         steps: 15,
       });
+      assert.equal(
+        await page.locator(".cw-interaction-overlay .cw-edge-motion").count(),
+        accepted ? 1 : 0,
+      );
       await page.mouse.up();
       const count = accepted ? 1 : 0;
       await page.waitForFunction(

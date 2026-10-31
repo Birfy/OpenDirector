@@ -28,6 +28,39 @@ function pathEnds(path: string) {
   return [numbers[0], numbers[1], numbers[end - 2], numbers[end - 1]];
 }
 
+function EdgeMotion({ path }: { path: string }) {
+  return (
+    <g className="cw-edge-motion" aria-hidden="true">
+      {/* Concentric segments form the same moving spindle on every path. */}
+      <path className="cw-edge-comet-glow" d={path} pathLength={100} />
+      <path className="cw-edge-comet-1" d={path} pathLength={100} />
+      <path className="cw-edge-comet-2" d={path} pathLength={100} />
+      <path className="cw-edge-comet-3" d={path} pathLength={100} />
+      <path className="cw-edge-comet-4" d={path} pathLength={100} />
+      <path className="cw-edge-comet-5" d={path} pathLength={100} />
+      <path className="cw-edge-comet-6" d={path} pathLength={100} />
+    </g>
+  );
+}
+
+export function CanvasConnectionPreview({
+  path,
+  invalid = false,
+}: {
+  path: string;
+  invalid?: boolean;
+}) {
+  return (
+    <g className={`cw-connection ${invalid ? "is-invalid" : ""}`}>
+      <path
+        className={`cw-connection-preview ${invalid ? "is-invalid" : ""}`}
+        d={path}
+      />
+      {!invalid && <EdgeMotion path={path} />}
+    </g>
+  );
+}
+
 export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
   const path =
     props.data?.sourceBounds && props.data.targetBounds
@@ -68,19 +101,7 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
         interactionWidth={24}
         style={ends ? { stroke: `url(#${fade})` } : undefined}
       />
-      {emphasized && (
-        <g className="cw-edge-motion" aria-hidden="true">
-          {/* Nested segments of decreasing length and increasing width
-              share one centre, drawing a spindle that tapers at both ends. */}
-          <path className="cw-edge-comet-glow" d={path} pathLength={100} />
-          <path className="cw-edge-comet-1" d={path} pathLength={100} />
-          <path className="cw-edge-comet-2" d={path} pathLength={100} />
-          <path className="cw-edge-comet-3" d={path} pathLength={100} />
-          <path className="cw-edge-comet-4" d={path} pathLength={100} />
-          <path className="cw-edge-comet-5" d={path} pathLength={100} />
-          <path className="cw-edge-comet-6" d={path} pathLength={100} />
-        </g>
-      )}
+      {emphasized && <EdgeMotion path={path} />}
     </g>
   );
 }
@@ -95,9 +116,9 @@ export function CanvasConnectionLine(props: ConnectionLineComponentProps) {
     targetPosition: props.toPosition,
   });
   return (
-    <path
-      className={`cw-connection-preview ${props.connectionStatus === "invalid" ? "is-invalid" : ""}`}
-      d={path}
+    <CanvasConnectionPreview
+      path={path}
+      invalid={props.connectionStatus === "invalid"}
     />
   );
 }
@@ -144,7 +165,7 @@ export function CanvasInteractionOverlay({
         ))}
         {pending && (
           <g data-testid="pending-connection">
-            <path className="cw-connection-preview" d={path} />
+            <CanvasConnectionPreview path={path!} />
             <circle
               className="cw-connection-endpoint"
               cx={pending.to.x}

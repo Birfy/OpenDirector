@@ -38,6 +38,7 @@ import {
 import {
   CanvasReferenceEdge,
   CanvasConnectionLine,
+  CanvasConnectionPreview,
   CanvasInteractionOverlay,
 } from "./CanvasConnections";
 import { alignNodes, type Alignment } from "./snapping";
@@ -4530,9 +4531,13 @@ function Workspace() {
             <ViewportPortal>
               {references.preview && (
                 <svg className="cw-interaction-overlay">
-                  <path
-                    className={`cw-connection-preview ${references.targetId && actions.referenceTargetState(references.targetId) === "invalid" ? "is-invalid" : ""}`}
-                    d={references.preview}
+                  <CanvasConnectionPreview
+                    path={references.preview}
+                    invalid={Boolean(
+                      references.targetId &&
+                      actions.referenceTargetState(references.targetId) ===
+                        "invalid",
+                    )}
                   />
                 </svg>
               )}
