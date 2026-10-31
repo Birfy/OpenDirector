@@ -67,9 +67,16 @@ class ModelConfigs:
             value = read_json(self.path)
             if value["version"] != 1 or not isinstance(value["models"], list):
                 raise ValueError()
+            services = value.get('services', {})
+            if not isinstance(services, dict) or any(set(service) != {'url', 'apiKey', 'connectionType', 'authMode'} for service in services.values()):
+                raise ValueError()
+            for item in value['models']:
+                if 'providerId' in item:
+                    identifier(item['providerId'])
+                    item.update(services[item['providerId']])
             seen = set()
             for item in value["models"]:
-                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'videoAdapter', 'videoCapabilities'}:
+                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'videoAdapter', 'videoCapabilities', 'providerId'}:
                     raise ValueError()
                 identifier(item["id"])
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
@@ -91,7 +98,7 @@ class ModelConfigs:
 
     @staticmethod
     def _public(item: dict) -> dict:
-        return {**{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities")}, 'inputRules': input_rules(item)}
+        return {**({'providerId': item['providerId']} if 'providerId' in item else {}), **{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities")}, 'inputRules': input_rules(item)}
 
     def list(self) -> list[dict]:
         with self.lock:
@@ -140,7 +147,12 @@ class ModelConfigs:
                 models[models.index(existing)] = item
             else:
                 models.append(item)
-            write_json(self.path, {"version": 1, "models": models})
+            if existing and 'providerId' in existing:
+                item['providerId'] = existing['providerId']
+                for peer in models:
+                    if peer.get('providerId') == item['providerId']:
+                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode')})
+            self._write(models)
             return self._public(item)
 
     def delete(self, config_id: str) -> None:
@@ -149,4 +161,71 @@ class ModelConfigs:
             remaining = [item for item in models if item["id"] != config_id]
             if len(remaining) == len(models):
                 raise ProjectError("模型配置已被删除，请重新加载。", 404)
-            write_json(self.path, {"version": 1, "models": remaining})
+            self._write(remaining)
+
+    def _write(self, models: list[dict]) -> None:
+        services = {}
+        stored = []
+        for model in models:
+            item = dict(model)
+            if 'providerId' in item:
+                services[item['providerId']] = {key: item.pop(key) for key in ('url', 'apiKey', 'connectionType', 'authMode')}
+            stored.append(item)
+        write_json(self.path, {'version': 1, 'models': stored, 'services': services})
+
+    def save_many(self, kind: str, url: str, model_ids: list[str], api_key: str,
+                  config_id: str | None = None, *, connection_type='api', protocol=None,
+                  auth_mode=None, video_adapter=None, video_capabilities=None) -> list[dict]:
+        if kind not in MODEL_KINDS or not 1 <= len(model_ids) <= 200:
+            raise ProjectError('请选择 1—200 个模型。')
+        connection = connection_fields(kind, connection_type, protocol, auth_mode)
+        fields = [model_fields(url, model_id, api_key) for model_id in model_ids]
+        if len({item['modelId'] for item in fields}) != len(fields):
+            raise ProjectError('模型列表不能重复。')
+        with self.lock:
+            models = self._read()
+            existing = next((item for item in models if item['id'] == config_id), None)
+            if config_id and not existing:
+                raise ProjectError('模型配置已被删除，请重新加载。', 404)
+            legacy_segmentation = existing and existing['kind'] == 'vision' and kind in {'image', 'video'}
+            if existing and existing['kind'] != kind and not legacy_segmentation:
+                raise ProjectError('不能修改模型所属类别。')
+            key = api_key.strip()
+            if connection['authMode'] == 'none':
+                key = ''
+            elif not key:
+                if not existing or existing['url'] != fields[0]['url'] or not existing['apiKey']:
+                    raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
+                key = existing['apiKey']
+            provider_id = existing.get('providerId', existing['id']) if existing else str(uuid4())
+            previous = [item for item in models if item.get('providerId') == provider_id or item['id'] == config_id]
+            peers = {item['modelId']: item for item in previous}
+            saved = []
+            for field in fields:
+                old = peers.get(field['modelId'])
+                if old is None and len(previous) == 1 and len(fields) == 1:
+                    old = existing
+                item = {'id': old['id'] if old else str(uuid4()), 'kind': kind, **field, **connection,
+                        'apiKey': key, 'providerId': provider_id, 'videoAdapter': video_adapter or 'auto'}
+                item['videoCapabilities'] = check_video_config(kind, connection['protocol'], item['videoAdapter'], video_capabilities)
+                profile = input_rules(item)['profile']
+                if item['videoCapabilities'] is not None and profile in {'fasth3-omni', 'vllm-omni-h3'}:
+                    check_video_config(kind, 'vllm_omni', 'fasth3' if profile == 'fasth3-omni' else 'minimax_h3', item['videoCapabilities'])
+                saved.append(item)
+            remaining = [item for item in models if item not in previous]
+            for item in remaining:
+                if item.get('providerId') == provider_id:
+                    item.update(url=fields[0]['url'], apiKey=key, connectionType=connection['connectionType'], authMode=connection['authMode'])
+            self._write(remaining + saved)
+            return [self._public(item) for item in saved]
+
+    def delete_service(self, config_id: str) -> None:
+        with self.lock:
+            models = self._read()
+            existing = next((item for item in models if item['id'] == config_id), None)
+            if existing is None:
+                raise ProjectError('服务配置已被删除，请重新加载。', 404)
+            provider_id = existing.get('providerId')
+            remaining = [item for item in models if item['id'] != config_id
+                         and not (provider_id and item.get('providerId') == provider_id and item['kind'] == existing['kind'])]
+            self._write(remaining)

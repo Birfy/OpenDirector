@@ -64,6 +64,7 @@ export function VideoCapabilitiesEditor({
             <div className="cw-output-spec-heading">
               <strong>输出规格 {index + 1}</strong>
               <button
+                className="cw-settings-button"
                 type="button"
                 disabled={value.outputs.length === 1}
                 onClick={() =>
@@ -132,6 +133,7 @@ export function VideoCapabilitiesEditor({
           </div>
         ))}
         <button
+          className="cw-settings-button"
           type="button"
           disabled={value.outputs.length >= 20}
           onClick={() =>

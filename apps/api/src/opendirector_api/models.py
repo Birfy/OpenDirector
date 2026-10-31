@@ -295,12 +295,29 @@ class ModelConfigInput(ModelConnection):
     videoCapabilities: VideoCapabilities | None = None
 
 
+class ModelBatchInput(ModelConfigInput):
+    modelId: str = ""
+    modelIds: list[str] = Field(min_length=1, max_length=200)
+    configId: UUID | None = None
+
+
+class ModelDiscoveryRequest(ModelConfigInput):
+    modelId: str = Field(default="", max_length=200)
+    configId: UUID | None = None
+
+
+class AgentModelTest(ModelConfigInput):
+    kind: Literal["agent"] = "agent"
+    configId: UUID | None = None
+
+
 class ModelCapabilityRequest(ModelConfigInput):
     configId: UUID | None = None
     source: Literal['preset', 'service'] = 'preset'
 
 
 class ModelConfigPublic(ModelConnection):
+    providerId: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     videoAdapter: VideoAdapter = 'auto'
     videoCapabilities: VideoCapabilities | None = None
     inputRules: dict = Field(default_factory=dict)

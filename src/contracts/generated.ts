@@ -636,6 +636,7 @@ export interface MediaMetadataInput extends ContractInput {
 
 export interface ModelConfigPublicInput extends ModelConnectionInput {
   readonly id: string;
+  readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
 }
 

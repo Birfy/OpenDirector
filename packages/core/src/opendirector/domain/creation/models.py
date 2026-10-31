@@ -100,6 +100,7 @@ class ModelConnection(Contract):
 class ModelConfigPublic(ModelConnection):
     """Application-level, never embedded in an editable project's credential data."""
     id: UUID
+    providerId: UUID | None = Field(default=None, exclude=True)
     inputRules: InputRules
 
 

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -29,7 +30,7 @@ from opendirector_api.workspace import workspace_routes
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.infrastructure.model_configs import connection_fields, model_fields
 from opendirector.domain.input_rules import input_rules
-from opendirector.integrations.model_capabilities import read_video_capabilities
+from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
 from opendirector.infrastructure.canvas_versions import apply_version, node_history
 from opendirector_api.models import ReferenceSourceBind, ApplyCanvasVersion
 from opendirector_api.models import AssetBatchDelete, AssetSelection
@@ -39,7 +40,8 @@ from opendirector_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRe
 from opendirector_api.models import ProjectFromMessage
 from opendirector_api.models import ToolTaskCreate, ToolPlacement, ImageSelectionCreate
 from opendirector_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
-from opendirector_api.models import ModelCapabilityRequest
+from opendirector_api.models import AgentModelTest, ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput
+from opendirector.integrations.chat_completions import chat_payload
 
 
 async def asset_bytes(request: Request) -> bytes:
@@ -132,6 +134,53 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.patch('/api/settings', response_model=GeneralSettings)
     def update_settings(value: GeneralSettingsPatch):
         return generation.settings.update(value.model_dump())
+
+    @app.delete('/api/model-services/{config_id}', status_code=204)
+    def delete_model_service(config_id: UUID):
+        model_configs.delete_service(str(config_id))
+
+    @app.post('/api/model-configs/batch', response_model=list[ModelConfigPublic])
+    def save_model_batch(value: ModelBatchInput):
+        return model_configs.save_many(value.kind, value.url, value.modelIds, value.apiKey.get_secret_value(),
+                                       str(value.configId) if value.configId else None, connection_type=value.connectionType,
+                                       protocol=value.protocol, auth_mode=value.authMode, video_adapter=value.videoAdapter,
+                                       video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None)
+
+    @app.post('/api/model-configs/discover')
+    async def discover_models(value: ModelDiscoveryRequest):
+        config = {**model_fields(value.url, value.modelId or 'discovery', value.apiKey.get_secret_value()),
+                  'kind': value.kind, **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode)}
+        if config['authMode'] == 'bearer' and not config['apiKey']:
+            existing = await run_in_threadpool(model_configs.resolve, str(value.configId), value.kind) if value.configId else None
+            if not existing or existing['url'] != config['url'] or not existing['apiKey']:
+                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
+            config['apiKey'] = existing['apiKey']
+        models = await read_service_models(config)
+        return {'models': list(dict.fromkeys(item['id'] for item in models))}
+
+    @app.post('/api/model-configs/test-agent')
+    async def test_agent_model(value: AgentModelTest):
+        config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': 'agent',
+                  **connection_fields('agent', value.connectionType, value.protocol, value.authMode)}
+        if config['authMode'] == 'bearer' and not config['apiKey']:
+            existing = await run_in_threadpool(model_configs.agent, str(value.configId)) if value.configId else None
+            if not existing or existing['url'] != config['url'] or not existing['apiKey']:
+                raise ProjectError('请填写该服务的 API Key；新地址不能复用原地址的密钥。')
+            config['apiKey'] = existing['apiKey']
+        payload = chat_payload(config, [{'role': 'user', 'content': 'Reply with OK only.'}], 'auto')
+        payload['max_tokens'] = 1024
+        started = time.monotonic()
+        received = False
+        try:
+            async with asyncio.timeout(30):
+                async for event in chat.provider.stream(config, payload):
+                    if event['type'] == 'delta' and event['text'].strip():
+                        received = True
+        except TimeoutError:
+            raise ProjectError('测试超时（30 秒），请检查服务地址及模型状态。', 504) from None
+        if not received:
+            raise ProjectError('模型未返回正文，请检查 Chat Completions 兼容性。', 502)
+        return {'elapsedMs': round((time.monotonic() - started) * 1000)}
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):

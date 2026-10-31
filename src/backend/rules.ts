@@ -37,6 +37,7 @@ export interface InputRules {
 }
 
 export interface ModelConfig {
+  providerId?: string | null;
   id: string;
   kind: ModelKind;
   url: string;
