@@ -46,6 +46,7 @@ export interface ChatReferenceEditorHandle {
   focus: () => void;
   openPicker: () => void;
   caret: () => Caret;
+  removeSource: (nodeId: string) => boolean;
   insert: (
     assets: ChatAsset[],
     range?: Caret,
@@ -493,6 +494,29 @@ export function ChatReferenceEditor({
     focus,
     caret,
     insert,
+    removeSource: (nodeId) => {
+      if (disabled || referencesDisabled || choosing.current) return false;
+      const at = caret();
+      const removed: number[] = [];
+      let offset = 0;
+      const next = current.current.filter((part) => {
+        const remove =
+          part.type === "reference" &&
+          part.binding !== "asset" &&
+          part.nodeId === nodeId;
+        if (remove) removed.push(offset);
+        offset += part.type === "text" ? part.text.length : 1;
+        return !remove;
+      });
+      if (!removed.length) return false;
+      const position = (point: number) =>
+        point - removed.filter((index) => index < point).length;
+      const nextCaret = { start: position(at.start), end: position(at.end) };
+      if (!publish(next, nextCaret)) return false;
+      close();
+      focus(nextCaret);
+      return true;
+    },
     openPicker: () => {
       if (rangeRef.current) {
         close();

@@ -11,6 +11,7 @@ export function composerPopoverPlacement(
   composer: Rect,
   size: { width: number; height: number },
   viewport: Rect,
+  placement: "outside-composer" | "above-anchor" = "outside-composer",
 ) {
   const margin = 12;
   const gap = 8;
@@ -20,6 +21,25 @@ export function composerPopoverPlacement(
   const bottomEdge = viewport.bottom - margin;
   const maxWidth = Math.max(0, rightEdge - leftEdge);
   const availableHeight = Math.max(0, bottomEdge - topEdge);
+  if (placement === "above-anchor") {
+    const maxHeight = Math.max(
+      0,
+      Math.min(availableHeight, anchor.top - gap - topEdge),
+    );
+    const height = Math.min(size.height, maxHeight);
+    const width = Math.min(size.width, maxWidth);
+    return {
+      left: Math.round(
+        Math.max(
+          leftEdge,
+          Math.min((anchor.left + anchor.right - width) / 2, rightEdge - width),
+        ),
+      ),
+      top: Math.round(Math.max(topEdge, anchor.top - gap - height)),
+      maxWidth,
+      maxHeight,
+    };
+  }
   const above = Math.max(0, composer.top - gap - topEdge);
   const below = Math.max(0, bottomEdge - composer.bottom - gap);
   const placeAbove = size.height <= above || above >= below;

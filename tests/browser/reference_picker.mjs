@@ -47,7 +47,8 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGNsYGhgIAUwkaR6VMOohiGlAQBCPQEgiSD+iQAAAABJRU5ErkJggg==",
   "base64",
 );
-for (let index = 0; index < 2; index++) {
+for (let index = 0; index < 3; index++) {
+  const name = index < 2 ? "女王.jpg.jpg" : "后台未上画布.png";
   const handle = crypto.randomUUID();
   const upload = await fetch(
     `${api}/api/creation/projects/${projectId}/uploads/${handle}`,
@@ -56,7 +57,7 @@ for (let index = 0; index < 2; index++) {
       headers: {
         ...headers,
         "Content-Type": "application/octet-stream",
-        "X-Asset-Name": encodeURIComponent("女王.jpg.jpg"),
+        "X-Asset-Name": encodeURIComponent(name),
         "X-Asset-Kind": "image",
       },
       body: png,
@@ -65,9 +66,51 @@ for (let index = 0; index < 2; index++) {
   assert.ok(upload.ok, await upload.text());
   await command("asset.import", {
     uploadHandle: handle,
-    name: "女王.jpg.jpg",
+    name,
     expectedKind: "image",
   });
+}
+const initial = await call(`/api/creation/projects/${projectId}`);
+const sourceIds = [];
+for (let index = 0; index < 3; index++) {
+  const asset = initial.assets[index < 2 ? index : 0];
+  const id = crypto.randomUUID();
+  await command("canvas.show", {
+    item: {
+      id,
+      projectId,
+      kind: "image",
+      title: index < 2 ? "女王.jpg.jpg" : "隐藏来源副本.jpg.jpg",
+      visible: index < 2,
+      position: { x: 150 + index * 210, y: 150 },
+      width: 160,
+      height: 160,
+      binding: {
+        role: "material",
+        objectRef: {
+          assetId: asset.id,
+          revision: asset.revision,
+          fingerprint: asset.fingerprint,
+          kind: asset.kind,
+        },
+      },
+    },
+  });
+  if (index < 2) sourceIds.push(id);
+  else {
+    const snapshot = await call(`/api/creation/projects/${projectId}`);
+    const item = snapshot.canvasItems.find((item) => item.id === id);
+    const result = await call(`/api/creation/projects/${projectId}/commands`, {
+      commandId: crypto.randomUUID(),
+      projectId,
+      type: "canvas.hide",
+      expectedVersions: [
+        { objectType: "canvas_item", id, revision: item.revision },
+      ],
+      payload: { itemId: id },
+    });
+    assert.equal(result.status, "applied", JSON.stringify(result));
+  }
 }
 await call(`/api/creation/sessions/${seedSession}`, null, "DELETE");
 const browser = await chromium.launch({
@@ -128,14 +171,19 @@ try {
     assert.equal(await caret(), 2);
     await opened();
     await picker
-      .getByRole("option", { name: "女王.jpg 项目素材", exact: true })
+      .getByRole("option", { name: "女王.jpg 图片 · 画布素材", exact: true })
       .first()
       .waitFor();
     assert.equal(
       await picker
-        .getByRole("option", { name: "女王.jpg 项目素材", exact: true })
+        .getByRole("option", { name: "女王.jpg 图片 · 画布素材", exact: true })
         .count(),
       2,
+    );
+    assert.equal(
+      await picker.getByRole("option").count(),
+      2,
+      "Only the two independent visible sources belong in this picker",
     );
     assert.equal(
       await picker.getByText("女王.jpg.jpg", { exact: true }).count(),
@@ -192,6 +240,24 @@ try {
     const reference = await editor
       .locator("[data-reference]")
       .getAttribute("data-reference");
+    assert.equal(JSON.parse(reference).nodeId, sourceIds[0]);
+    await page.locator(`.react-flow__edge[data-id]`).first().waitFor();
+    const sizes = await editor.evaluate((element) => {
+      const input = getComputedStyle(element);
+      const chip = element.querySelector("[data-reference]");
+      const thumbnail = chip.querySelector("img");
+      return {
+        font: input.fontSize,
+        sidebarFont: getComputedStyle(document.querySelector(".cw-rail-label"))
+          .fontSize,
+        lineHeight: parseFloat(input.lineHeight),
+        chipHeight: chip.getBoundingClientRect().height,
+        thumbnailHeight: thumbnail.getBoundingClientRect().height,
+      };
+    });
+    assert.equal(sizes.font, sizes.sidebarFont);
+    assert.ok(sizes.chipHeight <= sizes.lineHeight, JSON.stringify(sizes));
+    assert.ok(sizes.thumbnailHeight <= sizes.lineHeight, JSON.stringify(sizes));
     await page.getByRole("button", { name: "展开会话框", exact: true }).click();
     assert.equal(
       await editor.locator("[data-reference]").getAttribute("data-reference"),
@@ -215,8 +281,11 @@ try {
     checked.push(kind);
   }
   const snapshot = await call(`/api/creation/projects/${projectId}`);
-  assert.equal(snapshot.assets.length, 2);
-  assert.ok(snapshot.assets.every((asset) => asset.name === "女王.jpg.jpg"));
+  assert.equal(snapshot.assets.length, 3);
+  assert.equal(
+    snapshot.assets.filter((asset) => asset.name === "女王.jpg.jpg").length,
+    2,
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({

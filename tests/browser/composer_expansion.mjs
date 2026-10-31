@@ -21,7 +21,8 @@ async function call(path, body) {
   );
   return response.json();
 }
-assert.equal((await call("/api/creation-test-health")).isolated, true);
+const health = await call("/api/creation-test-health");
+assert.equal(health.isolated, true);
 const projectId = crypto.randomUUID();
 await call(`/api/creation/projects/${projectId}/commands`, {
   commandId: crypto.randomUUID(),
@@ -95,7 +96,7 @@ try {
         };
       });
       assert.ok(
-        Math.abs(size.effectiveFont - 14) < 0.1,
+        Math.abs(size.effectiveFont - 13) < 0.1,
         JSON.stringify({ percent, ...size }),
       );
       assert.ok(
@@ -116,9 +117,16 @@ try {
       const shell = element.querySelector(".cw-composer");
       const strip = body.querySelector(".cw-reference-strip");
       const scale = element.getBoundingClientRect().width / element.offsetWidth;
+      const style = getComputedStyle(input);
       return {
         width: element.getBoundingClientRect().width,
         height: element.getBoundingClientRect().height,
+        inputHeight: input.getBoundingClientRect().height / scale,
+        tenLines:
+          parseFloat(style.lineHeight) * 10 +
+          parseFloat(style.paddingTop) +
+          parseFloat(style.paddingBottom),
+        inputScrollable: input.scrollHeight > input.clientHeight,
         gap: strip
           ? (input.getBoundingClientRect().top -
               strip.querySelector("button").getBoundingClientRect().bottom) /
@@ -132,6 +140,11 @@ try {
     });
     assert.ok(compact.gap <= 12, JSON.stringify(compact));
     assert.ok(compact.bottom <= 10, JSON.stringify(compact));
+    assert.ok(
+      compact.inputHeight <= compact.tenLines + 1,
+      JSON.stringify(compact),
+    );
+    assert.equal(compact.inputScrollable, true);
     if (kind === "视频" && process.env.COMPOSER_SCREENSHOT_DIR)
       await page.screenshot({
         path: join(process.env.COMPOSER_SCREENSHOT_DIR, "composer-compact.png"),
@@ -265,7 +278,10 @@ try {
     await page.locator(".cw-composer-dock").getAttribute("data-expanded"),
     "false",
   );
-  assert.equal((await call("/api/creation-test-health")).calls.length, 0);
+  assert.equal(
+    (await call("/api/creation-test-health")).calls.length,
+    health.calls.length,
+  );
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({

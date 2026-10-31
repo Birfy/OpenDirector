@@ -9,6 +9,7 @@ export function ComposerPopover({
   label,
   onClose,
   children,
+  placement: placementMode = "outside-composer",
 }: {
   anchor: HTMLElement | null;
   composer: HTMLElement | null;
@@ -16,6 +17,7 @@ export function ComposerPopover({
   label: string;
   onClose: () => void;
   children: ReactNode;
+  placement?: "outside-composer" | "above-anchor";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -49,6 +51,7 @@ export function ComposerPopover({
           right: left + (visual?.width ?? window.innerWidth),
           bottom: top + (visual?.height ?? window.innerHeight),
         },
+        placementMode,
       );
       const next = JSON.stringify({ ...placement, scale });
       if (next !== previous) {
@@ -92,7 +95,7 @@ export function ComposerPopover({
       document.removeEventListener("pointerdown", dismiss, true);
       document.removeEventListener("keydown", escape, true);
     };
-  }, [anchor, composer]);
+  }, [anchor, composer, placementMode]);
 
   return createPortal(
     <div

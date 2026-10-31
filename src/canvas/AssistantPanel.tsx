@@ -58,6 +58,7 @@ export function AssistantPanel({
   documentTitle,
   catalog,
   nodes,
+  visibleNodes,
   selectedNodes,
   open,
   layout,
@@ -71,6 +72,7 @@ export function AssistantPanel({
   documentTitle: string;
   catalog: BackendModels;
   nodes: CanvasNode[];
+  visibleNodes: CanvasNode[];
   selectedNodes: CanvasNode[];
   open: boolean;
   layout: AssistantLayout;
@@ -252,7 +254,7 @@ export function AssistantPanel({
   };
 
   const mentionOptions = open
-    ? referenceCandidates(nodes, projectReferences.assets).map((option) => ({
+    ? referenceCandidates(visibleNodes, []).map((option) => ({
         ...option,
         disabledReason:
           option.disabledReason ||

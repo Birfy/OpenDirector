@@ -28,7 +28,10 @@ import { normalizeContent, referencePart } from "./chatReferenceContent.ts";
 
 export interface GenerationReferenceControls {
   projectId: string;
+  /** All logical sources remain available for resolving existing references. */
   nodes: CanvasNode[];
+  /** Only current canvas items are offered by the @ picker. */
+  visibleNodes: CanvasNode[];
   assets: ReferenceAsset[];
   pinned?: ReferenceAsset[];
   loading: boolean;
@@ -46,6 +49,7 @@ export interface GenerationReferenceHandle {
   openPicker: () => void;
   openUpload: () => void;
   insert: (node: CanvasNode) => void;
+  remove: (node: CanvasNode) => void;
 }
 export function GenerationReferenceEditor({
   node,
@@ -213,31 +217,12 @@ export function GenerationReferenceEditor({
     );
   };
   const options: MentionOption[] = referenceCandidates(
-    nodes,
-    library,
+    (controls?.visibleNodes ?? incoming).filter(
+      (source) => source.id !== node.id,
+    ),
+    [],
     check,
-  ).map((option) => {
-    if (!option.id.startsWith("asset:")) return option;
-    const asset = library.find((asset) => assetOptionId(asset) === option.id)!;
-    const candidate = {
-      ...node,
-      id: asset.nodeId ?? asset.id,
-      type: asset.kind as CanvasNode["type"],
-      data: {
-        kind: asset.kind as CanvasNode["type"],
-        title: asset.name,
-        prompt: "",
-        src: "inventory",
-        text: "inventory",
-        byteSize: asset.size,
-        mediaRole: "asset" as const,
-      },
-    };
-    return {
-      ...option,
-      disabledReason: option.disabledReason ?? check(candidate),
-    };
-  });
+  );
   const adoptAsset = async (
     asset: ReferenceAsset,
     signal: AbortSignal,
@@ -312,6 +297,7 @@ export function GenerationReferenceEditor({
   useImperativeHandle(pickerRef, () => ({
     openPicker: () => editor.current?.openPicker(),
     openUpload: () => file.current?.click(),
+    remove: (source) => editor.current?.removeSource(source.id),
     insert: (source) => {
       const reason = check(source);
       if (reason) {
@@ -563,7 +549,8 @@ export function GenerationReferenceEditor({
             assets.push(pinned);
             return [pinned];
           }
-          const option = options.find(
+          // Pasting an explicit source is independent of canvas visibility.
+          const option = referenceCandidates(nodes, library, check).find(
             (option) =>
               option.id === `node:${part.nodeId}` ||
               option.id ===

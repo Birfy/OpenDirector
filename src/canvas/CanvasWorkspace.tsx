@@ -1,6 +1,7 @@
 import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { useCanvasWheelBoundary } from "./useCanvasWheelBoundary";
 import { referenceContentCommand } from "./generationReferenceEdit.ts";
 import {
   generationContent,
@@ -625,6 +626,7 @@ function Workspace() {
   ): GenerationReferenceControls => ({
     projectId: doc.id,
     nodes: [...doc.nodes, ...(doc.hiddenNodes ?? [])],
+    visibleNodes: doc.nodes,
     assets: referenceAssets.assets,
     pinned: creationEnabled()
       ? (() => {
@@ -1653,6 +1655,7 @@ function Workspace() {
       !selectionControls,
     controlsKey: `${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
   });
+  useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -5728,6 +5731,7 @@ function Workspace() {
           documentTitle={doc.title}
           catalog={backendCatalog}
           nodes={[...doc.nodes, ...(doc.hiddenNodes ?? [])]}
+          visibleNodes={doc.nodes}
           selectedNodes={doc.nodes.filter((node) => selected.includes(node.id))}
           open={assistantOpen}
           layout={assistantLayout}

@@ -3,7 +3,8 @@
   --chat-surface: #303034;
   --chat-text: #e9e9ed;
   --input-min-height: 112px;
-  --input-max-height: 240px;
+  --prompt-line-height: 1.7;
+  --input-max-height: calc(10em * var(--prompt-line-height) + 4px);
   --composer-reference-height: 50px;
   display: flex;
   flex-direction: column;

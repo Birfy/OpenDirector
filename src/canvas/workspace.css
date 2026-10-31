@@ -10,7 +10,8 @@
     BlinkMacSystemFont,
     "PingFang SC",
     sans-serif;
-  font-size: 13px;
+  --cw-ui-font-size: 13px;
+  font-size: var(--cw-ui-font-size);
   isolation: isolate;
   --cw-surface: #202022;
   --cw-border: #ffffff10;
@@ -811,7 +812,7 @@
   transition:
     opacity 300ms ease,
     transform 300ms ease;
-  font-size: 13px;
+  font-size: var(--cw-ui-font-size);
   font-weight: 500;
   color: #a5a5a9;
   pointer-events: none;
