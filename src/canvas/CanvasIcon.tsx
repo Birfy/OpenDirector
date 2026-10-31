@@ -5,34 +5,41 @@ export interface CanvasIconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   size?: number;
 }
 
-/** Static shapes are shared across icons; viewport renders only select one. */
+/** One shape per content type, shared by creation tools, nodes and pickers. */
 const icons: Record<string, ReactNode> = {
-  "rail-text": <path d="M5 5h14M12 5v14M8 19h8M5 5v3M19 5v3" />,
-  "rail-image": (
+  text: <path d="M5 5h14M12 5v14M8 19h8M5 5v3M19 5v3" />,
+  image: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <circle cx="8" cy="8" r="1.2" />
       <path d="m3 16 6-5 5 5 3-3 4 4" />
     </>
   ),
-  "rail-video": (
+  video: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <path d="m10 8 6 4-6 4Z" />
     </>
   ),
-  "rail-audio": <path d="M3 10v4M8 5v14M13 8v8M18 3v18M23 9v6" />,
-  "rail-timeline": (
+  audio: <path d="M3 10v4M8 5v14M13 8v8M18 3v18M23 9v6" />,
+  timeline: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <path d="M3 9h18M8 3v6M15 3v6" />
     </>
   ),
-  "rail-subject": (
+  subject: (
     <>
       <rect x="3" y="2" width="18" height="20" rx="4" />
       <circle cx="12" cy="8" r="3" />
       <path d="M7 18v-1a5 5 0 0 1 10 0v1Z" />
+    </>
+  ),
+  canvas: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 3" />
+      <rect x="6" y="6" width="7" height="5" rx="1" />
+      <rect x="11" y="14" width="7" height="4" rx="1" />
     </>
   ),
   "rail-tool": (
@@ -54,31 +61,6 @@ const icons: Record<string, ReactNode> = {
     <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 3h18" />
   ),
   "rail-upload": <path d="M12 17V3m-6 6 6-6 6 6M4 17v4h16v-4" />,
-  image: (
-    <>
-      <rect x="3" y="3" width="18" height="18" rx="4" />
-      <circle cx="8" cy="8" r="1.4" />
-      <path d="m4 17 5-5 4 4 3-3 5 5" />
-    </>
-  ),
-  video: (
-    <>
-      <rect x="3" y="4" width="18" height="16" rx="4" />
-      <path d="m10 8 6 4-6 4Z" />
-    </>
-  ),
-  audio: (
-    <>
-      <path d="M9 18V5l11-2v13M9 9l11-2" />
-      <ellipse cx="6" cy="18" rx="3" ry="2.5" />
-      <ellipse cx="17" cy="16" rx="3" ry="2.5" />
-    </>
-  ),
-  text: (
-    <>
-      <path d="M4 5h16M12 5v15M8 20h8M4 5v3M20 5v3" />
-    </>
-  ),
   file: (
     <>
       <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
@@ -89,18 +71,6 @@ const icons: Record<string, ReactNode> = {
     <>
       <rect x="3" y="3" width="18" height="18" rx="3" strokeDasharray="3 3" />
       <rect x="7" y="7" width="10" height="10" rx="2" />
-    </>
-  ),
-  timeline: (
-    <>
-      <path d="M3 5h18M6 3v18M3 10h10v4H3ZM9 17h12v4H9Z" />
-      <path d="M16 8h5v6h-5Z" />
-    </>
-  ),
-  subject: (
-    <>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 22v-3a8 8 0 0 1 16 0v3M3 3h3M18 3h3M3 3v4M21 3v4" />
     </>
   ),
   stack: (
@@ -250,10 +220,23 @@ const icons: Record<string, ReactNode> = {
   ),
   hand: (
     <>
-      <path d="M8 12V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-7a2 2 0 0 1 4 0v10c0 4-3 6-7 6-2 0-4-1-5-3l-5-6a2 2 0 0 1 3-2l2 2Z" />
+      <path d="M8 12V6a1.5 1.5 0 0 1 3 0v5-7a1.5 1.5 0 0 1 3 0v7-6a1.5 1.5 0 0 1 3 0v7-3a1.5 1.5 0 0 1 3 0v6a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.5-2.7l-3.7-4.7a1.7 1.7 0 0 1 2.5-2.3L8 15" />
     </>
   ),
-  cursor: <path d="m5 3 15 10-7 1-3 7Z" />,
+  cursor: (
+    <path d="M5.5 3.5a1 1 0 0 0-1.4 1.2l4.5 16a1 1 0 0 0 1.9.1l2.6-7 7-2.6a1 1 0 0 0 .1-1.9Z" />
+  ),
+  minimap: (
+    <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Zm6-3v15m6-12v15" />
+  ),
+  connections: (
+    <>
+      <path d="m8.2 10.7 7.6-4.4m-7.6 7 7.6 4.4" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+    </>
+  ),
   fit: <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8Z" />,
   zoomIn: (
     <>

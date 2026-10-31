@@ -362,6 +362,7 @@ function IconButton({
   label,
   onClick,
   active,
+  highlighted = active,
   disabled,
   shortcut,
   tooltipSide = "top",
@@ -371,6 +372,7 @@ function IconButton({
   label: string;
   onClick: () => void;
   active?: boolean;
+  highlighted?: boolean;
   disabled?: boolean;
   shortcut?: string;
   tooltipSide?: "top" | "bottom" | "left" | "right";
@@ -378,7 +380,7 @@ function IconButton({
 }) {
   return (
     <TooltipButton
-      className={`cw-icon-button ${active ? "is-active" : ""}`}
+      className={`cw-icon-button ${highlighted ? "is-active" : ""}`}
       aria-label={label}
       label={label}
       shortcut={shortcut}
@@ -4331,24 +4333,24 @@ function Workspace() {
             label={hand ? "切换到选择工具" : "切换到抓手工具"}
             shortcut={hand ? "V" : "H"}
             tooltipDelay={0}
-            active={hand}
+            highlighted
             onClick={() => changeTool(!hand)}
           />
-          <span className="cw-vline" />
           <IconButton
-            name="map"
+            name="minimap"
             label={minimap ? "隐藏小地图" : "显示小地图"}
             tooltipDelay={0}
             active={minimap}
             onClick={() => setMinimap(!minimap)}
           />
           <IconButton
-            name="link"
+            name="connections"
             label={showEdges ? "隐藏连线" : "显示连线"}
             tooltipDelay={0}
             active={showEdges}
             onClick={() => setShowEdges(!showEdges)}
           />
+          <span className="cw-vline" />
           <TooltipButton
             className="cw-zoom-button"
             label="缩放选项"

@@ -101,6 +101,10 @@
   :is(.cw-project-name-editor input, .cw-project-name-measure) {
   color: #30343c;
 }
+:root[data-theme="light"] .cw-bottom-controls .cw-icon-button.is-active {
+  background: #edf0f5;
+  color: #30343c;
+}
 :root[data-theme="light"] .cw-project-name-editor input {
   background: transparent;
 }

@@ -1025,7 +1025,7 @@ export function ImageActionEditor({
                     }
                     onClick={() => void selection.recognize()}
                   >
-                    <CanvasIcon name="rail-subject" size={17} />
+                    <CanvasIcon name="subject" size={17} />
                   </TooltipButton>
                   <TooltipButton
                     label="快速选择：点击对象添加或移除"

@@ -263,8 +263,8 @@ function DomainCard({
           {(
             [
               ["import", "导入主体", "subject"],
-              ["canvas", "从画布选择", "link"],
-              ["assets", "从资产库选择", "folder"],
+              ["canvas", "从画布选择", "canvas"],
+              ["assets", "从资产库选择", "rail-folder"],
               ["file", "本地添加", "upload"],
             ] as const
           ).map(([source, label, icon]) => (
