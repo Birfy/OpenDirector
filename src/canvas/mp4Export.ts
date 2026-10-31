@@ -1,4 +1,5 @@
 /** A bounded frame/audio-chunk encoder shared by local composition tools. */
+import { prepareSoftwareAac } from "./softwareAac.ts";
 export interface Mp4Options {
   canvas: HTMLCanvasElement;
   duration: number;
@@ -37,11 +38,12 @@ export async function encodeMp4(options: Mp4Options): Promise<Blob> {
     throw new Error(
       "当前浏览器无法编码此尺寸的 H.264，请换用支持 WebCodecs 的浏览器或降低尺寸。",
     );
+  if (audio) await prepareSoftwareAac();
   if (
     audio &&
     !(await canEncodeAudio("aac", { sampleRate: 48000, numberOfChannels: 2 }))
   )
-    throw new Error("当前浏览器不支持 AAC 编码，无法导出带声音的 MP4。");
+    throw new Error("无法初始化 AAC 音频编码，请重新打开页面后重试。");
   signal.throwIfAborted();
   const target = new BufferTarget();
   const output = new Output({
