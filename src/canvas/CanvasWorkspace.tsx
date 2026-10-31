@@ -80,7 +80,14 @@ import { CanvasIcon } from "./CanvasIcon";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
-import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
+import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
+import {
+  itemBlob,
+  itemToResource,
+  withMediaSuffix,
+  type LibraryItem,
+} from "./library/libraryClient";
+import "./library/library.css";
 import {
   connectedCreationKinds,
   referenceIssue,
@@ -171,6 +178,7 @@ import { fingerprintMatches } from "./chatReferenceContent.ts";
 import {
   errorMessage,
   assetBlob,
+  headers,
   request as apiRequest,
 } from "../backend/api.ts";
 import {
@@ -256,6 +264,7 @@ import {
   downloadFile,
   downloadFilename,
   exampleDocument,
+  fileDataUrl,
   studyImage,
 } from "./assets";
 import "@xyflow/react/dist/style.css";
@@ -458,6 +467,7 @@ function Workspace() {
     null,
   );
   const [panel, setPanel] = useState<Panel>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
   const [toolRevision, setToolRevision] = useState(0);
@@ -804,6 +814,89 @@ function Workspace() {
     referenceTarget.current = null;
     setPanel((p) => (p === value ? null : value));
     setMenu(null);
+  };
+
+  /** Copies a picked resource onto the current canvas as independent nodes. */
+  const importCanvasResource = (resource: CanvasResource) => {
+    if (subjectTarget.current) {
+      applySubjectResource(subjectTarget.current, resource);
+      return;
+    }
+    const target = referenceTarget.current;
+    const where = center();
+    const node = createNode(
+      resource.kind,
+      { x: where.x - 160, y: where.y - 140 },
+      resourceNodeData(resource),
+    );
+    const linked =
+      target && doc.nodes.some((item) => item.id === target)
+        ? referenceEdges([node.id], target, [node])
+        : { commands: [], issue: "" };
+    command({
+      type: "batch",
+      commands: [{ type: "add-nodes", nodes: [node] }, ...linked.commands],
+    });
+    setSelected([node.id]);
+    referenceTarget.current = null;
+    setPanel(null);
+    notify(`素材已复制到当前画布，可独立编辑。${linked.issue}`);
+  };
+
+  const insertLibraryItems = async (items: LibraryItem[]) => {
+    const client = creationEnabled() ? creationClient(doc.id) : null;
+    let placed = 0;
+    const issues: string[] = [];
+    for (const item of items) {
+      try {
+        const blob = await itemBlob(item);
+        const resource = itemToResource(item);
+        // The backend identifies uploads by suffix, and library items made from
+        // canvas nodes carry a bare title ("图片 1"), so complete the name.
+        const name = withMediaSuffix(
+          item.name,
+          item.metadata?.mimeType || blob.type,
+        );
+        if (client) {
+          // The library blob must become a canvas-owned asset before a node
+          // can reference it, so the copy survives independently of the library.
+          const ref = await client.importBlob(blob, name, resource.kind);
+          resource.assetId = ref.assetId;
+          resource.src = await client.mediaUrl(ref.assetId);
+        } else {
+          // Legacy projects address assets by id under /api/data, so the bytes
+          // must be uploaded there too — a blob: URL would not survive reload.
+          const assetId = crypto.randomUUID();
+          const stored = await apiRequest<{ asset: { id: string } | null }>(
+            `/data/${doc.id}/assets/${assetId}`,
+            {
+              method: "PUT",
+              headers: {
+                ...headers,
+                "Content-Type": "application/octet-stream",
+                "X-Asset-Name": encodeURIComponent(name),
+              },
+              body: blob,
+            },
+          );
+          const storedId = stored.asset?.id ?? assetId;
+          resource.assetId = storedId;
+          // Legacy canvases persist media inline as a data: URL (see
+          // fileDataUrl); a blob: URL would not survive a reload.
+          resource.src = await fileDataUrl(
+            new File([blob], name, {
+              type: item.metadata?.mimeType || blob.type,
+            }),
+          );
+        }
+        importCanvasResource(resource);
+        placed += 1;
+      } catch (reason) {
+        issues.push(`${item.name}：${String(reason)}`);
+      }
+    }
+    if (!placed) throw new Error(issues.join("；") || "没有素材可以放入画布。");
+    if (issues.length) notify(`部分素材未能放入画布：${issues.join("；")}`);
   };
 
   const persist = useCallback((snapshot: CanvasDocument): Promise<boolean> => {
@@ -3595,7 +3688,7 @@ function Workspace() {
       }
       referenceTarget.current = null;
       subjectTarget.current = id;
-      setPanel("assets");
+      setLibraryOpen(true);
     },
     select: (id: string, event: React.MouseEvent) => {
       if (pointerGesture.current.blocksClick(event.detail)) return;
@@ -4282,8 +4375,8 @@ function Workspace() {
             label: "资产库",
             preserveCollapsedOnFocusRestore: true,
             separatorBefore: true,
-            active: panel === "assets",
-            onClick: () => togglePanel("assets"),
+            active: libraryOpen,
+            onClick: () => setLibraryOpen(true),
           },
           {
             name: "upload",
@@ -4918,7 +5011,7 @@ function Workspace() {
                 onPickReference={() => {
                   setExpandedComposerId(null);
                   referenceTarget.current = composerNode.id;
-                  setPanel("assets");
+                  setLibraryOpen(true);
                 }}
                 running={generationByNode.has(composerNode.id)}
               />
@@ -4943,7 +5036,7 @@ function Workspace() {
                 onPickReference={() => {
                   setExpandedComposerId(null);
                   referenceTarget.current = composerNode.id;
-                  setPanel("assets");
+                  setLibraryOpen(true);
                 }}
                 running={generationByNode.has(composerNode.id)}
                 backendModels={backendCatalog.models}
@@ -4974,7 +5067,7 @@ function Workspace() {
           onAssets={() => {
             referenceTarget.current = null;
             setAssistantOpen(false);
-            setPanel("assets");
+            setLibraryOpen(true);
           }}
           onUpload={() => openFilePicker()}
           onPaste={() => paste()}
@@ -5136,7 +5229,7 @@ function Workspace() {
                   : undefined
               }
               onCreate={(kind) => addNode(kind, menu.world)}
-              onAssets={() => setPanel("assets")}
+              onAssets={() => setLibraryOpen(true)}
               onUpload={() => openFilePicker()}
             />
           ),
@@ -5267,38 +5360,13 @@ function Workspace() {
                     </button>
                   ))}
               </div>
-              <ProjectAssetLibrary
-                key={doc.id}
-                currentId={doc.id}
-                onImport={(resource) => {
-                  if (subjectTarget.current) {
-                    applySubjectResource(subjectTarget.current, resource);
-                    return;
-                  }
-                  const target = referenceTarget.current;
-                  const where = center();
-                  const node = createNode(
-                    resource.kind,
-                    { x: where.x - 160, y: where.y - 140 },
-                    resourceNodeData(resource),
-                  );
-                  const linked =
-                    target && doc.nodes.some((item) => item.id === target)
-                      ? referenceEdges([node.id], target, [node])
-                      : { commands: [], issue: "" };
-                  command({
-                    type: "batch",
-                    commands: [
-                      { type: "add-nodes", nodes: [node] },
-                      ...linked.commands,
-                    ],
-                  });
-                  setSelected([node.id]);
-                  referenceTarget.current = null;
-                  setPanel(null);
-                  notify(`素材已复制到当前画布，可独立编辑。${linked.issue}`);
-                }}
-              />
+              <button
+                className="cw-wide-button"
+                onClick={() => setLibraryOpen(true)}
+              >
+                <CanvasIcon name="folder" />
+                打开资产库
+              </button>
               <h3>原创示例素材</h3>
               <div className="cw-asset-grid">
                 {["青山", "暮色", "远湖"].map((title, i) => (
@@ -6044,6 +6112,18 @@ function Workspace() {
   return (
     <>
       {workspace}
+      {libraryOpen && (
+        <AssetLibraryDialog
+          currentId={doc.id}
+          onClose={() => {
+            setLibraryOpen(false);
+            referenceTarget.current = null;
+            subjectTarget.current = null;
+          }}
+          onImport={importCanvasResource}
+          onInsert={insertLibraryItems}
+        />
+      )}
       {(!ready || switching) && (
         <div className="canvas-loading-screen" role="status">
           {initializationError ? (
