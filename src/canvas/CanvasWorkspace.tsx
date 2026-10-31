@@ -454,6 +454,9 @@ function Workspace() {
   const [dismissedComposer, setDismissedComposer] = useState<string | null>(
     null,
   );
+  const [expandedComposerId, setExpandedComposerId] = useState<string | null>(
+    null,
+  );
   const [panel, setPanel] = useState<Panel>(null);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
@@ -598,6 +601,9 @@ function Workspace() {
     if (!interacting) setComposerNodeId(single?.id ?? null);
   }, [single?.id, interacting]);
   const composerNode = doc.nodes.find((node) => node.id === composerNodeId);
+  useEffect(() => {
+    setExpandedComposerId(null);
+  }, [doc.id, composerNode?.id]);
   const composerIncoming = useMemo(
     () => incomingNodes(doc, composerNodeId),
     [doc.nodes, doc.hiddenNodes, doc.edges, composerNodeId],
@@ -1496,6 +1502,8 @@ function Workspace() {
     composerNode.id !== dismissedComposer &&
     !lockedIds.has(composerNode.id),
   );
+  const composerExpanded =
+    hasComposer && expandedComposerId === composerNode?.id;
   const hasToolbar = Boolean(
     selectionControls &&
     !activeAction &&
@@ -1533,7 +1541,9 @@ function Workspace() {
     root,
     toolbar: toolbarElement,
     composer: composerElement,
-    scaleComposer: hasComposer,
+    // Generators are screen-space UI, like the toolbar and sidebar. Only their
+    // anchor follows the selected node when the canvas zooms.
+    scaleComposer: false,
     bounds: presentationBounds,
     mediaBounds,
     preferredZoom: activeAction ? 1.5 : undefined,
@@ -1541,12 +1551,13 @@ function Workspace() {
     panel,
     focusRequest: presentationFocus,
     blocked:
+      composerExpanded ||
       interacting ||
       references.connecting ||
       spacePressed ||
       pointerGesture.current.moved ||
       !selectionControls,
-    controlsKey: `${hasComposer}:${hasToolbar}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
+    controlsKey: `${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
   });
   const flowNodes: FlowNode[] = useMemo(
     () =>
@@ -4776,93 +4787,170 @@ function Workspace() {
         </>
       )}
       {hasComposer && composerNode && (
-        <div
-          ref={composerElement}
-          className="cw-composer-dock"
-          style={{
-            ...selectionPresentation.placement?.composer,
-            width: selectionPresentation.composerWidth,
-            maxHeight: selectionPresentation.composerMaxHeight,
-            transform: selectionPresentation.composerTransform,
-          }}
-          data-interacting={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-          aria-hidden={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-          inert={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-        >
-          <TooltipButton
-            className="cw-composer-dismiss"
-            label="关闭生成面板"
-            onClick={() => {
-              setDismissedComposer(composerNode.id);
-              root.current?.focus({ preventScroll: true });
-            }}
-          >
-            <CanvasIcon name="close" size={14} />
-          </TooltipButton>
-          {composerNode.type === "text" ? (
-            <TextNodeComposer
-              key={`${composerNode.id}:${toolRevision}`}
-              node={composerNode}
-              incoming={composerIncoming}
-              referenceControls={generationReferenceControls(composerNode)}
-              models={backendCatalog.models}
-              onUpdate={(patch) =>
-                command({
-                  type: "update-node",
-                  id: composerNode.id,
-                  patch: { data: patch },
-                })
-              }
-              onRun={() => prepareGeneration(composerNode.id)}
-              onCancel={() => cancelServiceRuns(composerNode.id)}
-              onPickReference={() => {
-                referenceTarget.current = composerNode.id;
-                setPanel("assets");
+        <>
+          {composerExpanded && (
+            <div
+              className="cw-composer-backdrop"
+              aria-hidden="true"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
               }}
-              running={generationByNode.has(composerNode.id)}
-            />
-          ) : (
-            <NodeComposer
-              key={`${composerNode.id}:${toolRevision}`}
-              selectedNode={composerNode}
-              incomingNodes={composerIncoming}
-              referenceControls={generationReferenceControls(composerNode)}
-              onUpdate={(patch) =>
-                command({
-                  type: "update-node",
-                  id: composerNode.id,
-                  patch: { data: patch },
-                })
-              }
-              onRun={() => prepareGeneration(composerNode.id)}
-              onCancel={() => {
-                setGenerationTarget(null);
-                cancelServiceRuns(composerNode.id);
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpandedComposerId(null);
               }}
-              onPickReference={() => {
-                referenceTarget.current = composerNode.id;
-                setPanel("assets");
-              }}
-              running={generationByNode.has(composerNode.id)}
-              backendModels={backendCatalog.models}
             />
           )}
-        </div>
+          <div
+            ref={composerElement}
+            className="cw-composer-dock"
+            data-expandable="true"
+            data-expanded={composerExpanded}
+            role={composerExpanded ? "dialog" : undefined}
+            aria-modal={composerExpanded ? true : undefined}
+            aria-label={composerExpanded ? "展开的节点会话框" : undefined}
+            style={
+              composerExpanded
+                ? undefined
+                : {
+                    ...selectionPresentation.placement?.composer,
+                    width: selectionPresentation.composerWidth,
+                    maxHeight: selectionPresentation.composerMaxHeight,
+                    transform: selectionPresentation.composerTransform,
+                  }
+            }
+            data-interacting={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            aria-hidden={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            inert={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            onKeyDownCapture={(event) => {
+              if (!composerExpanded || event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setExpandedComposerId(null);
+                composerElement.current
+                  ?.querySelector<HTMLButtonElement>(".cw-composer-expand")
+                  ?.focus({ preventScroll: true });
+              } else if (event.key === "Tab") {
+                const controls = [
+                  ...event.currentTarget.querySelectorAll<HTMLElement>(
+                    'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[contenteditable="true"],[tabindex="0"]',
+                  ),
+                ].filter(
+                  (element) =>
+                    element.getClientRects().length &&
+                    !element.closest("[hidden],[inert]"),
+                );
+                const edge = event.shiftKey ? controls[0] : controls.at(-1);
+                if (document.activeElement === edge) {
+                  event.preventDefault();
+                  (event.shiftKey ? controls.at(-1) : controls[0])?.focus();
+                }
+              }
+            }}
+          >
+            <div className="cw-composer-window-controls">
+              <TooltipButton
+                type="button"
+                className="cw-composer-expand"
+                label={composerExpanded ? "收起会话框" : "展开会话框"}
+                aria-label={composerExpanded ? "收起会话框" : "展开会话框"}
+                aria-expanded={composerExpanded}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  setExpandedComposerId(
+                    composerExpanded ? null : composerNode.id,
+                  )
+                }
+              >
+                <CanvasIcon
+                  name={composerExpanded ? "collapse" : "expand"}
+                  size={14}
+                />
+              </TooltipButton>
+              <TooltipButton
+                className="cw-composer-dismiss"
+                label="关闭生成面板"
+                onClick={() => {
+                  setExpandedComposerId(null);
+                  setDismissedComposer(composerNode.id);
+                  root.current?.focus({ preventScroll: true });
+                }}
+              >
+                <CanvasIcon name="close" size={14} />
+              </TooltipButton>
+            </div>
+            {composerNode.type === "text" ? (
+              <TextNodeComposer
+                key={`${composerNode.id}:${toolRevision}`}
+                node={composerNode}
+                incoming={composerIncoming}
+                referenceControls={generationReferenceControls(composerNode)}
+                models={backendCatalog.models}
+                onUpdate={(patch) =>
+                  command({
+                    type: "update-node",
+                    id: composerNode.id,
+                    patch: { data: patch },
+                  })
+                }
+                onRun={() => prepareGeneration(composerNode.id)}
+                onCancel={() => cancelServiceRuns(composerNode.id)}
+                onPickReference={() => {
+                  setExpandedComposerId(null);
+                  referenceTarget.current = composerNode.id;
+                  setPanel("assets");
+                }}
+                running={generationByNode.has(composerNode.id)}
+              />
+            ) : (
+              <NodeComposer
+                key={`${composerNode.id}:${toolRevision}`}
+                selectedNode={composerNode}
+                incomingNodes={composerIncoming}
+                referenceControls={generationReferenceControls(composerNode)}
+                onUpdate={(patch) =>
+                  command({
+                    type: "update-node",
+                    id: composerNode.id,
+                    patch: { data: patch },
+                  })
+                }
+                onRun={() => prepareGeneration(composerNode.id)}
+                onCancel={() => {
+                  setGenerationTarget(null);
+                  cancelServiceRuns(composerNode.id);
+                }}
+                onPickReference={() => {
+                  setExpandedComposerId(null);
+                  referenceTarget.current = composerNode.id;
+                  setPanel("assets");
+                }}
+                running={generationByNode.has(composerNode.id)}
+                backendModels={backendCatalog.models}
+              />
+            )}
+          </div>
+        </>
       )}
 
       {menu && !menu.nodeId && !menu.connected && (

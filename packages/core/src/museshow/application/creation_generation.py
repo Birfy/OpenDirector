@@ -32,6 +32,7 @@ from museshow.infrastructure.creation_projects import directory
 from museshow.infrastructure.local_projects import child
 from museshow.integrations.fasth3 import video_parameters
 from museshow.integrations.providers import GenerationProviders
+from museshow.media.filenames import with_extension
 
 _INPUTS = ContextVar('creation_generation_inputs', default=None)
 
@@ -343,7 +344,7 @@ class CreationGeneration(Generation):
         job = self.get_job(task['projectId'], task['id'])
         handle = uuid5(job.id, 'output-upload')
         name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', task['title']).strip(' .')[:180] or job.execution.kind
-        self.assets.stage_output(job.projectId, handle, name + '.' + suffix,
+        self.assets.stage_output(job.projectId, handle, with_extension(name, suffix),
             GenerationResults(pinned, task['id']).directory / 'output', expected_kind=job.execution.kind)
         # Sibling results or user edits may advance the same spec between our
         # read and commit. Retry only registration of these already saved bytes;
@@ -365,7 +366,7 @@ class CreationGeneration(Generation):
         origin = next((i for i in before.canvasItems if i.id == job.originItemId), None)
         command = parse_command(dict(commandId=uuid5(job.id, f'register-result:{job.revision}:{spec.revision}:{origin.revision if origin else 0}'), projectId=job.projectId, type='asset.import',
             expectedVersions=[version('job', job), version('generation_spec', spec), *([version('canvas_item', origin)] if origin else [])],
-            payload=dict(uploadHandle=handle, name=name + '.' + suffix, expectedKind=job.execution.kind)))
+            payload=dict(uploadHandle=handle, name=with_extension(name, suffix), expectedKind=job.execution.kind)))
         def apply(current, asset):
             current_job = next(j for j in current.jobs if j.id == job.id)
             current_spec = next(s for s in current.generationSpecs if s.id == spec.id)

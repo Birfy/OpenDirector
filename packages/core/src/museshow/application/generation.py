@@ -30,6 +30,7 @@ from museshow.infrastructure.adoption import decision, fingerprints, node_basis,
 from museshow.integrations.providers import GenerationProviders
 from museshow.integrations.fasth3 import video_parameters, finalize_video_edit
 from museshow.integrations.generation_errors import transport_failure
+from museshow.media.filenames import with_extension
 
 
 ACTIVE = {"queued", "running"}
@@ -465,7 +466,7 @@ class Generation:
                 raise ProjectError('项目目录发生变化，结果未写入其他位置。', 409)
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', task.get('title', '')).strip(' .')[:200] or f"{task['kind']}-{task['id'][:8]}"
             existing = self._result_asset(task, directory)
-            result = existing or self.canvas.assets.import_file(task['projectId'], asset_id, f'{name}.{suffix}', data, None,
+            result = existing or self.canvas.assets.import_file(task['projectId'], asset_id, with_extension(name, suffix), data, None,
                 source='generated', generation=task, expected_kind=task['kind'])
             task['assetId'] = result['id']
             task['technicalCheck'] = self._technical_check(result)

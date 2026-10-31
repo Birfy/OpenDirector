@@ -114,13 +114,16 @@ export const EXTENSIONS: Record<string, string> = {
 };
 
 export function fileName(title: string, extension: string) {
-  const base =
+  let base =
     title
       // eslint-disable-next-line no-control-regex
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
       .trim()
       .slice(0, 80) || "素材";
-  return `${base}.${extension}`;
+  const suffix = `.${extension}`;
+  while (base.toLowerCase().endsWith(suffix.toLowerCase()))
+    base = base.slice(0, -suffix.length);
+  return `${base || "素材"}${suffix}`;
 }
 
 export async function fingerprint(blob: Blob) {

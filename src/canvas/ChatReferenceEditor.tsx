@@ -40,6 +40,7 @@ import {
   type ReferenceCategory,
 } from "./referenceMentions.ts";
 import "./reference-mentions.css";
+import { assetDisplayName } from "./assetNames.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
@@ -171,7 +172,7 @@ export function ChatReferenceEditor({
         const metadataOnly =
           asset && metadataOnlyKinds.includes(assetKind(asset));
         chip.title =
-          part.name +
+          assetDisplayName(part.name) +
           (part.binding === "asset" ? "（固定版本）" : "") +
           (metadataOnly ? "（仅传递素材信息）" : "");
         chip.querySelector("[data-reference-info]")?.remove();
@@ -218,13 +219,13 @@ export function ChatReferenceEditor({
         chip.contentEditable = "false";
         chip.dataset.reference = JSON.stringify(part);
         chip.className = "cw-chat-reference";
-        chip.setAttribute("aria-label", `参考：${part.name}`);
+        chip.setAttribute("aria-label", `参考：${assetDisplayName(part.name)}`);
         const icon = document.createElement("span");
         icon.dataset.referenceIcon = "1";
         icon.setAttribute("aria-hidden", "true");
         const label = document.createElement("span");
         label.className = "cw-chat-reference-label";
-        label.textContent = part.name;
+        label.textContent = assetDisplayName(part.name);
         chip.append(icon, label);
         fragment.append(chip);
       }
@@ -330,6 +331,22 @@ export function ChatReferenceEditor({
       setRange(null);
     } else if (dismissed.current !== next.start) open(next);
   }
+  useEffect(() => {
+    function selectionChanged() {
+      if (!root.current || document.activeElement !== root.current) return;
+      const at = selection(root.current);
+      if (
+        at &&
+        (at.start !== saved.current.start || at.end !== saved.current.end)
+      )
+        updateMention();
+    }
+    // selectionchange runs after the browser moves its native caret. A
+    // microtask from keydown still sees the previous position in Chromium.
+    document.addEventListener("selectionchange", selectionChanged);
+    return () =>
+      document.removeEventListener("selectionchange", selectionChanged);
+  }, [disabled, referencesDisabled]);
   async function choose(option: MentionOption) {
     if (
       disabled ||
@@ -660,6 +677,7 @@ export function ChatReferenceEditor({
           saved.current = caret();
         }}
         onPointerUp={() => {
+          close();
           saved.current = caret();
         }}
         onBlur={() => {
@@ -783,11 +801,7 @@ export function ChatReferenceEditor({
                 { start: end, end },
               );
             }
-          } else if (
-            event.key.startsWith("Arrow") ||
-            ["Home", "End"].includes(event.key)
-          )
-            queueMicrotask(updateMention);
+          }
         }}
         onCopy={(event) => clipboard(event, false)}
         onCut={(event) => clipboard(event, true)}

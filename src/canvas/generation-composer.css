@@ -4,12 +4,16 @@
   --chat-text: #e9e9ed;
   --input-min-height: 112px;
   --input-max-height: 240px;
-  --composer-reference-height: 60px;
+  --composer-reference-height: 50px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   max-height: inherit;
   overflow: hidden;
+}
+
+.cw-composer.cw-generation-composer {
+  padding: 10px 12px 8px;
 }
 
 /* Advanced editing cards keep their own scrolling. A generator's prompt owns
@@ -23,7 +27,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 4px;
   padding: 0;
   min-height: 0;
   overflow: hidden;
@@ -46,7 +50,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior: contain;
-  padding-bottom: 4px;
+  padding-bottom: 0;
   scrollbar-width: thin;
   scrollbar-color: #555 transparent;
 }
@@ -79,7 +83,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px;
-  padding: 8px 0 0;
+  padding: 4px 0 0;
   min-width: 0;
   min-height: 32px;
 }

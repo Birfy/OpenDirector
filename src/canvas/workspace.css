@@ -1111,6 +1111,68 @@
   color: white;
 }
 
+.cw-composer-window-controls {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.cw-composer-window-controls :is(.cw-composer-dismiss, .cw-composer-expand) {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  padding: 0;
+  color: #a6a6ae;
+  background: #25252a;
+}
+.cw-composer-window-controls button:hover {
+  background: #45454d;
+  color: white;
+}
+.cw-composer-dock[data-expandable="true"]
+  .cw-composer-body
+  > :is(.cw-reference-strip, .cw-frame-slots) {
+  width: calc(100% - 56px);
+}
+.cw-composer-dock[data-expandable="true"]
+  .cw-composer-body:not(:has(> :is(.cw-reference-strip, .cw-frame-slots)))
+  .cw-prompt-input {
+  padding-right: 68px;
+}
+.cw-composer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: #0009;
+}
+.cw-composer-dock[data-expanded="true"] {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(1440px, calc(100vw - 48px));
+  height: min(860px, calc(100dvh - 96px));
+  max-height: calc(100dvh - 32px);
+  transform: translate(-50%, -50%);
+  z-index: 49;
+}
+.cw-composer-dock[data-expanded="true"] > .cw-composer {
+  --input-max-height: none;
+  height: 100%;
+  max-height: 100%;
+}
+
+@media (max-width: 700px) {
+  .cw-composer-dock[data-expanded="true"] {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 48px);
+  }
+}
+
 .cw-composer-dock .cw-composer {
   width: 100%;
   max-width: none;

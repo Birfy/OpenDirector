@@ -1,5 +1,6 @@
 import type { CanvasNode } from "./model.ts";
 import { canSourceReference } from "./connectionPolicy.ts";
+import { assetDisplayName } from "./assetNames.ts";
 
 export const REFERENCE_CATEGORIES = [
   { id: "all", label: "全部" },
@@ -78,7 +79,7 @@ export function nodeMentionOptions(
       {
         id: node.id,
         kind: node.type as ReferenceKind,
-        title: node.data.title,
+        title: assetDisplayName(node.data.title),
         detail: `${category.label} · ${origin}`,
         thumbnail:
           node.type === "image"

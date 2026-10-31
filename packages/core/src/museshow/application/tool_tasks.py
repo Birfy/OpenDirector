@@ -19,6 +19,7 @@ from museshow.domain.projects import ProjectError, identifier
 from museshow.infrastructure.local_projects import child, read_json, write_json
 from museshow.integrations.model_adapters import adapter_for, capabilities_of
 from museshow.media import processing as media
+from museshow.media.filenames import with_extension
 
 ACTIVE = {'queued', 'running'}
 MAX_SOURCES = 20
@@ -344,10 +345,10 @@ class ToolTasks:
                     asset_id = str(uuid5(UUID(task['id']), f'output-{index}'))
                     if hasattr(self.assets, 'import_output'):
                         asset = await asyncio.to_thread(self.assets.import_output, task, asset_id,
-                                                       f'{output.title}.{output.suffix}', output.data)
+                                                       with_extension(output.title, output.suffix), output.data)
                     else:
                         asset = await asyncio.to_thread(self.assets.import_file, task['projectId'], asset_id,
-                                                        f'{output.title}.{output.suffix}', output.data, None, source='generated')
+                                                        with_extension(output.title, output.suffix), output.data, None, source='generated')
                     saved.append({name: asset.get(name) for name in ('id', 'kind', 'name', 'type', 'width', 'height', 'durationMs')}
                                  | {'title': output.title, 'canvasItemId': output_item_id(task, index, output.kind)})
                 await self._update(directory, task, status='succeeded', phase=None, outputs=saved, finishedAt=_now())

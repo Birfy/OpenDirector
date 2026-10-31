@@ -1,3 +1,7 @@
+.cw-chat-reference-editor[contenteditable="true"] {
+  cursor: text;
+}
+
 .cw-reference-mention-picker {
   --mention-surface: #252525;
   --mention-subtle: #ffffff08;
