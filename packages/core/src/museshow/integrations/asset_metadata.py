@@ -21,6 +21,25 @@ def legacy_kind(name: str, media_type: str):
             ".mp4": "video", ".mov": "video", ".webm": "video", ".wav": "audio", ".mp3": "audio"}.get(suffix, "other")
 
 
+_IMAGE_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"GIF87a", "GIF"),
+    (b"GIF89a", "GIF"),
+)
+
+
+def _guess_image(data: bytes):
+    """Return a PIL format name when the bytes start with a known header."""
+    for signature, name in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return name
+    # RIFF....WEBP
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "WEBP"
+    return None
+
+
 def inspect_asset(name: str, data: bytes) -> dict:
     suffix = PurePath(name).suffix.lower()
     if suffix in {".txt", ".md"}:
@@ -38,7 +57,22 @@ def inspect_asset(name: str, data: bytes) -> dict:
         media_type = media_types[suffix]
         return {"type": media_type, **probe(data, suffix, media_type.split("/")[0])}
     if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-        raise ProjectError("文件格式不受支持，请选择文本、图片、MP4／WebM／MOV 视频或常用音频文件。")
+        # Canvas node titles ("图片 1") reach us without an extension. When the
+        # bytes are recognisably an image, accept them rather than rejecting a
+        # valid file purely because its name has no suffix.
+        sniffed = _guess_image(data)
+        if sniffed is None:
+            raise ProjectError("文件格式不受支持，请选择文本、图片、MP4／WebM／MOV 视频或常用音频文件。")
+        try:
+            with BytesIO(data) as source, Image.open(source, formats=[sniffed]) as image:
+                if image.width * image.height > 25_000_000:
+                    raise ProjectError("图片像素总数应不超过 2500 万。", 413)
+                media_type = Image.MIME[image.format]
+                width, height = image.size
+                image.load()
+            return {"kind": "image", "type": media_type, "width": width, "height": height}
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+            raise ProjectError("文件格式不受支持，请选择文本、图片、MP4／WebM／MOV 视频或常用音频文件。") from None
     try:
         with Image.open(BytesIO(data), formats=["PNG", "JPEG", "GIF", "WEBP"]) as image:
             if image.width * image.height > 25_000_000:

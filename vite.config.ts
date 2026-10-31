@@ -19,8 +19,25 @@ const api: Record<string, ProxyOptions> = {
   },
 };
 
+// research/ and recovered/ hold byte-exact capture and decompiled evidence:
+// roughly 37,500 files that the app never imports. Watching them made the dev
+// server spend minutes crawling on startup before answering its first request.
+const evidence = [
+  "**/research/**",
+  "**/recovered/**",
+  "**/.toolchain/**",
+  "**/.venv/**",
+  "**/projects/**",
+  "**/.museshow/**",
+];
+
 export default defineConfig({
   plugins: [react()],
-  server: { host: "127.0.0.1", port: 5173, proxy: api },
+  server: {
+    host: "127.0.0.1",
+    port: 5173,
+    proxy: api,
+    watch: { ignored: evidence },
+  },
   preview: { host: "127.0.0.1", proxy: api },
 });

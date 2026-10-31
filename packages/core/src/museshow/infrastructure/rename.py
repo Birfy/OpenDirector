@@ -19,6 +19,8 @@ def rename_path(source: Path, target: Path) -> None:
         except OSError as error:
             if error.errno in {errno.ENOTEMPTY, errno.EEXIST}:
                 raise ProjectError("目标目录已存在，未覆盖任何文件。", 409) from None
+            if error.errno in {errno.EACCES, errno.EPERM}:
+                raise ProjectError("项目目录正被占用，未覆盖任何文件。", 409) from None
             raise
         return
     library = ctypes.CDLL(None, use_errno=True)

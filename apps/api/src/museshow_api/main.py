@@ -24,6 +24,7 @@ from museshow.application.chat_references import validate_chat_references
 from museshow.infrastructure.local_projects import LocalProjects
 from museshow.infrastructure.creation_projects import CreationProjects
 from museshow_api.creation import creation_routes
+from museshow_api.library import library_routes
 from museshow_api.workspace import workspace_routes
 from museshow.infrastructure.model_configs import ModelConfigs
 from museshow.infrastructure.model_configs import connection_fields, model_fields
@@ -79,6 +80,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     app = FastAPI(title="MuseShow Local API", version="0.1.0", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
+    app.include_router(library_routes(creation_projects))
     app.include_router(workspace_routes(store))
 
     @app.exception_handler(RequestValidationError)

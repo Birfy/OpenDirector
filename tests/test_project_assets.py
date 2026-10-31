@@ -23,6 +23,31 @@ def png():
     return data.getvalue()
 
 
+def test_inspect_asset_accepts_an_image_without_a_suffix():
+    """Canvas node titles ("图片 1") reach the importer without an extension.
+
+    The name must not decide validity when the bytes are a real image, or
+    copying a library item onto a canvas fails with "文件格式不受支持".
+    """
+    from museshow.integrations.asset_metadata import inspect_asset
+
+    data = png()
+    bare = inspect_asset('图片 1', data)
+    suffixed = inspect_asset('图片 1.png', data)
+    assert bare == suffixed
+    assert bare['kind'] == 'image'
+    assert bare['type'] == 'image/png'
+    assert (bare['width'], bare['height']) == (12, 8)
+
+
+def test_inspect_asset_still_rejects_non_media_without_a_suffix():
+    from museshow.domain.projects import ProjectError
+    from museshow.integrations.asset_metadata import inspect_asset
+
+    with pytest.raises(ProjectError):
+        inspect_asset('图片 2', b'this is not an image')
+
+
 @pytest.fixture
 def project_api(tmp_path):
     store = LocalProjects(tmp_path)
