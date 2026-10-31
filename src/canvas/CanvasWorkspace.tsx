@@ -74,6 +74,7 @@ import {
 } from "./textGeneration";
 import { assistantReferences } from "./assistantReferences";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
+import { NodeInfoButton } from "./NodeInfoButton";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
 import { useSelectionPresentation } from "./useSelectionPresentation";
 import { CanvasIcon } from "./CanvasIcon";
@@ -4300,6 +4301,7 @@ function Workspace() {
             }
             onRename={renameCurrentProject}
           />
+          <NodeInfoButton nodes={doc.nodes} />
           <span className="cw-save-status" title={saveStatus}>
             <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
             {saveStatus}

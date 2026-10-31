@@ -205,6 +205,18 @@
   border: 0;
   color: #30343c;
 }
+/* Node summary in the top bar: keep the trigger quiet and the panel readable
+   on the light canvas. */
+:root[data-theme="light"] .cw-node-info {
+  --cw-node-info-bg: #fff;
+  --cw-node-info-border: #dfe2e7;
+  --cw-node-info-fg: #6d7480;
+  --cw-node-info-muted: #5c636e;
+  --cw-node-info-hover-fg: #23262c;
+  --cw-node-info-hover-bg: #eceef3;
+  --cw-node-info-row: #23262c;
+  --cw-node-info-shadow: 0 18px 44px rgba(23, 28, 38, 0.18);
+}
 /* The composer window controls (dismiss and expand) defaulted to a dark chip,
    which read as a stray hole on the light composer. */
 :root[data-theme="light"] .cw-composer-dock {
