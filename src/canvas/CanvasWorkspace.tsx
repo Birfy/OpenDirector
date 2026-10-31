@@ -53,6 +53,7 @@ import {
 } from "./useCanvasReferences";
 import { referencePortMetrics, REFERENCE_PORT_SIZE } from "./connectionPorts";
 import { subjectDescriptionLayout } from "./subjectLayout.ts";
+import { measureSubjectNodeHeight } from "./subjectLayoutMeasurement.ts";
 import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
 import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
 import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
@@ -83,7 +84,10 @@ import { CanvasIcon } from "./CanvasIcon";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
-import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
+import {
+  AssetLibraryDialog,
+  type LibraryTab,
+} from "./library/AssetLibraryDialog";
 import {
   itemBlob,
   itemToResource,
@@ -145,6 +149,17 @@ const DirectorStage = lazy(() =>
 );
 import { readEditorResource, classifyImportFile } from "./editorMedia";
 import { assertUpload } from "./uploadPolicy.ts";
+import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
+import {
+  copyLibrarySubjects,
+  backUpLibrarySubject,
+} from "../backend/subjectLibrary.ts";
+import {
+  librarySubjectCommand,
+  subjectImportSelection,
+  subjectTargetIdentity,
+  mergeLibrarySubjectImport,
+} from "./subjectLibraryImport.ts";
 import { sameNodeData } from "./dataBoundary.ts";
 import { readImportBatch } from "./importBatch";
 import { useGenerationJobs } from "./useGenerationJobs";
@@ -226,6 +241,7 @@ import {
 import {
   createDocument,
   createNode,
+  applyCommand,
   canAddReference,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -471,6 +487,9 @@ function Workspace() {
   );
   const [panel, setPanel] = useState<Panel>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [subjectLibraryBusy, setSubjectLibraryBusy] = useState(false);
+  const [libraryInitialTab, setLibraryInitialTab] =
+    useState<LibraryTab>("assets");
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
   const [toolRevision, setToolRevision] = useState(0);
@@ -580,9 +599,11 @@ function Workspace() {
   const pasteCount = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
-  const uploadSource = useRef<{ projectId: string; node: CanvasNode } | null>(
-    null,
-  );
+  const uploadSource = useRef<{
+    projectId: string;
+    node: CanvasNode;
+    subjectSlot?: SubjectMediaSlot;
+  } | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const assistantLayout = useAssistantLayout(root, assistantOpen, () => {
@@ -601,6 +622,7 @@ function Workspace() {
     setPresentationFocus((value) => value + 1);
   };
   const saveQueue = useRef(Promise.resolve(true));
+  const saveError = useRef("");
   const [zoom, setZoom] = useState(1);
   const spacePressed = useKeyPress("Space");
   const panning = hand || spacePressed;
@@ -907,16 +929,132 @@ function Workspace() {
     saveQueue.current = saveQueue.current
       .then(async () => {
         await saveWorkspaceDocument(snapshot);
+        saveError.current = "";
         if (historyRef.current.present === snapshot)
           setSaveStatus("已保存到本机");
         return true;
       })
       .catch((error) => {
+        saveError.current = errorMessage(error);
         setSaveStatus(`保存失败：${String(error)}`);
         return false;
       });
     return saveQueue.current;
   }, []);
+  const importLibrarySubjects = async (
+    items: LibraryItem[],
+    targetId?: string,
+  ) => {
+    if (subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    const projectId = historyRef.current.present.id;
+    const beforeTarget = targetId
+      ? subjectImportSelection(historyRef.current.present, selectedRef.current)
+      : null;
+    if (
+      targetId &&
+      (beforeTarget?.issue || beforeTarget?.node?.id !== targetId)
+    )
+      throw new Error(
+        beforeTarget?.issue ?? "画布选择已变化，请重新选择主体。",
+      );
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("画布未保存，主体尚未导入。");
+      const copies = await copyLibrarySubjects(projectId, items);
+      const current = historyRef.current.present;
+      if (current.id !== projectId || switchPending.current)
+        throw new Error("项目已切换，本次导入未应用。");
+      if (targetId) {
+        const latest = subjectImportSelection(current, selectedRef.current);
+        if (
+          latest.issue ||
+          latest.node?.id !== targetId ||
+          !beforeTarget?.node ||
+          subjectTargetIdentity(latest.node) !==
+            subjectTargetIdentity(beforeTarget.node)
+        )
+          throw new Error(
+            latest.issue ?? "目标主体或选择已变化，本次导入未应用。",
+          );
+      }
+      const operation = librarySubjectCommand(
+        current,
+        copies.map((copy) => ({
+          title: copy.item.name,
+          subject: copy.subject,
+        })),
+        center(),
+        targetId,
+        (subject, width) =>
+          measureSubjectNodeHeight(
+            subject,
+            width,
+            getComputedStyle(root.current!).fontFamily,
+          ),
+      );
+      const next = applyCommand(current, operation);
+      // Publish the complete subject only after its project transaction succeeds.
+      if (!(await persist(next)))
+        throw new Error(
+          saveError.current || "主体导入未能保存，画布内容保持原状。",
+        );
+      if (historyRef.current.present.id !== projectId) return;
+      change((latest) =>
+        mergeLibrarySubjectImport(latest, current, next, targetId),
+      );
+      const previousIds = new Set(current.nodes.map((node) => node.id));
+      setSelected(
+        targetId
+          ? [targetId]
+          : next.nodes
+              .filter((node) => !previousIds.has(node.id))
+              .map((node) => node.id),
+      );
+      subjectTarget.current = null;
+      notify(
+        targetId
+          ? "已替换选中主体内容，可撤销。"
+          : `已导入 ${copies.length} 个主体到画布。`,
+      );
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+
+  const backupLibrarySubject = async () => {
+    const current = historyRef.current.present;
+    const node =
+      selectedRef.current.length === 1
+        ? current.nodes.find((node) => node.id === selectedRef.current[0])
+        : undefined;
+    if (!node || node.type !== "subject" || !node.data.subject?.main?.src)
+      throw new Error("请选择一个有内容的主体节点。");
+    if (subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("请先保存当前画布。");
+      if (historyRef.current.present.id !== current.id)
+        throw new Error("项目已切换，请重新选择主体。");
+      await backUpLibrarySubject(current.id, node.id);
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+
   const replayHistory = (forward = false) => {
     if (!creationEnabled()) {
       setHistory(forward ? redo : undo);
@@ -1892,7 +2030,10 @@ function Workspace() {
     subjectTarget.current = null;
     setPanel(null);
   };
-  const openFilePicker = (id: string | null = null) => {
+  const openFilePicker = (
+    id: string | null = null,
+    subjectSlot?: SubjectMediaSlot,
+  ) => {
     if (id && lockedIds.has(id)) {
       notify("请先解锁节点或所属分组。");
       return;
@@ -1914,7 +2055,11 @@ function Workspace() {
     }
     uploadTarget.current = id;
     uploadSource.current = selected
-      ? { projectId: historyRef.current.present.id, node: selected }
+      ? {
+          projectId: historyRef.current.present.id,
+          node: selected,
+          subjectSlot,
+        }
       : null;
     if (fileInput.current) {
       fileInput.current.multiple = !id;
@@ -1922,7 +2067,11 @@ function Workspace() {
         selected?.type === "text"
           ? ".txt,.md,.markdown"
           : selected?.type === "subject"
-            ? "image/*,video/*,audio/*"
+            ? subjectSlot === "auxiliary"
+              ? "image/*"
+              : subjectSlot === "voice"
+                ? "audio/*"
+                : "image/*,video/*,audio/*"
             : selected && ["image", "video", "audio"].includes(selected.type)
               ? `${selected.type}/*`
               : "";
@@ -1962,9 +2111,7 @@ function Workspace() {
               !target
                 ? "create"
                 : expected!.node.type === "subject"
-                  ? kind === "audio"
-                    ? "subject-voice"
-                    : "subject-main"
+                  ? `subject-${expected!.subjectSlot ?? (kind === "audio" ? "voice" : "main")}`
                   : "replace",
               expected?.node.type,
             );
@@ -1991,15 +2138,11 @@ function Workspace() {
               id: target,
               patch: {
                 data: {
-                  subject: {
-                    description: "",
-                    category: "character",
-                    auxiliaries: [],
-                    ...currentTarget.data.subject,
-                    ...(resource.kind === "audio"
-                      ? { voice: resource }
-                      : { main: resource }),
-                  },
+                  subject: subjectWithResource(
+                    currentTarget.data.subject,
+                    resource,
+                    expected?.subjectSlot,
+                  ),
                 },
               },
             });
@@ -3670,11 +3813,15 @@ function Workspace() {
   const resizeSubjectDescription = useCallback(
     (id: string, contentHeight: number) => {
       if (!Number.isFinite(contentHeight)) return;
-      const { nodeHeight } = subjectDescriptionLayout(contentHeight);
       setHistory((current) => {
         const node = current.present.nodes.find((node) => node.id === id);
-        if (node?.type !== "subject" || node.height === nodeHeight)
-          return current;
+        if (node?.type !== "subject") return current;
+        const { nodeHeight } = subjectDescriptionLayout(
+          contentHeight,
+          node.data.subject?.main,
+          node.width,
+        );
+        if (node.height === nodeHeight) return current;
         const present = executeCommand(current, {
           type: "update-node",
           id,
@@ -3701,14 +3848,17 @@ function Workspace() {
     pickSubject: (
       id: string,
       source: "file" | "canvas" | "assets" | "import",
+      slot?: SubjectMediaSlot,
     ) => {
       if (lockedIds.has(id)) return;
-      if (source === "file" || source === "import") {
-        openFilePicker(id);
+      if (source === "file") {
+        openFilePicker(id, slot);
         return;
       }
       referenceTarget.current = null;
       subjectTarget.current = id;
+      if (source === "import") setSelected([id]);
+      setLibraryInitialTab(source === "import" ? "subjects" : "assets");
       setLibraryOpen(true);
     },
     select: (id: string, event: React.MouseEvent) => {
@@ -6137,8 +6287,24 @@ function Workspace() {
       {libraryOpen && (
         <AssetLibraryDialog
           currentId={doc.id}
+          initialTab={libraryInitialTab}
+          subjectTarget={{
+            id: subjectImportSelection(doc, selected).node?.id,
+            issue: subjectImportSelection(doc, selected).issue,
+          }}
+          subjectBusy={subjectLibraryBusy || switching || projectRenaming}
+          backupSubjectIssue={
+            single?.type === "subject" &&
+            single.data.subject?.main?.src &&
+            single.data.assetState !== "missing"
+              ? null
+              : "请在画布中仅选中一个有内容的主体。"
+          }
+          onImportSubjects={importLibrarySubjects}
+          onBackupSubject={backupLibrarySubject}
           onClose={() => {
             setLibraryOpen(false);
+            setLibraryInitialTab("assets");
             referenceTarget.current = null;
             subjectTarget.current = null;
           }}

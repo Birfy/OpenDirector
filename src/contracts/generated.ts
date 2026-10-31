@@ -1029,11 +1029,18 @@ export interface SubjectDataInput extends ContractInput {
   readonly main?: AssetRefInput | null;
   readonly auxiliaries?: ReadonlyArray<AssetRefInput>;
   readonly voice?: AssetRefInput | null;
+  readonly librarySource?: SubjectLibrarySourceInput | null;
 }
 
 export interface SubjectDocumentInput extends EditorDocumentBaseInput {
   readonly kind: "subject";
   readonly data: SubjectDataInput;
+}
+
+export interface SubjectLibrarySourceInput extends ContractInput {
+  readonly itemId: string;
+  readonly revision: number;
+  readonly importId: string;
 }
 
 export interface TextCanvasItemInput extends MediaCanvasItemInput {
@@ -2262,11 +2269,18 @@ export interface SubjectData extends Contract {
   readonly main: AssetRef | null;
   readonly auxiliaries: ReadonlyArray<AssetRef>;
   readonly voice: AssetRef | null;
+  readonly librarySource: SubjectLibrarySource | null;
 }
 
 export interface SubjectDocument extends EditorDocumentBase {
   readonly kind: "subject";
   readonly data: SubjectData;
+}
+
+export interface SubjectLibrarySource extends Contract {
+  readonly itemId: string;
+  readonly revision: number;
+  readonly importId: string;
 }
 
 export interface TextCanvasItem extends MediaCanvasItem {

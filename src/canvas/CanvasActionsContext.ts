@@ -1,6 +1,7 @@
 import { createContext, type MouseEvent } from "react";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import type { NodeGenerationActivity } from "./generationActivity";
+import type { SubjectMediaSlot } from "./subjectMedia.ts";
 
 export interface CanvasActions {
   select: (id: string, event: MouseEvent) => void;
@@ -21,6 +22,7 @@ export interface CanvasActions {
   pickSubject?: (
     id: string,
     source: "file" | "canvas" | "assets" | "import",
+    slot?: SubjectMediaSlot,
   ) => void;
   isLocked: (id: string) => boolean;
   getNode: (id: string) => CanvasNode | undefined;

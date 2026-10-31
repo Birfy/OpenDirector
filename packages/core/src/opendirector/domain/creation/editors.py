@@ -88,6 +88,13 @@ class TimelineData(Contract):
         return self
 
 
+class SubjectLibrarySource(Contract):
+    """Frozen import provenance; subsequent editing never follows the library."""
+    itemId: UUID
+    revision: int = Field(ge=1, strict=True)
+    importId: UUID
+
+
 class SubjectData(Contract):
     description: str = Field(default='', max_length=20000,
         description='User-facing annotation only; not subject media or a generation reference')
@@ -95,6 +102,7 @@ class SubjectData(Contract):
     main: AssetRef | None = None
     auxiliaries: tuple[AssetRef, ...] = Field(default=(), max_length=3)
     voice: AssetRef | None = None
+    librarySource: SubjectLibrarySource | None = None
 
     @model_validator(mode='after')
     def source_roles(self):
@@ -104,6 +112,8 @@ class SubjectData(Contract):
             raise ValueError('Invalid subject auxiliary or voice source')
         if not self.main and (self.auxiliaries or self.voice):
             raise ValueError('Subject auxiliary sources require a main source')
+        if self.main and self.main.kind == 'video' and (self.auxiliaries or self.voice):
+            raise ValueError('Video subjects cannot contain auxiliary images or independent audio')
         unique([asset.assetId for asset in (self.main, *self.auxiliaries, self.voice) if asset], 'subject sources')
         return self
 

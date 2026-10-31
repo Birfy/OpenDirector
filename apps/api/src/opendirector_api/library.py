@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from opendirector.application.library import Library
+from opendirector.application.subject_library import SubjectLibrary
 
 
 class LibrarySelection(BaseModel):
@@ -40,9 +41,41 @@ class SubjectImport(BaseModel):
     preview: str | None = None
 
 
+class SubjectSelection(BaseModel):
+    id: UUID
+    revision: int = Field(ge=1, strict=True)
+
+
+class SubjectPreparation(BaseModel):
+    items: list[SubjectSelection] = Field(min_length=1, max_length=100)
+
+
+class SubjectBackup(BaseModel):
+    projectId: UUID
+    nodeId: UUID
+
+
 def library_routes(projects):
     router = APIRouter(prefix='/api/library', tags=['Global asset library'])
     library = Library(projects)
+    subjects = SubjectLibrary(projects)
+
+    @router.get('/subjects')
+    def list_subjects(query: str = ''):
+        return subjects.list(query)
+
+    @router.post('/subjects/prepare')
+    def prepare_subjects(value: SubjectPreparation):
+        return subjects.prepare([item.model_dump() for item in value.items])
+
+    @router.post('/subjects/from-canvas')
+    def backup_subject(value: SubjectBackup):
+        return subjects.backup(value.projectId, value.nodeId)
+
+    @router.get('/items/{item_id}/subject-media/{slot}')
+    def subject_media(item_id: UUID, slot: str, revision: int = Query(ge=1)):
+        data, mime = subjects.media(item_id, slot, revision)
+        return Response(data, media_type=mime, headers={'Cache-Control': 'no-store'})
 
     @router.get('/items')
     def list_items(

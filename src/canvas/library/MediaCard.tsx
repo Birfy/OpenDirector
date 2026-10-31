@@ -47,7 +47,9 @@ function MediaThumb({ src, kind }: { src: string; kind: "video" | "audio" }) {
           if (Number.isFinite(media.duration) && media.duration > 0.3)
             media.currentTime = Math.min(0.3, media.duration / 2);
         }}
-        onMouseEnter={(event) => void event.currentTarget.play().catch(() => {})}
+        onMouseEnter={(event) =>
+          void event.currentTarget.play().catch(() => {})
+        }
         onMouseLeave={(event) => {
           const media = event.currentTarget;
           media.pause();
@@ -72,6 +74,7 @@ export function MediaCard({
   icon,
   selected,
   selectable = true,
+  disabled = false,
   starred = false,
   onSelect,
   onOpen,
@@ -89,6 +92,7 @@ export function MediaCard({
   icon?: Parameters<typeof CanvasIcon>[0]["name"];
   selected?: boolean;
   selectable?: boolean;
+  disabled?: boolean;
   starred?: boolean;
   onSelect?: () => void;
   onOpen?: () => void;
@@ -103,7 +107,11 @@ export function MediaCard({
     .join(" ");
   return (
     <div className={className}>
-      <div className="cw-lib-thumb" onClick={onOpen} role={onOpen ? "button" : undefined}>
+      <div
+        className="cw-lib-thumb"
+        onClick={onOpen}
+        role={onOpen ? "button" : undefined}
+      >
         {item ? (
           <LibraryThumb item={item} />
         ) : src ? (
@@ -120,7 +128,10 @@ export function MediaCard({
         {selectable && (
           <button
             type="button"
-            className={selected ? "cw-lib-check cw-lib-check-on" : "cw-lib-check"}
+            disabled={disabled}
+            className={
+              selected ? "cw-lib-check cw-lib-check-on" : "cw-lib-check"
+            }
             role="checkbox"
             aria-checked={Boolean(selected)}
             aria-label={`选择：${title}`}

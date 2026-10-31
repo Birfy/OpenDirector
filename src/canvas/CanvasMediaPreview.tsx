@@ -12,6 +12,10 @@ const Playback = createContext<{
   blocked: boolean;
   claim: (element: HTMLMediaElement) => void;
 }>({ blocked: false, claim: () => {} });
+
+export function useCanvasPlayback() {
+  return useContext(Playback);
+}
 export function CanvasPlaybackProvider({
   blocked,
   children,

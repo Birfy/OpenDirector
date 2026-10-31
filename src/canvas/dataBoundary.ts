@@ -307,6 +307,21 @@ export function subjectError(value: unknown): string | null {
     return "主体辅助素材必须是图片。";
   if (!value.main && (value.voice || value.auxiliaries.length))
     return "先添加主体主素材，再添加辅助图片或声音。";
+  if (
+    value.main &&
+    (value.main as CanvasResource).kind === "video" &&
+    (value.voice || value.auxiliaries.length)
+  )
+    return "视频主体不能包含附加图片或独立声音。";
+  if (
+    value.librarySource !== undefined &&
+    (!record(value.librarySource) ||
+      !nonempty(value.librarySource.itemId) ||
+      !nonempty(value.librarySource.importId) ||
+      !Number.isInteger(value.librarySource.revision) ||
+      Number(value.librarySource.revision) < 1)
+  )
+    return "主体库来源记录无效。";
   const resources = [value.main, ...value.auxiliaries, value.voice].filter(
     Boolean,
   ) as CanvasResource[];
@@ -326,9 +341,9 @@ export function subjectError(value: unknown): string | null {
     return "主体视频不能超过 15 秒。";
   if (
     voice?.durationSeconds !== undefined &&
-    (voice.durationSeconds < 2 || voice.durationSeconds > 5)
+    (voice.durationSeconds <= 0 || voice.durationSeconds > 15)
   )
-    return "主体声音应为 2–5 秒。";
+    return "主体声音需在 15 秒以内。";
   return null;
 }
 
@@ -339,6 +354,9 @@ export function copySubject(value: SubjectData): SubjectData {
     auxiliaries: value.auxiliaries.map(copyResource),
     ...(value.main ? { main: copyResource(value.main) } : {}),
     ...(value.voice ? { voice: copyResource(value.voice) } : {}),
+    ...(value.librarySource
+      ? { librarySource: { ...value.librarySource } }
+      : {}),
   };
 }
 
@@ -810,6 +828,14 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
         (a, b) =>
           a.description === b.description &&
           a.category === b.category &&
+          sameOptional(
+            a.librarySource,
+            b.librarySource,
+            (a, b) =>
+              a.itemId === b.itemId &&
+              a.revision === b.revision &&
+              a.importId === b.importId,
+          ) &&
           sameOptional(a.main, b.main, sameResource) &&
           sameArray(a.auxiliaries, b.auxiliaries, sameResource) &&
           sameOptional(a.voice, b.voice, sameResource),

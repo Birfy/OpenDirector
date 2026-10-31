@@ -633,7 +633,8 @@
           "revision": 1,
           "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
           "kind": "audio"
-        }
+        },
+        "librarySource": null
       }
     },
     {

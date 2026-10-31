@@ -128,6 +128,9 @@ export class CreationProjection {
           subject: {
             description: doc.data.description,
             category: doc.data.category,
+            ...(doc.data.librarySource
+              ? { librarySource: { ...doc.data.librarySource } }
+              : {}),
             main: doc.data.main
               ? await this.resource(doc.data.main)
               : undefined,
@@ -605,6 +608,7 @@ export class CreationProjection {
           data: {
             description: data.description,
             category: data.category,
+            librarySource: data.librarySource ?? null,
             main: data.main ? await ref(data.main) : null,
             auxiliaries: await Promise.all(data.auxiliaries.map(ref)),
             voice: data.voice ? await ref(data.voice) : null,

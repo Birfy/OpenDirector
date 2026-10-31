@@ -217,6 +217,8 @@ class CreationCanvas:
                     obj['revision'] += 1
         result = ProjectSnapshot.model_validate(data)
         validate_frame_reference_limit(result)
+        from opendirector.application.subject_library import SubjectLibrary
+        SubjectLibrary(self.projects).validate_imports(before, result)
         previous_inputs = {value.id: value for doc in before.editorDocuments for value in doc.inputConnections}
         items = {item.id: item for item in result.canvasItems}
         for doc in result.editorDocuments:

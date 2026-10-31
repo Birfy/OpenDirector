@@ -8744,6 +8744,17 @@
               }
             ],
             "default": null
+          },
+          "librarySource": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SubjectLibrarySource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "title": "SubjectData",
@@ -8798,6 +8809,34 @@
           "data"
         ],
         "title": "SubjectDocument",
+        "type": "object"
+      },
+      "SubjectLibrarySource": {
+        "additionalProperties": false,
+        "description": "Frozen import provenance; subsequent editing never follows the library.",
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "importId": {
+            "format": "uuid",
+            "title": "Importid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "revision",
+          "importId"
+        ],
+        "title": "SubjectLibrarySource",
         "type": "object"
       },
       "TextCanvasItem": {
@@ -19997,6 +20036,17 @@
               }
             ],
             "default": null
+          },
+          "librarySource": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SubjectLibrarySource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -20004,7 +20054,8 @@
           "category",
           "main",
           "auxiliaries",
-          "voice"
+          "voice",
+          "librarySource"
         ],
         "title": "SubjectData",
         "type": "object"
@@ -20061,6 +20112,34 @@
           "data"
         ],
         "title": "SubjectDocument",
+        "type": "object"
+      },
+      "SubjectLibrarySource": {
+        "additionalProperties": false,
+        "description": "Frozen import provenance; subsequent editing never follows the library.",
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "importId": {
+            "format": "uuid",
+            "title": "Importid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "revision",
+          "importId"
+        ],
+        "title": "SubjectLibrarySource",
         "type": "object"
       },
       "TextCanvasItem": {

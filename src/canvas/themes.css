@@ -158,8 +158,18 @@
 :root[data-theme="light"] .cw-domain-card-subject .cw-domain-card-preview {
   background: #e9ecf2;
 }
-:root[data-theme="light"] .cw-card-subject small {
+:root[data-theme="light"] .cw-subject-auxiliary,
+:root[data-theme="light"] .cw-subject-add-auxiliary {
+  background: #e9ecf2;
+}
+:root[data-theme="light"] .cw-subject-add-auxiliary,
+:root[data-theme="light"] .cw-subject-voice button {
   color: #58616e;
+}
+:root[data-theme="light"] .cw-subject-add-auxiliary:hover:not(:disabled),
+:root[data-theme="light"] .cw-subject-voice button:hover:not(:disabled) {
+  background: #dfe4ed;
+  color: #23262c;
 }
 /* A node with no media yet: an empty dark well reads as a hole in a light
    canvas, so the placeholder gets the same quiet surface as the node body. */

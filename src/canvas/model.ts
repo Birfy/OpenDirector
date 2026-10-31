@@ -118,6 +118,7 @@ export interface SubjectData {
   main?: CanvasResource;
   auxiliaries: CanvasResource[];
   voice?: CanvasResource;
+  librarySource?: { itemId: string; revision: number; importId: string };
 }
 
 export interface StackData {

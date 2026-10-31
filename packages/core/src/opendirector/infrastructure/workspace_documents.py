@@ -74,9 +74,19 @@ class WorkspaceDocuments:
     def save(self, project_id, document, revision, session):
         identifier(project_id)
         validate_document(document, project_id)
+        transfers = None
+        if any(isinstance(node, dict) and isinstance(node.get('data'), dict)
+               and isinstance(node['data'].get('subject'), dict) and node['data']['subject'].get('librarySource')
+               for node in document.get('nodes', []) + document.get('hiddenNodes', [])):
+            from opendirector.application.subject_library import SubjectLibrary
+            from opendirector.infrastructure.creation_projects import CreationProjects
+            transfers = SubjectLibrary(CreationProjects(self.store))
         with self.store.transaction() as db:
             directory = self.store._owner(db, project_id, session)
             current = self._read(directory, project_id)
+            imports = current.get('subjectImports', {})
+            if transfers:
+                imports = transfers.validate_legacy_imports(current['document'], document, imports)
             previous_nodes = {node.get('id'): node for node in (current['document'] or {}).get('nodes', []) + (current['document'] or {}).get('hiddenNodes', []) if isinstance(node, dict)}
             for node in document.get('nodes', []) + document.get('hiddenNodes', []):
                 previous = previous_nodes.get(node.get('id')) if isinstance(node, dict) else None
@@ -88,7 +98,8 @@ class WorkspaceDocuments:
                 return current
             if current['revision'] != revision:
                 raise ProjectError('画布已变化，请重新打开项目后再保存。', 409, code='revision_conflict')
-            value = {'schemaVersion': 1, 'revision': revision + 1, 'document': document}
+            value = {'schemaVersion': 1, 'revision': revision + 1, 'document': document,
+                     **({'subjectImports': imports} if imports else {})}
             # Enforce JSON serialization before touching the existing file.
             json.dumps(value, allow_nan=False)
             write_json(child(directory, self.filename), value)

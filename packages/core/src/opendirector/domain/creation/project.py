@@ -176,8 +176,8 @@ class ProjectSnapshot(Contract):
                         raise ValueError('Subject video exceeds 15 seconds')
                 if data.voice:
                     seconds = assets[data.voice.assetId].metadata.durationSeconds
-                    if seconds is not None and not 2 <= seconds <= 5:
-                        raise ValueError('Subject voice must be 2 to 5 seconds')
+                    if seconds is not None and not 0 < seconds <= 15:
+                        raise ValueError('Subject voice must be within 15 seconds')
             if isinstance(doc, TimelineDocument):
                 for track in doc.data.tracks:
                     for clip in track.clips:

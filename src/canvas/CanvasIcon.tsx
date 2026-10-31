@@ -159,6 +159,7 @@ const icons: Record<string, ReactNode> = {
   ),
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
   play: <path d="m7 4 14 8-14 8Z" />,
+  pause: <path d="M8 5v14M16 5v14" />,
   link: (
     <>
       <path d="m9 15 6-6M8 17l-1 1a4.2 4.2 0 0 1-6-6l4-4a4.2 4.2 0 0 1 6 0m2 8a4.2 4.2 0 0 0 6 0l4-4a4.2 4.2 0 0 0-6-6l-1 1" />

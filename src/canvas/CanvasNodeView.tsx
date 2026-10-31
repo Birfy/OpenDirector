@@ -1,19 +1,11 @@
-import {
-  memo,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type MouseEvent,
-} from "react";
+import { memo, useContext, type MouseEvent } from "react";
 import type { Node, NodeProps } from "@xyflow/react";
 import { NodeFrame } from "./NodeFrame";
 import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
-import { subjectDescriptionLayout } from "./subjectLayout.ts";
+import { SubjectNodeCard } from "./SubjectNodeCard";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
@@ -61,14 +53,16 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
       kind={kind}
       title={data.title || names[kind]}
       selected={selected}
-      empty={!hasAsset && !data.text}
+      empty={
+        kind === "subject" ? !data.subject?.main?.src : !hasAsset && !data.text
+      }
       busy={Boolean(activity)}
     >
       {kind === "group" ? (
         <div className="cw-group-interior" />
-      ) : ["timeline", "subject", "stack", "tool", "external"].includes(
-          kind,
-        ) ? (
+      ) : kind === "subject" ? (
+        <SubjectNodeCard id={id} data={data} actions={actions} />
+      ) : ["timeline", "stack", "tool", "external"].includes(kind) ? (
         <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
         actions?.isTextEditing(id) ? (
@@ -244,50 +238,16 @@ function DomainCard({
   const firstClip = timeline?.tracks.find((track) => track.kind === "visual")
     ?.clips[0];
   const resource: CanvasResource | undefined =
-    kind === "subject"
-      ? data.subject?.main
-      : kind === "stack"
-        ? stackResource
-        : kind === "timeline"
-          ? firstClip?.resource
-          : data.src
-            ? { id, kind: "image", title: data.title, src: data.src }
-            : undefined;
-  if (kind === "subject" && !data.subject?.main?.src)
-    return (
-      <div className="cw-subject-empty">
-        <SubjectDescription
-          id={id}
-          value={data.subject?.description ?? ""}
-          actions={actions}
-        />
-        <div className="cw-subject-empty-material nodrag nopan">
-          {(
-            [
-              ["import", "导入主体", "subject"],
-              ["canvas", "从画布选择", "canvas"],
-              ["assets", "从资产库选择", "rail-folder"],
-              ["file", "本地添加", "upload"],
-            ] as const
-          ).map(([source, label, icon]) => (
-            <button
-              key={source}
-              disabled={actions?.isLocked(id)}
-              onClick={() => actions?.pickSubject?.(id, source)}
-            >
-              <CanvasIcon name={icon} size={13} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    kind === "stack"
+      ? stackResource
+      : kind === "timeline"
+        ? firstClip?.resource
+        : data.src
+          ? { id, kind: "image", title: data.title, src: data.src }
+          : undefined;
   return (
     <div className={`cw-domain-card cw-domain-card-${kind}`}>
-      {(kind === "subject" ||
-        kind === "stack" ||
-        kind === "timeline" ||
-        kind === "external") && (
+      {(kind === "stack" || kind === "timeline" || kind === "external") && (
         <div className="cw-domain-card-preview">
           {resource ? (
             <ResourcePreview resource={resource} controls={false} />
@@ -299,11 +259,9 @@ function DomainCard({
               <span>
                 {kind === "timeline"
                   ? "把素材编排成故事"
-                  : kind === "subject"
-                    ? "添加主素材与角色声音"
-                    : kind === "stack"
-                      ? "整理画布资源"
-                      : "布景、镜头与动作预演"}
+                  : kind === "stack"
+                    ? "整理画布资源"
+                    : "布景、镜头与动作预演"}
               </span>
             </div>
           )}
@@ -346,29 +304,6 @@ function DomainCard({
               </span>
             </div>
           ))}
-        </div>
-      )}
-      {kind === "subject" && (
-        <div className="cw-card-subject">
-          <SubjectDescription
-            id={id}
-            value={data.subject?.description ?? ""}
-            actions={actions}
-          />
-          <div>
-            {data.subject?.auxiliaries.map((item) => (
-              <img
-                key={item.id}
-                src={item.src}
-                alt={item.title}
-                draggable={false}
-              />
-            ))}
-            <small>
-              {data.subject?.auxiliaries.length ?? 0}/3 辅助视角 ·{" "}
-              {data.subject?.voice ? "已添加声音" : "无声音"}
-            </small>
-          </div>
         </div>
       )}
       {kind === "stack" && (
@@ -453,95 +388,6 @@ function DomainCard({
         </button>
       )}
     </div>
-  );
-}
-
-/** User annotations are edited on the canvas, independently of retained media. */
-function SubjectDescription({
-  id,
-  value,
-  actions,
-}: {
-  id: string;
-  value: string;
-  actions: CanvasActions | null;
-}) {
-  const [draft, setDraft] = useState(value);
-  const [editing, setEditing] = useState(false);
-  const cancelled = useRef(false);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const resize = actions?.resizeSubjectDescription;
-  useLayoutEffect(() => {
-    const element = input.current;
-    if (!element) return;
-    const measure = () => {
-      if (!element.clientWidth) return;
-      element.style.height = "0px";
-      element.style.overflowY = "hidden";
-      const contentHeight = element.scrollHeight;
-      const { descriptionHeight } = subjectDescriptionLayout(contentHeight);
-      element.style.height = `${descriptionHeight}px`;
-      element.style.overflowY =
-        contentHeight > descriptionHeight ? "auto" : "hidden";
-      resize?.(id, contentHeight);
-    };
-    measure();
-    let width = element.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (element.clientWidth === width) return;
-      width = element.clientWidth;
-      measure();
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [draft, id, resize]);
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
-  return (
-    <textarea
-      ref={input}
-      className="cw-subject-description nodrag nopan nowheel"
-      aria-label="主体描述"
-      title="仅供查看，不作为生成参考"
-      placeholder="添加描述…"
-      rows={1}
-      maxLength={20000}
-      readOnly={actions?.isLocked(id)}
-      value={draft}
-      onFocus={() => {
-        cancelled.current = false;
-        setEditing(true);
-      }}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => {
-        const node = actions?.getNode(id);
-        if (
-          !cancelled.current &&
-          node?.type === "subject" &&
-          node.data.subject &&
-          !actions?.isLocked(id) &&
-          draft !== node.data.subject.description
-        )
-          actions?.update(id, {
-            subject: { ...node.data.subject, description: draft },
-          });
-        setEditing(false);
-      }}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.nativeEvent.isComposing) return;
-        if (event.key === "Escape") {
-          event.preventDefault();
-          cancelled.current = true;
-          setDraft(value);
-          event.currentTarget.blur();
-        } else if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          event.currentTarget.blur();
-        }
-      }}
-    />
   );
 }
 

@@ -202,9 +202,37 @@ try {
         .isEditable(),
       false,
     );
-    const choosing = page.waitForEvent("filechooser");
     await node(f.blank)
       .getByRole("button", { name: "导入主体", exact: true })
+      .click();
+    const library = page.getByRole("dialog", { name: "资产库", exact: true });
+    await library.waitFor();
+    assert.equal(
+      await library
+        .getByRole("tab", { name: "主体", exact: true })
+        .getAttribute("aria-selected"),
+      "true",
+    );
+    await library
+      .getByRole("button", { name: "关闭资产库", exact: true })
+      .click();
+    await page
+      .getByRole("toolbar", { name: "画布创作工具", exact: true })
+      .getByRole("button", { name: "资产库", exact: true })
+      .click();
+    await library.waitFor();
+    assert.equal(
+      await library
+        .getByRole("tab", { name: "资产", exact: true })
+        .getAttribute("aria-selected"),
+      "true",
+    );
+    await library
+      .getByRole("button", { name: "关闭资产库", exact: true })
+      .click();
+    const choosing = page.waitForEvent("filechooser");
+    await node(f.blank)
+      .getByRole("button", { name: "本地添加", exact: true })
       .click();
     await (await choosing).setFiles([]);
     assert.equal(await page.getByRole("dialog").count(), 0);
@@ -347,7 +375,9 @@ try {
         "focused summary Escape preserves selection",
         "no subject editor entry",
         "locked controls",
-        "direct import",
+        "import opens library subjects tab",
+        "ordinary library keeps assets default",
+        "direct local upload",
         "reopen",
       ],
     });
