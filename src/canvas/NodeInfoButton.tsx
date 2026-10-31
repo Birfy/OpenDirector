@@ -60,15 +60,20 @@ export function NodeInfoButton({ nodes }: { nodes: CanvasNode[] }) {
     }, HOVER_CLOSE_DELAY_MS);
   };
 
-  // Escape dismisses the panel for keyboard users; the panel is hover-driven so
-  // it needs no outside-click handler.
+  // Hovering the summary must not take Escape away from the focused editor.
+  // Only consume the key when focus belongs to the summary itself.
   useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
       setOpen(false);
+      if (
+        event.target instanceof Node &&
+        anchorRef.current?.contains(event.target)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     document.addEventListener("keydown", escape, true);
     return () => document.removeEventListener("keydown", escape, true);

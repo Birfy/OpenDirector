@@ -135,6 +135,32 @@
   background: #f0f2f6;
   color: #757d8a;
 }
+/* Subject annotations and material controls share both empty and filled cards. */
+:root[data-theme="light"] .cw-node-subject .cw-subject-description,
+:root[data-theme="light"] .cw-node-subject .cw-subject-description::placeholder {
+  color: #58616e;
+}
+:root[data-theme="light"] .cw-node-subject .cw-subject-description:focus {
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-subject-empty-material {
+  background: #ffffff60;
+}
+:root[data-theme="light"] .cw-subject-empty-material button {
+  color: #4c545f;
+}
+:root[data-theme="light"] .cw-subject-empty-material button:hover {
+  color: #23262c;
+}
+:root[data-theme="light"] .cw-domain-card-subject {
+  background: #f0f2f6;
+}
+:root[data-theme="light"] .cw-domain-card-subject .cw-domain-card-preview {
+  background: #e9ecf2;
+}
+:root[data-theme="light"] .cw-card-subject small {
+  color: #58616e;
+}
 /* A node with no media yet: an empty dark well reads as a hole in a light
    canvas, so the placeholder gets the same quiet surface as the node body. */
 :root[data-theme="light"] .cw-node-media {

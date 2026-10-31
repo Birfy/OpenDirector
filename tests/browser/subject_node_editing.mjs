@@ -93,6 +93,16 @@ try {
     await page.goto(base + "/ai-tool/ai-canvas/" + f.id + mode);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    const summary = page.locator(".cw-node-info-trigger");
+    const summaryPanel = page.getByRole("tooltip", {
+      name: "节点信息",
+      exact: true,
+    });
+    const hoverSummary = async () => {
+      await page.mouse.move(1680, 900);
+      await summary.hover();
+      await summaryPanel.waitFor();
+    };
     await node(f.blank).locator(".cw-node-title").dblclick();
     const title = node(f.blank).getByRole("textbox", {
       name: "节点名称",
@@ -107,7 +117,9 @@ try {
     assert.equal(await page.getByRole("dialog").count(), 0);
     await node(f.blank).locator(".cw-node-title").dblclick();
     await title.fill("Cancelled rename");
+    await hoverSummary();
     await title.press("Escape");
+    assert.equal(await summaryPanel.isVisible(), false);
     assert.equal(
       await node(f.blank).locator(".cw-node-title").innerText(),
       "新的主体名称",
@@ -123,7 +135,9 @@ try {
       exact: true,
     });
     await otherDescription.fill("Cancelled annotation");
+    await hoverSummary();
     await otherDescription.press("Escape");
+    assert.equal(await summaryPanel.isVisible(), false);
     assert.equal(await otherDescription.inputValue(), "原说明");
     await otherDescription.fill("更新后的素材说明");
     await otherDescription.press("Enter");
@@ -137,6 +151,18 @@ try {
       exact: true,
     });
     await toolbar.waitFor();
+    await summary.focus();
+    await summaryPanel.waitFor();
+    await page.keyboard.press("Escape");
+    assert.equal(await summaryPanel.isVisible(), false);
+    assert.equal(
+      await summary.evaluate((el) => document.activeElement === el),
+      true,
+    );
+    assert.equal(
+      await node(f.filled).evaluate((el) => el.classList.contains("selected")),
+      true,
+    );
     assert.equal(
       await toolbar
         .getByRole("button", { name: "编辑主体", exact: true })
@@ -317,6 +343,8 @@ try {
         "fixed canvas width and zoom-independent size",
         "rename cancel",
         "inline annotation save/cancel",
+        "hovered summary preserves editor Escape",
+        "focused summary Escape preserves selection",
         "no subject editor entry",
         "locked controls",
         "direct import",

@@ -189,8 +189,16 @@ try {
       await picker.getByText("女王.jpg.jpg", { exact: true }).count(),
       0,
     );
+    // A hovered summary must not consume the editor's picker dismissal.
+    const summaryPanel = page.getByRole("tooltip", {
+      name: "节点信息",
+      exact: true,
+    });
+    await page.locator(".cw-node-info-trigger").hover();
+    await summaryPanel.waitFor();
     await editor.press("Escape");
     await closed();
+    assert.equal(await summaryPanel.isVisible(), false);
     await editor.press("ArrowRight");
     assert.equal(await caret(), 3);
     await closed();
