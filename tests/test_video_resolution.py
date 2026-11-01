@@ -114,16 +114,20 @@ def test_selection_survives_api_task_snapshot_and_actual_fasth3_multipart(tmp_pa
     asyncio.run(run())
 
 
-def test_reference_video_orientation_takes_priority_over_portrait_images_and_ui_ratio():
+def test_explicit_ratio_wins_over_references_and_automatic_fit_prefers_video():
     config = {'kind': 'video', 'protocol': 'vllm_omni', 'modelId': 'FastH3-Omni', 'url': 'http://model.test/v1'}
     node = {'videoMode': 'reference', 'referenceIds': ['photo', 'video']}
     records = {'photo': {'kind': 'image', 'width': 512, 'height': 1024},
                'video': {'kind': 'video', 'width': 1920, 'height': 1080}}
     parameters = {}
     apply_video_resolution(parameters, node, records, config, {'resolution': '768P', 'aspectRatio': '9:16'})
+    assert parameters['size'] == '768x1344'
+    apply_video_resolution(parameters, node, records, config, {'resolution': '768P', 'aspectRatio': 'adaptive'})
     assert parameters['size'] == '1344x768'
     records['video'].update(width=1080, height=1920)
     apply_video_resolution(parameters, node, records, config, {'resolution': '768P', 'aspectRatio': '16:9'})
+    assert parameters['size'] == '1344x768'
+    apply_video_resolution(parameters, node, records, config, {'resolution': '768P'})
     assert parameters['size'] == '768x1344'
     assert records['photo']['width'] == 512  # Source/reference dimensions remain untouched.
 

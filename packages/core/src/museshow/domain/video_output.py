@@ -52,13 +52,15 @@ def apply_video_resolution(parameters, node, records, config, output):
         raise ProjectError('当前模型的图片参考模式不支持所选分辨率，请重新选择；未提交生成。')
     preset = next((item for item in (capabilities or {}).get('outputs', []) if item['resolution'] == resolution), {})
     if rules['profile'] in {'fasth3-omni', 'vllm-omni-h3', 'standard-video'}:
-        # References determine framing; output resolution only controls its size.
+        # Explicit framing wins; infer it from references only for automatic fit.
         visuals = [item for kind in ('video', 'image') for item in sources
                    if item['kind'] == kind and item.get('width') and item.get('height')]
-        ratio = output.get('aspectRatio', '16:9')
-        if visuals:
+        ratio = output.get('aspectRatio')
+        if ratio in {None, 'adaptive'} and visuals:
             aspect = visuals[0]['width'] / visuals[0]['height']
             ratio = min(RATIOS, key=lambda candidate: abs(math.log(_ratio(candidate) / aspect)))
+        elif ratio in {None, 'adaptive'}:
+            ratio = '16:9'
         if ratio not in RATIOS:
             raise ProjectError('当前模型不支持所选画幅比例；未提交生成。')
         if preset.get('width') and preset.get('height'):
