@@ -1,0 +1,269 @@
+.cw-stage-dialog {
+  width: min(1500px, 98vw);
+}
+.cw-stage-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(300px, 1fr) 240px;
+  gap: 18px;
+  min-height: 480px;
+}
+.cw-stage-objects,
+.cw-stage-inspector {
+  min-width: 0;
+}
+.cw-stage-layout h3 {
+  font-size: 13px;
+  margin: 8px 0 14px;
+  color: #dedee6;
+}
+.cw-stage-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cw-stage-add button {
+  padding: 7px;
+  font-size: 11px;
+}
+.cw-stage-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 15px 0 24px;
+}
+.cw-stage-object-list button {
+  justify-content: flex-start;
+  text-align: left;
+}
+.cw-stage-object-list button[aria-pressed="true"] {
+  background: #6554a83d;
+  border-color: #8e76d1;
+}
+.cw-stage-object-list span {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.cw-stage-center {
+  min-width: 0;
+}
+.cw-stage-viewport {
+  width: 100%;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px #3b3d50;
+  border-radius: 12px;
+  background: #151923;
+  touch-action: none;
+}
+.cw-stage-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cw-stage-transport {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 15px 0;
+}
+.cw-stage-transport output {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #c5c5d5;
+}
+.cw-stage-transport label {
+  font-size: 11px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.cw-stage-transport input {
+  width: 65px !important;
+  padding: 5px !important;
+}
+.cw-stage-center > input[type="range"] {
+  width: 100%;
+  accent-color: #b493ec;
+}
+.cw-stage-keyframes {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-height: 58px;
+  margin: 12px 0;
+}
+.cw-stage-keyframes > div {
+  display: flex;
+  align-items: center;
+}
+.cw-stage-keyframes button {
+  border-radius: 6px 0 0 6px;
+  padding: 7px;
+  font-size: 11px;
+}
+.cw-stage-keyframes button + button {
+  border-radius: 0 6px 6px 0;
+  border-left: 0;
+}
+.cw-stage-keyframes p {
+  font-size: 12px;
+  color: #9795a7;
+}
+.cw-stage-vector {
+  border: 0;
+  padding: 0;
+  margin: 13px 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.cw-stage-vector legend {
+  font-size: 11px;
+  margin-bottom: 7px;
+  color: #b9b7c7;
+}
+.cw-stage-vector label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #9995ad;
+  font-size: 10px;
+}
+.cw-stage-vector input {
+  width: 100% !important;
+  padding: 7px !important;
+  min-width: 0;
+}
+.cw-stage-inspector .cw-domain-field {
+  margin: 11px 0;
+}
+.cw-stage-inspector > h3:not(:first-child) {
+  border-top: 1px solid #32303e;
+  padding-top: 20px;
+  margin-top: 20px;
+}
+.cw-stage-dialog input[type="color"] {
+  padding: 3px;
+  height: 32px;
+  width: 100%;
+}
+.cw-stage-dialog .cw-domain-body {
+  padding-bottom: 10px;
+}
+@media (max-width: 1100px) {
+  .cw-stage-layout {
+    grid-template-columns: 150px minmax(260px, 1fr);
+  }
+  .cw-stage-inspector {
+    grid-column: 1/-1;
+    max-height: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .cw-stage-inspector h3 {
+    grid-column: 1/-1;
+  }
+  .cw-stage-inspector > button {
+    align-self: end;
+  }
+}
+@media (max-width: 650px) {
+  .cw-stage-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .cw-stage-objects {
+    max-height: none;
+  }
+  .cw-stage-object-list {
+    flex-direction: row;
+    overflow: auto;
+    margin: 10px 0;
+  }
+  .cw-stage-object-list button {
+    white-space: nowrap;
+  }
+  .cw-stage-objects > .cw-domain-field,
+  .cw-stage-objects > .cw-domain-checkbox {
+    display: none;
+  }
+  .cw-stage-inspector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cw-stage-transport {
+    gap: 6px;
+  }
+  .cw-stage-dialog .cw-domain-footer {
+    gap: 10px;
+  }
+  .cw-stage-dialog .cw-domain-footer > div {
+    flex-wrap: wrap;
+  }
+}
+
+/* The camera and encoder share this exact frame; no min-height may change its aspect. */
+.cw-stage-viewport {
+  min-height: 0;
+  height: auto;
+}
+.cw-stage-clips,
+.cw-stage-storyboard {
+  margin: 16px 0;
+}
+.cw-stage-clip,
+.cw-stage-shot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  border: 1px solid #39374b;
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 9px;
+}
+.cw-stage-clip label,
+.cw-stage-shot label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: #aaa5bb;
+  min-width: 0;
+}
+.cw-stage-clip input,
+.cw-stage-clip select,
+.cw-stage-shot input,
+.cw-stage-shot select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+}
+.cw-stage-clip input[type="range"] {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cw-stage-clip button,
+.cw-stage-shot button {
+  align-self: end;
+  font-size: 11px;
+  padding: 6px;
+}
+.cw-stage-shot {
+  grid-template-columns:
+    minmax(90px, 1fr) repeat(2, minmax(65px, 0.7fr))
+    auto auto;
+  align-items: end;
+}
+.cw-stage-camera-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 650px) {
+  .cw-stage-shot {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,511 @@
+{
+  "schema_version": 1,
+  "observed_on": [
+    "2026-10-26",
+    "2026-10-27"
+  ],
+  "method": "Authenticated original-site UI interaction. No private API replay. Completion means a ready result was visible; it does not establish perceptual quality.",
+  "total_points_debited": 827,
+  "tests": [
+    {
+      "id": "T01",
+      "capability": "text-to-image",
+      "model": "Seedream 4.0",
+      "settings": {
+        "ratio": "1:1",
+        "resolution": "2K",
+        "count": 1
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "prompt": "一只橙色陶瓷小鸟，摆在浅灰色桌面上，旁边有一个蓝色小球，纯白背景，柔和影棚光，产品摄影，完整主体，无文字，无水印。",
+      "observed_points_debited": 1
+    },
+    {
+      "id": "T02",
+      "capability": "text-to-video",
+      "model": "即梦 Seedance 1.0 Fast",
+      "settings": {
+        "ratio": "16:9",
+        "resolution": "720P",
+        "count": 1,
+        "seconds": 5,
+        "mode": "首尾帧（无参考）"
+      },
+      "quoted_points": 10,
+      "status": "completed",
+      "prompt": "浅灰色桌面上一只橙色陶瓷小鸟与一个蓝色小球，镜头缓慢向前推进，柔和影棚光，纯白背景，无文字。",
+      "observed_points_debited": 10
+    },
+    {
+      "id": "T03",
+      "capability": "text-to-speech",
+      "model": "SeedAudio 1.0",
+      "settings": {
+        "mode": "文本朗读",
+        "voice": "动漫海绵"
+      },
+      "quoted_points": 12,
+      "status": "completed",
+      "prompt": "你好，这是画布功能测试。",
+      "observed_points_debited": 12
+    },
+    {
+      "id": "T04",
+      "capability": "image-cutout",
+      "model": "site default",
+      "settings": {
+        "selection": "自动选择主体"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "result": "new image node and source edge",
+      "observed_points_debited": 1
+    },
+    {
+      "id": "T05",
+      "capability": "image-smart-upscale",
+      "model": "智能超清",
+      "settings": {
+        "resolution": "4K",
+        "detail": "default"
+      },
+      "quoted_points": 0,
+      "status": "completed",
+      "discount": "限免1次; 原价2",
+      "result": "new image node and source edge",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T06",
+      "capability": "image-outpaint",
+      "model": "site default",
+      "settings": {
+        "ratio": "16:9"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "prompt": "向左右延展浅灰桌面和干净的白色摄影棚背景，保持橙色陶瓷小鸟和蓝球不变。",
+      "observed_points_debited": 1
+    },
+    {
+      "id": "T07",
+      "capability": "image-instruction-edit",
+      "model": "Seedream 5.0 Lite",
+      "settings": {
+        "resolution": "2K",
+        "annotations": false
+      },
+      "quoted_points": 3,
+      "status": "completed",
+      "prompt": "把蓝色小球改为红色，保持陶瓷小鸟、桌面和构图不变。",
+      "observed_points_debited": 3
+    },
+    {
+      "id": "T08",
+      "capability": "image-multi-angle",
+      "model": "site default",
+      "settings": {
+        "direction": "右侧"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "observed_points_debited": 1
+    },
+    {
+      "id": "T09",
+      "capability": "image-relight",
+      "model": "site default",
+      "settings": {
+        "preset": "伦勃朗光",
+        "light": "左高位侧顺光",
+        "diffusion": "硬光"
+      },
+      "quoted_points": 21,
+      "status": "completed",
+      "observed_points_debited": 21
+    },
+    {
+      "id": "T10",
+      "capability": "image-panorama",
+      "model": "site default",
+      "settings": {
+        "resolution": "2K"
+      },
+      "quoted_points": 21,
+      "status": "completed",
+      "prompt": "明亮的极简摄影棚，中央桌面上的橙色陶瓷小鸟与蓝色小球，白色墙面，柔和漫射光。",
+      "observed_points_debited": 21
+    },
+    {
+      "id": "T11",
+      "capability": "image-object-remove",
+      "model": "site default",
+      "settings": {
+        "selection": "rectangle over blue ball"
+      },
+      "quoted_points": 1,
+      "status": "completed",
+      "observed_points_debited": 1
+    },
+    {
+      "id": "T12",
+      "capability": "image-preset-product-three-view",
+      "model": "Seedream 5.0 Pro",
+      "settings": {
+        "ratio": "16:9",
+        "resolution": "2K",
+        "count": 1
+      },
+      "quoted_points": 8,
+      "status": "completed",
+      "note": "Other models disabled by preset requirement",
+      "observed_points_debited": 8
+    },
+    {
+      "id": "T13",
+      "capability": "reference-image-to-video",
+      "model": "即梦 Seedance 2.0 mini",
+      "settings": {
+        "mode": "全能参考",
+        "seconds": 4,
+        "resolution": "720P",
+        "ratio": "16:9",
+        "count": 1
+      },
+      "quoted_points": 24,
+      "status": "completed",
+      "prompt": "保持参考图中的橙色陶瓷小鸟和蓝球，镜头缓慢环绕小鸟，桌面与白色背景不变。",
+      "observed_points_debited": 24
+    },
+    {
+      "id": "T14",
+      "capability": "text-to-music",
+      "model": "SeedMusic 1.0 Preview",
+      "settings": {
+        "seconds": 30
+      },
+      "quoted_points": 6,
+      "status": "completed",
+      "prompt": "轻快的纯音乐，木琴与柔和钢琴，适合陶瓷小鸟产品短片，无人声，无歌词，30秒。",
+      "observed_points_debited": 6
+    },
+    {
+      "id": "T15",
+      "capability": "video-smart-upscale",
+      "model": "site default",
+      "settings": {
+        "resolution": "2K",
+        "input_seconds": 5
+      },
+      "quoted_points": 30,
+      "status": "completed",
+      "result": "2026-10-27 resume: 1 ready, 0 processing, 0 failed.",
+      "observed_points_debited": 30
+    },
+    {
+      "id": "T16",
+      "capability": "video-frame-interpolation",
+      "model": "site default",
+      "settings": {
+        "fps": 30,
+        "input_seconds": 5
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "note": "No price label in UI; no observed deduction",
+      "cost_evidence": "历史记录显示 0 积分；提交前后余额未变。",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T17",
+      "capability": "video-extension",
+      "model": "即梦 Seedance 2.5",
+      "settings": {
+        "extra_seconds": 4,
+        "input_seconds": 5,
+        "resolution": "720P",
+        "count": 1
+      },
+      "quoted_points": 207,
+      "status": "completed",
+      "note": "Other models disabled, shortest extension 4s",
+      "observed_points_debited": 207
+    },
+    {
+      "id": "T18",
+      "capability": "timeline-render",
+      "model": "not AI",
+      "settings": {
+        "resolution": "720P",
+        "destination": "canvas",
+        "input_seconds": 5
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "MP4 video node with timeline provenance edge",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T19",
+      "capability": "video-extract-audio",
+      "model": "not AI",
+      "settings": {
+        "input_seconds": 4
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "audio node with source edge",
+      "cost_evidence": "历史记录显示 0 积分；提交前后余额未变。",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T20",
+      "capability": "video-local-reshoot",
+      "model": "Seedance 2.5",
+      "settings": {
+        "start": 0,
+        "end": 4,
+        "resolution": "source720P"
+      },
+      "quoted_points": 184,
+      "status": "completed",
+      "prompt": "保持橙色陶瓷小鸟不变，把蓝色小球改为绿色小球，保留原有镜头运动和白色背景。",
+      "note": "Only 2.5 available; shorter selection rejected, minimum 4 seconds.",
+      "observed_points_debited": 184
+    },
+    {
+      "id": "T21",
+      "capability": "text-to-sound-effect",
+      "model": "SeedAudio 1.0",
+      "settings": {
+        "mode": "unified",
+        "prompt_requested_seconds": 3
+      },
+      "quoted_points": 12,
+      "status": "completed",
+      "submission_note": "First UI click left blank node/no history/no deduction; checked history before one successful retry.",
+      "prompt": "生成3秒短音效：安静摄影棚中，一颗小玻璃球轻轻落在木桌上，发出一次清脆碰撞声，然后滚动停下。没有人声，没有音乐。",
+      "observed_points_debited": 12
+    },
+    {
+      "id": "T22",
+      "capability": "subject-reference",
+      "model": "not AI",
+      "settings": {
+        "main": "T01 image",
+        "auxiliary_count": 0,
+        "description": "orange ceramic bird with blue ball"
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "bound subject with source edge, renamed and description saved",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T23",
+      "capability": "image-layer-decomposition",
+      "model": "site default",
+      "settings": {
+        "mode": "智能拆分"
+      },
+      "quoted_points": 22,
+      "status": "completed",
+      "result": "new image layer node and source edge",
+      "observed_points_debited": 22
+    },
+    {
+      "id": "T24",
+      "capability": "image-marketing-multisize",
+      "model": "Seedream 5.0 Flash",
+      "settings": {
+        "outputs": [
+          {
+            "ratio": "3:4",
+            "width": 1200,
+            "height": 1600
+          }
+        ],
+        "count": 1
+      },
+      "quoted_points": 3,
+      "status": "completed",
+      "result": "new image node and source edge",
+      "note": "Model identified from generation history after completion.",
+      "observed_points_debited": 3
+    },
+    {
+      "id": "T25",
+      "capability": "video-matting",
+      "model": "site default",
+      "settings": {
+        "source": "T13",
+        "seconds": 4,
+        "background": "green screen"
+      },
+      "quoted_points": 4,
+      "status": "completed",
+      "observed_points_debited": 4
+    },
+    {
+      "id": "T26",
+      "capability": "video-depth-motion-capture",
+      "model": "site default",
+      "settings": {
+        "source": "T13",
+        "seconds": 4,
+        "resolution": "480P"
+      },
+      "quoted_points": 0,
+      "status": "completed",
+      "result": "1 ready, 0 processing, 0 failed; synthetic bird source, no human skeletal quality claim",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T27",
+      "capability": "video-subtitle-remove",
+      "model": "site default",
+      "settings": {
+        "source": "self-authored subtitle-test-3s.mp4",
+        "seconds": 3,
+        "width": 640,
+        "height": 360,
+        "caption": "CANVAS SUBTITLE TEST"
+      },
+      "quoted_points": 3,
+      "status": "completed",
+      "result": "1 ready, 0 processing, 0 failed",
+      "observed_points_debited": 3
+    },
+    {
+      "id": "T28",
+      "capability": "video-reverse-analysis",
+      "model": "AI assistant",
+      "settings": {
+        "source": "self-authored subtitle-test-3s.mp4"
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "note": "No visible price; no observed deduction before T29 submission",
+      "result": "AI assistant returned full video analysis, including dimensions, caption and scene descriptions; incorrectly claimed no audio track",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T29",
+      "capability": "video-instruction-edit",
+      "model": "site default",
+      "settings": {
+        "source": "T13",
+        "seconds": 4,
+        "resolution": "source720P"
+      },
+      "quoted_points": 184,
+      "status": "completed",
+      "prompt": "将视频中的蓝色小球改成绿色，保持橙色陶瓷小鸟、镜头运动与背景不变。",
+      "result": "1 ready, 0 processing, 0 failed",
+      "observed_points_debited": 184
+    },
+    {
+      "id": "T30",
+      "capability": "image-ecommerce-main",
+      "model": "site default",
+      "settings": {
+        "source": "T01",
+        "resolution": "1.5K",
+        "ratio": "1:1",
+        "view": "default",
+        "count": 1
+      },
+      "quoted_points": 0,
+      "status": "completed",
+      "note": "2K costs 8; lowest 1.5K displayed 0",
+      "result": "1 ready, 0 processing, 0 failed",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T31",
+      "capability": "director-stage-animation-export",
+      "model": "not AI",
+      "settings": {
+        "character": "男性 · 标准",
+        "motion": "标准待机",
+        "seconds": 4,
+        "resolution": "720P",
+        "fps": 30,
+        "container": "MP4"
+      },
+      "quoted_points": null,
+      "status": "completed",
+      "result": "scene saved, timeline played, MP4 exported and added to canvas with source edge",
+      "observed_points_debited": 0
+    },
+    {
+      "id": "T32",
+      "capability": "image-product-replacement",
+      "model": "site default",
+      "settings": {
+        "scene": "T01",
+        "product": "T07",
+        "resolution": "2K",
+        "selection": "automatic subject detection"
+      },
+      "quoted_points": 8,
+      "status": "completed",
+      "prompt": "将选中的商品替换为参考图中的橙色陶瓷小鸟，保留原场景与光影，球体为红色。",
+      "result": "1 ready, 0 processing, 0 failed",
+      "observed_points_debited": 8
+    },
+    {
+      "id": "T33",
+      "capability": "image-dynamic-poster",
+      "model": "Seedance 2.5",
+      "settings": {
+        "source": "T01",
+        "resolution": "480P",
+        "ratio": "source",
+        "count": 1,
+        "output_seconds_observed": 5
+      },
+      "quoted_points": 60,
+      "status": "completed",
+      "note": "Only 2.5 available. 480P is lowest resolution; 720P/1080P also visible. Deduction confirmed.",
+      "prompt": "橙色陶瓷小鸟保持不动，蓝色小球轻轻上下浮动，固定镜头，白色背景，简洁循环动效。",
+      "observed_points_debited": 60,
+      "result": "5-second video result ready and playback seek advanced to 1.706s. Download GIF attempted: UI reported GIF export failed; video remains usable.",
+      "cost_evidence": "History confirms 60 points."
+    }
+  ],
+  "entry_observations": [
+    {
+      "capability": "product-replacement",
+      "status": "editor-loaded-on-later-retry",
+      "charged": true,
+      "covered_by": "T32",
+      "note": "Initial editor did not load; later retry after director test succeeded. Cause not established."
+    },
+    {
+      "capability": "dynamic-poster",
+      "status": "editor-loaded-on-later-retry",
+      "charged": true,
+      "covered_by": "T33"
+    },
+    {
+      "capability": "video-sound-separation-menu",
+      "status": "observed",
+      "entries": [
+        "分离音频"
+      ],
+      "covered_by": "T19"
+    },
+    {
+      "capability": "video-translation",
+      "status": "not-found-in-current-account-ui",
+      "note": "Static entry only; not observed in current video toolbar or tools menu."
+    },
+    {
+      "capability": "audio-source-separation",
+      "status": "not-found-in-current-account-ui",
+      "note": "Video sound menu only exposed extract-audio (T19); music node toolbar exposed trim and download."
+    }
+  ]
+}

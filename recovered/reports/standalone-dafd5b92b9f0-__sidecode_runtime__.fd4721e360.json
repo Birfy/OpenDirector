@@ -1,0 +1,22 @@
+{
+  "detected_formats": [
+    "webpack5"
+  ],
+  "safety": "normal",
+  "modules": [
+    {
+      "filename": "module-O.js",
+      "kind": "javascript",
+      "status": "decompiled"
+    },
+    {
+      "filename": "entry.js",
+      "kind": "javascript",
+      "status": "decompiled"
+    }
+  ],
+  "warnings": [],
+  "total": 2,
+  "failed": 0,
+  "elapsed_ms": 4
+}

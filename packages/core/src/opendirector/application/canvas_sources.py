@@ -1,0 +1,169 @@
+"""Read-only node sources with stable identity; copies never borrow edit leases."""
+import base64
+from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_canvas import current_asset, visible_item_ids
+from opendirector.application.subject_library import SubjectLibrary
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.workspace_documents import WorkspaceDocuments
+from opendirector.infrastructure.creation_uploads import inspect_file
+
+
+class CanvasSources:
+    def __init__(self, projects):
+        self.projects = projects
+
+    def _read(self, project_id):
+        try:
+            snapshot = self.projects.snapshot(project_id)
+        except ProjectError as error:
+            if error.code != 'unsupported_format':
+                raise
+            document = WorkspaceDocuments(self.projects.local).read(str(project_id))['document']
+            if document is None:
+                return [], lambda resource: b''
+            nodes = document.get('nodes', [])
+            def read(resource):
+                if resource.get('kind') == 'text':
+                    return resource.get('text', '').encode('utf-8')
+                src = resource.get('src', '')
+                if src.startswith('opendirector-media:'):
+                    src = document['mediaSources'][int(src.split(':')[1])]
+                if src.startswith('data:') and ';base64,' in src:
+                    try:
+                        return base64.b64decode(src.split(',', 1)[1], validate=True)
+                    except (ValueError, TypeError):
+                        raise ProjectError('来源素材内容无效。', 422) from None
+                if resource.get('assetId'):
+                    return self.projects.local.asset(str(project_id), str(resource['assetId']))[0]
+                raise ProjectError('来源素材尚未保存或不可用。', 410)
+            rows = []
+            for node in nodes:
+                kind, data = node.get('type'), node.get('data', {})
+                if kind == 'subject':
+                    subject = deepcopy(data.get('subject') or {})
+                    if not subject.get('main'):
+                        continue
+                    content = subject
+                elif kind in {'image', 'video', 'audio', 'file', 'text'}:
+                    if not data.get('src') and not data.get('text'):
+                        continue
+                    content = dict(main=dict(id=node['id'], kind=kind, title=data.get('title', ''), src=data.get('src', ''),
+                        text=data.get('text', ''), assetId=data.get('backendAssetId'), **(data.get('media') or {})))
+                else:
+                    continue
+                # Expand wire references for preview and subsequent media reads.
+                for resource in self._resources(content).values():
+                    if resource and resource.get('src', '').startswith('opendirector-media:'):
+                        resource['src'] = document['mediaSources'][int(resource['src'].split(':')[1])]
+                rows.append(self._row(node['id'], data.get('title', ''), kind, content))
+            return rows, read
+        else:
+            assets = {asset.id: asset for asset in snapshot.assets}
+            documents = {doc.id: doc for doc in snapshot.editorDocuments}
+            def resource(ref):
+                asset = assets[ref.assetId]
+                return dict(id=str(asset.id), assetId=str(asset.id), kind=asset.kind, title=asset.name,
+                            **asset.metadata.model_dump(mode='json'), fingerprint=asset.fingerprint)
+            def read(value):
+                stream, _ = CreationAssets(self.projects).open_media(project_id, value['assetId'])
+                with stream:
+                    return stream.read()
+            rows = []
+            visible = visible_item_ids(snapshot)
+            for item in snapshot.canvasItems:
+                if item.id not in visible:
+                    continue
+                if item.kind == 'subject':
+                    data = documents[item.binding.objectRef.id].data
+                    if not data.main:
+                        continue
+                    content = dict(description=data.description, category=data.category, main=resource(data.main),
+                        auxiliaries=[resource(ref) for ref in data.auxiliaries], voice=resource(data.voice) if data.voice else None)
+                else:
+                    asset = current_asset(snapshot, item)
+                    if asset is None:
+                        continue
+                    from opendirector.application.creation_canvas import asset_ref
+                    content = dict(main=resource(asset_ref(asset)))
+                rows.append(self._row(str(item.id), item.title, item.kind, content))
+            return rows, read
+
+    @staticmethod
+    def _resources(content):
+        result = dict(main=content.get('main'))
+        result.update({f'auxiliary:{i}': value for i, value in enumerate(content.get('auxiliaries', []))})
+        if content.get('voice'):
+            result['voice'] = content['voice']
+        return result
+
+    @staticmethod
+    def _row(node_id, title, kind, content):
+        identity = dict(nodeId=node_id, title=title, kind=kind, content=content)
+        revision = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        return dict(**identity, revision=revision)
+
+    def list(self, project_id):
+        rows, _ = self._read(project_id)
+        return [dict(nodeId=row['nodeId'], title=row['title'], kind=row['kind'], revision=row['revision'],
+                     main=row['content']['main'], hasVoice=bool(row['content'].get('voice')),
+                     auxiliaryCount=len(row['content'].get('auxiliaries', []))) for row in rows]
+
+    def source(self, project_id, node_id, revision):
+        rows, read = self._read(project_id)
+        row = next((row for row in rows if row['nodeId'] == str(node_id)), None)
+        if row is None:
+            raise ProjectError('来源节点内容为空或已移除。', 410)
+        if row['revision'] != revision:
+            raise ProjectError('来源节点已变化，请重新选择。', 409)
+        return row, read
+
+    def media(self, project_id, node_id, revision, slot):
+        row, read = self.source(project_id, node_id, revision)
+        value = self._resources(row['content']).get(slot)
+        if not value:
+            raise ProjectError('来源素材槽位不存在。', 404)
+        return read(value), value
+
+    def prepare(self, project_id, node_id, revision, slot='main', subject=True):
+        row, read = self.source(project_id, node_id, revision)
+        content = row['content']
+        if len(content.get('auxiliaries', [])) > 3:
+            raise ProjectError('主体最多包含 3 张附加图片。', 422)
+        resources = self._resources(content)
+        if row['kind'] != 'subject':
+            resources = {slot: content['main']}
+        elif slot != 'main':
+            raise ProjectError('附图和声音槽位请选择单个媒体。', 422)
+        media = []
+        total = 0
+        for destination, value in resources.items():
+            payload = read(value)
+            total += len(payload)
+            if total > 256 * 1024 * 1024:
+                raise ProjectError('来源素材总量超过限制。', 413)
+            if len(payload) > 50 * 1024 * 1024:
+                raise ProjectError('来源素材超过大小限制。', 413)
+            with tempfile.TemporaryDirectory(prefix='opendirector-source-') as folder:
+                path = Path(folder) / 'media'
+                path.write_bytes(payload)
+                if subject or row['kind'] == 'subject':
+                    kind, metadata = SubjectLibrary.inspect(path, 'auxiliary:0' if destination == 'auxiliary' else destination)
+                else:
+                    kind, metadata = inspect_file(path, value.get('title') or 'source.bin', expected_kind=value['kind'])
+                facts = metadata.model_dump(mode='json')
+            label = value.get('title') or row['title'] or 'source'
+            name = ''.join('_' if ord(char) < 32 or char in '<>:"/\\|?*' else char for char in label).strip()[:180] or 'source'
+            media.append(dict(slot=destination, sourceSlot=destination if row['kind'] == 'subject' else 'main',
+                sha=hashlib.sha256(payload).hexdigest(), kind=kind, metadata=facts, name=name))
+        if row['kind'] == 'subject' and media[0]['kind'] == 'video' and len(media) != 1:
+            raise ProjectError('视频主体不能包含附图或独立声音。', 422)
+        if len({value['sha'] for value in media}) != len(media):
+            raise ProjectError('主体不能包含重复素材。', 422)
+        return dict(title=row['title'], kind=row['kind'], category=content.get('category', 'character'),
+                    description=content.get('description', ''), media=media)

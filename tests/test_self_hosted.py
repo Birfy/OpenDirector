@@ -8,19 +8,19 @@ from PIL import Image
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.integrations.providers import GenerationProviders
-from museshow.integrations.reference_inputs import generation_references
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow.domain.projects import ProjectError
-from museshow_api.main import create_app
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.integrations.providers import GenerationProviders
+from opendirector.integrations.reference_inputs import generation_references
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.domain.projects import ProjectError
+from opendirector_api.main import create_app
 
 
 def test_self_hosted_models_support_optional_auth_all_four_kinds(tmp_path):
     store=LocalProjects(tmp_path)
-    headers={'X-MuseShow-Request':'1','X-MuseShow-Session':str(uuid4())}
+    headers={'X-OpenDirector-Request':'1','X-OpenDirector-Session':str(uuid4())}
     with TestClient(create_app(store), headers=headers) as client:
         for kind in ('agent','image','video','audio'):
             value={'kind':kind,'url':'http://127.0.0.1:18091/v1','modelId':'local-model',
@@ -92,7 +92,7 @@ def test_fasth3_multipart_carries_video_and_image_and_resumes_without_reupload(t
 def test_video_reference_connects_to_fasth3_but_not_seedance(tmp_path,monkeypatch):
     store=LocalProjects(tmp_path); session=str(uuid4())
     project=store.create('视频连线',str(uuid4()),session); canvas=CanvasProjects(store)
-    monkeypatch.setattr('museshow.integrations.asset_metadata.probe',lambda *args: {'kind':'video','durationMs':3000,'width':320,'height':240,'frameRate':24,'hasAudio':False})
+    monkeypatch.setattr('opendirector.integrations.asset_metadata.probe',lambda *args: {'kind':'video','durationMs':3000,'width':320,'height':240,'frameRate':24,'hasAudio':False})
     asset=canvas.import_file(project['id'],str(uuid4()),'输入.mp4',b'video',session,str(uuid4()))
     configs=ModelConfigs(store.repository)
     hosted=configs.save('video','http://localhost:18091/v1','FastH3-Omni','',connection_type='self_hosted')
@@ -129,7 +129,7 @@ def test_self_hosted_image_and_audio_use_compatible_routes_without_auth(tmp_path
 
 @pytest.mark.parametrize('dimensions,expected', [((32,64),'480x832'),((64,32),'832x480')])
 def test_fasth3_480p_follows_reference_orientation(tmp_path, dimensions, expected):
-    from museshow.application.generation import Generation
+    from opendirector.application.generation import Generation
     store=LocalProjects(tmp_path)
     session=str(uuid4()); owner=store.create('方向验证',str(uuid4()),session)['id']
     configs=ModelConfigs(store.repository)
@@ -169,7 +169,7 @@ def test_self_hosted_image_result_auth_stays_on_configured_origin(tmp_path, orig
 def test_loopback_models_bypass_system_proxy_for_all_four_kinds(tmp_path, monkeypatch):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from museshow.integrations.http_settings import trust_environment
+    from opendirector.integrations.http_settings import trust_environment
     calls=[]
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
@@ -204,7 +204,8 @@ def test_loopback_models_bypass_system_proxy_for_all_four_kinds(tmp_path, monkey
         async def submitted(value): assert value=='video-local'
         for kind,result in [('image',('png',b'image')),('audio',('mp3',b'audio')),('video',('mp4',b'video'))]:
             task={'kind':kind,'projectId':'owner','prompt':'test','referenceIds':[],'videoMode':'reference','parameters':{}}
-            assert await provider.generate({**config,'kind':kind,'protocol':'vllm_omni' if kind=='video' else 'openai'},task,submitted)==result
+            assert await provider.generate({**config,'kind':kind,'protocol':'vllm_omni' if kind=='video' else 'openai',
+                'videoAdapter':'fasth3' if kind=='video' else 'auto'},task,submitted)==result
     try:
         asyncio.run(run())
         assert trust_environment('https://api.example/v1') is True

@@ -1,0 +1,24 @@
+.cw-tooltip {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #ffffff14;
+  border-radius: 8px;
+  background: #303033;
+  box-shadow: 0 6px 24px #0005;
+  color: #f0f0f2;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.cw-tooltip kbd {
+  flex-shrink: 0;
+  color: #a2a2aa;
+  font: inherit;
+}

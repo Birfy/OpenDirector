@@ -1,21 +1,18 @@
 """Connections edit live node inputs; executed and historical inputs stay frozen."""
 import asyncio
 from copy import deepcopy
-from pathlib import Path
-import shutil
-import subprocess
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas_versions import node_history
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas_versions import node_history
+from opendirector_api.main import create_app
 from test_canvas_generation import png
 from test_canvas_version_application import restore
 from test_inline_references import document
-from test_production_repairs import context, close
+from canvas_helpers import context, close
 from test_multimodal_references import media
 
 
@@ -195,7 +192,7 @@ def test_deleted_source_keeps_invalid_body_and_restoring_reconnects(tmp_path):
 def test_connection_endpoints_and_material_upload_guard(tmp_path):
     c = context(tmp_path); canvas = c.generation.canvas
     origin = source(c)
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}
     with TestClient(create_app(c.store), headers=headers) as client:
         response = client.post(f'/api/projects/{c.owner}/canvas/connections', json={
             'sourceId': origin['id'], 'assetId': origin['assetId'], 'targetId': str(uuid4()),
@@ -210,8 +207,8 @@ def test_connection_endpoints_and_material_upload_guard(tmp_path):
 
 
 def test_supported_incomplete_audio_input_uses_existing_draft_and_shared_rules(media):
-    from museshow.infrastructure.model_configs import ModelConfigs
-    from museshow.integrations.reference_inputs import generation_references
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    from opendirector.integrations.reference_inputs import generation_references
     store, owner, session, canvas, image, audio, _ = media
     model = ModelConfigs(store.repository).save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', 'test')
     nodes = canvas.snapshot(owner)['canvas']['nodes']
@@ -235,11 +232,11 @@ def test_supported_incomplete_audio_input_uses_existing_draft_and_shared_rules(m
 def test_chat_resolves_current_versions_but_never_rewrites_sent_history(tmp_path):
     import httpx
     from test_chat import setup, completion, events
-    from museshow.infrastructure.canvas import CanvasProjects
-    from museshow.integrations.chat_completions import ChatCompletions
+    from opendirector.infrastructure.canvas import CanvasProjects
+    from opendirector.integrations.chat_completions import ChatCompletions
     provider = ChatCompletions(httpx.MockTransport(lambda _: httpx.Response(200, text=completion())))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    session = headers['X-MuseShow-Session']
+    session = headers['X-OpenDirector-Session']
     owner = store.create('聊天版本跟随', str(uuid4()), session)['id']
     canvas = CanvasProjects(store)
     node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'image'}, session)
@@ -256,41 +253,3 @@ def test_chat_resolves_current_versions_but_never_rewrites_sent_history(tmp_path
         assert messages[-2]['content'][1]['assetId'] == second['id']
         assert messages[-2]['content'][0] == body[0] and messages[-2]['content'][2] == body[2]
         assert messages[-2]['referenceInputs'][0]['assetId'] == second['id']
-
-
-def test_port_geometry_arrow_direction_and_live_inline_projection(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    bundler = root / ('apps/web/node_modules/@esbuild/win32-x64/esbuild.exe' if __import__('os').name == 'nt' else 'apps/web/node_modules/.bin/esbuild')
-    if not shutil.which('node') or not bundler.exists():
-        pytest.skip('Install frontend dependencies for geometry checks')
-    entry = tmp_path / 'entry.ts'
-    entry.write_text('\n'.join(f'export * from {str(root / "apps/web/src/features" / path)!r};' for path in [
-        'canvas/useCanvasConnections.ts', 'canvas/edgePath.ts', 'references/content.ts']))
-    bundle = tmp_path / 'geometry.cjs'
-    subprocess.run([str(bundler), str(entry), '--bundle', '--platform=node', '--format=cjs', f'--outfile={bundle}'], check=True, capture_output=True)
-    script = tmp_path / 'geometry-check.cjs'
-    script.write_text("""
-const assert = require('node:assert/strict');
-const {nearestPort, edgePath, currentReferences} = require('./geometry.cjs');
-const source = {id: 'A', assetId: 'v1', draft: null, x: 0, y: 0};
-const size = {width: 320, height: 260};
-assert.equal(nearestPort({x: 160, y: 130}, [source], () => size, 24), null);
-for (const [side, x, y] of [['top',160,0],['right',320,130],['bottom',160,260],['left',0,130]]) {
-  assert.equal(nearestPort({x,y},[source],()=>size,24).side,side);
-}
-assert.equal(nearestPort({x: 320, y: 130}, [{...source, assetId: null}], () => size, 24), null);
-const a = {...source, ...size}, b = {...a, x: 500};
-assert.match(edgePath(a,b), /^M320,130 /);
-assert.match(edgePath(b,a), /^M500,130 /);
-assert.notEqual(edgePath(a,b,true),edgePath(b,a,true));
-assert.match(edgePath(a,a), /^M320,130 C450,130 /);
-const body = [{type:'text',text:'前文\\n'}, {type:'reference',nodeId:'A',assetId:'v1',name:'旧图',fingerprint:'old'}, {type:'text',text:'\\n后文'}];
-const original = JSON.stringify(body);
-const result = currentReferences(body,[{nodeId:'A',id:'v2',name:'新图',fingerprint:'new'}]);
-assert.equal(result[1].assetId,'v2');
-assert.equal(result[1].nodeId,'A');
-assert.deepEqual(result[0],body[0]);assert.deepEqual(result[2],body[2]);
-assert.equal(JSON.stringify(body),original);
-assert.deepEqual(currentReferences(body,[]),body);
-""")
-    subprocess.run(['node', str(script)], check=True, capture_output=True)

@@ -1,0 +1,15 @@
+export const A = {
+  "feed-item-video": "feed-item-video-BaE89I",
+  feedItemVideo: "feed-item-video-BaE89I",
+  playing: "playing-pwe9Uu",
+  "play-icon": "play-icon-pL_nmw",
+  playIcon: "play-icon-pL_nmw",
+  image: "image-YBWJDU",
+  hide: "hide-cUHx7A",
+  "video-wrapper": "video-wrapper-DEHE1B",
+  videoWrapper: "video-wrapper-DEHE1B",
+  "auto-play-cover": "auto-play-cover-pyOyGV",
+  autoPlayCover: "auto-play-cover-pyOyGV",
+  video: "video-SDLkCh",
+  icon: "icon-ZQ1Tw2",
+};

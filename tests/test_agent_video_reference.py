@@ -1,10 +1,6 @@
 """A chat edit must reach the video provider with the original instructions and media."""
 import io
 import json
-from pathlib import Path
-import os
-import shutil
-import subprocess
 import time
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,14 +10,14 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.agent.video_edits import video_edit_request
-from museshow.domain.references import project_content
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow.integrations.providers import GenerationProviders
-from museshow_api.main import create_app
+from opendirector.agent.video_edits import video_edit_request
+from opendirector.domain.references import project_content
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.integrations.providers import GenerationProviders
+from opendirector_api.main import create_app
 from test_agent_canvas import sse
 from test_multimodal_references import small_video
 
@@ -84,9 +80,6 @@ def test_chat_edit_keeps_video_connection_original_prompt_and_actual_multipart(t
             assert '本期不接通视频文件' not in payload['messages'][0]['content']
             if first_call == 'image_fallback':
                 return reply_tool('generate_asset', {**wrong, 'kind': 'image'}, 'bad-image')
-            if first_call == 'new_plan':
-                return reply_tool('start_production_plan', {'title': '重新构思的剧情', 'shots': [
-                    {'title': '新镜头', 'videoPrompt': '虚构夜店新剧情', 'referenceIds': [c.photo['id']]}]}, 'bad-plan')
             return reply_tool('generate_asset', wrong, 'edit')
         result = json.loads(payload['messages'][-1]['content'])
         if 'error' in result:
@@ -97,7 +90,7 @@ def test_chat_edit_keeps_video_connection_original_prompt_and_actual_multipart(t
         return httpx.Response(200, text=sse({'content': '已保留原视频和原始替换要求，提交参考生成。'}) + sse(finish='stop'))
     provider = GenerationProviders(c.store, httpx.MockTransport(handle_generation), poll_interval=0)
     app = create_app(c.store, ChatCompletions(httpx.MockTransport(handle_chat)), provider)
-    with TestClient(app, headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         response = client.post(f'/api/data/{c.owner}/chat', json={'id': str(uuid4()), 'modelId': c.agent['id'],
             'text': 'ignored', 'content': c.content, 'assets': [c.video['id'], c.photo['id']],
             'modelSelections': {'video': c.model['id']}})
@@ -132,7 +125,7 @@ def test_edit_with_unsupported_selected_model_does_not_downgrade_or_submit(tmp_p
         return httpx.Response(200, text=sse({'content': '请选择支持视频参考的模型，尚未提交生成。'}) + sse(finish='stop'))
     app = create_app(c.store, ChatCompletions(httpx.MockTransport(handle_chat)), GenerationProviders(c.store,
         httpx.MockTransport(lambda _: pytest.fail('Must not call a media provider'))))
-    with TestClient(app, headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         result = client.post(f'/api/data/{c.owner}/chat', json={'id': str(uuid4()), 'modelId': c.agent['id'],
             'text': 'ignored', 'content': c.content, 'assets': [c.video['id'], c.photo['id']], 'modelSelections': {'video': c.model['id']}})
         assert '尚未提交生成' in result.text
@@ -157,36 +150,3 @@ def test_edit_intent_uses_current_user_words_only(text, expected):
     assert bool(result) == expected
     if result:
         assert result['sourceVideoIds'] == ['current'] and result['prompt'] == text
-
-
-def test_chat_reference_badges_follow_selected_model_capabilities(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    esbuild = root/('apps/web/node_modules/@esbuild/win32-x64/esbuild.exe' if os.name == 'nt' else 'apps/web/node_modules/.bin/esbuild')
-    if not shutil.which('node') or not esbuild.exists():
-        pytest.skip('Install frontend dependencies')
-    entry = tmp_path/'reference-labels.tsx'
-    entry.write_text('''
-import assert from 'node:assert/strict';
-import {renderToStaticMarkup} from 'ROOT/apps/web/node_modules/react-dom/server';
-import {metadataOnlyReferenceKinds} from 'ROOT/apps/web/src/features/settings/models';
-import {ReferenceText} from 'ROOT/apps/web/src/features/references/ReferenceText';
-import {PendingReferences} from 'ROOT/apps/web/src/features/assistant/components/PendingReferences';
-const video = {id:'clip', name:'原片.mp4', kind:'video', type:'video/mp4', size:100, fingerprint:'clip'};
-const content = [{type:'reference', assetId:'clip', name:video.name, fingerprint:video.fingerprint}];
-const rules = {videoModes:['reference'], allowedKinds:['video','audio','image'], maxVideos:3, maxAudios:3};
-const hosted = metadataOnlyReferenceKinds({inputRules:rules});
-const legacy = metadataOnlyReferenceKinds({inputRules:{...rules,allowedKinds:['image','audio'],maxVideos:0}});
-assert.deepEqual(hosted, []);
-assert.deepEqual(legacy, ['video']);
-assert.deepEqual(metadataOnlyReferenceKinds(), ['video','audio']);
-for (const [kinds, expected] of [[hosted,false],[legacy,true]]) {
-  const message=renderToStaticMarkup(<ReferenceText scope="p" text="" assets={[video]} content={content} metadataOnlyKinds={kinds}/>);
-  const pending=renderToStaticMarkup(<PendingReferences pending={{projectId:'p',items:[{nodeId:'n',asset:video,title:'原片',error:null}]}} disabled={false} onCancel={()=>{}} metadataOnlyKinds={kinds}/>);
-  assert.equal(message.includes('仅素材信息'), expected);
-  assert.equal(pending.includes('仅素材信息'), expected);
-}
-'''.replace('ROOT', root.as_posix()), encoding='utf-8')
-    bundle = tmp_path/'reference-labels.cjs'
-    subprocess.run([str(esbuild), str(entry), '--bundle', '--platform=node', '--format=cjs', '--jsx=automatic',
-                    f'--outfile={bundle}', '--alias:react='+str(root/'apps/web/node_modules/react')], check=True, capture_output=True)
-    subprocess.run(['node', str(bundle)], check=True, capture_output=True)

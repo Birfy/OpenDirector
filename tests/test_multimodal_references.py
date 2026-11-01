@@ -14,18 +14,18 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import MAX_REFERENCES, input_rules
-from museshow.domain.projects import ProjectError
-from museshow.domain.references import project_content
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.generation_errors import provider_failure
-from museshow.integrations.reference_inputs import generation_references, reference_content, request_size
-from museshow.integrations.volcengine import VolcengineGeneration
-from museshow_api.main import create_app
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import MAX_REFERENCES, input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.domain.references import project_content
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.canvas_versions import apply_version, node_history
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.generation_errors import provider_failure
+from opendirector.integrations.reference_inputs import generation_references, reference_content, request_size
+from opendirector.integrations.volcengine import VolcengineGeneration
+from opendirector_api.main import create_app
 from test_chat import completion, events
 
 BASE = 'https://ark.cn-beijing.volces.com/api/plan/v3'
@@ -129,7 +129,7 @@ def test_ten_images_survive_api_generation_history_and_undo(media):
         manager._prepare(owner, target['id'], {**value, 'id': str(uuid4()), 'inputs': {'prompt': '超限', 'referenceIds': refs + [extra['id']]}}, session)
     assert canvas.snapshot(owner) == before
     # Draft and API models permit >8 references; provider limits remain separate.
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         response = client.patch(f'/api/data/{owner}/draft', json={'draft': '对比这些图', 'assets': [{k: a[k] for k in ('id', 'name', 'type', 'size', 'fingerprint')} for a in images], 'thinking': 'auto'})
         assert response.status_code == 200
@@ -158,7 +158,7 @@ def test_real_adapter_encodes_reference_roles_and_resume_never_reads_sources(med
 
 
 def test_video_mode_history_apply_and_inflight_guards(media):
-    from museshow.infrastructure.adoption import node_basis, reason
+    from opendirector.infrastructure.adoption import node_basis, reason
     store, owner, session, canvas, image, _, _ = media
     model = ModelConfigs(store.repository).save('video', BASE, 'doubao-seedance-2.0', 'private')
     node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'video'}, session)
@@ -176,7 +176,7 @@ def test_video_mode_history_apply_and_inflight_guards(media):
     current = canvas._node(canvas.snapshot(owner)['canvas'], node['id'])
     changed = {**current, 'videoMode': 'first_frame'}
     directory = store.root / '四类参考'; records = canvas.assets._records(directory, owner)
-    assert reason(receipt, directory, changed, records, {}, manager.configs, False) == 'node_changed'
+    assert reason(receipt, directory, changed, records, manager.configs) == 'node_changed'
 
 
 def test_reference_error_classification_is_specific_and_redacted():
@@ -224,7 +224,7 @@ def test_history_application_restores_mode_and_references_atomically(media, smal
 
 
 def test_audio_reference_first_message_can_create_project_and_chat(media):
-    from museshow.integrations.chat_completions import ChatCompletions
+    from opendirector.integrations.chat_completions import ChatCompletions
     store, _, session, _, _, audio, _ = media
     data = store.asset(audio['projectId'], audio['id'])[0]
     scratch_id = str(uuid4())
@@ -235,7 +235,7 @@ def test_audio_reference_first_message_can_create_project_and_chat(media):
     def handler(request):
         calls.append(json.loads(request.content)); return httpx.Response(200, text=completion('素材项目'))
     content = [{'type': 'reference', 'assetId': scratch_id, 'name': '节奏.wav', 'fingerprint': 'fixture'}, {'type': 'text', 'text': '\n请记录此素材'}]
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(handler))), headers=headers) as client:
         created = client.post('/api/projects/from-message', json={'id': str(uuid4()), 'turnId': str(uuid4()), 'modelId': model['id'],
             'draft': 'ignored', 'draftContent': content, 'assets': [{k: attachment[k] for k in ('id', 'name', 'type', 'size', 'fingerprint')}], 'thinking': 'auto'})
@@ -271,28 +271,3 @@ def test_audio_count_and_total_duration_are_checked_together(media, count, secon
     audios = [canvas.import_file(owner, str(uuid4()), f'音频{i}.wav', buf.getvalue(), session, str(uuid4())) for i in range(count)]
     with pytest.raises(ProjectError, match='最多 3 段，总时长不超过 15 秒'):
         generation_references(store, task(owner, [image, *audios]), config())
-
-
-def test_plan_and_local_repair_keep_explicit_reference_mode(tmp_path, small_video):
-    from test_production_repairs import context, wait, close, command
-    from test_result_adoption import audio_bytes
-    c = context(tmp_path, (small_video, audio_bytes()))
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '多图计划', 'shots': [{'title': '一镜', 'imagePrompt': '关键帧',
-            'videoPrompt': '视频', 'referenceIds': [c.reference['id']], 'videoMode': 'reference'}]}, c.models, c.session)
-        plan = await wait(c)
-        assert plan['status'] == 'succeeded'
-        image_step, video_step = plan['steps']
-        video = c.provider.calls[-1]
-        assert video['videoMode'] == video_step['videoMode'] == 'reference'
-        assert video['referenceIds'] == [image_step['assetId'], c.reference['id']]
-        old_tasks = {p: p.read_bytes() for p in (c.directory / 'tasks').glob('*.json')}
-        await c.manager.repair(c.owner, plan['id'], command(c, plan, video_step, mode='reference',
-            referenceIds=video['referenceIds'], prompt='局部修改', adoptionPolicy='candidate_only'), c.session)
-        repaired = await wait(c)
-        assert c.provider.calls[-1]['videoMode'] == 'reference'
-        assert repaired['steps'][0]['assetId'] == image_step['assetId']
-        assert {p: p.read_bytes() for p in old_tasks} == old_tasks
-        assert node_history(c.generation.canvas, c.owner, video_step['nodeId'])['versions'][-1]['videoMode'] == 'reference'
-        await close(c)
-    asyncio.run(run())

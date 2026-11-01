@@ -6,18 +6,18 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.assets import attachment
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure import asset_deletion
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects, read_json, write_json
+from opendirector.domain.assets import attachment
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure import asset_deletion
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects, read_json, write_json
 from test_project_assets import project_api, png
 
 
 def removed_upload(project_api):
     client, store, project = project_api
     canvas = CanvasProjects(store)
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     asset = canvas.import_file(project['id'], str(uuid4()), 'source.png', png(), session, str(uuid4()))
     node = canvas.snapshot(project['id'])['canvas']['nodes'][0]
     canvas.remove_many(project['id'], [{'id': node['id'], 'expectedRevision': node['revision'], 'expectedTaskId': node['taskId']}], session)
@@ -37,7 +37,7 @@ def delete(client, project, asset, impact, clear=True):
 @pytest.mark.parametrize('direction', ['undo', 'redo', 'both'])
 def test_removed_asset_can_be_deleted_with_explicit_history_confirmation(project_api, direction):
     client, store, project, canvas, asset = removed_upload(project_api)
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     if direction != 'undo':
         entry = canvas.snapshot(project['id'])['canvas']['history']['undo']
         canvas.history(project['id'], 'undo', entry['id'], str(uuid4()), session)
@@ -77,7 +77,7 @@ def test_removed_asset_can_be_deleted_with_explicit_history_confirmation(project
 @pytest.mark.parametrize('source', ['draft', 'message', 'node', 'asset', 'task', 'task_result', 'versions'])
 def test_business_references_cannot_be_bypassed_by_clearing_history(project_api, source):
     client, store, project, canvas, asset = removed_upload(project_api)
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     root = Path(project['path'])
     if source in {'draft', 'message'}:
         conversation = store.conversation(project['id'])
@@ -123,7 +123,7 @@ def test_business_references_cannot_be_bypassed_by_clearing_history(project_api,
 def test_confirmation_is_invalidated_by_new_edit_and_requires_preflight(project_api):
     client, store, project, canvas, asset = removed_upload(project_api)
     impact = preview(client, project, asset)
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'text'}, session, remember=True)
     before = (Path(project['path']) / 'canvas.json').read_bytes()
     response = delete(client, project, asset, impact)
@@ -136,7 +136,7 @@ def test_confirmation_is_invalidated_by_new_edit_and_requires_preflight(project_
 
 def test_plain_deletion_preserves_unrelated_history(project_api):
     client, store, project = project_api
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'text'}, session, remember=True)
     asset = canvas.assets.import_file(project['id'], str(uuid4()), 'unplaced.png', png(), session)
@@ -182,7 +182,7 @@ def test_failed_deletion_restores_file_inventory_and_history(project_api, monkey
 def test_interrupted_deletion_recovers_before_and_after_file_commit(project_api, monkeypatch, checkpoint):
     client, store, project, canvas, asset = removed_upload(project_api)
     root = Path(project['path'])
-    session = client.headers['X-MuseShow-Session']
+    session = client.headers['X-OpenDirector-Session']
     impact = preview(client, project, asset)
     original_unlink = Path.unlink
     original_write = asset_deletion.write_json
@@ -222,7 +222,7 @@ def test_reference_added_after_preflight_blocks_deletion_without_clearing_histor
     client, store, project, canvas, asset = removed_upload(project_api)
     impact = preview(client, project, asset)
     before = (Path(project['path']) / 'canvas.json').read_bytes()
-    store.save_draft(project['id'], {'assets': [attachment(asset)]}, client.headers['X-MuseShow-Session'])
+    store.save_draft(project['id'], {'assets': [attachment(asset)]}, client.headers['X-OpenDirector-Session'])
     response = delete(client, project, asset, impact)
     assert response.status_code == 409 and response.json()['code'] == 'asset_in_use'
     assert before == (Path(project['path']) / 'canvas.json').read_bytes()

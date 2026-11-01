@@ -1,0 +1,65 @@
+.cw-context-menu.cw-canvas-menu {
+  position: fixed;
+  width: min(226px, calc(100vw - 16px));
+  min-width: 0;
+  padding: 4px;
+  border-radius: 14px;
+  background: #262627;
+  color: #eee;
+}
+.cw-context-menu.cw-canvas-menu button {
+  height: 44px;
+  padding: 0 14px;
+  gap: 10px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+.cw-context-menu.cw-canvas-menu .cw-menu-caption {
+  padding: 12px 14px;
+  font-size: 12px;
+}
+.cw-canvas-menu button:hover:not(:disabled):not([aria-disabled="true"]),
+.cw-canvas-menu button.is-open {
+  background: #ffffff0c;
+}
+.cw-context-menu.cw-canvas-menu button:disabled,
+.cw-context-menu.cw-canvas-menu button[aria-disabled="true"] {
+  color: #77777d;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.cw-context-menu.cw-canvas-menu button:disabled:hover,
+.cw-context-menu.cw-canvas-menu button[aria-disabled="true"]:hover {
+  background: transparent;
+}
+.cw-context-menu.cw-canvas-menu kbd {
+  font-size: 14px;
+  color: #a5a5a9;
+}
+.cw-canvas-menu button:disabled kbd {
+  color: inherit;
+}
+.cw-context-menu.cw-canvas-menu hr {
+  margin: 8px 14px;
+  background: #ffffff10;
+}
+.cw-canvas-menu button:focus-visible {
+  outline: 2px solid #8daed4;
+  outline-offset: -2px;
+}
+:root[data-theme="light"] .cw-canvas-menu {
+  background: #fff;
+  color: #30343c;
+}
+:root[data-theme="light"]
+  .cw-canvas-menu
+  button:hover:not(:disabled):not([aria-disabled="true"]),
+:root[data-theme="light"] .cw-canvas-menu button.is-open {
+  background: #edf0f5;
+}
+:root[data-theme="light"] .cw-canvas-menu button[aria-disabled="true"] {
+  color: #a0a6af;
+}
+:root[data-theme="light"] .cw-canvas-menu hr {
+  background: #dfe2e7;
+}

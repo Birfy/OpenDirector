@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from museshow.infrastructure.local_projects import LocalProjects, read_json
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow_api.main import create_app
+from opendirector.infrastructure.local_projects import LocalProjects, read_json
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector_api.main import create_app
 
 
 def sse(delta=None, finish=None):
@@ -35,7 +35,7 @@ def test_agent_tool_roundtrip_persists_asset_and_private_reasoning(tmp_path):
         assert assistant[0]['reasoning_content'] == 'private-thought'
         assert any(m['role'] == 'tool' and 'succeeded' in m['content'] for m in payload['messages'])
         return httpx.Response(200, text=sse({'reasoning_content': 'private-followup'}) + sse({'content': '已将剧本保存到画布。'}) + sse(finish='stop') + 'data: [DONE]\n\n')
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(handler))), headers=headers) as client:
         reply_id = str(uuid4())
         request = {'id': reply_id, 'modelId': config['id'], 'text': '写一份剧本并保存到画布'}
@@ -80,7 +80,7 @@ def test_missing_media_model_returns_tool_error_without_empty_node(tmp_path):
         result = json.loads(payload['messages'][-1]['content'])
         assert '尚未选择' in result['error']
         return httpx.Response(200, text=sse({'content': '请先配置图片模型。'}) + sse(finish='stop'))
-    with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(handler))), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(handler))), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         response = client.post(f'/api/data/{project["id"]}/chat', json={'id': str(uuid4()), 'modelId': config['id'], 'text': '生成图片', 'modelSelections': {'image': None}})
         assert '请先配置图片模型。' in response.text
         state = client.get(f'/api/projects/{project["id"]}/canvas').json()
@@ -91,9 +91,9 @@ def test_agent_cannot_overwrite_a_node_using_a_stale_read(tmp_path):
     import asyncio
     from types import SimpleNamespace
     import pytest
-    from museshow.agent.loop import AgentLoop
-    from museshow.application.generation import Generation
-    from museshow.domain.projects import ProjectError
+    from opendirector.agent.loop import AgentLoop
+    from opendirector.application.generation import Generation
+    from opendirector.domain.projects import ProjectError
     store = LocalProjects(tmp_path)
     session = str(uuid4())
     project = store.create('保护编辑', str(uuid4()), session)
@@ -110,9 +110,36 @@ def test_agent_cannot_overwrite_a_node_using_a_stale_read(tmp_path):
 
 def test_rejected_tool_arguments_name_the_fields_without_their_values():
     from pydantic import ValidationError
-    from museshow.agent.loop import SCHEMAS, argument_error
+    from opendirector.agent.loop import SCHEMAS, argument_error
     with pytest.raises(ValidationError) as failure:
         SCHEMAS['generate_asset'][0].model_validate_json('{"kind": "image", "prompt": "雨夜", "modelConfigId": "secret-value"}')
     message = argument_error(failure.value)
     assert 'modelConfigId' in message and 'secret-value' not in message
     assert argument_error(ValueError('x')) == '工具参数或文本格式无效，未执行。'
+
+
+@pytest.mark.parametrize('kind', ['image', 'video'])
+def test_agent_does_not_default_to_or_generate_with_a_segmentation_model(tmp_path, kind):
+    import asyncio
+    from types import SimpleNamespace
+    from opendirector.agent.loop import AgentLoop
+    from opendirector.application.generation import Generation
+    from opendirector.domain.projects import ProjectError
+    store = LocalProjects(tmp_path)
+    session = str(uuid4())
+    project = store.create('SAM能力筛选', str(uuid4()), session)
+    configs = ModelConfigs(tmp_path)
+    sam = configs.save(kind, 'http://fixture.invalid/v1', 'sam3', '',
+                       connection_type='self_hosted', protocol='vllm_omni_segmentation')
+    generation = Generation(store, configs)
+    loop = AgentLoop(store, configs, generation, None)
+    turn = SimpleNamespace(owner=project['id'], session=session, selections={}, selected_node_id=None)
+    assert loop._project(turn)['models'] == []
+    args = {'kind': kind, 'prompt': 'test', 'referenceIds': []}
+    with pytest.raises(ProjectError, match='尚未选择'):
+        asyncio.run(loop.execute(turn, 'generate_asset', args, str(uuid4())))
+    turn.selections = {kind: sam['id']}
+    with pytest.raises(ProjectError, match='视觉分割模型'):
+        asyncio.run(loop.execute(turn, 'generate_asset', args, str(uuid4())))
+    state = generation.canvas.snapshot(project['id'])
+    assert state['canvas']['nodes'] == [] and state['tasks'] == []

@@ -1,0 +1,12 @@
+export var DAVideoGenerateType;
+let o;
+o = DAVideoGenerateType || (DAVideoGenerateType = {});
+o.none = "";
+o.lipSync = "lip_sync";
+o.genVideo = "gen_video";
+o.mergeVideo = "merge_video";
+o.subtitleErase = "subtitle_erase";
+o.videoAudioEffect = "video_audio_effect";
+o.videoTemplate = "video_template";
+o.videoBgm = "video_bgm";
+o.workflow = "work_flow";

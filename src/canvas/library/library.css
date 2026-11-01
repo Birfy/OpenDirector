@@ -1,0 +1,470 @@
+/* Global asset library (docs/ASSET-LIBRARY-DESIGN.md §1.5, §7). */
+
+/* Default dark palette. Light overrides live together at the end of the file
+   so every surface the dialog paints is themed from one place. */
+.cw-lib-dialog {
+  --cw-lib-bg: #131517;
+  --cw-lib-fg: #e6e8ea;
+  --cw-lib-border: #262a2e;
+  --cw-lib-muted: #9aa0a6;
+  --cw-lib-faint: #7d848b;
+  --cw-lib-hover: #1c1f22;
+  --cw-lib-raised: #1a1d20;
+  --cw-lib-active: #2a2e33;
+  --cw-lib-active-fg: #fff;
+  --cw-lib-input: #191c1f;
+  --cw-lib-input-border: #2c3035;
+  --cw-lib-button: #1b1e21;
+  --cw-lib-button-border: #2f3439;
+  --cw-lib-button-fg: #d7dade;
+  --cw-lib-button-hover: #23282c;
+  --cw-lib-well: #0d0f11;
+  --cw-lib-dashed: #33383d;
+  --cw-lib-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --cw-lib-danger-border: #5a2626;
+  --cw-lib-danger-fg: #f19a9a;
+  --cw-lib-danger-bg: #1e1414;
+  --cw-lib-warn-fg: #f0c4c4;
+}
+
+.cw-lib-overlay {
+  --cw-lib-scrim: rgba(0, 0, 0, 0.55);
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: var(--cw-lib-scrim);
+  padding: 24px;
+}
+
+.cw-lib-dialog {
+  display: flex;
+  flex-direction: column;
+  /* Square window centred on the page; shrink to fit short viewports. */
+  width: min(var(--cw-lib-size), 100vw - 48px, 100vh - 48px);
+  height: min(var(--cw-lib-size), 100vw - 48px, 100vh - 48px);
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--cw-lib-border);
+  background: var(--cw-lib-bg);
+  color: var(--cw-lib-fg);
+  box-shadow: var(--cw-lib-shadow);
+}
+
+.cw-lib-overlay {
+  --cw-lib-size: 880px;
+}
+
+/* header: primary tabs, search capsule, close */
+.cw-lib-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  flex-wrap: wrap;
+}
+
+.cw-lib-top {
+  display: flex;
+  gap: 4px;
+}
+
+.cw-lib-top button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cw-lib-muted);
+  font-size: 15px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cw-lib-top button:hover {
+  background: var(--cw-lib-hover);
+  color: var(--cw-lib-fg);
+}
+
+.cw-lib-top .cw-lib-top-on {
+  background: var(--cw-lib-active);
+  color: var(--cw-lib-active-fg);
+}
+
+.cw-lib-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 180px;
+  min-width: 150px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--cw-lib-input-border);
+  background: var(--cw-lib-input);
+  color: var(--cw-lib-faint);
+}
+
+.cw-lib-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--cw-lib-fg);
+  font-size: 14px;
+  outline: none;
+}
+
+.cw-lib-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cw-lib-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cw-lib-close:hover {
+  background: var(--cw-lib-hover);
+  color: var(--cw-lib-active-fg);
+}
+
+.cw-lib-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px;
+}
+
+.cw-lib-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+}
+
+/* secondary tabs sit under the primary ones, underlined when active */
+.cw-lib-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.cw-lib-tab {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--cw-lib-muted);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cw-lib-tab:hover {
+  color: var(--cw-lib-fg);
+}
+
+.cw-lib-tab-on {
+  color: var(--cw-lib-active-fg);
+  border-bottom-color: var(--cw-lib-active-fg);
+}
+
+.cw-lib-tab-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.cw-lib-tab-actions button,
+.cw-lib-footer button {
+  padding: 7px 13px;
+  border: 1px solid var(--cw-lib-button-border);
+  border-radius: 8px;
+  background: var(--cw-lib-button);
+  color: var(--cw-lib-button-fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cw-lib-tab-actions button:hover:not(:disabled),
+.cw-lib-footer button:hover:not(:disabled) {
+  background: var(--cw-lib-button-hover);
+}
+
+.cw-lib-tab-actions button:disabled,
+.cw-lib-footer button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cw-lib-danger {
+  border-color: var(--cw-lib-danger-border) !important;
+  color: var(--cw-lib-danger-fg) !important;
+}
+
+.cw-lib-back {
+  padding: 4px 10px 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--cw-lib-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.cw-lib-note,
+.cw-lib-empty {
+  margin: 0;
+  color: var(--cw-lib-faint);
+  font-size: 13px;
+}
+
+.cw-lib-empty {
+  padding: 48px 0;
+  text-align: center;
+}
+
+/* card grid: square media cards, wide cards for canvas thumbnails */
+.cw-lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 18px 14px;
+  padding-bottom: 20px;
+}
+
+.cw-lib-grid-wide {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.cw-lib-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cw-lib-card .cw-lib-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--cw-lib-border);
+  background: var(--cw-lib-raised);
+  cursor: pointer;
+}
+
+.cw-lib-card-wide .cw-lib-thumb {
+  aspect-ratio: 16 / 10;
+}
+
+.cw-lib-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Video/audio cards show a real frame; the badge marks the media kind.
+   `contain` keeps the whole frame visible instead of cropping a landscape
+   video into a square, and the dark backdrop masks the letterbox. */
+.cw-lib-thumb .cw-lib-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: var(--cw-lib-well);
+}
+
+.cw-lib-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cw-lib-scrim);
+  color: var(--cw-lib-fg);
+  pointer-events: none;
+}
+
+.cw-lib-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--cw-lib-faint);
+  border: 1px dashed var(--cw-lib-dashed);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.cw-lib-card-selected .cw-lib-thumb {
+  border-color: var(--cw-lib-active-fg);
+}
+
+/* checkbox in the top-left corner of every selectable card */
+.cw-lib-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid #6d747b;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.cw-lib-check-on {
+  border-color: var(--cw-lib-active-fg);
+  background: #fff;
+}
+
+.cw-lib-check-on::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  background: var(--cw-lib-bg);
+}
+
+.cw-lib-star {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  color: var(--cw-lib-active-fg);
+  font-size: 16px;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.cw-lib-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.cw-lib-title {
+  overflow: hidden;
+  color: var(--cw-lib-fg);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cw-lib-subtitle {
+  color: var(--cw-lib-faint);
+  font-size: 12px;
+}
+
+/* footer: selection count on the left, actions on the right */
+.cw-lib-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--cw-lib-border);
+  color: var(--cw-lib-muted);
+  font-size: 13px;
+}
+
+.cw-lib-footer > div {
+  display: flex;
+  gap: 10px;
+}
+
+.cw-lib-primary {
+  border-color: #3d6bd6 !important;
+  background: #3d6bd6 !important;
+  color: #fff !important;
+}
+
+.cw-lib-primary:disabled {
+  opacity: 0.45;
+}
+
+.cw-lib-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--cw-lib-danger-border);
+  border-radius: 10px;
+  background: var(--cw-lib-danger-bg);
+}
+
+.cw-lib-confirm p {
+  margin: 0;
+  color: var(--cw-lib-warn-fg);
+  font-size: 13px;
+}
+
+.cw-lib-confirm > div {
+  display: flex;
+  gap: 8px;
+}
+
+.cw-lib-panel [role="alert"] {
+  margin: 0;
+  color: var(--cw-lib-danger-fg);
+  font-size: 13px;
+}
+
+/* Light theme. The dialog is portalled outside .cw-workspace, so it cannot
+   inherit that scope's variables and must key off the root attribute.
+   Only the surfaces change; the overlaid checkbox and primary button stay
+   light-on-colour because they sit on top of media, not on the dialog. */
+:root[data-theme="light"] .cw-lib-overlay {
+  --cw-lib-scrim: rgba(23, 28, 38, 0.32);
+}
+:root[data-theme="light"] .cw-lib-dialog {
+  --cw-lib-bg: #fff;
+  --cw-lib-fg: #30343c;
+  --cw-lib-border: #dfe2e7;
+  --cw-lib-muted: #5c636e;
+  --cw-lib-faint: #757b86;
+  --cw-lib-hover: #f3f4f6;
+  --cw-lib-raised: #fafbfc;
+  --cw-lib-active: #e4e7ed;
+  --cw-lib-active-fg: #23262c;
+  --cw-lib-input: #fafbfc;
+  --cw-lib-input-border: #dfe2e7;
+  --cw-lib-button: #fff;
+  --cw-lib-button-border: #d7dbe1;
+  --cw-lib-button-fg: #3c4149;
+  --cw-lib-button-hover: #f3f4f6;
+  --cw-lib-well: #f1f3f6;
+  --cw-lib-dashed: #cfd4dc;
+  --cw-lib-shadow: 0 24px 64px rgba(23, 28, 38, 0.18);
+  --cw-lib-danger-border: #e8c4c4;
+  --cw-lib-danger-fg: #b23b3b;
+  --cw-lib-danger-bg: #fff5f5;
+  --cw-lib-warn-fg: #8f3a3a;
+}
+
+/* The search field and the video well keep a quiet grey so white media and
+   light UI chrome remain distinguishable. */
+:root[data-theme="light"] .cw-lib-thumb .cw-lib-video {
+  background: var(--cw-lib-well);
+}
+
+:root[data-theme="light"] .cw-lib-check {
+  border-color: #ffffffcc;
+  background: rgba(23, 28, 38, 0.35);
+}
+
+:root[data-theme="light"] .cw-lib-check-on {
+  border-color: #3d6bd6;
+  background: #3d6bd6;
+}

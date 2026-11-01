@@ -1,5 +1,4 @@
 """Layout is presentation state: no generation, input edits, or implicit moves."""
-import asyncio
 from copy import deepcopy
 from itertools import combinations
 import io
@@ -10,14 +9,13 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from museshow.domain.canvas import CanvasNode, CanvasState
-from museshow.domain.canvas_layout import CANVAS_LIMIT, KINDS, NODE_WIDTH, ROW_GAP, SLOT_WIDTH, arrange, node_height
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import write_json
-from museshow_api.main import create_app
+from opendirector.domain.canvas import CanvasNode, CanvasState
+from opendirector.domain.canvas_layout import CANVAS_LIMIT, KINDS, NODE_WIDTH, ROW_GAP, SLOT_WIDTH, arrange, node_height
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import write_json
+from opendirector_api.main import create_app
 from test_canvas_generation import node, project
-from test_production_repairs import close, command, context, media, wait
 
 
 def positions(nodes):
@@ -158,7 +156,7 @@ def test_layout_writes_are_atomic_and_stale_requests_do_not_move_any_node(projec
         canvas.arrange(owner['id'], state['revision'] - 1, session)
     assert path.read_bytes() == before
     def disk_failure(*args): raise OSError('simulated disk failure')
-    monkeypatch.setattr('museshow.infrastructure.canvas.write_json', disk_failure)
+    monkeypatch.setattr('opendirector.infrastructure.canvas.write_json', disk_failure)
     with pytest.raises(OSError): canvas.arrange(owner['id'], state['revision'], session)
     assert path.read_bytes() == before
 
@@ -166,13 +164,13 @@ def test_layout_writes_are_atomic_and_stale_requests_do_not_move_any_node(projec
 def test_layout_api_validates_heights_versions_edit_lease_and_extended_coordinates(project):
     store, owner, session, _ = project
     endpoint = f'/api/projects/{owner["id"]}/canvas'
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         item = client.post(endpoint + '/nodes', json={'id': str(uuid4()), 'kind': 'audio', 'x': 200000, 'y': -100}).json()
         assert item['x'] == 200000
         state = client.get(endpoint).json()['canvas']
         body = {'expectedRevision': state['revision']}
-        assert client.post(endpoint + '/arrange', json=body, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(endpoint + '/arrange', json=body, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         assert client.post(endpoint + '/arrange', json={**body, 'heights': {item['id']: -1}}).status_code == 422
         response = client.post(endpoint + '/arrange', json=body)
         assert response.status_code == 200 and response.json()['nodes'][0]['x'] == 40
@@ -187,49 +185,3 @@ def test_all_500_nodes_can_be_arranged_in_one_lane_with_equal_spacing():
     assert state['nodes'][-1]['x'] + NODE_WIDTH < CANVAS_LIMIT
     assert all(b['x'] - a['x'] == SLOT_WIDTH for a, b in zip(state['nodes'], state['nodes'][1:]))
     CanvasState.model_validate(state)
-
-
-def test_production_uses_all_lanes_and_layout_during_generation_keeps_adoption_and_receipts(tmp_path, media):
-    c = context(tmp_path, media)
-    async def run():
-        c.generation.canvas.save_text(c.owner, str(uuid4()), str(uuid4()), '剧本正文', '剧本.md', c.session, create=True)
-        c.provider.gate.clear()
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '排版不影响制作', 'shots': [{'title': '首镜', 'imagePrompt': '关键帧', 'videoPrompt': '视频', 'narration': '旁白正文'}]}, c.models, c.session)
-        for _ in range(300):
-            if c.provider.calls: break
-            await asyncio.sleep(.01)
-        state = c.generation.canvas.snapshot(c.owner)['canvas']
-        canvas = c.generation.canvas
-        arranged = canvas.arrange(c.owner, state['revision'], c.session)
-        c.provider.gate.set()
-        plan = await wait(c)
-        assert plan['status'] == 'succeeded', plan['error']
-        snapshot = canvas.snapshot(c.owner)
-        assert {node['kind'] for node in snapshot['canvas']['nodes']} == set(KINDS)
-        assert all(node['y'] == snapshot['canvas']['layout']['rows'][node['kind']] for node in snapshot['canvas']['nodes'])
-        assert len(c.provider.calls) == 3 and all(task['adopted'] for task in snapshot['tasks'])
-        board = deepcopy(c.manager.board.snapshot(c.owner))
-        receipts = {path.name: path.read_bytes() for path in (c.directory / 'tasks').glob('*.json')}
-        # A later explicit arrangement can be undone after media changes without
-        # reverting the selected assets or task records.
-        changed = canvas.arrange(c.owner, snapshot['canvas']['revision'], c.session)
-        if changed['history']['undo']:
-            canvas.history(c.owner, 'undo', changed['history']['undo']['id'], str(uuid4()), c.session)
-        assert c.manager.board.snapshot(c.owner) == board
-        assert {path.name: path.read_bytes() for path in (c.directory / 'tasks').glob('*.json')} == receipts
-        # Reusing an uploaded asset keeps its existing source node and position;
-        # it must not create a duplicate generator containing the upload.
-        second, _ = c.manager._prepare(c.owner, str(uuid4()), {'title': '直接复用', 'shots': [{'title': '次镜', 'imagePrompt': '备用'}]}, c.models, c.session)
-        c.manager._initialize(c.owner, second)
-        second['status'] = 'stopped'; c.manager._save(c.owner, second)
-        second = c.manager.read(c.owner, second['id'])
-        nodes_before_reuse = canvas.snapshot(c.owner)['canvas']['nodes']
-        await c.manager.repair(c.owner, second['id'], command(c, second, second['steps'][0], action='reuse', assetId=c.reference['id']), c.session)
-        assert (await wait(c))['status'] == 'succeeded'
-        latest = canvas.snapshot(c.owner)['canvas']
-        assert latest['nodes'] == nodes_before_reuse
-        source = next(node for node in latest['nodes'] if node['assetId'] == c.reference['id'])
-        assert source['role'] == 'material'
-        assert len(c.provider.calls) == 3
-        await close(c)
-    asyncio.run(run())

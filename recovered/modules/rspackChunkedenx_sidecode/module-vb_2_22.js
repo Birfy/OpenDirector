@@ -1,0 +1,5 @@
+export default !require("./module-X_23.js")(function () {
+  function t() {}
+  t.prototype.constructor = null;
+  return Object.getPrototypeOf(new t()) !== t.prototype;
+});

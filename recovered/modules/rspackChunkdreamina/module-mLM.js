@@ -1,0 +1,13 @@
+var a;
+export { a as n };
+export var V;
+let i;
+let n;
+i = a || (a = {});
+i.PENDING = "Pending";
+i.APPROVING = "Approving";
+i.APPROVED = "Approved";
+i.REJECTED = "Rejected";
+n = V || (V = {});
+n.APPROVE = "Approve";
+n.REJECT = "Reject";

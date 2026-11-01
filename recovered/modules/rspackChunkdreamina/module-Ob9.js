@@ -1,0 +1,17 @@
+export const A = {
+  trigger: "trigger-mVc8Hy",
+  "picking-file": "picking-file-fsRPe_",
+  pickingFile: "picking-file-fsRPe_",
+  popover: "popover-0ghnYs",
+  menu: "menu-KkwjpY",
+  "upload-action": "upload-action-TdZBc3",
+  uploadAction: "upload-action-TdZBc3",
+  "menu-label": "menu-label-OKY0Rc",
+  menuLabel: "menu-label-OKY0Rc",
+  "menu-cn": "menu-cn-wvPCDe",
+  menuCn: "menu-cn-wvPCDe",
+  "upload-requirements-tooltip": "upload-requirements-tooltip-ORQKIw",
+  uploadRequirementsTooltip: "upload-requirements-tooltip-ORQKIw",
+  "upload-requirements-link": "upload-requirements-link-PiD7X5",
+  uploadRequirementsLink: "upload-requirements-link-PiD7X5",
+};

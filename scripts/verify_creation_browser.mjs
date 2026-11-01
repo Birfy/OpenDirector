@@ -1,0 +1,356 @@
+/** Real UI/API loop using tests/browser/creation_server.py. No paid models.
+ * Set PLAYWRIGHT_MODULE and CHROMIUM_PATH when using an existing installation.
+ */
+import assert from "node:assert/strict";
+const { chromium } = await import(
+  process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
+);
+const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
+const api = process.env.CREATION_API_URL ?? "http://127.0.0.1:8019";
+const headers = {
+  "X-OpenDirector-Request": "1",
+  "Content-Type": "application/json",
+};
+const call = async (path, body) => {
+  const response = await fetch(api + path, {
+    headers,
+    ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+  });
+  assert.ok(
+    response.ok,
+    `${response.status}: ${await response.clone().text()}`,
+  );
+  return response.json();
+};
+assert.equal(
+  (await call("/api/creation-test-health")).isolated,
+  true,
+  "Use the isolated fixture server",
+);
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.CHROMIUM_PATH
+    ? { executablePath: process.env.CHROMIUM_PATH }
+    : {}),
+  args: ["--no-sandbox"],
+});
+const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+page.setDefaultTimeout(15000);
+const errors = [];
+page.on("pageerror", (error) => errors.push(error.message));
+page.on("response", (response) => {
+  if (response.status() >= 400 && response.url().includes("/api/"))
+    console.error("API response", response.status(), response.url());
+});
+const reopen = process.env.CREATION_REOPEN_PROJECT;
+const projectId = reopen ?? crypto.randomUUID();
+if (!reopen)
+  await call(`/api/creation/projects/${projectId}/commands`, {
+    commandId: crypto.randomUUID(),
+    projectId,
+    type: "project.create",
+    payload: { name: `Browser closure ${projectId.slice(0, 8)}` },
+  });
+const state = () => call(`/api/creation/projects/${projectId}`);
+const until = async (predicate, label) => {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const snapshot = await state();
+    if (predicate(snapshot)) return snapshot;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timeout: ${label}`);
+};
+const rail = (label) =>
+  page
+    .getByRole("toolbar", { name: "画布创作工具" })
+    .getByRole("button", { name: `添加${label}`, exact: true });
+try {
+  if (reopen) {
+    const before = await state();
+    const calls = (await call("/api/creation-test-health")).calls.length;
+    await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
+    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    assert.equal(
+      await page.locator(".react-flow__node").count(),
+      before.canvasItems.filter((item) => item.visible).length,
+    );
+    assert.deepEqual(await state(), before);
+    assert.equal((await call("/api/creation-test-health")).calls.length, calls);
+    assert.deepEqual(errors, []);
+    console.log(
+      JSON.stringify({
+        passed: true,
+        reopenedProject: projectId,
+        eventCursor: before.eventCursor,
+        checks: [
+          "service restart",
+          "same business snapshot",
+          "no provider resubmit",
+        ],
+      }),
+    );
+  } else {
+    await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
+    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    await rail("文本").click();
+    let snapshot = await until(
+      (value) => value.canvasItems.length === 1,
+      "source created",
+    );
+    const sourceId = snapshot.canvasItems[0].id;
+    const source = page.locator(`.react-flow__node[data-id="${sourceId}"]`);
+    await source.locator(".cw-text-display").dblclick();
+    await source.getByRole("textbox").fill("Source version one");
+    await rail("文本").click();
+    snapshot = await until(
+      (value) => value.canvasItems.length === 2 && value.assets.length === 1,
+      "material and target saved",
+    );
+    const sourceAsset = snapshot.assets[0],
+      targetId = snapshot.canvasItems[1].id;
+    // Arrange through the public semantic API so both real drag targets are visible.
+    await page.evaluate(
+      async ({ projectId, sourceId, targetId }) => {
+        const { creationClient, objectVersion } =
+          await import("/src/backend/creationClient.ts");
+        const client = creationClient(projectId);
+        await client.refresh();
+        await client.command(
+          "canvas.move",
+          {
+            items: [
+              { itemId: sourceId, position: { x: 150, y: 150 } },
+              { itemId: targetId, position: { x: 700, y: 150 } },
+            ],
+          },
+          client.snapshot.canvasItems.map((item) =>
+            objectVersion("canvas_item", item),
+          ),
+        );
+      },
+      { projectId, sourceId, targetId },
+    );
+    await page.waitForTimeout(600);
+    const target = page.locator(`.react-flow__node[data-id="${targetId}"]`);
+    const bounds = await source.boundingBox(),
+      targetBounds = await target.boundingBox();
+    assert.ok(bounds && targetBounds);
+    await page.mouse.move(
+      bounds.x + bounds.width + 22,
+      bounds.y + bounds.height / 2,
+    );
+    await page.locator(".cw-reference-port").waitFor();
+    const port = await page.locator(".cw-reference-port").boundingBox();
+    assert.ok(port);
+    await page.mouse.move(port.x + port.width / 2, port.y + port.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBounds.x + 30, targetBounds.y + 40, {
+      steps: 12,
+    });
+    await page.mouse.up();
+    snapshot = await until(
+      (value) => value.references.some((ref) => ref.active),
+      "dragged reference committed",
+    );
+    const referenceId = snapshot.references.find((ref) => ref.active).id;
+    await target.locator(".cw-node-title").click();
+    const prompt = page.getByRole("textbox", {
+      name: "文本生成提示词",
+      exact: true,
+    });
+    await prompt.fill("Based on @");
+    await prompt.press("Enter");
+    snapshot = await until(
+      (value) =>
+        value.generationSpecs.some((spec) =>
+          spec.promptContent?.some(
+            (part) =>
+              part.type === "reference" && part.referenceId === referenceId,
+          ),
+        ),
+      "structured mention saved",
+    );
+    await source.locator(".cw-node-title").dblclick();
+    await page
+      .getByRole("textbox", { name: "节点名称", exact: true })
+      .fill("Source A");
+    await page
+      .getByRole("textbox", { name: "节点名称", exact: true })
+      .press("Enter");
+    await until(
+      (value) =>
+        value.canvasItems.find((item) => item.id === sourceId).title ===
+        "Source A",
+      "rename saved",
+    );
+    await target.locator(".cw-node-title").click();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("textarea")].some(
+        (input) =>
+          input.getAttribute("aria-label") === "文本生成提示词" &&
+          input.value.includes("Source A"),
+      ),
+    );
+    await call("/api/creation-test-gate", { open: false });
+    await page
+      .getByRole("textbox", { name: "文本生成提示词", exact: true })
+      .press("Control+Enter");
+    snapshot = await until((value) => value.jobs.length === 1, "job accepted");
+    const jobId = snapshot.jobs[0].id;
+    await source.click({ button: "right", position: { x: 80, y: 60 } });
+    await page.getByRole("menuitem", { name: /^删除/ }).click();
+    await until(
+      (value) =>
+        !value.canvasItems.find((item) => item.id === sourceId).visible,
+      "source hidden while generating",
+    );
+    await call("/api/creation-test-gate", { open: true });
+    snapshot = await until(
+      (value) => value.jobs[0].status === "succeeded",
+      "background completion",
+    );
+    assert.equal(snapshot.jobs[0].adopted, true);
+    assert.equal(
+      snapshot.jobs[0].inputSnapshot.references[0].asset.assetId,
+      sourceAsset.id,
+    );
+    assert.equal(snapshot.canvasItems.length, 2);
+    assert.equal(snapshot.generationSpecs.length, 2);
+    await page
+      .getByText(/Fixture generated:/)
+      .first()
+      .waitFor();
+    await page.getByRole("button", { name: "资产列表", exact: true }).click();
+    const list = page.getByRole("dialog", { name: "资产列表", exact: true });
+    await list.waitFor();
+    const sourceRow = list
+      .locator(".cw-creation-asset-row")
+      .filter({ has: page.getByText(sourceAsset.name, { exact: true }) });
+    await sourceRow.waitFor();
+    assert.equal(
+      await page.getByRole("dialog", { name: "资产列表", exact: true }).count(),
+      1,
+    );
+    assert.equal(await list.getByRole("button", { name: /预览/ }).count(), 0);
+    await sourceRow.locator(".cw-creation-asset-open").click();
+    await until(
+      (value) => value.canvasItems.find((item) => item.id === sourceId).visible,
+      "same logical source restored",
+    );
+    snapshot = await state();
+    assert.equal(snapshot.canvasItems.length, 2);
+    assert.equal(snapshot.assets.length, 2);
+    await page.evaluate(async (projectId) => {
+      const { creationClient } = await import("/src/backend/creationClient.ts");
+      await creationClient(projectId).writeText(
+        "Disposable",
+        "Unused local bytes",
+      );
+    }, projectId);
+    await page.getByRole("button", { name: "资产列表", exact: true }).click();
+    await list.waitFor();
+    const disposable = list
+      .locator(".cw-creation-asset-row")
+      .filter({ hasText: "Disposable.md" });
+    await disposable.waitFor();
+    await disposable.getByRole("checkbox").check();
+    await list
+      .getByRole("button", { name: "删除所选（1）", exact: true })
+      .click();
+    await list
+      .getByRole("button", { name: "确认永久删除", exact: true })
+      .click();
+    await until(
+      (value) => !value.assets.some((asset) => asset.name === "Disposable.md"),
+      "permanent deletion",
+    );
+    await list
+      .getByRole("button", { name: "关闭资产列表", exact: true })
+      .click();
+    for (const kind of ["图片", "视频", "音频", "主体", "时间线"])
+      await rail(kind).click();
+    snapshot = await until(
+      (value) => value.canvasItems.length === 7,
+      "all six node kinds persisted",
+    );
+    assert.deepEqual(
+      [...new Set(snapshot.canvasItems.map((item) => item.kind))].sort(),
+      ["audio", "image", "subject", "text", "timeline", "video"],
+    );
+    await page.getByRole("button", { name: "生成历史", exact: true }).click();
+    await page
+      .getByRole("button", { name: "恢复生成配置", exact: true })
+      .waitFor();
+    await page
+      .getByRole("button", { name: "恢复生成配置", exact: true })
+      .click();
+    await page
+      .getByText("生成配置已恢复，当前结果保留；未开始新的生成任务。", {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      (await state()).jobs.length,
+      1,
+      "Restoring config does not start a job",
+    );
+    await page.getByRole("button", { name: "关闭侧栏", exact: true }).click();
+    await page.reload();
+    await page.getByText("已保存到本机", { exact: true }).waitFor();
+    assert.equal(await page.locator(".react-flow__node").count(), 7);
+    snapshot = await state();
+    assert.equal(snapshot.jobs[0].id, jobId);
+    assert.equal(snapshot.results.length, 1);
+    assert.equal(
+      (await call("/api/creation-test-health")).calls.filter(
+        (call) => call.id === jobId,
+      ).length,
+      1,
+    );
+    assert.deepEqual(errors, []);
+    console.log(
+      JSON.stringify({
+        passed: true,
+        projectId,
+        visibleNodes: 7,
+        referenceId,
+        jobId,
+        results: 1,
+        checks: [
+          "UI create/edit",
+          "drag reference",
+          "structured @",
+          "rename",
+          "hidden source generation",
+          "same-ID restore",
+          "asset list without preview",
+          "permanent deletion",
+          "six kinds",
+          "config history",
+          "reload",
+        ],
+      }),
+    );
+  }
+} catch (error) {
+  console.error(
+    "Browser state:",
+    (await page.locator("body").innerText()).slice(-2500),
+  );
+  console.error("Page errors:", errors);
+  throw error;
+} finally {
+  await call("/api/creation-test-gate", { open: true }).catch(() => {});
+  // Closing Chromium can end the renderer before pagehide's keepalive finishes.
+  // Await the normal public release endpoint so restart checks model a clean
+  // window close without bypassing the application's other-window protection.
+  await page
+    .evaluate(async () => {
+      const { releaseBackendProject } =
+        await import("/src/backend/projects.ts");
+      await releaseBackendProject();
+    })
+    .catch(() => {});
+  await browser.close();
+}

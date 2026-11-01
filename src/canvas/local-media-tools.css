@@ -1,0 +1,158 @@
+.cw-local-media-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 17px;
+  color: #aa9cba;
+  font-size: 11px;
+}
+.cw-local-media-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cw-local-media-controls input:not([type="range"]):not([type="color"]),
+.cw-local-media-controls select {
+  width: 110px;
+  border: 1px solid #51415e;
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: #d6c5e3;
+  background: #28202f;
+}
+.cw-local-media-controls input[type="range"] {
+  accent-color: #c6a8e3;
+  width: 150px;
+}
+.cw-local-media-controls input[type="color"] {
+  width: 32px;
+  height: 28px;
+  background: none;
+  border: 1px solid #4e3c5d;
+}
+.cw-local-media-controls button {
+  padding: 6px 10px;
+  border: 1px solid #4e3b5c;
+  border-radius: 5px;
+  background: #30233b;
+  color: #cdb4dd;
+  cursor: pointer;
+}
+.cw-local-media-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.cw-local-media-controls > span {
+  font-size: 10px;
+  color: #94809f;
+}
+.cw-local-image-surface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  max-height: 65vh;
+  overflow: auto;
+  background: #0f0c14;
+  border: 1px solid #3d3048;
+  border-radius: 8px;
+}
+.cw-local-image-surface canvas {
+  max-width: 100%;
+  max-height: 62vh;
+  object-fit: contain;
+  touch-action: none;
+  cursor: crosshair;
+}
+.cw-local-video-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  background: #0e0c12;
+  border: 1px solid #3d3048;
+  border-radius: 8px;
+  padding: 10px;
+}
+.cw-local-video-preview video {
+  max-width: 100%;
+  max-height: 58vh;
+}
+.cw-local-video-preview audio {
+  width: min(100%, 600px);
+}
+.cw-local-video-stage {
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+}
+.cw-video-crop-stage {
+  position: relative;
+  overflow: hidden;
+  line-height: 0;
+  flex-shrink: 0;
+}
+.cw-video-crop-stage video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.cw-video-crop-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #e4d3f3;
+  box-shadow: 0 0 0 9999px #05030899;
+  cursor: move;
+  touch-action: none;
+}
+.cw-video-crop-box.is-busy {
+  pointer-events: none;
+}
+.cw-video-crop-box > span {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  color: white;
+  background: #18121dcc;
+  border-radius: 3px;
+  padding: 6px;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+.cw-video-crop-box .cw-crop-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  min-width: 0;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 2px;
+  background: #9b80b6;
+  touch-action: none;
+}
+.cw-crop-corner.is-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.cw-crop-corner.is-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.cw-crop-corner.is-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.cw-crop-corner.is-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.cw-video-crop-controls input[type="number"] {
+  width: 72px;
+}

@@ -1,0 +1,15 @@
+{
+  "detected_formats": [],
+  "safety": "normal",
+  "modules": [
+    {
+      "filename": "d2884cdf7cef-runtime.9b94ac16bd.js",
+      "kind": "javascript",
+      "status": "decompiled"
+    }
+  ],
+  "warnings": [],
+  "total": 1,
+  "failed": 0,
+  "elapsed_ms": 20
+}

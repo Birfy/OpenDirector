@@ -12,16 +12,15 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import input_rules
-from museshow.domain.production import ProductionRequest
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.providers import GenerationProviders
-from museshow.integrations.vllm_omni import VllmOmniGeneration, h3_frames
-from museshow.integrations.volcengine import VolcengineGeneration
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.providers import GenerationProviders
+from opendirector.integrations.vllm_omni import VllmOmniGeneration, h3_frames
+from opendirector.integrations.volcengine import VolcengineGeneration
 
 H3 = {'kind': 'video', 'url': 'http://gpu-box:8000/v1', 'modelId': 'MiniMaxAI/MiniMax-H3', 'apiKey': 'token'}
 
@@ -187,47 +186,29 @@ def test_other_models_keep_rejecting_video_references(project):
                                                                 'referenceIds': [], 'videoMode': 'continuation'}, seedance)
 
 
-def test_production_continuation_shot_validation():
-    shot = {'title': '镜头', 'videoPrompt': '继续'}
-    ProductionRequest(title='计划', shots=[shot, {**shot, 'videoMode': 'continuation'}])
-    for shots in ([{**shot, 'videoMode': 'continuation'}],
-                  [shot, {**shot, 'videoMode': 'continuation', 'imagePrompt': '关键帧'}],
-                  [{'title': '镜头', 'imagePrompt': '图'}, {**shot, 'videoMode': 'continuation'}]):
-        with pytest.raises(ValueError, match='continuation shot'):
-            ProductionRequest(title='计划', shots=shots)
-
-
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
-def test_production_plan_chains_continuation_shots(project, tmp_path):
-    from museshow.application.production import Production
-
+def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
     store, value, session, canvas = project
     clip = tmp_path / 'clip.mp4'
-    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
+    server = FakeOmni(clip.read_bytes())
     configs = ModelConfigs(store.repository)
-    config = configs.save('video', H3['url'], H3['modelId'], 'token')
-    tasks = []
-
-    class Provider:
-        def validate(self, kind, config): pass
-        async def generate(self, config, task, submitted):
-            tasks.append(task)
-            return 'mp4', clip.read_bytes()
-
-    generation = Generation(store, configs, Provider())
-    manager = Production(store, generation)
-    specification = {'title': '两镜接续', 'shots': [
-        {'title': '镜头1', 'videoPrompt': '灯塔亮起'},
-        {'title': '镜头2', 'videoPrompt': '光束扫过海面', 'videoMode': 'continuation'}]}
+    config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
 
     async def run():
-        plan = await manager.submit(value['id'], str(uuid4()), specification, {'video': config['id']}, session)
-        first, second = plan['steps']
-        assert second['dependency'] == first['id'] and second['videoMode'] == 'continuation'
-        await asyncio.gather(*manager.jobs.values())
-        result = manager.list(value['id'])[0]
-        assert result['status'] == 'succeeded', result['error']
-        assert [task['videoMode'] for task in tasks] == ['first_frame', 'continuation']
-        assert tasks[1]['referenceIds'] == [result['steps'][0]['assetId']]
+        manager = Generation(store, configs, GenerationProviders(store, httpx.MockTransport(server), poll_interval=0))
+        item = canvas.create(value['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
+        task = await manager.submit(value['id'], item['id'], {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': item['revision'],
+            'inputs': {'title': '', 'prompt': '雨夜街头', 'referenceIds': [], 'videoMode': 'first_frame', 'durationSeconds': 10, 'aspectRatio': '9:16'}}, session)
+        await asyncio.gather(*(job.future for job in manager.jobs.values()))
+        done = next(item for item in canvas.snapshot(value['id'])['tasks'] if item['id'] == task['id'])
+        assert done['status'] == 'succeeded', (done['error'], done['errorDetails'])
+        assert (done['parameters']['duration'], done['parameters']['ratio']) == (10, '9:16')
+        # The node keeps only its generation inputs.
+        node = next(node for node in canvas.snapshot(value['id'])['canvas']['nodes'] if node['id'] == item['id'])
+        assert 'durationSeconds' not in node and node['prompt'] == '雨夜街头'
+        fields, _ = server.posts[0]
+        assert fields['num_frames'] == str(h3_frames(10)) and json.loads(fields['extra_params']) == {'task': 't2va', 'aspect_ratio': '9:16'}
+        await manager.close()
 
     asyncio.run(run())

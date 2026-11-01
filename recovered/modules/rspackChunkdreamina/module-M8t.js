@@ -1,0 +1,14 @@
+export var DAImageGenerateType;
+let o;
+o = DAImageGenerateType || (DAImageGenerateType = {});
+o.none = "";
+o.generate = "generate";
+o.blend = "blend";
+o.mixBlend = "mix_blend";
+o.painting = "painting";
+o.superResolution = "super_resolution";
+o.normalHD = "normal_hd";
+o.proHD = "pro_hd";
+o.aiCamera = "ai_camera";
+o.unifiedGenerate = "unified_generate";
+o.unifiedGenerateV2 = "unified_generate_v2";

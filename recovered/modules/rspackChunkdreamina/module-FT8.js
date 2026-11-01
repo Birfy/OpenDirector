@@ -1,0 +1,15 @@
+export const A = {
+  area: "area-a4SD2j",
+  "recent-projects-motion": "recent-projects-motion-YzPwRG",
+  recentProjectsMotion: "recent-projects-motion-YzPwRG",
+  "transition-marker": "transition-marker-BhVjhQ",
+  transitionMarker: "transition-marker-BhVjhQ",
+  generator: "generator-RfLR9g",
+  "transition-target": "transition-target-IQpl7Z",
+  transitionTarget: "transition-target-IQpl7Z",
+  recommendations: "recommendations-G9MgDT",
+  "rename-modal": "rename-modal-vqqFEb",
+  renameModal: "rename-modal-vqqFEb",
+  "rename-input": "rename-input-oJZun8",
+  renameInput: "rename-input-oJZun8",
+};

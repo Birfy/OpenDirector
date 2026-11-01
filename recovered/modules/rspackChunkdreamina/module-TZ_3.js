@@ -1,0 +1,15 @@
+export const A = {
+  "modal-wrap": "modal-wrap-vQOOtq",
+  modalWrap: "modal-wrap-vQOOtq",
+  modal: "modal-YIMidS",
+  header: "header-G3zz8q",
+  title: "title-Shu4Y5",
+  "close-icon": "close-icon-HCD1Xf",
+  closeIcon: "close-icon-HCD1Xf",
+  "content-container": "content-container-H0zcww",
+  contentContainer: "content-container-H0zcww",
+  "asset-list-container": "asset-list-container-SSJ8WA",
+  assetListContainer: "asset-list-container-SSJ8WA",
+  "tabs-container": "tabs-container-MJfv4E",
+  tabsContainer: "tabs-container-MJfv4E",
+};

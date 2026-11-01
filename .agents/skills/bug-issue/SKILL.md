@@ -1,6 +1,6 @@
 ---
 name: bug-issue
-description: Reproduce and verify a reported MuseShow bug, then publish an evidence-based GitHub Bug Issue. Use when the user invokes bug-issue or asks for bug investigation with Issue creation; not for implementation-only requests or discussion of the skill itself.
+description: Reproduce and verify a reported OpenDirector bug, then publish an evidence-based GitHub Bug Issue. Use when the user invokes bug-issue or asks for bug investigation with Issue creation; not for implementation-only requests or discussion of the skill itself.
 ---
 
 # Bug Issue

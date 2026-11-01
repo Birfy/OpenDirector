@@ -1,0 +1,26 @@
+let r;
+r = {};
+r[(r.Duplicate = 100001)] = "Duplicate";
+r[(r.OverLimit = 100002)] = "OverLimit";
+r[(r.ReviewReject = 100003)] = "ReviewReject";
+r[(r.DuplicateName = 100004)] = "DuplicateName";
+r[(r.InvalidParam = 100008)] = "InvalidParam";
+r[(r.ActiveLimitExceeded = 100009)] = "ActiveLimitExceeded";
+r[(r.UploadUnsupportedFormat = 100103)] = "UploadUnsupportedFormat";
+r[(r.UploadFileTooLarge = 100104)] = "UploadFileTooLarge";
+r[(r.UploadUncompressedTooLarge = 100105)] = "UploadUncompressedTooLarge";
+r[(r.UploadSingleFileTooLarge = 100106)] = "UploadSingleFileTooLarge";
+r[(r.UploadEmptyFile = 100107)] = "UploadEmptyFile";
+r[(r.UploadFileCountLimit = 100108)] = "UploadFileCountLimit";
+r[(r.UploadMissingSkillMd = 100109)] = "UploadMissingSkillMd";
+r[(r.UploadInvalidFrontmatter = 100110)] = "UploadInvalidFrontmatter";
+r[(r.UploadMissingRequiredFields = 100111)] = "UploadMissingRequiredFields";
+r[(r.UploadTooManyLevels = 100112)] = "UploadTooManyLevels";
+r[(r.InvalidName = 100113)] = "InvalidName";
+r[(r.DescriptionTooLong = 100114)] = "DescriptionTooLong";
+r[(r.UploadInnerFileUnsupportedFormat = 100115)] =
+  "UploadInnerFileUnsupportedFormat";
+r[(r.UploadScriptFileTooLarge = 100116)] = "UploadScriptFileTooLarge";
+r[(r.UploadSkillMdTooLarge = 100117)] = "UploadSkillMdTooLarge";
+r[(r.UploadNameExists = 100118)] = "UploadNameExists";
+export var $ = r;

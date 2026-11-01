@@ -1,0 +1,118 @@
+import type { CanvasNode } from "./model.ts";
+import { assistantReferences } from "./assistantReferences.ts";
+import type { ReferenceInput } from "../backend/generation.ts";
+
+export interface PendingCanvasReference {
+  nodeId: string;
+  title: string;
+  kind: CanvasNode["type"];
+  thumbnail?: string;
+  metadataOnly: boolean;
+  error: string | null;
+  identity: {
+    assetState: CanvasNode["data"]["assetState"];
+    references: ReferenceInput[];
+  };
+  node: CanvasNode;
+}
+
+/** Selecting a node only stages context. No upload, attachment or draft write. */
+export function pendingCanvasReferences(
+  nodes: readonly CanvasNode[],
+): PendingCanvasReference[] {
+  return [...new Map(nodes.map((node) => [node.id, node])).values()].map(
+    (node) => {
+      const data = node.data;
+      const supported = ["text", "image", "video", "audio", "subject"].includes(
+        node.type,
+      );
+      const available =
+        node.type === "text"
+          ? Boolean(data.text?.trim())
+          : node.type === "subject"
+            ? Boolean(data.subject?.main?.src)
+            : Boolean(data.src);
+      const error = !supported
+        ? "该类型暂不支持作为对话参考。"
+        : data.assetState === "missing"
+          ? "素材已丢失，请先恢复原文件。"
+          : !available
+            ? "尚无已保存的资产，请先上传、保存文本或等待生成完成。"
+            : null;
+      return {
+        nodeId: node.id,
+        title: data.title || "空白节点",
+        kind: node.type,
+        thumbnail:
+          node.type === "image"
+            ? data.src
+            : node.type === "subject" && data.subject?.main?.kind === "image"
+              ? data.subject.main.src
+              : undefined,
+        metadataOnly: node.type === "video" || node.type === "audio",
+        error,
+        identity: {
+          assetState: data.assetState,
+          references: assistantReferences([node]),
+        },
+        node,
+      };
+    },
+  );
+}
+
+/** Compare the immutable source strings directly; serializing a media data URL
+ * on each selection/draft render would copy potentially large video bytes. */
+export function samePendingReferences(
+  left: readonly PendingCanvasReference[],
+  right: readonly PendingCanvasReference[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index]!;
+      return (
+        item.nodeId === other.nodeId &&
+        item.kind === other.kind &&
+        item.title === other.title &&
+        item.error === other.error &&
+        item.identity.assetState === other.identity.assetState &&
+        item.identity.references.length === other.identity.references.length &&
+        item.identity.references.every((ref, offset) => {
+          const next = other.identity.references[offset]!;
+          return (
+            ref.kind === next.kind &&
+            ref.title === next.title &&
+            ref.src === next.src &&
+            ref.text === next.text
+          );
+        })
+      );
+    })
+  );
+}
+
+export function pendingReferenceInsertion(
+  value: string,
+  end: number,
+  items: readonly PendingCanvasReference[],
+  maxLength = 20000,
+) {
+  if (items.length > 64)
+    throw new Error("每次最多添加 64 份参考素材，整批未插入。");
+  const invalid = items.filter((item) => item.error);
+  if (invalid.length)
+    throw new Error(
+      invalid.map((item) => `${item.title}：${item.error}`).join(" ") +
+        " 整批未插入。",
+    );
+  const start = Math.max(0, Math.min(value.length, end));
+  const inserted =
+    (start > 0 && !/\s/.test(value[start - 1]!) ? " " : "") +
+    items.map((item) => `@${item.title}`).join(" ") +
+    " ";
+  const next = value.slice(0, start) + inserted + value.slice(start);
+  if (next.length > maxLength)
+    throw new Error(`正文最多 ${maxLength} 字，整批未插入。`);
+  return { value: next, start, inserted, caret: start + inserted.length };
+}

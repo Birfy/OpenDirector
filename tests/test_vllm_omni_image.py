@@ -8,15 +8,14 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import input_rules
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.asset_catalog import AssetCatalog
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.providers import GenerationProviders
-from test_production_repairs import close, context, wait
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.asset_catalog import AssetCatalog
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.providers import GenerationProviders
 
 ZIMAGE = {'kind': 'image', 'url': 'http://gpu-box:8200/v1', 'modelId': 'Tongyi-MAI/Z-Image-Turbo', 'apiKey': 'token'}
 
@@ -110,24 +109,6 @@ def test_reference_images_are_rejected_before_any_request(project):
 def test_bad_responses_fail_the_task(project, reply):
     task, posts = run_image(project, reply)
     assert task['status'] == 'failed' and len(posts) == 1 and task['assetId'] is None
-
-
-def test_production_keyframes_skip_image_references_for_a_text_only_model(tmp_path):
-    c = context(tmp_path)
-    zimage = c.generation.configs.save('image', ZIMAGE['url'], ZIMAGE['modelId'], 'token')
-
-    async def run():
-        await c.manager.submit(c.owner, str(uuid4()), {'title': '两镜', 'shots': [
-            {'title': '一镜', 'imagePrompt': '樱花校门', 'referenceIds': [c.reference['id']]},
-            {'title': '二镜', 'imagePrompt': '钟楼远景', 'referenceShot': 1}]}, {'image': zimage['id']}, c.session)
-        plan = await wait(c)
-        assert plan['status'] == 'succeeded', plan['error']
-        # Neither the shot's picture nor the earlier keyframe reaches the text-only model.
-        assert [step['referenceIds'] for step in plan['steps']] == [[], []]
-        assert [task['referenceIds'] for task in c.provider.calls] == [[], []]
-        await close(c)
-
-    asyncio.run(run())
 
 
 def test_self_hosted_config_without_a_key_sends_no_authorization(project):

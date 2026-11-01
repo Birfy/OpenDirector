@@ -1,0 +1,15 @@
+{
+  "detected_formats": [],
+  "safety": "normal",
+  "modules": [
+    {
+      "filename": "5cc3f954c9bf-route-manifest-main.f030f305.js",
+      "kind": "javascript",
+      "status": "decompiled"
+    }
+  ],
+  "warnings": [],
+  "total": 1,
+  "failed": 0,
+  "elapsed_ms": 5
+}

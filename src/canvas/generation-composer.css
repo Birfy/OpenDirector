@@ -1,0 +1,92 @@
+.cw-composer {
+  --chat-border: #ffffff20;
+  --chat-surface: #303034;
+  --chat-text: #e9e9ed;
+  --input-min-height: 112px;
+  --prompt-line-height: 1.7;
+  --input-max-height: calc(10em * var(--prompt-line-height) + 4px);
+  --composer-reference-height: 50px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+  overflow: hidden;
+}
+
+.cw-composer.cw-generation-composer {
+  padding: 10px 12px 8px;
+}
+
+/* Advanced editing cards keep their own scrolling. A generator's prompt owns
+   vertical scrolling, while its references and footer stay in view. */
+.cw-composer-dock:has(> .cw-composer) {
+  overflow: visible;
+}
+
+.cw-composer-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cw-composer-body > :is(.cw-reference-strip, .cw-frame-slots) {
+  /* Reserve space for a native horizontal scrollbar below the 44px chips.
+     Keep frame slots equally tall so changing video mode never shifts the form. */
+  flex: 0 0 var(--composer-reference-height);
+  height: var(--composer-reference-height);
+  box-sizing: border-box;
+}
+
+.cw-reference-strip {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #555 transparent;
+}
+
+.cw-workspace .cw-composer .cw-prompt-input {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: var(--input-min-height);
+  max-height: var(--input-max-height);
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cw-composer .cw-prompt-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  /* The empty-prompt hint is drawn by ::before, not ::placeholder, so it needs
+     the themeable colour here. */
+  color: var(--cw-prompt-hint, #7f828d);
+  pointer-events: none;
+}
+
+.cw-composer-footer {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 4px 0 0;
+  min-width: 0;
+  min-height: 32px;
+}

@@ -1,0 +1,22 @@
+import n from "./module-r9_22.js";
+import i from "./module-M_2_22.js";
+import { f as f_1 } from "./module-P_23.js";
+import s from "./module-w_23.js";
+import a from "./module-F_23.js";
+import u from "./module-Vm_2_22.js";
+import c from "./module-D_2_22.js";
+import _f from "./module-XG_2_22.js";
+export const f = n
+  ? Object.getOwnPropertyDescriptor
+  : function (t, r) {
+      t = a(t);
+      r = u(r);
+      if (_f) {
+        try {
+          return Object.getOwnPropertyDescriptor(t, r);
+        } catch (t) {}
+      }
+      if (c(t, r)) {
+        return s(!i(f_1, t, r), t[r]);
+      }
+    };

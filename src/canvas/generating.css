@@ -1,0 +1,216 @@
+/* Motion belongs to the task, not to selection or the saved media. Transform
+   and opacity animate a small set of layers; blur stays constant. */
+.cw-generating {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 11px;
+  background: #1c202b;
+  pointer-events: none;
+  animation: cw-generation-enter 240ms ease-out both;
+}
+.cw-generating-with-asset {
+  background: #20233288;
+  backdrop-filter: blur(14px) saturate(0.7);
+  -webkit-backdrop-filter: blur(14px) saturate(0.7);
+}
+.cw-generating-field {
+  position: absolute;
+  inset: -25%;
+  filter: blur(26px);
+  opacity: 0.8;
+}
+.cw-generating-with-asset .cw-generating-field {
+  opacity: 0.58;
+}
+.cw-generating-field i {
+  position: absolute;
+  width: 64%;
+  height: 70%;
+  border-radius: 50%;
+  animation: cw-generation-drift 6s ease-in-out infinite alternate;
+}
+.cw-generating-field i:nth-child(1) {
+  left: -5%;
+  top: 0;
+  background: radial-gradient(ellipse, #708abe 0%, #708abe00 70%);
+}
+.cw-generating-field i:nth-child(2) {
+  left: 45%;
+  top: 15%;
+  background: radial-gradient(ellipse, #ac8aba 0%, #ac8aba00 70%);
+  animation-delay: -3s;
+  animation-duration: 7s;
+  animation-direction: alternate-reverse;
+}
+.cw-generating-field i:nth-child(3) {
+  left: 0;
+  top: 50%;
+  background: radial-gradient(ellipse, #71a7a1 0%, #71a7a100 70%);
+  animation-delay: -2s;
+  animation-duration: 5s;
+}
+.cw-generating-field i:nth-child(4) {
+  left: 45%;
+  top: 55%;
+  background: radial-gradient(ellipse, #c1a896 0%, #c1a89600 70%);
+  animation-delay: -4s;
+  animation-duration: 8s;
+  animation-direction: alternate-reverse;
+}
+.cw-generating-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  background-image:
+    radial-gradient(circle at 22% 28%, #e9f1ff 0 1px, transparent 1.8px),
+    radial-gradient(circle at 67% 36%, #f4ebff 0 1px, transparent 1.8px),
+    radial-gradient(circle at 42% 66%, #d9f8ef 0 0.7px, transparent 1.6px),
+    radial-gradient(circle at 80% 72%, #e9f1ff 0 0.7px, transparent 1.6px);
+  animation: cw-generation-stars 3.6s ease-in-out infinite alternate;
+}
+.cw-generating-sheen {
+  position: absolute;
+  inset: -30%;
+  background: linear-gradient(
+    110deg,
+    transparent 35%,
+    #e9f2ff20 49%,
+    #e9f2ff08 54%,
+    transparent 65%
+  );
+  animation: cw-generation-sweep 3.2s ease-in-out infinite;
+}
+.cw-generating-caption {
+  position: absolute;
+  bottom: 16px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  color: #f0f0f6;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  text-shadow: 0 1px 6px #000b;
+}
+.cw-generating-indicator {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e2def9;
+  box-shadow: 0 0 9px #dfd7ff9c;
+  animation: cw-generation-stars 1.6s ease-in-out infinite alternate;
+}
+.cw-generating-count {
+  opacity: 0.7;
+}
+.cw-generating[data-phase="queued"] .cw-generating-field {
+  opacity: 0.3;
+}
+.cw-generating[data-phase="queued"] .cw-generating-field i {
+  animation-duration: 12s;
+}
+.cw-generating[data-phase="queued"] .cw-generating-sheen {
+  display: none;
+}
+.cw-generating[data-phase="finishing"] .cw-generating-sheen {
+  animation-duration: 1.8s;
+}
+.cw-node-generating > .cw-node-placeholder {
+  visibility: hidden;
+}
+.cw-node-result-arrival > .cw-node-media {
+  animation: cw-generation-reveal 800ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes cw-generation-drift {
+  from {
+    transform: translate(-12%, -8%) scale(0.85);
+  }
+  to {
+    transform: translate(15%, 12%) scale(1.2);
+  }
+}
+@keyframes cw-generation-sweep {
+  from {
+    transform: translateX(-65%);
+  }
+  to {
+    transform: translateX(65%);
+  }
+}
+@keyframes cw-generation-stars {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 0.7;
+  }
+}
+@keyframes cw-generation-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes cw-generation-reveal {
+  from {
+    opacity: 0.25;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-generating,
+  .cw-generating-field i,
+  .cw-generating-stars,
+  .cw-generating-sheen,
+  .cw-generating-indicator,
+  .cw-node-result-arrival > .cw-node-media,
+  .cw-composer .cw-running-dot {
+    animation: none;
+  }
+  .cw-generating-sheen {
+    display: none;
+  }
+}
+
+/* Estimated progress: the outline fills clockwise from the top-left corner. */
+.cw-generating-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.cw-generating-ring path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cw-generating-ring-track {
+  stroke: #ffffff14;
+  stroke-width: 2;
+}
+.cw-generating-ring-progress {
+  stroke: #5aa8ff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px #3d8bffaa);
+  transition: stroke-dashoffset 250ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-generating-ring-progress {
+    transition: none;
+  }
+}

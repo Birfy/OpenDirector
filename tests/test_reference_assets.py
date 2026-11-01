@@ -10,16 +10,16 @@ from uuid import uuid4
 from PIL import Image
 import pytest
 
-from museshow.domain.assets import attachment
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.adoption import references_match
-from museshow.infrastructure.asset_catalog import AssetCatalog
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.canvas_versions import node_history
-from museshow.infrastructure.local_projects import empty_conversation, read_json, write_json
-from museshow.infrastructure.model_configs import ModelConfigs
+from opendirector.domain.assets import attachment
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.adoption import references_match
+from opendirector.infrastructure.asset_catalog import AssetCatalog
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.canvas_versions import node_history
+from opendirector.infrastructure.local_projects import empty_conversation, read_json, write_json
+from opendirector.infrastructure.model_configs import ModelConfigs
 from test_project_assets import project_api
-from test_production_repairs import context, close
+from canvas_helpers import context, close
 from test_canvas_version_application import generate, restore
 
 
@@ -63,10 +63,10 @@ def test_detach_and_clear_draft_do_not_delete_uploaded_reference(project_api):
     asset = upload(client, project['id'])['asset']
     draft = {key: value for key, value in empty_conversation().items() if key != 'messages'}
     assert client.patch(f'/api/data/{project["id"]}/draft', json={**draft, 'assets': [attachment(asset)]}).status_code == 200
-    store.save_draft(project['id'], {'draft': '', 'assets': []}, client.headers['X-MuseShow-Session'])
+    store.save_draft(project['id'], {'draft': '', 'assets': []}, client.headers['X-OpenDirector-Session'])
     assert client.delete(f'/api/data/{project["id"]}/assets/{asset["id"]}').status_code == 200
     assert store.asset(project['id'], asset['id'])[0] == picture()
-    impact = AssetCatalog(store).deletion_preview(project['id'], asset['id'], client.headers['X-MuseShow-Session'])
+    impact = AssetCatalog(store).deletion_preview(project['id'], asset['id'], client.headers['X-OpenDirector-Session'])
     assert impact['blockers'] == [] and impact['history'] == {'undo': 0, 'redo': 0}
 
 
@@ -76,7 +76,7 @@ def test_scratch_upload_is_typed_deduplicated_and_transferred_as_hidden_source(p
     assert first['projectId'] is None
     assert upload(client, 'scratch', name='copy.png')['asset']['id'] == first['id']
     draft = {**empty_conversation(), 'draft': '使用参考', 'assets': [attachment(first)]}
-    new = store.create('新项目引用', str(uuid4()), client.headers['X-MuseShow-Session'], draft=draft)
+    new = store.create('新项目引用', str(uuid4()), client.headers['X-OpenDirector-Session'], draft=draft)
     state = CanvasProjects(store).snapshot(new['id'])
     assert state['canvas']['nodes'] == []
     assert state['availableAssetIds'] == [first['id']]
@@ -92,7 +92,7 @@ def test_deduplicated_scratch_source_survives_another_windows_project_creation(p
     second = catalog.import_file('scratch', str(uuid4()), 'same.png', picture(), second_session, as_reference=True)['asset']
     assert first['id'] == second['id']
     draft = {**empty_conversation(), 'draft': '使用参考', 'assets': [attachment(first)]}
-    a = store.create('窗口一', str(uuid4()), client.headers['X-MuseShow-Session'], draft=draft)
+    a = store.create('窗口一', str(uuid4()), client.headers['X-OpenDirector-Session'], draft=draft)
     b = store.create('窗口二', str(uuid4()), second_session, draft=draft)
     assert store.asset(a['id'], first['id'])[0] == store.asset(b['id'], first['id'])[0] == picture()
     assert CanvasProjects(store).snapshot(a['id'])['canvas']['nodes'] == CanvasProjects(store).snapshot(b['id'])['canvas']['nodes'] == []
@@ -100,7 +100,7 @@ def test_deduplicated_scratch_source_survives_another_windows_project_creation(p
 
 def test_identical_independent_nodes_require_source_choice_and_do_not_merge(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     existing = [canvas.import_file(owner, str(uuid4()), 'same.png', picture(), session, str(uuid4())) for _ in range(2)]
     result = upload(client, owner)
@@ -114,7 +114,7 @@ def test_identical_independent_nodes_require_source_choice_and_do_not_merge(proj
 
 def test_historical_only_match_creates_new_source_instead_of_exposing_old_version(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     old = canvas.import_file(owner, str(uuid4()), 'old.png', picture(), session, str(uuid4()))
     origin = canvas.snapshot(owner)['canvas']['nodes'][0]
@@ -128,7 +128,7 @@ def test_historical_only_match_creates_new_source_instead_of_exposing_old_versio
 
 def test_reference_upload_validates_target_before_saving_and_does_not_lock_blank(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     configs = ModelConfigs(store.repository)
     configs.save('image', 'https://image.test', 'seedream', 'test')
@@ -198,10 +198,10 @@ def test_recover_library_registration_failure_never_auto_places_upload(project_a
     with monkeypatch.context() as patch:
         patch.setattr(AssetCatalog, 'register_reference', staticmethod(lambda *args: (_ for _ in ()).throw(OSError('interrupted'))))
         with pytest.raises(OSError):
-            catalog.import_file(project['id'], asset_id, 'reference.png', picture(), client.headers['X-MuseShow-Session'], as_reference=True)
+            catalog.import_file(project['id'], asset_id, 'reference.png', picture(), client.headers['X-OpenDirector-Session'], as_reference=True)
     state = CanvasProjects(store).snapshot(project['id'])
     assert state['canvas']['nodes'] == [] and state['availableAssetIds'] == [asset_id]
-    assert catalog.import_file(project['id'], asset_id, 'reference.png', picture(), client.headers['X-MuseShow-Session'], as_reference=True)['asset']['id'] == asset_id
+    assert catalog.import_file(project['id'], asset_id, 'reference.png', picture(), client.headers['X-OpenDirector-Session'], as_reference=True)['asset']['id'] == asset_id
     assert len(CanvasProjects(store).snapshot(project['id'])['assets']) == 1
 
 
@@ -209,7 +209,7 @@ def test_simultaneous_duplicate_uploads_save_one_asset(project_api):
     client, store, project = project_api
     catalog = AssetCatalog(store)
     def add(_):
-        return catalog.import_file(project['id'], str(uuid4()), 'reference.png', picture(), client.headers['X-MuseShow-Session'], as_reference=True)
+        return catalog.import_file(project['id'], str(uuid4()), 'reference.png', picture(), client.headers['X-OpenDirector-Session'], as_reference=True)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(add, range(2)))
     assert results[0]['asset']['id'] == results[1]['asset']['id']
@@ -218,7 +218,7 @@ def test_simultaneous_duplicate_uploads_save_one_asset(project_api):
 
 def test_old_fingerprint_upgrades_without_rewriting_task_evidence(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     old_id = str(uuid4())
     store.save_asset(owner, old_id, {'name': 'old.png', 'type': 'image/png', 'fingerprint': 'name/size/time'}, picture(), session)
     canvas = CanvasProjects(store)
@@ -238,7 +238,7 @@ def test_old_fingerprint_upgrades_without_rewriting_task_evidence(project_api):
 
 def test_unused_usage_and_batch_delete_protect_drafts_and_report_partial_failure(project_api, monkeypatch):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     saved = [upload(client, owner, name=f'{i}.txt', data=f'body{i}'.encode())['asset'] for i in range(3)]
     store.save_draft(owner, {'assets': [attachment(saved[0])]}, session)
     usage = client.get(f'/api/projects/{owner}/assets/usage').json()
@@ -262,7 +262,7 @@ def test_unused_usage_and_batch_delete_protect_drafts_and_report_partial_failure
 
 def test_show_restores_source_identity_once_and_does_not_expose_archived_versions(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     source = upload(client, owner)['asset']
     shown = canvas.create(owner, {'id': str(uuid4()), 'kind': 'image', 'assetId': source['id']}, session, remember=True)
@@ -280,7 +280,7 @@ def test_show_restores_source_identity_once_and_does_not_expose_archived_version
 def test_audio_upload_obeys_target_mode_without_requiring_complete_input_during_edit(project_api):
     import wave
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     config = ModelConfigs(store.repository).save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', 'test')
     target = canvas.create(owner, {'id': str(uuid4()), 'kind': 'video'}, session)
@@ -298,7 +298,7 @@ def test_audio_upload_obeys_target_mode_without_requiring_complete_input_during_
 
 def test_fingerprint_upgrade_preserves_editor_undo_and_redo(project_api):
     client, store, project = project_api
-    owner, session = project['id'], client.headers['X-MuseShow-Session']
+    owner, session = project['id'], client.headers['X-OpenDirector-Session']
     canvas = CanvasProjects(store)
     ModelConfigs(store.repository).save('image', 'https://image.test', 'seedream', 'test')
     source_id = str(uuid4())

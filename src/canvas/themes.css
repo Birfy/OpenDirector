@@ -1,0 +1,346 @@
+/* Default dark values preserve the existing OpenDirector canvas palette. */
+:root {
+  --settings-background: #202022;
+  --settings-surface: #262627;
+  --settings-text: #ededee;
+  --settings-muted: #9b9ba0;
+  --settings-border: #ffffff20;
+  --settings-hover: #ffffff08;
+  --settings-active: #ffffff12;
+  --settings-input: #19191b;
+  --settings-warning: #f3b7a6;
+  --settings-warning-background: #45332c;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #30343c;
+  background: #f7f8fa;
+  --settings-background: #eeeef1;
+  --settings-surface: #fff;
+  --settings-text: #30343c;
+  --settings-muted: #757b86;
+  --settings-border: #dfe2e7;
+  --settings-hover: #f3f4f6;
+  --settings-active: #e4e7ed;
+  --settings-input: #fafbfc;
+  --settings-warning: #9a4d36;
+  --settings-warning-background: #fff1e9;
+}
+:root[data-theme="light"] .cw-workspace {
+  background: #f7f8fa;
+  color: #30343c;
+  --cw-surface: #fff;
+  --cw-border: #dfe2e7;
+}
+:root[data-theme="light"] .canvas-loading-screen {
+  background: #f7f8fa;
+  color: #69717d;
+}
+:root[data-theme="light"] .cw-topbar {
+  background: linear-gradient(#f7f8faf5, #f7f8fa00);
+}
+:root[data-theme="light"] .cw-rail-mask {
+  background: linear-gradient(90deg, #f7f8faf5 20%, #f7f8fad9 55%, #f7f8fa00);
+}
+:root[data-theme="light"]
+  :is(
+    .cw-rail,
+    .cw-settings-control,
+    .cw-bottom-controls,
+    .cw-undo-controls,
+    .cw-chat-button,
+    .cw-export-button,
+    .cw-project-dropdown,
+    .cw-side-panel,
+    .cw-context-menu,
+    .cw-menu-popover,
+    .cw-selection-bar,
+    .cw-selection-toolbar,
+    .cw-selection-menu,
+    .cw-composer,
+    .cw-modal,
+    .cw-project-dialog,
+    .cw-toast
+  ) {
+  background: #fff;
+  color: #30343c;
+  border-color: #dfe2e7;
+  box-shadow: 0 4px 20px #30374414;
+}
+:root[data-theme="light"]
+  :is(.cw-domain-dialog, .cw-domain-header, .cw-domain-footer) {
+  background: #fff;
+  color: #30343c;
+  border-color: #dfe2e7;
+}
+:root[data-theme="light"]
+  :is(.cw-domain-section-heading h3, .cw-domain-field, .cw-domain-checkbox) {
+  color: #58616e;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-project-name:hover,
+    .cw-project-chevron:hover,
+    .cw-project-chevron[aria-expanded="true"]
+  ) {
+  background: transparent;
+  color: #14171d;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-project-option:hover,
+    .cw-project-option[aria-checked="true"],
+    .cw-rail-button:hover,
+    .cw-icon-button:hover,
+    .cw-selection-toolbar button:hover
+  ) {
+  background: #edf0f5;
+  color: #30343c;
+}
+:root[data-theme="light"]
+  :is(.cw-project-name-editor input, .cw-project-name-measure) {
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-bottom-controls .cw-icon-button.is-active {
+  background: #edf0f5;
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-project-name-editor input {
+  background: transparent;
+}
+:root[data-theme="light"] .cw-project-create:hover {
+  color: #11141b;
+}
+:root[data-theme="light"]
+  :is(.cw-node, .cw-node-stack::before, .cw-node-stack::after) {
+  background: #fff;
+  color: #30343c;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"] .cw-node-selected {
+  border-color: #697b9d;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-node-title,
+    .cw-node-heading,
+    .cw-rail-label,
+    .cw-empty h1,
+    .cw-zoom-button,
+    .cw-side-panel h3
+  ) {
+  color: #404957;
+}
+:root[data-theme="light"] :is(.cw-node-body, .cw-text-content, .cw-node-empty) {
+  background: #f0f2f6;
+  color: #757d8a;
+}
+/* Subject annotations and material controls share both empty and filled cards. */
+:root[data-theme="light"] .cw-node-subject .cw-subject-description,
+:root[data-theme="light"] .cw-node-subject .cw-subject-description::placeholder {
+  color: #58616e;
+}
+:root[data-theme="light"] .cw-node-subject .cw-subject-description:focus {
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-subject-empty-material {
+  background: #ffffff60;
+}
+:root[data-theme="light"] .cw-subject-empty-material button {
+  color: #4c545f;
+}
+:root[data-theme="light"] .cw-subject-empty-material button:hover {
+  color: #23262c;
+}
+:root[data-theme="light"] .cw-domain-card-subject {
+  background: #f0f2f6;
+}
+:root[data-theme="light"] .cw-domain-card-subject .cw-domain-card-preview {
+  background: #e9ecf2;
+}
+:root[data-theme="light"] .cw-subject-auxiliary,
+:root[data-theme="light"] .cw-subject-add-auxiliary {
+  background: #e9ecf2;
+}
+:root[data-theme="light"] .cw-subject-add-auxiliary,
+:root[data-theme="light"] .cw-subject-voice button {
+  color: #58616e;
+}
+:root[data-theme="light"] .cw-subject-add-auxiliary:hover:not(:disabled),
+:root[data-theme="light"] .cw-subject-voice button:hover:not(:disabled) {
+  background: #dfe4ed;
+  color: #23262c;
+}
+/* A node with no media yet: an empty dark well reads as a hole in a light
+   canvas, so the placeholder gets the same quiet surface as the node body. */
+:root[data-theme="light"] .cw-node-media {
+  --cw-media-well: #e9ecf2;
+}
+:root[data-theme="light"] .cw-node-empty:not(.cw-node-timeline):not(.cw-node-group):not(.cw-node-stack) {
+  /* Keep the well clearly distinct from the #f7f8fa canvas without going
+     back to a dark block: a cool grey with a solid border reads as media. */
+  --cw-node-empty-background: linear-gradient(135deg, #e9ecf2, #dde1e9);
+  --cw-node-empty-border: #c8cdd7;
+}
+:root[data-theme="light"] .cw-node-placeholder {
+  color: #98a0ad;
+}
+:root[data-theme="light"] .cw-node-placeholder:hover {
+  background: rgba(23, 28, 38, 0.04);
+  color: #6d7684;
+}
+:root[data-theme="light"] .cw-placeholder-label {
+  color: #7d8592;
+}
+:root[data-theme="light"] .cw-placeholder-upload {
+  border-color: #dfe2e7 !important;
+  background: #fff !important;
+  color: #4c545f;
+}
+:root[data-theme="light"] .cw-placeholder-upload:hover {
+  background: #f3f4f6 !important;
+  color: #23262c;
+}
+:root[data-theme="light"] .cw-empty p,
+:root[data-theme="light"] .cw-empty small {
+  color: #77808e;
+}
+:root[data-theme="light"] .cw-empty button {
+  background: #fff;
+  color: #404957;
+  border-color: #dfe2e7;
+}
+:root[data-theme="light"] .cw-aurora {
+  opacity: 0.35;
+}
+:root[data-theme="light"]
+  :is(
+    .cw-composer,
+    .cw-domain-dialog,
+    .cw-modal,
+    .cw-project-dialog,
+    .cw-side-panel
+  )
+  :is(
+    input:not([type="range"], [type="checkbox"], [type="color"], [type="file"]),
+    textarea,
+    select
+  ) {
+  background: #f5f6f9;
+  color: #30343c;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"]
+  :is(.cw-composer, .cw-domain-dialog, .cw-modal, .cw-side-panel)
+  button {
+  color: #404957;
+  border-color: #d7dbe3;
+}
+:root[data-theme="light"] .cw-workspace .cw-composer .cw-prompt-input {
+  background: transparent;
+  border: 0;
+  color: #30343c;
+}
+/* Node summary in the top bar: keep the trigger quiet and the panel readable
+   on the light canvas. */
+:root[data-theme="light"] .cw-node-info {
+  --cw-node-info-bg: #fff;
+  --cw-node-info-border: #dfe2e7;
+  --cw-node-info-fg: #6d7480;
+  --cw-node-info-muted: #5c636e;
+  --cw-node-info-hover-fg: #23262c;
+  --cw-node-info-hover-bg: #eceef3;
+  --cw-node-info-row: #23262c;
+  --cw-node-info-shadow: 0 18px 44px rgba(23, 28, 38, 0.18);
+}
+/* The composer window controls (dismiss and expand) defaulted to a dark chip,
+   which read as a stray hole on the light composer. */
+:root[data-theme="light"] .cw-composer-dock {
+  --cw-dismiss-bg: #eef0f4;
+  --cw-dismiss-fg: #5c636e;
+  --cw-dismiss-hover-bg: #e2e6ec;
+  --cw-dismiss-hover-fg: #23262c;
+}
+/* The expanded-composer scrim is a full-screen #0009 in the dark theme, which
+   is too heavy over the light canvas. */
+:root[data-theme="light"] .cw-composer-backdrop {
+  --cw-composer-backdrop: rgba(23, 28, 38, 0.28);
+}
+:root[data-theme="light"] .cw-prompt-input::placeholder {
+  color: #8b929e;
+}
+/* The empty-prompt hint is a ::before pseudo element, so it takes a variable
+   rather than the ::placeholder colour above. */
+:root[data-theme="light"] :is(.cw-composer, .cw-assistant-composer) {
+  --cw-prompt-hint: #8b929e;
+}
+/* Inline reference chips inside the generation composer kept the dark
+   chat surface, so a quoted asset read as a dark block on the white sheet. */
+:root[data-theme="light"] .cw-composer {
+  --chat-surface: #eef0f4;
+  --chat-border: #d7dbe1;
+  --chat-text: #30343c;
+  /* The submit disc is the composer's primary action; use the same brand blue
+     as the asset library's primary button so it stands out on the light sheet
+     instead of reading as a neutral grey chip. */
+  --cw-run-active-bg: #3d6bd6;
+  --cw-run-active-fg: #fff;
+  --cw-run-bg: #dfe2e8;
+  --cw-run-fg: #6d7480;
+  /* The add-reference tile used 5%-white, invisible on the light sheet. */
+  --cw-add-ref-bg: #f7f8fa;
+  --cw-add-ref-border: #d7dbe1;
+  --cw-add-ref-fg: #4c545f;
+  --cw-add-ref-span: #7d8592;
+  --cw-add-ref-hover-bg: #eef0f4;
+  --cw-add-ref-hover-border: #c8cdd7;
+}
+:root[data-theme="light"] .cw-composer .cw-run-button:hover:not(:disabled) {
+  background: #3358b8;
+}
+/* The generic light button colour above would paint the run arrow the same
+   shade as its own background, hiding it. Keep the arrow legible on the disc;
+   the selector is scoped through the composer to outrank that generic rule. */
+:root[data-theme="light"] .cw-composer .cw-run-button {
+  color: var(--cw-run-active-fg);
+}
+:root[data-theme="light"] .cw-composer .cw-run-button:disabled {
+  color: var(--cw-run-fg);
+}
+:root[data-theme="light"] :is(.cw-text-editor, .cw-node-title-input)::placeholder {
+  color: #98a0ad;
+}
+:root[data-theme="light"]
+  :is(.cw-composer, .cw-domain-dialog, .cw-modal, .cw-side-panel)
+  button:hover:not(:disabled) {
+  background: #e9edf4;
+}
+:root[data-theme="light"] .cw-domain-dialog .cw-domain-primary {
+  background: #596c8b;
+  color: #fff;
+}
+:root[data-theme="light"] .cw-vline,
+:root[data-theme="light"] .cw-divider {
+  background: #dfe2e7;
+}
+:root[data-theme="light"] .cw-connection-preview {
+  stroke: #597db6;
+}
+:root[data-theme="light"] .cw-connection-preview.is-invalid {
+  stroke: #b94040;
+}
+:root[data-theme="light"] .cw-workspace .cw-reference-port {
+  border-color: #3d6bd6;
+  color: #3d6bd6;
+  background: transparent;
+}
+:root[data-theme="light"] .cw-reference-edge {
+  color: #8998b1;
+}
+:root[data-theme="light"] .cw-reference-edge.is-emphasized {
+  color: #1f6fe5;
+}
+:root[data-theme="light"] ::selection {
+  background: #c3d7f5;
+  color: #172c4e;
+}

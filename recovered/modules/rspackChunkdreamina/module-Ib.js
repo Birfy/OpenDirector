@@ -1,0 +1,26 @@
+export var R = {
+  Show: "show",
+  Confirm: "confirm",
+  ImageDelete: "image_delete",
+  VideoDelete: "video_delete",
+  Close: "close",
+  UploadFromLocal: "upload_from_local",
+  UploadFromAsset: "upload_from_asset",
+  UploadVoice: "upload_voice",
+  AiVoice: "ai_voice",
+  VoiceSelect: "voice_select",
+  AudioDelete: "audio_delete",
+  VoiceDelete: "voice_delete",
+};
+export var B = {
+  SubjectListCreate: "subject_list_create",
+  SubjectListEdit: "subject_list_edit",
+  Generation: "generation",
+  Asset: "asset",
+  Canvas: "canvas",
+  WorkCollectionDetail: "work_collection_detail",
+  PreviewHoverEdit: "preview_hover_edit",
+  GenerationAsset: "generation_asset",
+  SubjectTabCreate: "subject_tab_create",
+  Adjust: "adjust",
+};

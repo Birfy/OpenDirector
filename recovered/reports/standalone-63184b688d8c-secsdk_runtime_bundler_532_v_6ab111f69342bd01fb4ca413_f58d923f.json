@@ -1,0 +1,15 @@
+{
+  "detected_formats": [],
+  "safety": "normal",
+  "modules": [
+    {
+      "filename": "63184b688d8c-secsdk_runtime_bundler_532_v_6ab111f69342bd01fb4ca413_f58d923f.js",
+      "kind": "javascript",
+      "status": "decompiled"
+    }
+  ],
+  "warnings": [],
+  "total": 1,
+  "failed": 0,
+  "elapsed_ms": 105
+}
