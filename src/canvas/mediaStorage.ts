@@ -1,5 +1,5 @@
 /** Wire format 2 stores repeated embedded media once; runtime documents stay v1. */
-const PREFIX = "opendesign-media:";
+const PREFIX = "opendirector-media:";
 const MIN_SHARED_LENGTH = 64 * 1024;
 
 function mapSources(

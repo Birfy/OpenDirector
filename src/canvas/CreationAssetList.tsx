@@ -39,7 +39,7 @@ interface Impact {
   hiddenItemIds: string[];
 }
 
-/** MuseShow's asset management layout without its independent preview branch. */
+/** OpenDirector's asset management layout without its independent preview branch. */
 export function CreationAssetList({
   projectId,
   onClose,

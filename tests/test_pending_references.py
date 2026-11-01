@@ -4,10 +4,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.application.chat_references import validate_chat_references
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import read_json, write_json
-from museshow_api.main import create_app
+from opendirector.application.chat_references import validate_chat_references
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import read_json, write_json
+from opendirector_api.main import create_app
 from test_multimodal_references import media, small_video
 
 
@@ -30,7 +30,7 @@ def test_mixed_batch_preflight_never_writes_or_invokes_models(media, small_video
     assets = [text, image, audio, video]
     selected = [selection(canvas, owner, asset) for asset in assets]
     before = files(store)
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1'}) as client:
         # No edit lease is required for a read-only preflight.
         response = client.post(f'/api/projects/{owner}/chat-references/validate', json={'content': document(assets), 'selections': selected})
         assert response.status_code == 200 and response.json() == {'ok': True}
@@ -81,7 +81,7 @@ def test_duplicate_mention_does_not_bypass_missing_file_check(media):
 
 
 def test_file_and_encoded_request_budgets_are_shared_with_chat(media, monkeypatch):
-    from museshow.integrations import reference_inputs
+    from opendirector.integrations import reference_inputs
     store, owner, session, canvas, image, _, _ = media
     large = canvas.import_file(owner, str(uuid4()), '大文本.md', b'x' * (64 * 1024 + 1), session, str(uuid4()))
     before = files(store)
@@ -98,7 +98,7 @@ def test_api_rejects_overflow_and_invalid_selection_without_mutation(media):
     store, owner, _, canvas, image, _, _ = media
     selected = selection(canvas, owner, image)
     before = files(store)
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1'}) as client:
         endpoint = f'/api/projects/{owner}/chat-references/validate'
         for payload in [
             {'content': document([image]), 'selections': []},

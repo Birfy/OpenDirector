@@ -1,5 +1,6 @@
 import type { CanvasNode } from "./model.ts";
 import type { ReferenceInput } from "../backend/generation.ts";
+import { subjectMediaReferences } from "./subjectReferences.ts";
 
 /** Snapshot only explicit selection; do not silently send the whole document. */
 export function assistantReferences(
@@ -18,29 +19,14 @@ export function assistantReferences(
           text: data.text,
         });
     } else if (node.type === "subject" && data.subject) {
-      for (const [sourceRole, resource] of [
-        ["main", data.subject.main],
-        ...data.subject.auxiliaries.map(
-          (resource, index) => [`auxiliary:${index}`, resource] as const,
-        ),
-        ["voice", data.subject.voice],
-      ] as const)
-        if (resource?.src && resource.kind !== "file")
-          references.push({
-            nodeId: node.id,
-            sourceRole,
-            assetId: resource.assetId,
-            kind: resource.kind,
-            title: resource.title,
-            src: resource.src,
-          });
-      if (data.subject.description)
+      for (const { sourceRole, resource } of subjectMediaReferences(node))
         references.push({
-          kind: "text",
-          title: data.title,
-          text: data.subject.description,
           nodeId: node.id,
-          sourceRole: "description",
+          sourceRole,
+          assetId: resource.assetId,
+          kind: resource.kind,
+          title: resource.title,
+          src: resource.src,
         });
     } else if (
       ["image", "video", "audio"].includes(node.type) &&

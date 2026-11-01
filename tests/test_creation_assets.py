@@ -11,16 +11,16 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from museshow.application.creation_assets import CreationAssets
-from museshow.domain.creation.assets import AssetProvenance, AssetRef
-from museshow.domain.creation.commands import parse_command
-from museshow.domain.creation.project import ProjectSnapshot
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.creation_files import upload_directory
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.creation_uploads import CreationUploads, upload_asset_id
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow_api.main import create_app
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.domain.creation.assets import AssetProvenance, AssetRef
+from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.creation.project import ProjectSnapshot
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.creation_files import upload_directory
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.creation_uploads import CreationUploads, upload_asset_id
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector_api.main import create_app
 
 
 def command(project_id, kind='project.create', **payload):
@@ -132,7 +132,7 @@ def test_file_and_asset_receipt_recover_together_after_each_commit_interruption(
 
 
 def test_install_failure_leaves_no_partial_asset_and_can_retry_from_journal(storage, monkeypatch):
-    from museshow.infrastructure import creation_files
+    from opendirector.infrastructure import creation_files
     projects, project_id, session = storage
     info = upload(storage)
     operation = import_command(project_id, info)
@@ -202,7 +202,7 @@ def test_wrong_kind_names_and_invalid_media_never_publish(storage):
 
 
 def test_upload_limits_use_streamed_bytes_and_text_limits_use_utf8(storage, monkeypatch):
-    from museshow.infrastructure import creation_uploads
+    from opendirector.infrastructure import creation_uploads
     projects, project_id, session = storage
     monkeypatch.setattr(creation_uploads, 'MAX_CREATION_ASSET_BYTES', 4)
     writer = CreationUploads(projects).begin(project_id, uuid4(), session, 'file.bin')
@@ -322,7 +322,7 @@ def test_video_metadata_uses_actual_dimensions_duration_and_audio_tracks(storage
 
 def test_trusted_agent_text_records_actual_run_without_a_fictitious_job(storage):
     projects, project_id, session = storage
-    from museshow.domain.creation.models import ModelSnapshot
+    from opendirector.domain.creation.models import ModelSnapshot
     model = ModelSnapshot(modelConfigId=uuid4(), kind='agent', modelId='agent', url='http://model.test/v1', protocol='openai', connectionType='api')
     provenance = AssetProvenance(source='agent_written', agentRunId=uuid4(), modelSnapshot=model, prompt='Write a script')
     operation = command(project_id, 'asset.writeText', name='script.md', text='Real assistant text')
@@ -351,8 +351,8 @@ def test_trusted_editor_output_is_registered_with_document_version_and_source_as
 
 
 def test_generated_file_and_job_result_are_recovered_in_one_commit(storage, tmp_path):
-    from museshow.domain.creation.generation import ImageGenerationSpec, InputSnapshot, Job, ResultVersion
-    from museshow.domain.creation.models import ModelSnapshot
+    from opendirector.domain.creation.generation import ImageGenerationSpec, InputSnapshot, Job, ResultVersion
+    from opendirector.domain.creation.models import ModelSnapshot
     projects, project_id, session = storage
     model_id, spec_id, job_id = uuid4(), uuid4(), uuid4()
     spec = ImageGenerationSpec(id=spec_id, projectId=project_id, kind='image', purpose='generation', modelConfigId=model_id, prompt='A mountain')
@@ -408,7 +408,7 @@ def test_large_project_file_is_not_restricted_by_chat_attachment_limit(storage):
 @pytest.fixture
 def api(storage):
     projects, project_id, session = storage
-    with TestClient(create_app(projects.local), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(projects.local), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         yield client, f'/api/creation/projects/{project_id}', projects, project_id
 
 
@@ -462,7 +462,7 @@ def test_public_sources_and_file_paths_cannot_be_forged(api):
 
 
 def test_upload_response_loss_and_request_retry_keep_same_handle(api, monkeypatch):
-    from museshow.infrastructure import creation_uploads
+    from opendirector.infrastructure import creation_uploads
     client, base, _, _ = api
     handle = str(uuid4())
     original = creation_uploads.durable_json
@@ -515,7 +515,7 @@ def test_interrupted_http_upload_releases_lock_and_partial_bytes(storage):
             yield png()[:10]
             raise ClientDisconnect()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver',
-                headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session, 'X-Asset-Name': 'frame.png'}) as client:
+                headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session, 'X-Asset-Name': 'frame.png'}) as client:
             with pytest.raises(ClientDisconnect):
                 await client.put(f'/api/creation/projects/{project_id}/uploads/{handle}', content=chunks())
     asyncio.run(run())

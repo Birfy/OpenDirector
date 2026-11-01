@@ -120,15 +120,19 @@
   background: #ffffff0e;
 }
 .cw-node-task-panel .cw-node-task-primary {
-  background: #b6ef9d;
-  border-color: #b6ef9d;
-  color: #23341b;
+  background: var(--cw-control-accent);
+  border-color: var(--cw-control-accent);
+  color: var(--cw-control-on-accent);
   min-width: 64px;
   font-weight: 600;
 }
+.cw-node-task-panel .cw-node-task-primary:hover:not(:disabled) {
+  background: var(--cw-control-accent-hover);
+  border-color: var(--cw-control-accent-hover);
+}
 .cw-node-task-status {
   flex: 1;
-  color: #b6ef9d;
+  color: var(--cw-control-accent);
   font-size: 11px;
 }
 @media (max-width: 560px) {
@@ -154,6 +158,8 @@
 }
 .cw-node-action-dock {
   z-index: 10;
+  background: #1e2028;
+  border: 1px solid #ffffff20;
 }
 .cw-node-action-dock > section {
   min-width: 0;

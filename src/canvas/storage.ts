@@ -58,7 +58,7 @@ const NODE_KINDS: CanvasNodeKind[] = [
   "tool",
   "external",
 ];
-const DB_NAME = "museshow-canvas";
+const DB_NAME = "opendirector-canvas";
 const STORE_NAME = "documents";
 const failure = <T>(
   code: CanvasStorageError["code"],
@@ -224,7 +224,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       !nodeIds.has(raw.target) ||
       (raw.intent !== undefined &&
         raw.intent !== "generation_input" &&
+        raw.intent !== "assembly_input" &&
         raw.intent !== "post_edit_result") ||
+      (raw.intent === "assembly_input" && !nonempty(raw.assemblySlotId)) ||
       (raw.sourceHandle !== null && !optionalString(raw.sourceHandle)) ||
       (raw.targetHandle !== null && !optionalString(raw.targetHandle))
     )
@@ -235,6 +237,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       id: raw.id,
       source: raw.source,
       target: raw.target,
+      ...(raw.intent === "assembly_input"
+        ? { assemblySlotId: raw.assemblySlotId as string }
+        : {}),
       ...(raw.intent !== undefined
         ? { intent: raw.intent as CanvasEdge["intent"] }
         : {}),

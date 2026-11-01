@@ -3,6 +3,8 @@ import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { ComposerPopover } from "./ComposerPopover";
+import { DurationControl } from "./DurationControl";
+import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
   changeGenerationSettings,
   generationBlocker,
@@ -55,7 +57,7 @@ export interface NodeComposerProps {
 
 export type ComposerSettings = GenerationSettings;
 const ratios = GENERATION_RATIOS;
-type Panel = "parameters" | "voices" | null;
+type Panel = "parameters" | "duration" | "voices" | null;
 
 /** Shared defaults let the workspace run the same parameters that the controls display. */
 export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
@@ -163,6 +165,18 @@ export function NodeComposer({
         ? { min: serviceSeconds[0]!, max: serviceSeconds.at(-1)!, step: 1 }
         : undefined
       : model?.duration;
+  const durationValues =
+    backend && mode === "video"
+      ? serviceSeconds
+      : duration
+        ? Array.from(
+            {
+              length:
+                Math.floor((duration.max - duration.min) / duration.step) + 1,
+            },
+            (_, index) => duration.min + index * duration.step,
+          )
+        : [];
   const serviceModes = config?.inputRules.videoModes ?? [];
   const videoModes = [
     ["reference", "全能参考"],
@@ -359,27 +373,15 @@ export function NodeComposer({
                 <CanvasIcon name="plus" size={20} />
               </TooltipButton>
               {incomingNodes.map((node) => (
-                <button
-                  type="button"
-                  className="cw-reference-chip"
+                <ReferenceThumbnail
                   key={node.id}
-                  onClick={() => insertReference(node)}
-                  disabled={Boolean(referenceIssue(node))}
+                  node={node}
+                  onInsert={() => insertReference(node)}
+                  onRemove={() => mentions.current?.remove(node)}
+                  disabled={running || Boolean(referenceIssue(node))}
+                  removalDisabled={running}
                   title={`${generationReferenceRole(node)}：${node.data.title}${referenceIssue(node) ? ` · ${referenceIssue(node)}` : ""}`}
-                >
-                  {node.data.kind === "image" &&
-                  node.data.src &&
-                  node.data.assetState !== "missing" ? (
-                    <img
-                      src={node.data.src}
-                      alt={node.data.title}
-                      draggable={false}
-                    />
-                  ) : (
-                    <CanvasIcon name={node.data.kind} size={22} />
-                  )}
-                  <span>{node.data.title}</span>
-                </button>
+                />
               ))}
             </div>
           )}
@@ -469,7 +471,7 @@ export function NodeComposer({
                   : reading
                     ? "文本朗读"
                     : "全能配音"
-                : `${settings.aspectRatio} · ${settings.resolution}${mode === "video" ? ` · ${duration ? `${settings.durationSeconds} 秒` : "服务默认时长"}` : ` · ${settings.count} 张`}`}
+                : `${settings.aspectRatio} · ${settings.resolution}${mode === "image" ? ` · ${settings.count} 张` : ""}`}
             </span>
           </button>
           <div className="cw-generation-mode-controls">
@@ -605,6 +607,29 @@ export function NodeComposer({
               <CanvasIcon name="plus" size={16} />
             </TooltipButton>
           )}
+          {mode === "video" && (
+            <button
+              type="button"
+              className={`cw-duration-trigger${panel === "duration" ? " cw-is-active" : ""}`}
+              aria-label="视频生成时长"
+              aria-haspopup="dialog"
+              aria-expanded={panel === "duration"}
+              disabled={running || !durationValues.length}
+              title={
+                !durationValues.length
+                  ? "该模型尚未提供可选生成时长"
+                  : "选择视频生成时长"
+              }
+              onClick={(event) => togglePanel("duration", event.currentTarget)}
+            >
+              <span>
+                {durationValues.length
+                  ? `${settings.durationSeconds} 秒`
+                  : "服务默认时长"}
+              </span>
+              <CanvasIcon name="chevronDown" size={12} />
+            </button>
+          )}
           {!reading && !music && (
             <TooltipButton
               type="button"
@@ -649,6 +674,22 @@ export function NodeComposer({
           <CanvasIcon name={running ? "stop" : "arrowUp"} size={20} />
         </TooltipButton>
       </div>
+      {panel === "duration" && mode === "video" && (
+        <ComposerPopover
+          {...popoverProps}
+          className="cw-duration-popover"
+          label="视频生成时长设置"
+          placement="above-anchor"
+        >
+          <DurationControl
+            values={durationValues}
+            value={settings.durationSeconds}
+            disabled={running}
+            scale={{ min: 0, max: 30, step: 5 }}
+            onChange={(durationSeconds) => updateSettings({ durationSeconds })}
+          />
+        </ComposerPopover>
+      )}
       {panel === "parameters" && (
         <ComposerPopover
           {...popoverProps}
@@ -730,58 +771,18 @@ export function NodeComposer({
               </div>
             </div>
           )}
-          {(mode === "video" || music) && (
+          {music && (
             <div className="cw-parameter-section">
               <span className="cw-field-label">时长</span>
               {duration ? (
-                <div className="cw-duration-controls">
-                  <input
-                    type="range"
-                    aria-label="创作时长"
-                    min={backend ? 0 : duration.min}
-                    max={backend ? serviceSeconds.length - 1 : duration.max}
-                    step={duration.step}
-                    disabled={running || duration.min === duration.max}
-                    value={
-                      backend
-                        ? Math.max(
-                            0,
-                            serviceSeconds.indexOf(settings.durationSeconds),
-                          )
-                        : settings.durationSeconds
-                    }
-                    aria-valuetext={`${settings.durationSeconds} 秒`}
-                    onChange={(event) =>
-                      updateSettings({
-                        durationSeconds: backend
-                          ? serviceSeconds[Number(event.target.value)]!
-                          : Number(event.target.value),
-                      })
-                    }
-                  />
-                  <select
-                    aria-label="精确创作时长"
-                    value={settings.durationSeconds}
-                    disabled={running}
-                    onChange={(event) =>
-                      updateSettings({
-                        durationSeconds: Number(event.target.value),
-                      })
-                    }
-                  >
-                    {(backend
-                      ? serviceSeconds
-                      : Array.from(
-                          { length: duration.max - duration.min + 1 },
-                          (_, index) => duration.min + index,
-                        )
-                    ).map((value) => (
-                      <option key={value} value={value}>
-                        {value} 秒
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <DurationControl
+                  values={durationValues}
+                  value={settings.durationSeconds}
+                  disabled={running}
+                  onChange={(durationSeconds) =>
+                    updateSettings({ durationSeconds })
+                  }
+                />
               ) : (
                 <span className="cw-parameter-unknown">
                   该模型普通生成的时长范围尚未核实

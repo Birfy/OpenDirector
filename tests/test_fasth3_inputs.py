@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.integrations.fasth3 import native_prompt, video_parameters, finalize_video_edit
+from opendirector.domain.projects import ProjectError
+from opendirector.integrations.fasth3 import native_prompt, video_parameters, finalize_video_edit
 
 
 def source(kind, name, **extra):
@@ -167,7 +167,7 @@ def test_native_prompt_and_full_duration_reach_actual_video_multipart():
     from email.parser import BytesParser
     from email.policy import default
     import httpx
-    from museshow.integrations.providers import GenerationProviders
+    from opendirector.integrations.providers import GenerationProviders
     video = source('video', 'original.mp4', fingerprint='fixture', durationMs=15000, hasAudio=True)
     picture = source('image', 'person.png', fingerprint='fixture')
     picture['type'] = 'image/png'

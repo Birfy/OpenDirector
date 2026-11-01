@@ -7,11 +7,11 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.creation.commands import parse_command
-from museshow.domain.creation.project import ProjectSnapshot
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects, read_json
+from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.creation.project import ProjectSnapshot
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects, read_json
 
 
 def request(project_id, kind='project.create', *, versions=(), **payload):
@@ -151,7 +151,7 @@ def test_version_rejections_and_noops_are_durable_without_change_events(projects
     assert again.receipt(created.projectId, noop.commandId).eventCursor == 1
 
 
-@pytest.mark.parametrize('name', ['', '../escape', 'CON', 'a:b', 'abc.', '.museshow-reserved'])
+@pytest.mark.parametrize('name', ['', '../escape', 'CON', 'a:b', 'abc.', '.opendirector-reserved'])
 def test_invalid_creation_names_never_write_a_journal_or_project(projects, name):
     # Empty names already fail at the contract boundary.
     with pytest.raises((ProjectError, ValueError)):
@@ -350,7 +350,7 @@ def test_paginated_outbox_has_no_duplicate_or_skipped_events(projects):
 
 @pytest.mark.parametrize('file_kind', ['journal', 'bundle', 'manifest'])
 def test_real_file_write_failure_preserves_recoverable_intent(projects, monkeypatch, file_kind):
-    from museshow.infrastructure import creation_projects
+    from opendirector.infrastructure import creation_projects
     created = create(projects)
     command = rename(created)
     original = creation_projects.write_json

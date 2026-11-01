@@ -5,16 +5,16 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
 
 
 @pytest.fixture
 def api(tmp_path):
     store = LocalProjects(tmp_path)
-    headers = {"X-MuseShow-Request": "1", "X-MuseShow-Session": str(uuid4())}
+    headers = {"X-OpenDirector-Request": "1", "X-OpenDirector-Session": str(uuid4())}
     with TestClient(create_app(store), headers=headers) as client:
         yield client, store
 
@@ -64,7 +64,7 @@ def test_edit_preserves_blank_key_and_stable_id_then_delete(api):
 
 
 def test_validation_and_save_failures_preserve_file_and_hide_request_values(api, monkeypatch):
-    from museshow.infrastructure import model_configs
+    from opendirector.infrastructure import model_configs
 
     client, store = api
     config = client.post("/api/model-configs", json=payload()).json()
@@ -126,14 +126,14 @@ def test_project_selections_and_history_survive_config_changes(api):
 def test_model_config_routes_keep_local_request_protection(api):
     client, _ = api
     assert client.get("/api/model-configs", headers={"Origin": "https://untrusted.example"}).status_code == 403
-    assert client.post("/api/model-configs", json=payload(), headers={"X-MuseShow-Request": ""}).status_code == 403
+    assert client.post("/api/model-configs", json=payload(), headers={"X-OpenDirector-Request": ""}).status_code == 403
 
 
 @pytest.mark.parametrize('kind', ['image', 'video'])
 def test_segmentation_protocol_serves_both_tools_without_generation(api, kind):
-    from museshow.domain.creation.models import ModelConfigPublic, ModelSnapshot
-    from museshow.integrations.model_adapters import capabilities_of
-    from museshow.integrations.providers import GenerationProviders
+    from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
+    from opendirector.integrations.model_adapters import capabilities_of
+    from opendirector.integrations.providers import GenerationProviders
     client, store = api
     response = client.post('/api/model-configs', json=payload(kind, protocol='vllm_omni_segmentation', modelId='facebook/sam3'))
     assert response.status_code == 200, response.text
@@ -142,7 +142,7 @@ def test_segmentation_protocol_serves_both_tools_without_generation(api, kind):
     assert saved['inputRules']['allowedKinds'] == [] and saved['inputRules']['videoModes'] == []
     assert ModelConfigs(store.repository).list() == [saved]
     public = ModelConfigPublic.model_validate(saved)
-    ModelSnapshot(modelConfigId=public.id, **public.model_dump(exclude={'id', 'authMode', 'videoCapabilities'}))
+    ModelSnapshot(modelConfigId=public.id, **public.model_dump(exclude={'id', 'providerId', 'authMode', 'videoCapabilities'}))
     private = ModelConfigs(store.repository).resolve(saved['id'], kind)
     assert capabilities_of(private) == {'image.segment', 'video.matting'}
     with pytest.raises(ProjectError, match='视觉分割模型'):
@@ -193,3 +193,156 @@ def test_legacy_generation_boundary_rejects_sam_before_creating_a_task(tmp_path,
             'modelConfigId': sam['id'], 'inputs': {'prompt': 'generate'}}, session)
     assert provider.calls == []
     assert generation.canvas.snapshot(project['id'])['tasks'] == []
+
+
+def test_agent_model_test_uses_draft_without_saving(api, monkeypatch):
+    from opendirector.integrations.chat_completions import ChatCompletions
+
+    client, store = api
+    saved = client.post('/api/model-configs', json=payload()).json()
+    before = (store.state_dir / 'models.json').read_bytes()
+    calls = []
+
+    async def stream(self, config, request):
+        calls.append((config, request))
+        yield {'type': 'delta', 'text': 'OK'}
+
+    monkeypatch.setattr(ChatCompletions, 'stream', stream)
+    response = client.post('/api/model-configs/test-agent', json=payload(
+        configId=saved['id'], apiKey='', modelId='draft-model'))
+    assert response.status_code == 200
+    assert response.json()['elapsedMs'] >= 0
+    assert calls[0][0]['apiKey'] == 'test-secret'
+    assert calls[0][1]['model'] == 'draft-model'
+    assert calls[0][1]['stream'] is True
+    assert 'test-secret' not in response.text
+    assert (store.state_dir / 'models.json').read_bytes() == before
+    response = client.post('/api/model-configs/test-agent', json=payload(
+        configId=saved['id'], apiKey='', url='https://other.example/v1'))
+    assert response.status_code == 400
+    assert len(calls) == 1
+
+
+def test_agent_model_test_requires_reply(api, monkeypatch):
+    from opendirector.integrations.chat_completions import ChatCompletions
+
+    client, _ = api
+
+    async def stream(self, config, request):
+        yield {'type': 'thinking'}
+
+    monkeypatch.setattr(ChatCompletions, 'stream', stream)
+    response = client.post('/api/model-configs/test-agent', json=payload())
+    assert response.status_code == 502
+    assert '未返回正文' in response.json()['detail']
+    assert client.post('/api/model-configs/test-agent', json=payload(kind='image')).status_code == 422
+
+
+def test_discover_models_without_model_id_and_preserve_key(api, monkeypatch):
+    client, store = api
+    saved = client.post('/api/model-configs', json=payload()).json()
+    before = (store.state_dir / 'models.json').read_bytes()
+    calls = []
+
+    async def models(config):
+        calls.append(config)
+        return [{'id': 'model-a'}, {'id': 'model-b'}, {'id': 'model-a'}]
+
+    monkeypatch.setattr('opendirector_api.main.read_service_models', models)
+    response = client.post('/api/model-configs/discover', json=payload(
+        modelId='', apiKey='', configId=saved['id']))
+    assert response.status_code == 200
+    assert response.json() == {'models': ['model-a', 'model-b']}
+    assert calls[0]['apiKey'] == 'test-secret'
+    assert (store.state_dir / 'models.json').read_bytes() == before
+    response = client.post('/api/model-configs/discover', json=payload(
+        modelId='', apiKey='', configId=saved['id'], url='https://other.example/v1'))
+    assert response.status_code == 400
+    assert len(calls) == 1
+
+
+def test_read_service_models_protocol():
+    import asyncio
+    import httpx
+    from opendirector.integrations.model_capabilities import read_service_models
+
+    config = payload(authMode='bearer')
+
+    def respond(request):
+        assert request.url.path == '/v1/models'
+        assert request.headers['Authorization'] == 'Bearer test-secret'
+        return httpx.Response(200, json={'data': [{'id': 'model-a'}]})
+
+    assert asyncio.run(read_service_models(config, httpx.MockTransport(respond))) == [{'id': 'model-a'}]
+    with pytest.raises(ProjectError):
+        asyncio.run(read_service_models(config, httpx.MockTransport(
+            lambda request: httpx.Response(200, json={'data': [{'id': 123}]}))))
+
+
+def test_shared_service_batch_persists_one_credential_and_stable_models(api):
+    client, store = api
+    response = client.post('/api/model-configs/batch', json=payload(modelIds=['one', 'two']))
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert len({item['providerId'] for item in saved}) == 1
+    assert 'test-secret' not in response.text
+    path = store.state_dir / 'models.json'
+    raw = json.loads(path.read_text())
+    assert len(raw['services']) == 1
+    assert all('apiKey' not in item and 'url' not in item for item in raw['models'])
+    assert path.read_text().count('test-secret') == 1
+    configs = ModelConfigs(store.repository)
+    assert configs.resolve(saved[1]['id'], 'agent')['apiKey'] == 'test-secret'
+    updated = client.post('/api/model-configs/batch', json=payload(
+        configId=saved[0]['id'], modelIds=['one', 'two', 'three'], apiKey='rotated'))
+    assert updated.status_code == 200, updated.text
+    assert [item['id'] for item in updated.json()[:2]] == [item['id'] for item in saved]
+    assert configs.resolve(saved[1]['id'], 'agent')['apiKey'] == 'rotated'
+    response = client.post('/api/model-configs/batch', json=payload(
+        configId=saved[0]['id'], modelIds=['two'], apiKey=''))
+    assert response.status_code == 200
+    assert response.json()[0]['id'] == saved[1]['id']
+    assert len(configs.list()) == 1
+    client.delete('/api/model-configs/' + saved[1]['id'])
+    assert json.loads(path.read_text())['services'] == {}
+
+
+def test_shared_service_batch_is_atomic_and_preserves_legacy_identity(api):
+    client, store = api
+    saved = client.post('/api/model-configs', json=payload(modelId='one')).json()
+    path = store.state_dir / 'models.json'
+    before = path.read_bytes()
+    response = client.post('/api/model-configs/batch', json=payload(
+        configId=saved['id'], modelIds=['one', ''], apiKey=''))
+    assert response.status_code == 400
+    assert path.read_bytes() == before
+    response = client.post('/api/model-configs/batch', json=payload(
+        configId=saved['id'], modelIds=['one', 'two'], apiKey=''))
+    assert response.status_code == 200, response.text
+    assert response.json()[0]['id'] == saved['id']
+    before = path.read_bytes()
+    response = client.post('/api/model-configs/batch', json=payload(
+        configId=saved['id'], modelIds=['one'], apiKey='', url='https://other.example/v1'))
+    assert response.status_code == 400
+    assert path.read_bytes() == before
+
+
+def test_delete_service_removes_group_atomically(api):
+    client, store = api
+    saved = client.post('/api/model-configs/batch', json=payload(modelIds=['one', 'two'])).json()
+    other = client.post('/api/model-configs', json=payload(modelId='other')).json()
+    response = client.delete('/api/model-services/' + saved[0]['id'])
+    assert response.status_code == 204
+    assert client.get('/api/model-configs').json() == [other]
+    assert json.loads((store.state_dir / 'models.json').read_text())['services'] == {}
+
+
+def test_batch_edit_legacy_segmentation_preserves_identity(api):
+    client, _ = api
+    saved = client.post('/api/model-configs', json=payload('vision', protocol='vllm_omni', modelId='facebook/sam3')).json()
+    response = client.post('/api/model-configs/batch', json=payload(
+        'image', protocol='vllm_omni_segmentation', configId=saved['id'],
+        modelIds=['facebook/sam3', 'other-segmentation'], apiKey=''))
+    assert response.status_code == 200, response.text
+    assert response.json()[0]['id'] == saved['id']
+    assert len(client.get('/api/model-configs').json()) == 2

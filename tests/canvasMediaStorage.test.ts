@@ -27,12 +27,12 @@ test("shared embedded video is stored once across nodes and timeline snapshots",
   const wire = JSON.parse(encoded.value);
   assert.equal(wire.version, 2);
   assert.deepEqual(wire.mediaSources, [src]);
-  assert.equal(wire.nodes[0].data.src, "opendesign-media:0");
+  assert.equal(wire.nodes[0].data.src, "opendirector-media:0");
   assert.ok(encoded.value.length < src.length + 10000);
   const canonical = parseDocument(document);
   assert.deepEqual(parseDocument(wire), canonical);
   assert.deepEqual(parseDocument(encoded.value), canonical);
-  assert.equal(wire.nodes[0].data.src, "opendesign-media:0");
+  assert.equal(wire.nodes[0].data.src, "opendirector-media:0");
   assert.equal(video.data.src, src);
 });
 
@@ -60,13 +60,13 @@ test("invalid shared media references fail without mutating the supplied documen
     ...createDocument(),
     version: 2,
     mediaSources: ["data:image/png;base64,YQ=="],
-    nodes: [createNode("image", { x: 0, y: 0 }, { src: "opendesign-media:0" })],
+    nodes: [createNode("image", { x: 0, y: 0 }, { src: "opendirector-media:0" })],
   };
   for (const src of [
-    "opendesign-media:1",
-    "opendesign-media:-1",
-    "opendesign-media:0.5",
-    "opendesign-media:00",
+    "opendirector-media:1",
+    "opendirector-media:-1",
+    "opendirector-media:0.5",
+    "opendirector-media:00",
   ])
     assert.equal(
       parseDocument({
@@ -82,5 +82,5 @@ test("invalid shared media references fail without mutating the supplied documen
     [null],
   ])
     assert.equal(parseDocument({ ...doc, mediaSources }).ok, false);
-  assert.equal(doc.nodes[0]!.data.src, "opendesign-media:0");
+  assert.equal(doc.nodes[0]!.data.src, "opendirector-media:0");
 });

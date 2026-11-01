@@ -8,14 +8,14 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import input_rules
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.asset_catalog import AssetCatalog
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.providers import GenerationProviders
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.asset_catalog import AssetCatalog
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.providers import GenerationProviders
 
 ZIMAGE = {'kind': 'image', 'url': 'http://gpu-box:8200/v1', 'modelId': 'Tongyi-MAI/Z-Image-Turbo', 'apiKey': 'token'}
 

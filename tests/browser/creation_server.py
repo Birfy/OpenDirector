@@ -14,22 +14,22 @@ from fastapi import Request
 from PIL import Image
 import uvicorn
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
-from museshow.application.tool_operations import TOOLS, Output
-from museshow.domain.capabilities import Segment, MediaResult
-from museshow.integrations.model_adapters import OpenAIImages, VllmOmniSegmentation
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
+from opendirector.application.tool_operations import TOOLS, Output
+from opendirector.domain.capabilities import Segment, MediaResult
+from opendirector.integrations.model_adapters import OpenAIImages, VllmOmniSegmentation
 
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', type=int, default=8019)
 parser.add_argument('--root', type=Path)
 args = parser.parse_args()
-root = (args.root or Path(tempfile.mkdtemp(prefix='opendesign-creation-'))).resolve()
-if root.parent != Path(tempfile.gettempdir()).resolve() or not root.name.startswith('opendesign-creation-'):
-    parser.error('Browser fixtures require an opendesign-creation-* directory directly under the system temp directory')
+root = (args.root or Path(tempfile.mkdtemp(prefix='opendirector-creation-'))).resolve()
+if root.parent != Path(tempfile.gettempdir()).resolve() or not root.name.startswith('opendirector-creation-'):
+    parser.error('Browser fixtures require an opendirector-creation-* directory directly under the system temp directory')
 store = LocalProjects(root)
 configs = ModelConfigs(root)
 if not configs.list():

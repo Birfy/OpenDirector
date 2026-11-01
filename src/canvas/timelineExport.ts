@@ -181,7 +181,7 @@ export function exportTimelineFcpxml(
       return `<asset-clip ref="${source.ref}" name="${xml(clip.resource.title)}" lane="${lane}" offset="${frameTime(startFrame)}" start="${fcpxmlTime(mappedStart)}" duration="${frameTime(endFrame - startFrame)}"${audio && muted ? ' enabled="0"' : ""} srcEnable="${audio ? "audio" : muted || clip.resource.kind === "image" ? "video" : "all"}"${audio ? ` audioRole="music.track-${-lane}"` : ""}>${timeMap}${conform}${volume}</asset-clip>`;
     })
     .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><resources><format id="sequence-format" frameDuration="1/${timeline.fps}s" width="${timeline.width}" height="${timeline.height}"/>\n${resourceXml}</resources><library><event name="MuseShow"><project name="${xml(title || "Timeline")}"><sequence format="sequence-format" duration="${durationTime}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k"><spine><gap name="Timeline" offset="0s" start="0s" duration="${durationTime}">\n${clips}\n</gap></spine></sequence></project></event></library></fcpxml>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><resources><format id="sequence-format" frameDuration="1/${timeline.fps}s" width="${timeline.width}" height="${timeline.height}"/>\n${resourceXml}</resources><library><event name="OpenDirector"><project name="${xml(title || "Timeline")}"><sequence format="sequence-format" duration="${durationTime}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k"><spine><gap name="Timeline" offset="0s" start="0s" duration="${durationTime}">\n${clips}\n</gap></spine></sequence></project></event></library></fcpxml>\n`;
 }
 
 export interface ZipEntry {
@@ -339,7 +339,7 @@ export async function exportTimelinePackage(
   entries.push({
     path: "README.txt",
     content: new Blob([
-      "MuseShow FCPXML 1.10\n解压整个文件夹后导入 project.fcpxml，保留 media 相对路径。\n包含原媒体、剪辑入出点、顺序、倍速、音量、静音与多音轨；媒体不转码。\n支持 FCPXML 的剪辑软件可读取，具体版本与源编码能力决定导入兼容性。未声称可直接导入 Premiere 或原生剪映工程。\n素材真实帧率、声道与采样率由接收软件读取；剪辑边界对齐整数项目帧率，源入点与变速时间点精度为微秒。\nFCPXML 标准：https://developer.apple.com/documentation/professional-video-applications/creating-fcpxml-documents\n",
+      "OpenDirector FCPXML 1.10\n解压整个文件夹后导入 project.fcpxml，保留 media 相对路径。\n包含原媒体、剪辑入出点、顺序、倍速、音量、静音与多音轨；媒体不转码。\n支持 FCPXML 的剪辑软件可读取，具体版本与源编码能力决定导入兼容性。未声称可直接导入 Premiere 或原生剪映工程。\n素材真实帧率、声道与采样率由接收软件读取；剪辑边界对齐整数项目帧率，源入点与变速时间点精度为微秒。\nFCPXML 标准：https://developer.apple.com/documentation/professional-video-applications/creating-fcpxml-documents\n",
     ]),
   });
   const zip = await createTimelineZip(entries, signal);

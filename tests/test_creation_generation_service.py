@@ -4,11 +4,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from museshow.application.creation_canvas import resolved_inputs
-from museshow.application.creation_generation import CreationGeneration
-from museshow.application.generation import Generation
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.model_configs import ModelConfigs
+from opendirector.application.creation_canvas import resolved_inputs
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.generation import Generation
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
@@ -51,6 +51,31 @@ def configure(project, config):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize('title', ['Output.md', 'Output.md.md'])
+async def test_result_registration_uses_one_extension_when_the_node_title_has_one(project, title):
+    store, pid, session = project
+    provider = Provider()
+    runner, config = runtime(project, provider)
+    try:
+        target, spec = configure(project, config)
+        assert send(store, pid, 'generationSpec.update', session=session,
+            versions=[ver('generation_spec', spec)], spec=spec.model_copy(update={'prompt': title})).status == 'applied'
+        spec = store.snapshot(pid).generationSpecs[-1]
+        provider.finish.set()
+        command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+            expectedVersions=[ver('canvas_item', target), ver('generation_spec', spec)],
+            payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+        assert (await runner.execute(command, session=session)).status == 'accepted'
+        await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+        snapshot = store.snapshot(pid)
+        assert snapshot.jobs[0].status == 'succeeded'
+        assert len(snapshot.assets) == 1
+        assert snapshot.assets[0].name == 'Output.md'
+    finally:
+        await runner.close()
+
+
+@pytest.mark.anyio
 async def test_hidden_source_generation_frozen_history_restart_and_idempotent_command(project):
     store, pid, session = project
     provider = Provider()
@@ -83,8 +108,8 @@ async def test_hidden_source_generation_frozen_history_restart_and_idempotent_co
     assert (await runner.execute(command, session=session)) == receipt
     assert len(provider.calls) == 1
     await runner.close()
-    from museshow.infrastructure.creation_projects import CreationProjects
-    from museshow.infrastructure.local_projects import LocalProjects
+    from opendirector.infrastructure.creation_projects import CreationProjects
+    from opendirector.infrastructure.local_projects import LocalProjects
     reopened = CreationProjects(LocalProjects(store.local.repository)).snapshot(pid)
     assert reopened == snapshot
     assert len(reopened.canvasItems) == 2  # No per-request execution node.

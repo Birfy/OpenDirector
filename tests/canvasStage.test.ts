@@ -34,7 +34,7 @@ function oldStage() {
     motion: { preset: "walk", speed: 1.5, amount: 0.8 },
   };
   return {
-    format: "museshow-local-stage",
+    format: "opendirector-local-stage",
     version: 1,
     background: "#151923",
     grid: true,

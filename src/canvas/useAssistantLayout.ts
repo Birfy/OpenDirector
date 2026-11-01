@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 
-const KEY = "opendesign.assistant-layout.v1";
+const KEY = "opendirector.assistant-layout.v1";
 const DEFAULT_WIDTH = 420;
 const MAX_WIDTH = 720;
 const COLLAPSE_AT = 200;
@@ -26,7 +26,7 @@ function readWidth() {
   }
 }
 
-/** MuseShow's drag, keyboard, reset and collapse behavior, with room for the canvas header. */
+/** OpenDirector's drag, keyboard, reset and collapse behavior, with room for the canvas header. */
 export function useAssistantLayout(
   root: RefObject<HTMLDivElement | null>,
   open: boolean,

@@ -17,7 +17,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
-const headers = { "X-MuseShow-Request": "1" };
+const headers = { "X-OpenDirector-Request": "1" };
 const json = async (response) => {
   assert.ok(response.ok(), await response.text());
   return response.json();
@@ -416,7 +416,7 @@ try {
   );
 } catch (error) {
   await page.screenshot({
-    path: "/tmp/opendesign-tool-placeholder-failure.png",
+    path: "/tmp/opendirector-tool-placeholder-failure.png",
   });
   console.error((await page.locator("body").innerText()).slice(-2400));
   console.error(errors);

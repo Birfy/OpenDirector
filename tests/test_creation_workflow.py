@@ -6,15 +6,15 @@ from uuid import UUID, uuid4
 from PIL import Image
 import pytest
 
-from museshow.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs
-from museshow.application.creation_generation import CreationGeneration
-from museshow.application.creation_history import CreationHistory
-from museshow.application.generation import Generation
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.generation_errors import transport_failure
+from opendirector.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_history import CreationHistory
+from opendirector.application.generation import Generation
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.generation_errors import transport_failure
 from test_creation_canvas_service import project, media, send, text_material, ver
 from test_creation_generation_service import anyio_backend, Provider, runtime, configure
 
@@ -118,7 +118,7 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     cursors = [event.cursor for event in reopened.changes(pid, after=0, limit=200)['events']]
     assert cursors == list(range(1, before.eventCursor + 1))
     assert not (store.root / 'Unified' / 'canvas.json').exists()
-    assert not (store.root / 'Unified' / 'opendesign-canvas.json').exists()
+    assert not (store.root / 'Unified' / 'opendirector-canvas.json').exists()
     assert not (store.root / 'Unified' / 'tasks').exists()
 
 
@@ -298,7 +298,7 @@ async def test_interrupted_remote_video_resumes_original_external_id_after_resta
 async def test_real_agent_adapter_uses_frozen_reference_names_and_ignores_presentation_only_changes(project):
     import json
     import httpx
-    from museshow.integrations.providers import GenerationProviders
+    from opendirector.integrations.providers import GenerationProviders
     store, pid, session = project
     runner, config = runtime(project, Provider())
     captured = []
@@ -357,7 +357,7 @@ async def test_two_runtime_owners_cannot_submit_the_same_durable_job_twice(proje
 
 @pytest.mark.anyio
 async def test_text_agent_preserves_manual_versions_and_new_handwriting_requires_explicit_result_selection(project):
-    from museshow.application.creation_canvas import current_asset
+    from opendirector.application.creation_canvas import current_asset
     store, pid, session = project
     provider = Provider()
     runner, config = runtime(project, provider)

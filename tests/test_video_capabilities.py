@@ -8,15 +8,15 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.application.generation import Generation
-from museshow.domain.input_rules import input_rules
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.model_capabilities import read_video_capabilities
-from museshow.integrations.providers import GenerationProviders
-from museshow_api.main import create_app
-from museshow_api.models import GenerateNode
+from opendirector.application.generation import Generation
+from opendirector.domain.input_rules import input_rules
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.model_capabilities import read_video_capabilities
+from opendirector.integrations.providers import GenerationProviders
+from opendirector_api.main import create_app
+from opendirector_api.models import GenerateNode
 
 
 CAPS = {'outputs': [
@@ -34,7 +34,7 @@ def model_payload(**changes):
 @pytest.fixture
 def api(tmp_path):
     store = LocalProjects(tmp_path)
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1'}) as client:
         yield client, store
 
 
@@ -174,7 +174,7 @@ def test_discovery_uses_saved_key_only_for_its_original_address_and_never_saves(
     async def read(config):
         assert config['apiKey'] == 'test-secret'
         return CAPS
-    monkeypatch.setattr('museshow_api.main.read_video_capabilities', read)
+    monkeypatch.setattr('opendirector_api.main.read_video_capabilities', read)
     payload = {**model_payload(apiKey=''), 'configId': saved['id'], 'source': 'service'}
     response = client.post('/api/model-configs/capabilities', json=payload)
     assert response.status_code == 200 and response.json()['videoCapabilities'] == CAPS

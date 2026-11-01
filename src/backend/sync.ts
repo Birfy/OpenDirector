@@ -9,7 +9,7 @@ import {
 /** Finished tasks whose results have not reached the canvas yet, such as
  * those started by the assistant or finished after the canvas switched. */
 
-const KEY = "opendesign.backendHandled.";
+const KEY = "opendirector.backendHandled.";
 
 function handled(projectId: string): Set<string> | null {
   try {

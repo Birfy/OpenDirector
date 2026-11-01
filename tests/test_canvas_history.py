@@ -7,10 +7,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import read_json, write_json
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import read_json, write_json
+from opendirector_api.main import create_app
 from test_canvas_generation import project, png
 
 
@@ -119,7 +119,7 @@ def test_conflict_is_atomic_and_unrelated_fields_do_not_conflict(project):
 
 def test_asset_selection_references_and_model_undo_preserve_all_versions(project):
     store, owner, session, canvas = project
-    from museshow.infrastructure.model_configs import ModelConfigs
+    from opendirector.infrastructure.model_configs import ModelConfigs
     config = ModelConfigs(store.repository).save('image', 'https://model.test', 'image', 'test')
     item = create(canvas, owner, session, 'image')
     a, b = [canvas.assets.import_file(owner['id'], str(uuid4()), name, png(), session, source='generated') for name in ('a.png', 'b.png')]
@@ -210,7 +210,7 @@ def test_failed_history_write_does_not_move_cursor_or_edit_node(project, monkeyp
     path = Path(owner['path']) / 'canvas.json'
     before = path.read_bytes()
     def fail(*args): raise OSError('disk failure')
-    monkeypatch.setattr('museshow.infrastructure.canvas.write_json', fail)
+    monkeypatch.setattr('opendirector.infrastructure.canvas.write_json', fail)
     with pytest.raises(OSError):
         step(canvas, owner, session)
     assert path.read_bytes() == before
@@ -240,7 +240,7 @@ def test_legacy_layout_undo_migrates_without_a_read_write_or_changing_identity(p
 def test_manual_api_records_edit_save_upload_remove_and_enforces_lease(project):
     store, owner, session, _ = project
     endpoint = f'/api/projects/{owner["id"]}/canvas'
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         item = client.post(endpoint + '/nodes', json={'id': str(uuid4()), 'kind': 'text'}).json()
         assert client.get(endpoint).json()['canvas']['history']['undo']['label'] == '添加节点'
@@ -251,7 +251,7 @@ def test_manual_api_records_edit_save_upload_remove_and_enforces_lease(project):
         state = client.get(endpoint).json()['canvas']
         assert state['history']['undo']['label'] == '上传节点资产'
         body = {'id': str(uuid4()), 'entryId': state['history']['undo']['id']}
-        assert client.post(endpoint + '/history/undo', json=body, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(endpoint + '/history/undo', json=body, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         response = client.post(endpoint + '/history/undo', json=body)
         assert response.status_code == 200 and response.json()['nodes'][0]['assetId'] != state['nodes'][0]['assetId']
         assert client.post(endpoint + '/history/undo', json=body).json() == response.json()

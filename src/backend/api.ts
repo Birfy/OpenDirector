@@ -1,4 +1,4 @@
-/** Requests to the local MuseShow API started by scripts/museshow.py. */
+/** Requests to the local OpenDirector API started by scripts/opendirector.py. */
 
 export const sessionId = crypto.randomUUID();
 
@@ -13,8 +13,8 @@ export class ApiError extends Error {
 }
 
 export const headers = {
-  "X-MuseShow-Request": "1",
-  "X-MuseShow-Session": sessionId,
+  "X-OpenDirector-Request": "1",
+  "X-OpenDirector-Session": sessionId,
 };
 
 export async function responseError(response: Response) {
@@ -41,7 +41,7 @@ export async function request<T>(
   } catch (failure) {
     if (options.signal?.aborted) throw failure;
     throw new ApiError(
-      "无法连接本地服务，请用 scripts/museshow.py 启动 OpenDesign。",
+      "无法连接本地服务，请用 scripts/opendirector.py 启动 OpenDirector。",
       null,
       "network_error",
     );

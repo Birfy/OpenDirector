@@ -124,9 +124,9 @@ test("subject and timeline boundaries reject wrong roles, duplicates, overlappin
       category: "",
       main: image,
       auxiliaries: [],
-      voice: { id: "v", kind: "audio", title: "voice", durationSeconds: 6 },
+      voice: { id: "v", kind: "audio", title: "voice", durationSeconds: 16 },
     })!,
-    /2–5/,
+    /15/,
   );
   const timeline = createNode("timeline").data.timeline!;
   const clip = {

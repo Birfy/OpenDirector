@@ -81,7 +81,6 @@ const videoTools: readonly [CanvasToolId, string, string][] = [
 const editLabels: Partial<Record<CanvasNode["type"], string>> = {
   text: "编辑文本",
   timeline: "编辑时间线",
-  subject: "编辑主体",
   stack: "管理堆叠",
   tool: "编辑工具",
   external: "打开导演台",

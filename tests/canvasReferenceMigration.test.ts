@@ -38,9 +38,9 @@ const kinds = [
 ] as const;
 const allowed: Record<(typeof kinds)[number], readonly CanvasNodeKind[]> = {
   text: ["text", "image", "video"],
-  image: ["text", "image", "video", "audio"],
-  video: ["text", "video"],
-  audio: ["text", "video", "audio"],
+  image: ["text", "image", "video", "audio", "subject", "timeline"],
+  video: ["text", "video", "subject", "timeline"],
+  audio: ["text", "video", "audio", "timeline"],
   subject: ["image", "video", "audio"],
   timeline: [],
 };
@@ -48,6 +48,9 @@ function ready(kind: (typeof kinds)[number]) {
   return createNode(kind, undefined, {
     src: `data:${kind}/v1`,
     text: kind === "text" ? "saved text" : undefined,
+    media: ["video", "audio"].includes(kind)
+      ? { durationSeconds: 5 }
+      : undefined,
     ...(kind === "subject"
       ? {
           subject: {

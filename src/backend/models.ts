@@ -29,6 +29,20 @@ export interface ModelConfigInput {
   videoCapabilities?: VideoCapabilities | null;
 }
 
+export function discoverModels(value: ModelConfigInput, configId?: string) {
+  return request<{ models: string[] }>(
+    "/model-configs/discover",
+    json("POST", { ...value, configId }),
+  );
+}
+
+export function testAgentModel(value: ModelConfigInput, configId?: string) {
+  return request<{ elapsedMs: number }>(
+    "/model-configs/test-agent",
+    json("POST", { ...value, configId }),
+  );
+}
+
 export function readModelCapabilities(
   value: ModelConfigInput,
   configId: string | undefined,
@@ -79,6 +93,21 @@ export function useBackendModels() {
         : [...current, saved],
     );
   };
+  const saveMany = async (
+    value: ModelConfigInput,
+    modelIds: string[],
+    id?: string,
+  ) => {
+    await request<ModelConfig[]>(
+      "/model-configs/batch",
+      json("POST", { ...value, modelIds, configId: id }),
+    );
+    await refresh();
+  };
+  const removeService = async (id: string) => {
+    await request(`/model-services/${id}`, { method: "DELETE" });
+    await refresh();
+  };
   const remove = async (id: string) => {
     await request(`/model-configs/${id}`, { method: "DELETE" });
     setModels((current) => current.filter((item) => item.id !== id));
@@ -106,7 +135,9 @@ export function useBackendModels() {
     connected,
     refresh,
     save,
+    saveMany,
     remove,
+    removeService,
     updateSettings,
   };
 }

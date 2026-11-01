@@ -5,6 +5,7 @@ import type { CanvasNodeData, CanvasNodeKind, CanvasResource } from "./model";
 import { ResourcePreview } from "./EditorModal";
 import { resourceFromNode } from "./operations";
 import { timelineDuration } from "./timeline";
+import { SubjectNodeCard } from "./SubjectNodeCard";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { GeneratingOverlay } from "./GeneratingOverlay";
@@ -52,14 +53,16 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
       kind={kind}
       title={data.title || names[kind]}
       selected={selected}
-      empty={!hasAsset && !data.text}
+      empty={
+        kind === "subject" ? !data.subject?.main?.src : !hasAsset && !data.text
+      }
       busy={Boolean(activity)}
     >
       {kind === "group" ? (
         <div className="cw-group-interior" />
-      ) : ["timeline", "subject", "stack", "tool", "external"].includes(
-          kind,
-        ) ? (
+      ) : kind === "subject" ? (
+        <SubjectNodeCard id={id} data={data} actions={actions} />
+      ) : ["timeline", "stack", "tool", "external"].includes(kind) ? (
         <DomainCard id={id} data={data} actions={actions} />
       ) : kind === "text" ? (
         actions?.isTextEditing(id) ? (
@@ -235,57 +238,16 @@ function DomainCard({
   const firstClip = timeline?.tracks.find((track) => track.kind === "visual")
     ?.clips[0];
   const resource: CanvasResource | undefined =
-    kind === "subject"
-      ? data.subject?.main
-      : kind === "stack"
-        ? stackResource
-        : kind === "timeline"
-          ? firstClip?.resource
-          : data.src
-            ? { id, kind: "image", title: data.title, src: data.src }
-            : undefined;
-  if (kind === "subject" && !data.subject?.main?.src)
-    return (
-      <div className="cw-subject-empty">
-        <header>
-          <CanvasIcon name="subject" size={14} />
-          <strong>{data.title}</strong>
-          <button
-            className="nodrag nopan"
-            aria-label="编辑主体"
-            onClick={() => actions?.edit(id)}
-          >
-            <CanvasIcon name="pencil" size={12} />
-          </button>
-        </header>
-        <small>{data.subject?.description || "添加描述…"}</small>
-        <div className="cw-subject-empty-material nodrag nopan">
-          {(
-            [
-              ["import", "导入主体", "subject"],
-              ["canvas", "从画布选择", "canvas"],
-              ["assets", "从资产库选择", "rail-folder"],
-              ["file", "本地添加", "upload"],
-            ] as const
-          ).map(([source, label, icon]) => (
-            <button
-              key={source}
-              disabled={actions?.isLocked(id)}
-              onClick={() => actions?.pickSubject?.(id, source)}
-            >
-              <CanvasIcon name={icon} size={13} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    kind === "stack"
+      ? stackResource
+      : kind === "timeline"
+        ? firstClip?.resource
+        : data.src
+          ? { id, kind: "image", title: data.title, src: data.src }
+          : undefined;
   return (
     <div className={`cw-domain-card cw-domain-card-${kind}`}>
-      {(kind === "subject" ||
-        kind === "stack" ||
-        kind === "timeline" ||
-        kind === "external") && (
+      {(kind === "stack" || kind === "timeline" || kind === "external") && (
         <div className="cw-domain-card-preview">
           {resource ? (
             <ResourcePreview resource={resource} controls={false} />
@@ -297,11 +259,9 @@ function DomainCard({
               <span>
                 {kind === "timeline"
                   ? "把素材编排成故事"
-                  : kind === "subject"
-                    ? "添加主素材与角色声音"
-                    : kind === "stack"
-                      ? "整理画布资源"
-                      : "布景、镜头与动作预演"}
+                  : kind === "stack"
+                    ? "整理画布资源"
+                    : "布景、镜头与动作预演"}
               </span>
             </div>
           )}
@@ -344,25 +304,6 @@ function DomainCard({
               </span>
             </div>
           ))}
-        </div>
-      )}
-      {kind === "subject" && (
-        <div className="cw-card-subject">
-          <span>{data.subject?.description || "主体描述尚未填写"}</span>
-          <div>
-            {data.subject?.auxiliaries.map((item) => (
-              <img
-                key={item.id}
-                src={item.src}
-                alt={item.title}
-                draggable={false}
-              />
-            ))}
-            <small>
-              {data.subject?.auxiliaries.length ?? 0}/3 辅助视角 ·{" "}
-              {data.subject?.voice ? "已添加声音" : "无声音"}
-            </small>
-          </div>
         </div>
       )}
       {kind === "stack" && (
@@ -430,22 +371,22 @@ function DomainCard({
           )}
         </div>
       )}
-      <button
-        className="cw-card-open nodrag nopan"
-        onClick={() => actions?.edit(id)}
-      >
-        <CanvasIcon name="edit" size={13} />
-        {kind === "timeline"
-          ? "打开时间线"
-          : kind === "subject"
-            ? "编辑主体"
+      {kind !== "subject" && (
+        <button
+          className="cw-card-open nodrag nopan"
+          onClick={() => actions?.edit(id)}
+        >
+          <CanvasIcon name="edit" size={13} />
+          {kind === "timeline"
+            ? "打开时间线"
             : kind === "stack"
               ? "管理堆叠"
               : kind === "tool"
                 ? "编辑参数"
                 : "进入导演台"}
-        <CanvasIcon name="chevronRight" size={13} />
-      </button>
+          <CanvasIcon name="chevronRight" size={13} />
+        </button>
+      )}
     </div>
   );
 }

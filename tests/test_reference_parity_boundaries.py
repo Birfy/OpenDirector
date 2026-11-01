@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.domain.references import project_content
+from opendirector.domain.projects import ProjectError
+from opendirector.domain.references import project_content
 from test_workspace_documents import workspace, document
 from canvas_helpers import context, close, media
 from test_creation_generation_service import anyio_backend
@@ -75,9 +75,9 @@ async def test_workspace_sources_reuse_canonical_assets_with_independent_logical
 
 
 def test_hidden_source_replacement_and_title_keep_identity_and_current_version(tmp_path):
-    from museshow.infrastructure.asset_catalog import AssetCatalog
-    from museshow.infrastructure.canvas import CanvasProjects
-    from museshow.infrastructure.local_projects import LocalProjects
+    from opendirector.infrastructure.asset_catalog import AssetCatalog
+    from opendirector.infrastructure.canvas import CanvasProjects
+    from opendirector.infrastructure.local_projects import LocalProjects
     store = LocalProjects(tmp_path)
     pid, session = str(uuid4()), str(uuid4())
     store.create('Hidden sources', pid, session)

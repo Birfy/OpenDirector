@@ -1,6 +1,7 @@
 import type { CanvasNode } from "./model.ts";
 import { nodeMentionOptions, type MentionOption } from "./referenceMentions.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
+import { assetDisplayName } from "./assetNames.ts";
 
 export function assetOptionId(
   asset: Pick<ReferenceAsset, "id" | "nodeId" | "sourceRole">,
@@ -28,7 +29,7 @@ export function referenceCandidates(
     options.push({
       id: assetOptionId(asset),
       kind: asset.kind as MentionOption["kind"],
-      title: asset.nodeTitle || asset.name,
+      title: assetDisplayName(asset.nodeTitle || asset.name),
       detail: "项目素材",
       disabledReason:
         asset.size >

@@ -49,7 +49,7 @@ export interface StageShot {
 }
 export const STAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"] as const;
 export interface LocalStageDocument {
-  format: "museshow-local-stage";
+  format: "opendirector-local-stage";
   version: 2;
   background: string;
   grid: boolean;
@@ -121,7 +121,7 @@ export function defaultStageCamera(): StageCamera {
 }
 export function createLocalStage(): LocalStageDocument {
   return {
-    format: "museshow-local-stage",
+    format: "opendirector-local-stage",
     version: 2,
     background: "#151923",
     grid: true,
@@ -280,11 +280,11 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
 }
 export function parseLocalStageValue(input: unknown): LocalStageDocument {
   let v = input;
-  if (record(v) && v.format === "museshow-local-stage" && v.version === 1)
+  if (record(v) && v.format === "opendirector-local-stage" && v.version === 1)
     v = migrateV1(v);
   if (
     !record(v) ||
-    v.format !== "museshow-local-stage" ||
+    v.format !== "opendirector-local-stage" ||
     v.version !== 2 ||
     !color(v.background) ||
     typeof v.grid !== "boolean" ||
@@ -371,7 +371,7 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
     "分镜",
   );
   return {
-    format: "museshow-local-stage",
+    format: "opendirector-local-stage",
     version: 2,
     background: v.background,
     grid: v.grid,

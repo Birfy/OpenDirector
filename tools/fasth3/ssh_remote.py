@@ -8,7 +8,7 @@ import sys
 import subprocess
 import paramiko
 
-STATE = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'MuseShow' / 'cloud-fasth3'
+STATE = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'OpenDirector' / 'cloud-fasth3'
 
 def main():
     # Remote compiler/progress logs use Unicode even on Windows with a GBK locale.
@@ -55,7 +55,7 @@ def main():
         allow_agent=False, look_for_keys=False, timeout=30, banner_timeout=30, auth_timeout=30)
     client.save_host_keys(str(hosts))
     if args.bootstrap:
-        public = key.get_name() + ' ' + key.get_base64() + ' museshow-fasth3'
+        public = key.get_name() + ' ' + key.get_base64() + ' opendirector-fasth3'
         command = ('umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; '
                    'grep -qxF ' + shlex.quote(public) + ' ~/.ssh/authorized_keys || '
                    'printf "%s\\n" ' + shlex.quote(public) + ' >> ~/.ssh/authorized_keys')

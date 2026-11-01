@@ -417,13 +417,13 @@
   background: #3d2a4a;
 }
 .cw-editor-apply {
-  border-color: #c3a0dd !important;
-  color: #2c1b39;
-  background: #c3a0dd;
+  border-color: var(--cw-control-accent, #c3a0dd) !important;
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent);
 }
 .cw-editor-apply:not(:disabled):hover {
-  color: #24132e;
-  background: #d6b6ee;
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent-hover);
 }
 @keyframes cw-editor-spin {
   to {

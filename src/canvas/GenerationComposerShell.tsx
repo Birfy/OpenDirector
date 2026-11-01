@@ -18,7 +18,7 @@ export function GenerationComposerShell({
   return (
     <div
       ref={composerRef}
-      className={`cw-composer nodrag nopan nowheel${running ? " cw-composer-running" : ""}`}
+      className={`cw-composer cw-generation-composer nodrag nopan nowheel${running ? " cw-composer-running" : ""}`}
       aria-label={label}
       aria-busy={running}
       onPointerDown={(event) => event.stopPropagation()}

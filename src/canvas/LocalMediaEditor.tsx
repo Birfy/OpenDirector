@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import { EditorModal } from "./EditorModal";
+import { ControlSlider } from "./ControlSlider";
 import { encodePcmWav } from "./localAudio.ts";
 import { withMediaDuration } from "./editorMedia";
 import {
@@ -570,10 +571,9 @@ export function LocalMediaEditor({
         </span>
         {mode === "frame" ? (
           <>
-            <input
+            <ControlSlider
               aria-label="视频取帧位置"
-              type="range"
-              min="0"
+              min={0}
               max={Math.max(0, duration - 0.001)}
               step="0.01"
               value={position}

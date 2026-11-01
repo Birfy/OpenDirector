@@ -7,6 +7,7 @@ import { GenerationComposerShell } from "./GenerationComposerShell";
 import { ComposerPopover } from "./ComposerPopover";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
+import { ReferenceThumbnail } from "./ReferenceThumbnail";
 import {
   GenerationReferenceEditor,
   type GenerationReferenceHandle,
@@ -80,24 +81,14 @@ export function TextNodeComposer({
               <CanvasIcon name="plus" size={20} />
             </TooltipButton>
             {incoming.map((reference) => (
-              <button
-                type="button"
-                className="cw-reference-chip"
+              <ReferenceThumbnail
                 key={reference.id}
-                title={reference.data.title}
-                onClick={() => insert(reference)}
-              >
-                {reference.type === "image" && reference.data.src ? (
-                  <img
-                    src={reference.data.src}
-                    alt={reference.data.title}
-                    draggable={false}
-                  />
-                ) : (
-                  <CanvasIcon name={reference.type} size={22} />
-                )}
-                <span>{reference.data.title}</span>
-              </button>
+                node={reference}
+                disabled={running || Boolean(referenceIssue(reference))}
+                removalDisabled={running}
+                onInsert={() => insert(reference)}
+                onRemove={() => mentions.current?.remove(reference)}
+              />
             ))}
           </div>
         )}

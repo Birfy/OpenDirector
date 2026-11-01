@@ -1,6 +1,6 @@
 ---
 name: feat-issue
-description: Plan a MuseShow feature and publish a concise, actionable GitHub Issue through gh CLI. Use when the user invokes feat-issue or requests feature planning with issue creation, not for implementation or discussion of the skill itself.
+description: Plan a OpenDirector feature and publish a concise, actionable GitHub Issue through gh CLI. Use when the user invokes feat-issue or requests feature planning with issue creation, not for implementation or discussion of the skill itself.
 ---
 
 # Feat Issue
@@ -28,7 +28,7 @@ The skill's own files remain repository-local.
 ## Plan the feature
 
 Read the user's request and inspect the relevant code with targeted searches.
-Distinguish existing behavior from proposed behavior. For MuseShow, keep
+Distinguish existing behavior from proposed behavior. For OpenDirector, keep
 browser interactions, business rules, Agent decisions, durable execution,
 and media processing in their proper modules.
 

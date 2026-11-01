@@ -2,7 +2,7 @@
 #    printf '%s\n' '-e ./packages/core' '-e ./apps/api[test]' | uv pip compile - --universal --output-file requirements.txt
 -e ./apps/api
 -e ./packages/core
-    # via museshow-api
+    # via opendirector-api
 annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
@@ -10,7 +10,7 @@ annotated-types==0.8.0
 anyio==4.15.1
     # via
     #   httpx
-    #   museshow-core
+    #   opendirector-core
     #   starlette
 certifi==2026.7.22
     # via
@@ -21,9 +21,9 @@ click==8.5.0
 colorama==0.4.6 ; sys_platform == 'win32'
     # via pytest
 fastapi==0.143.2
-    # via museshow-api
+    # via opendirector-api
 filelock==3.32.7
-    # via museshow-core
+    # via opendirector-core
 h11==0.16.0
     # via
     #   httpcore
@@ -32,8 +32,8 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via
-    #   museshow-api
-    #   museshow-core
+    #   opendirector-api
+    #   opendirector-core
 idna==3.20
     # via
     #   anyio
@@ -45,19 +45,19 @@ opentelemetry-api==1.45.1
 packaging==26.3
     # via pytest
 pillow==13.0.0
-    # via museshow-core
+    # via opendirector-core
 pluggy==1.7.0
     # via pytest
 pydantic==2.14.1
     # via
     #   fastapi
-    #   museshow-core
+    #   opendirector-core
 pydantic-core==2.50.1
     # via pydantic
 pygments==2.21.0
     # via pytest
 pytest==9.1.1
-    # via museshow-api
+    # via opendirector-api
 starlette==1.8.0
     # via fastapi
 typing-extensions==4.16.0
@@ -74,4 +74,4 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
 uvicorn==0.54.0
-    # via museshow-api
+    # via opendirector-api

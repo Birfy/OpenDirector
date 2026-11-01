@@ -1,6 +1,7 @@
 import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { useCanvasWheelBoundary } from "./useCanvasWheelBoundary";
 import { referenceContentCommand } from "./generationReferenceEdit.ts";
 import {
   generationContent,
@@ -37,6 +38,7 @@ import {
 import {
   CanvasReferenceEdge,
   CanvasConnectionLine,
+  CanvasConnectionPreview,
   CanvasInteractionOverlay,
 } from "./CanvasConnections";
 import { alignNodes, type Alignment } from "./snapping";
@@ -51,6 +53,8 @@ import {
   type PortSide,
 } from "./useCanvasReferences";
 import { referencePortMetrics, REFERENCE_PORT_SIZE } from "./connectionPorts";
+import { subjectDescriptionLayout } from "./subjectLayout.ts";
+import { measureSubjectNodeHeight } from "./subjectLayoutMeasurement.ts";
 import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
 import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
 import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
@@ -74,13 +78,21 @@ import {
 } from "./textGeneration";
 import { assistantReferences } from "./assistantReferences";
 import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
+import { NodeInfoButton } from "./NodeInfoButton";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
 import { useSelectionPresentation } from "./useSelectionPresentation";
 import { CanvasIcon } from "./CanvasIcon";
 import { CanvasToolRail } from "./CanvasToolRail";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { ImageEditor } from "./ImageEditor";
-import { ProjectAssetLibrary } from "./ProjectAssetLibrary";
+import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
+import {
+  itemBlob,
+  itemToResource,
+  withMediaSuffix,
+  type LibraryItem,
+} from "./library/libraryClient";
+import "./library/library.css";
 import {
   connectedCreationKinds,
   referenceIssue,
@@ -90,7 +102,7 @@ import {
 } from "./connectionPolicy";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
 import { persistCurrentDocument } from "./projectManagement";
-import museshowLogo from "../assets/museshow-logo.png";
+import openDirectorLogoAnimation from "../assets/open_director_logo_anim.gif";
 import { ProjectSelector } from "./ProjectSelector";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import {
@@ -115,7 +127,6 @@ import { CreationAssetList } from "./CreationAssetList.tsx";
 import { portableDocument } from "./portableDocument.ts";
 import { resourceNodeData } from "./projectAssets";
 import { TimelineEditor } from "./TimelineEditor";
-import { SubjectEditor } from "./SubjectEditor";
 import { StackEditor } from "./StackEditor";
 import { ToolEditor } from "./ToolEditor";
 import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
@@ -136,6 +147,27 @@ const DirectorStage = lazy(() =>
 );
 import { readEditorResource, classifyImportFile } from "./editorMedia";
 import { assertUpload } from "./uploadPolicy.ts";
+import {
+  SubjectImportDialog,
+  type SubjectImportChoice,
+  type SubjectImportTab,
+} from "./library/SubjectImportDialog";
+import {
+  copyCanvasSource,
+  copySubjectAsset,
+  type CanvasSource,
+} from "../backend/canvasSources";
+import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
+import {
+  copyLibrarySubjects,
+  backUpLibrarySubject,
+} from "../backend/subjectLibrary.ts";
+import {
+  librarySubjectCommand,
+  subjectImportSelection,
+  subjectTargetIdentity,
+  mergeLibrarySubjectImport,
+} from "./subjectLibraryImport.ts";
 import { sameNodeData } from "./dataBoundary.ts";
 import { readImportBatch } from "./importBatch";
 import { useGenerationJobs } from "./useGenerationJobs";
@@ -171,6 +203,7 @@ import { fingerprintMatches } from "./chatReferenceContent.ts";
 import {
   errorMessage,
   assetBlob,
+  headers,
   request as apiRequest,
 } from "../backend/api.ts";
 import {
@@ -216,6 +249,7 @@ import {
 import {
   createDocument,
   createNode,
+  applyCommand,
   canAddReference,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -256,12 +290,14 @@ import {
   downloadFile,
   downloadFilename,
   exampleDocument,
+  fileDataUrl,
   studyImage,
 } from "./assets";
 import "@xyflow/react/dist/style.css";
 import "./workspace.css";
 import "./settings.css";
 import "./themes.css";
+import "./control-theme.css";
 
 type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 type Panel = "assets" | "search" | "history" | null;
@@ -454,7 +490,19 @@ function Workspace() {
   const [dismissedComposer, setDismissedComposer] = useState<string | null>(
     null,
   );
+  const [expandedComposerId, setExpandedComposerId] = useState<string | null>(
+    null,
+  );
   const [panel, setPanel] = useState<Panel>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [subjectImport, setSubjectImport] = useState<{
+    projectId: string;
+    nodeId: string;
+    slot: SubjectMediaSlot;
+    tab: SubjectImportTab;
+    identity: string;
+  } | null>(null);
+  const [subjectLibraryBusy, setSubjectLibraryBusy] = useState(false);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [hand, setHand] = useState(false);
   const [toolRevision, setToolRevision] = useState(0);
@@ -564,9 +612,11 @@ function Workspace() {
   const pasteCount = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
-  const uploadSource = useRef<{ projectId: string; node: CanvasNode } | null>(
-    null,
-  );
+  const uploadSource = useRef<{
+    projectId: string;
+    node: CanvasNode;
+    subjectSlot?: SubjectMediaSlot;
+  } | null>(null);
   const referenceTarget = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const assistantLayout = useAssistantLayout(root, assistantOpen, () => {
@@ -585,6 +635,7 @@ function Workspace() {
     setPresentationFocus((value) => value + 1);
   };
   const saveQueue = useRef(Promise.resolve(true));
+  const saveError = useRef("");
   const [zoom, setZoom] = useState(1);
   const spacePressed = useKeyPress("Space");
   const panning = hand || spacePressed;
@@ -598,6 +649,9 @@ function Workspace() {
     if (!interacting) setComposerNodeId(single?.id ?? null);
   }, [single?.id, interacting]);
   const composerNode = doc.nodes.find((node) => node.id === composerNodeId);
+  useEffect(() => {
+    setExpandedComposerId(null);
+  }, [doc.id, composerNode?.id]);
   const composerIncoming = useMemo(
     () => incomingNodes(doc, composerNodeId),
     [doc.nodes, doc.hiddenNodes, doc.edges, composerNodeId],
@@ -608,6 +662,7 @@ function Workspace() {
   ): GenerationReferenceControls => ({
     projectId: doc.id,
     nodes: [...doc.nodes, ...(doc.hiddenNodes ?? [])],
+    visibleNodes: doc.nodes,
     assets: referenceAssets.assets,
     pinned: creationEnabled()
       ? (() => {
@@ -800,20 +855,305 @@ function Workspace() {
     setMenu(null);
   };
 
+  /** Copies a picked resource onto the current canvas as independent nodes. */
+  const importCanvasResource = async (resource: CanvasResource) => {
+    const current = historyRef.current.present;
+    const where = center();
+    const node = createNode(
+      resource.kind,
+      { x: where.x - 160, y: where.y - 140 },
+      resourceNodeData(resource),
+    );
+    const next = applyCommand(current, { type: "add-nodes", nodes: [node] });
+    if (!(await persist(next)))
+      throw new Error(saveError.current || "导入未能保存。");
+    if (historyRef.current.present.id !== current.id) return;
+    change((latest) => mergeLibrarySubjectImport(latest, current, next));
+    setSelected([node.id]);
+    referenceTarget.current = null;
+    setPanel(null);
+    notify("素材已复制到当前画布，可独立编辑。");
+  };
+
+  const insertLibraryItems = async (items: LibraryItem[]) => {
+    const client = creationEnabled() ? creationClient(doc.id) : null;
+    let placed = 0;
+    const issues: string[] = [];
+    for (const item of items) {
+      try {
+        const blob = await itemBlob(item);
+        const resource = itemToResource(item);
+        // The backend identifies uploads by suffix, and library items made from
+        // canvas nodes carry a bare title ("图片 1"), so complete the name.
+        const name = withMediaSuffix(
+          item.name,
+          item.metadata?.mimeType || blob.type,
+        );
+        if (client) {
+          // The library blob must become a canvas-owned asset before a node
+          // can reference it, so the copy survives independently of the library.
+          const ref = await client.importBlob(blob, name, resource.kind);
+          resource.assetId = ref.assetId;
+          resource.src = await client.mediaUrl(ref.assetId);
+        } else {
+          // Legacy projects address assets by id under /api/data, so the bytes
+          // must be uploaded there too — a blob: URL would not survive reload.
+          const assetId = crypto.randomUUID();
+          const stored = await apiRequest<{ asset: { id: string } | null }>(
+            `/data/${doc.id}/assets/${assetId}`,
+            {
+              method: "PUT",
+              headers: {
+                ...headers,
+                "Content-Type": "application/octet-stream",
+                "X-Asset-Name": encodeURIComponent(name),
+              },
+              body: blob,
+            },
+          );
+          const storedId = stored.asset?.id ?? assetId;
+          resource.assetId = storedId;
+          // Legacy canvases persist media inline as a data: URL (see
+          // fileDataUrl); a blob: URL would not survive a reload.
+          resource.src = await fileDataUrl(
+            new File([blob], name, {
+              type: item.metadata?.mimeType || blob.type,
+            }),
+          );
+        }
+        await importCanvasResource(resource);
+        placed += 1;
+      } catch (reason) {
+        issues.push(`${item.name}：${String(reason)}`);
+      }
+    }
+    if (!placed) throw new Error(issues.join("；") || "没有素材可以放入画布。");
+    if (issues.length) notify(`部分素材未能放入画布：${issues.join("；")}`);
+  };
+
   const persist = useCallback((snapshot: CanvasDocument): Promise<boolean> => {
     saveQueue.current = saveQueue.current
       .then(async () => {
         await saveWorkspaceDocument(snapshot);
+        saveError.current = "";
         if (historyRef.current.present === snapshot)
           setSaveStatus("已保存到本机");
         return true;
       })
       .catch((error) => {
+        saveError.current = errorMessage(error);
         setSaveStatus(`保存失败：${String(error)}`);
         return false;
       });
     return saveQueue.current;
   }, []);
+  const importLibrarySubjects = async (items: LibraryItem[]) => {
+    if (subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    const projectId = historyRef.current.present.id;
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("画布未保存，主体尚未导入。");
+      const copies = await copyLibrarySubjects(projectId, items);
+      const current = historyRef.current.present;
+      if (current.id !== projectId || switchPending.current)
+        throw new Error("项目已切换，本次导入未应用。");
+      const operation = librarySubjectCommand(
+        current,
+        copies.map((copy) => ({
+          title: copy.item.name,
+          subject: copy.subject,
+        })),
+        center(),
+        undefined,
+        (subject, width) =>
+          measureSubjectNodeHeight(
+            subject,
+            width,
+            getComputedStyle(root.current!).fontFamily,
+          ),
+      );
+      const next = applyCommand(current, operation);
+      // Publish the complete subject only after its project transaction succeeds.
+      if (!(await persist(next)))
+        throw new Error(
+          saveError.current || "主体导入未能保存，画布内容保持原状。",
+        );
+      if (historyRef.current.present.id !== projectId) return;
+      change((latest) => mergeLibrarySubjectImport(latest, current, next));
+      const previousIds = new Set(current.nodes.map((node) => node.id));
+      setSelected(
+        next.nodes
+          .filter((node) => !previousIds.has(node.id))
+          .map((node) => node.id),
+      );
+      notify(`已导入 ${copies.length} 个主体到画布。`);
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+
+  const confirmSubjectImport = async (choice: SubjectImportChoice) => {
+    const intent = subjectImport;
+    if (!intent || subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    const assertTarget = () => {
+      const current = historyRef.current.present;
+      const { node, issue } = subjectImportSelection(current, [intent.nodeId]);
+      if (
+        current.id !== intent.projectId ||
+        issue ||
+        !node ||
+        subjectTargetIdentity(node) !== intent.identity
+      )
+        throw new Error(issue || "目标主体已变化，请重新打开导入界面。");
+      return { current, node };
+    };
+    assertTarget();
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("请先保存当前画布。");
+      let source: import("./model").SubjectData;
+      const complete =
+        choice.tab === "subjects" ||
+        (choice.tab === "canvas" && choice.item.kind === "subject");
+      if (choice.tab === "subjects")
+        source = (
+          await copyLibrarySubjects(intent.projectId, [choice.item])
+        )[0]!.subject;
+      else {
+        const copied =
+          choice.tab === "assets"
+            ? {
+                resource: await copySubjectAsset(
+                  intent.projectId,
+                  choice.item,
+                  intent.slot,
+                ),
+                subject: undefined,
+              }
+            : await copyCanvasSource(
+                intent.projectId,
+                intent.projectId,
+                choice.item as CanvasSource,
+                intent.slot,
+              );
+        const { node } = assertTarget();
+        source = complete
+          ? copied.subject!
+          : subjectWithResource(
+              node.data.subject,
+              copied.resource,
+              intent.slot,
+            );
+      }
+      const { current, node } = assertTarget();
+      const next = applyCommand(
+        current,
+        librarySubjectCommand(
+          current,
+          [{ title: node.data.title, subject: source }],
+          center(),
+          node.id,
+          (subject, width) =>
+            measureSubjectNodeHeight(
+              subject,
+              width,
+              getComputedStyle(root.current!).fontFamily,
+            ),
+        ),
+      );
+      if (!(await persist(next)))
+        throw new Error(saveError.current || "主体导入未能保存。");
+      if (historyRef.current.present.id === intent.projectId)
+        change((latest) =>
+          mergeLibrarySubjectImport(latest, current, next, node.id),
+        );
+      notify("已导入主体内容，可撤销。");
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+  const importCanvasSource = async (
+    originProjectId: string,
+    source: CanvasSource,
+  ) => {
+    const projectId = historyRef.current.present.id;
+    if (
+      !(await persistCurrentDocument(() => historyRef.current.present, persist))
+    )
+      throw new Error("请先保存画布。");
+    const copied = await copyCanvasSource(
+      projectId,
+      originProjectId,
+      source,
+      "main",
+      false,
+    );
+    if (historyRef.current.present.id !== projectId)
+      throw new Error("项目已切换。");
+    if (copied.kind === "subject") {
+      const current = historyRef.current.present;
+      const next = applyCommand(
+        current,
+        librarySubjectCommand(
+          current,
+          [{ title: copied.title, subject: copied.subject }],
+          center(),
+          undefined,
+          (subject, width) =>
+            measureSubjectNodeHeight(
+              subject,
+              width,
+              getComputedStyle(root.current!).fontFamily,
+            ),
+        ),
+      );
+      if (!(await persist(next)))
+        throw new Error(saveError.current || "导入失败。");
+      change((latest) => mergeLibrarySubjectImport(latest, current, next));
+    } else await importCanvasResource(copied.resource);
+  };
+
+  const backupLibrarySubject = async () => {
+    const current = historyRef.current.present;
+    const node =
+      selectedRef.current.length === 1
+        ? current.nodes.find((node) => node.id === selectedRef.current[0])
+        : undefined;
+    if (!node || node.type !== "subject" || !node.data.subject?.main?.src)
+      throw new Error("请选择一个有内容的主体节点。");
+    if (subjectLibraryBusy || switchPending.current)
+      throw new Error("请等待当前操作完成。");
+    setSubjectLibraryBusy(true);
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("请先保存当前画布。");
+      if (historyRef.current.present.id !== current.id)
+        throw new Error("项目已切换，请重新选择主体。");
+      await backUpLibrarySubject(current.id, node.id);
+    } finally {
+      setSubjectLibraryBusy(false);
+    }
+  };
+
   const replayHistory = (forward = false) => {
     if (!creationEnabled()) {
       setHistory(forward ? redo : undo);
@@ -838,7 +1178,7 @@ function Workspace() {
       setPreview(null);
       editorOrigin.current = null;
       referenceTarget.current = null;
-      subjectTarget.current = null;
+
       uploadTarget.current = null;
       setArrivingNodes(new Set());
       setHistory(createHistory(next));
@@ -1496,6 +1836,8 @@ function Workspace() {
     composerNode.id !== dismissedComposer &&
     !lockedIds.has(composerNode.id),
   );
+  const composerExpanded =
+    hasComposer && expandedComposerId === composerNode?.id;
   const hasToolbar = Boolean(
     selectionControls &&
     !activeAction &&
@@ -1533,7 +1875,9 @@ function Workspace() {
     root,
     toolbar: toolbarElement,
     composer: composerElement,
-    scaleComposer: hasComposer,
+    // Generators are screen-space UI, like the toolbar and sidebar. Only their
+    // anchor follows the selected node when the canvas zooms.
+    scaleComposer: false,
     bounds: presentationBounds,
     mediaBounds,
     preferredZoom: activeAction ? 1.5 : undefined,
@@ -1541,13 +1885,15 @@ function Workspace() {
     panel,
     focusRequest: presentationFocus,
     blocked:
+      composerExpanded ||
       interacting ||
       references.connecting ||
       spacePressed ||
       pointerGesture.current.moved ||
       !selectionControls,
-    controlsKey: `${hasComposer}:${hasToolbar}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
+    controlsKey: `${hasComposer}:${hasToolbar}:${composerExpanded}:${activeAction?.token ?? ""}:${activeAction?.tool === "outpaint" ? JSON.stringify(presentationBounds) : ""}`,
   });
+  useCanvasWheelBoundary(root, selectionPresentation.userNavigation);
   const flowNodes: FlowNode[] = useMemo(
     () =>
       orderNodesForCanvas(doc.nodes).map((n) => ({
@@ -1750,40 +2096,10 @@ function Workspace() {
       notify(errorMessage(error));
     }
   };
-  const subjectTarget = useRef<string | null>(null);
-  const applySubjectResource = (id: string, resource: CanvasResource) => {
-    const target = historyRef.current.present.nodes.find(
-      (n) => n.id === id && n.type === "subject",
-    );
-    if (!target || lockedIds.has(id)) {
-      notify("主体已移除或锁定。");
-      return;
-    }
-    if (!["image", "video", "audio"].includes(resource.kind)) {
-      notify("主体需要图片、视频或音频素材。");
-      return;
-    }
-    command({
-      type: "update-node",
-      id,
-      patch: {
-        data: {
-          subject: {
-            description: "",
-            category: "character",
-            auxiliaries: [],
-            ...target.data.subject,
-            ...(resource.kind === "audio"
-              ? { voice: resource }
-              : { main: resource }),
-          },
-        },
-      },
-    });
-    subjectTarget.current = null;
-    setPanel(null);
-  };
-  const openFilePicker = (id: string | null = null) => {
+  const openFilePicker = (
+    id: string | null = null,
+    subjectSlot?: SubjectMediaSlot,
+  ) => {
     if (id && lockedIds.has(id)) {
       notify("请先解锁节点或所属分组。");
       return;
@@ -1805,7 +2121,11 @@ function Workspace() {
     }
     uploadTarget.current = id;
     uploadSource.current = selected
-      ? { projectId: historyRef.current.present.id, node: selected }
+      ? {
+          projectId: historyRef.current.present.id,
+          node: selected,
+          subjectSlot,
+        }
       : null;
     if (fileInput.current) {
       fileInput.current.multiple = !id;
@@ -1813,7 +2133,11 @@ function Workspace() {
         selected?.type === "text"
           ? ".txt,.md,.markdown"
           : selected?.type === "subject"
-            ? "image/*,video/*,audio/*"
+            ? subjectSlot === "auxiliary"
+              ? "image/*"
+              : subjectSlot === "voice"
+                ? "audio/*"
+                : "image/*,video/*"
             : selected && ["image", "video", "audio"].includes(selected.type)
               ? `${selected.type}/*`
               : "";
@@ -1853,15 +2177,36 @@ function Workspace() {
               !target
                 ? "create"
                 : expected!.node.type === "subject"
-                  ? kind === "audio"
-                    ? "subject-voice"
-                    : "subject-main"
+                  ? `subject-${expected!.subjectSlot ?? (kind === "audio" ? "voice" : "main")}`
                   : "replace",
               expected?.node.type,
             );
           validate(classifyImportFile(file).kind);
-          const resource = await readEditorResource(file, signal);
+          let resource = await readEditorResource(file, signal);
           validate(resource.kind);
+          if (expected?.node.type === "subject") {
+            // Validate the slot before registering, then retain the canonical
+            // project resource so a later projection cannot change its identity.
+            subjectWithResource(
+              expected.node.data.subject,
+              resource,
+              expected.subjectSlot,
+            );
+            if (creationEnabled()) {
+              const ref = await creationClient(importDocumentId).importBlob(
+                file,
+                file.name,
+                resource.kind,
+              );
+              resource =
+                await workspaceProjection(importDocumentId).resource(ref);
+              subjectWithResource(
+                expected.node.data.subject,
+                resource,
+                expected.subjectSlot,
+              );
+            }
+          }
           return resource;
         },
         controller.signal,
@@ -1882,15 +2227,11 @@ function Workspace() {
               id: target,
               patch: {
                 data: {
-                  subject: {
-                    description: "",
-                    category: "character",
-                    auxiliaries: [],
-                    ...currentTarget.data.subject,
-                    ...(resource.kind === "audio"
-                      ? { voice: resource }
-                      : { main: resource }),
-                  },
+                  subject: subjectWithResource(
+                    currentTarget.data.subject,
+                    resource,
+                    expected?.subjectSlot,
+                  ),
                 },
               },
             });
@@ -1991,6 +2332,7 @@ function Workspace() {
     [doc.nodes, selected],
   );
   const openEditor = (node: CanvasNode, mode: EditorMode = "default") => {
+    if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
       notify("请先解锁节点或所属分组。");
       return;
@@ -3179,7 +3521,7 @@ function Workspace() {
   const generationDraft =
     generationNode && generationSettings
       ? {
-          format: "museshow-generation-request",
+          format: "opendirector-generation-request",
           version: 1,
           status: "draft",
           sourcePage: ORIGINAL_CANVAS_URL,
@@ -3379,7 +3721,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-canvas-menu,.cw-node-title-input",
+        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-canvas-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;
@@ -3557,7 +3899,31 @@ function Workspace() {
     };
   });
 
+  const resizeSubjectDescription = useCallback(
+    (id: string, contentHeight: number) => {
+      if (!Number.isFinite(contentHeight)) return;
+      setHistory((current) => {
+        const node = current.present.nodes.find((node) => node.id === id);
+        if (node?.type !== "subject") return current;
+        const { nodeHeight } = subjectDescriptionLayout(
+          contentHeight,
+          node.data.subject?.main,
+          node.width,
+        );
+        if (node.height === nodeHeight) return current;
+        const present = executeCommand(current, {
+          type: "update-node",
+          id,
+          patch: { height: nodeHeight },
+        }).present;
+        return present === current.present ? current : { ...current, present };
+      });
+    },
+    [],
+  );
+
   const actions = {
+    resizeSubjectDescription,
     referenceTargetState: (id: string): "valid" | "invalid" | null => {
       if (
         !references.connecting ||
@@ -3571,20 +3937,40 @@ function Workspace() {
     pickSubject: (
       id: string,
       source: "file" | "canvas" | "assets" | "import",
+      slot?: SubjectMediaSlot,
     ) => {
       if (lockedIds.has(id)) return;
       if (source === "file") {
-        openFilePicker(id);
-        return;
-      }
-      if (source === "import") {
-        const node = doc.nodes.find((n) => n.id === id);
-        if (node) openEditor(node);
+        openFilePicker(id, slot ?? "main");
         return;
       }
       referenceTarget.current = null;
-      subjectTarget.current = id;
-      setPanel("assets");
+
+      void (async () => {
+        if (
+          !(await persistCurrentDocument(
+            () => historyRef.current.present,
+            persist,
+          ))
+        )
+          throw new Error("请先保存画布。");
+        const current = historyRef.current.present;
+        const { node, issue } = subjectImportSelection(current, [id]);
+        if (issue || !node) throw new Error(issue || "目标主体已移除。");
+        setSelected([id]);
+        setSubjectImport({
+          projectId: current.id,
+          nodeId: id,
+          slot: slot ?? "main",
+          tab:
+            source === "import"
+              ? "subjects"
+              : source === "canvas"
+                ? "canvas"
+                : "assets",
+          identity: subjectTargetIdentity(node),
+        });
+      })().catch((error) => notify(errorMessage(error)));
     },
     select: (id: string, event: React.MouseEvent) => {
       if (pointerGesture.current.blocksClick(event.detail)) return;
@@ -3710,8 +4096,17 @@ function Workspace() {
       if (!node) return;
       const actual = Object.fromEntries(
         Object.entries(media).filter(
-          ([, value]) =>
-            typeof value === "number" && Number.isFinite(value) && value > 0,
+          ([key, value]) =>
+            typeof value === "number" &&
+            Number.isFinite(value) &&
+            value > 0 &&
+            // Container duration can differ between browser and server probes.
+            // Registered media uses the server's time bounds for retained clips.
+            !(
+              key === "durationSeconds" &&
+              node.data.backendAssetId &&
+              node.data.media?.durationSeconds !== undefined
+            ),
         ),
       );
       if (
@@ -3949,7 +4344,14 @@ function Workspace() {
           interacting ||
           panning ||
           references.connecting ||
-          Boolean(editing || preview || activeAction || menu)
+          Boolean(
+            editing ||
+            preview ||
+            activeAction ||
+            menu ||
+            libraryOpen ||
+            subjectImport,
+          )
         }
       >
         <CanvasActionsContext.Provider value={actions}>
@@ -4129,9 +4531,13 @@ function Workspace() {
             <ViewportPortal>
               {references.preview && (
                 <svg className="cw-interaction-overlay">
-                  <path
-                    className={`cw-connection-preview ${references.targetId && actions.referenceTargetState(references.targetId) === "invalid" ? "is-invalid" : ""}`}
-                    d={references.preview}
+                  <CanvasConnectionPreview
+                    path={references.preview}
+                    invalid={Boolean(
+                      references.targetId &&
+                      actions.referenceTargetState(references.targetId) ===
+                        "invalid",
+                    )}
                   />
                 </svg>
               )}
@@ -4177,8 +4583,8 @@ function Workspace() {
         <div className="cw-project-heading">
           <img
             className="cw-brand"
-            src={museshowLogo}
-            alt="OpenDesign"
+            src={openDirectorLogoAnimation}
+            alt="OpenDirector"
             draggable={false}
           />
           <ProjectSelector
@@ -4196,6 +4602,7 @@ function Workspace() {
             }
             onRename={renameCurrentProject}
           />
+          <NodeInfoButton nodes={doc.nodes} />
           <span className="cw-save-status" title={saveStatus}>
             <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
             {saveStatus}
@@ -4271,8 +4678,8 @@ function Workspace() {
             label: "资产库",
             preserveCollapsedOnFocusRestore: true,
             separatorBefore: true,
-            active: panel === "assets",
-            onClick: () => togglePanel("assets"),
+            active: libraryOpen,
+            onClick: () => setLibraryOpen(true),
           },
           {
             name: "upload",
@@ -4649,8 +5056,6 @@ function Workspace() {
               width: selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
               transform: selectionPresentation.composerTransform,
-              background: "#1e2028",
-              border: "1px solid #ffffff20",
             }}
             data-interacting={
               interacting ||
@@ -4776,93 +5181,170 @@ function Workspace() {
         </>
       )}
       {hasComposer && composerNode && (
-        <div
-          ref={composerElement}
-          className="cw-composer-dock"
-          style={{
-            ...selectionPresentation.placement?.composer,
-            width: selectionPresentation.composerWidth,
-            maxHeight: selectionPresentation.composerMaxHeight,
-            transform: selectionPresentation.composerTransform,
-          }}
-          data-interacting={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-          aria-hidden={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-          inert={
-            interacting ||
-            references.connecting ||
-            spacePressed ||
-            !selectionPresentation.visible
-          }
-        >
-          <TooltipButton
-            className="cw-composer-dismiss"
-            label="关闭生成面板"
-            onClick={() => {
-              setDismissedComposer(composerNode.id);
-              root.current?.focus({ preventScroll: true });
-            }}
-          >
-            <CanvasIcon name="close" size={14} />
-          </TooltipButton>
-          {composerNode.type === "text" ? (
-            <TextNodeComposer
-              key={`${composerNode.id}:${toolRevision}`}
-              node={composerNode}
-              incoming={composerIncoming}
-              referenceControls={generationReferenceControls(composerNode)}
-              models={backendCatalog.models}
-              onUpdate={(patch) =>
-                command({
-                  type: "update-node",
-                  id: composerNode.id,
-                  patch: { data: patch },
-                })
-              }
-              onRun={() => prepareGeneration(composerNode.id)}
-              onCancel={() => cancelServiceRuns(composerNode.id)}
-              onPickReference={() => {
-                referenceTarget.current = composerNode.id;
-                setPanel("assets");
+        <>
+          {composerExpanded && (
+            <div
+              className="cw-composer-backdrop"
+              aria-hidden="true"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
               }}
-              running={generationByNode.has(composerNode.id)}
-            />
-          ) : (
-            <NodeComposer
-              key={`${composerNode.id}:${toolRevision}`}
-              selectedNode={composerNode}
-              incomingNodes={composerIncoming}
-              referenceControls={generationReferenceControls(composerNode)}
-              onUpdate={(patch) =>
-                command({
-                  type: "update-node",
-                  id: composerNode.id,
-                  patch: { data: patch },
-                })
-              }
-              onRun={() => prepareGeneration(composerNode.id)}
-              onCancel={() => {
-                setGenerationTarget(null);
-                cancelServiceRuns(composerNode.id);
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpandedComposerId(null);
               }}
-              onPickReference={() => {
-                referenceTarget.current = composerNode.id;
-                setPanel("assets");
-              }}
-              running={generationByNode.has(composerNode.id)}
-              backendModels={backendCatalog.models}
             />
           )}
-        </div>
+          <div
+            ref={composerElement}
+            className="cw-composer-dock"
+            data-expandable="true"
+            data-expanded={composerExpanded}
+            role={composerExpanded ? "dialog" : undefined}
+            aria-modal={composerExpanded ? true : undefined}
+            aria-label={composerExpanded ? "展开的节点会话框" : undefined}
+            style={
+              composerExpanded
+                ? undefined
+                : {
+                    ...selectionPresentation.placement?.composer,
+                    width: selectionPresentation.composerWidth,
+                    maxHeight: selectionPresentation.composerMaxHeight,
+                    transform: selectionPresentation.composerTransform,
+                  }
+            }
+            data-interacting={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            aria-hidden={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            inert={
+              !composerExpanded &&
+              (interacting ||
+                references.connecting ||
+                spacePressed ||
+                !selectionPresentation.visible)
+            }
+            onKeyDownCapture={(event) => {
+              if (!composerExpanded || event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setExpandedComposerId(null);
+                composerElement.current
+                  ?.querySelector<HTMLButtonElement>(".cw-composer-expand")
+                  ?.focus({ preventScroll: true });
+              } else if (event.key === "Tab") {
+                const controls = [
+                  ...event.currentTarget.querySelectorAll<HTMLElement>(
+                    'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[contenteditable="true"],[tabindex="0"]',
+                  ),
+                ].filter(
+                  (element) =>
+                    element.getClientRects().length &&
+                    !element.closest("[hidden],[inert]"),
+                );
+                const edge = event.shiftKey ? controls[0] : controls.at(-1);
+                if (document.activeElement === edge) {
+                  event.preventDefault();
+                  (event.shiftKey ? controls.at(-1) : controls[0])?.focus();
+                }
+              }
+            }}
+          >
+            <div className="cw-composer-window-controls">
+              <TooltipButton
+                type="button"
+                className="cw-composer-expand"
+                label={composerExpanded ? "收起会话框" : "展开会话框"}
+                aria-label={composerExpanded ? "收起会话框" : "展开会话框"}
+                aria-expanded={composerExpanded}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  setExpandedComposerId(
+                    composerExpanded ? null : composerNode.id,
+                  )
+                }
+              >
+                <CanvasIcon
+                  name={composerExpanded ? "collapse" : "expand"}
+                  size={14}
+                />
+              </TooltipButton>
+              <TooltipButton
+                className="cw-composer-dismiss"
+                label="关闭生成面板"
+                onClick={() => {
+                  setExpandedComposerId(null);
+                  setDismissedComposer(composerNode.id);
+                  root.current?.focus({ preventScroll: true });
+                }}
+              >
+                <CanvasIcon name="close" size={14} />
+              </TooltipButton>
+            </div>
+            {composerNode.type === "text" ? (
+              <TextNodeComposer
+                key={`${composerNode.id}:${toolRevision}`}
+                node={composerNode}
+                incoming={composerIncoming}
+                referenceControls={generationReferenceControls(composerNode)}
+                models={backendCatalog.models}
+                onUpdate={(patch) =>
+                  command({
+                    type: "update-node",
+                    id: composerNode.id,
+                    patch: { data: patch },
+                  })
+                }
+                onRun={() => prepareGeneration(composerNode.id)}
+                onCancel={() => cancelServiceRuns(composerNode.id)}
+                onPickReference={() => {
+                  setExpandedComposerId(null);
+                  referenceTarget.current = composerNode.id;
+                  setLibraryOpen(true);
+                }}
+                running={generationByNode.has(composerNode.id)}
+              />
+            ) : (
+              <NodeComposer
+                key={`${composerNode.id}:${toolRevision}`}
+                selectedNode={composerNode}
+                incomingNodes={composerIncoming}
+                referenceControls={generationReferenceControls(composerNode)}
+                onUpdate={(patch) =>
+                  command({
+                    type: "update-node",
+                    id: composerNode.id,
+                    patch: { data: patch },
+                  })
+                }
+                onRun={() => prepareGeneration(composerNode.id)}
+                onCancel={() => {
+                  setGenerationTarget(null);
+                  cancelServiceRuns(composerNode.id);
+                }}
+                onPickReference={() => {
+                  setExpandedComposerId(null);
+                  referenceTarget.current = composerNode.id;
+                  setLibraryOpen(true);
+                }}
+                running={generationByNode.has(composerNode.id)}
+                backendModels={backendCatalog.models}
+              />
+            )}
+          </div>
+        </>
       )}
 
       {menu && !menu.nodeId && !menu.connected && (
@@ -4886,7 +5368,7 @@ function Workspace() {
           onAssets={() => {
             referenceTarget.current = null;
             setAssistantOpen(false);
-            setPanel("assets");
+            setLibraryOpen(true);
           }}
           onUpload={() => openFilePicker()}
           onPaste={() => paste()}
@@ -5013,7 +5495,7 @@ function Workspace() {
                 single.data.src &&
                 menuButton("编辑图片", "crop", () => openEditor(single))}
               {single &&
-                ["timeline", "subject", "stack", "tool", "external"].includes(
+                ["timeline", "stack", "tool", "external"].includes(
                   single.type,
                 ) &&
                 menuButton("打开编辑器", single.type, () => openEditor(single))}
@@ -5048,7 +5530,7 @@ function Workspace() {
                   : undefined
               }
               onCreate={(kind) => addNode(kind, menu.world)}
-              onAssets={() => setPanel("assets")}
+              onAssets={() => setLibraryOpen(true)}
               onUpload={() => openFilePicker()}
             />
           ),
@@ -5111,7 +5593,6 @@ function Workspace() {
               onClick={() => {
                 setPanel(null);
                 referenceTarget.current = null;
-                subjectTarget.current = null;
               }}
             />
           </div>
@@ -5127,7 +5608,7 @@ function Workspace() {
               </p>
               <button
                 className="cw-wide-button"
-                onClick={() => openFilePicker(subjectTarget.current)}
+                onClick={() => openFilePicker()}
               >
                 <CanvasIcon name="upload" />
                 上传本地素材
@@ -5140,15 +5621,6 @@ function Workspace() {
                     <button
                       key={n.id}
                       onClick={() => {
-                        if (subjectTarget.current) {
-                          const resource = resourceFromNode(n);
-                          if (resource)
-                            applySubjectResource(
-                              subjectTarget.current,
-                              resource,
-                            );
-                          return;
-                        }
                         if (
                           referenceTarget.current &&
                           referenceTarget.current !== n.id &&
@@ -5179,54 +5651,19 @@ function Workspace() {
                     </button>
                   ))}
               </div>
-              <ProjectAssetLibrary
-                key={doc.id}
-                currentId={doc.id}
-                onImport={(resource) => {
-                  if (subjectTarget.current) {
-                    applySubjectResource(subjectTarget.current, resource);
-                    return;
-                  }
-                  const target = referenceTarget.current;
-                  const where = center();
-                  const node = createNode(
-                    resource.kind,
-                    { x: where.x - 160, y: where.y - 140 },
-                    resourceNodeData(resource),
-                  );
-                  const linked =
-                    target && doc.nodes.some((item) => item.id === target)
-                      ? referenceEdges([node.id], target, [node])
-                      : { commands: [], issue: "" };
-                  command({
-                    type: "batch",
-                    commands: [
-                      { type: "add-nodes", nodes: [node] },
-                      ...linked.commands,
-                    ],
-                  });
-                  setSelected([node.id]);
-                  referenceTarget.current = null;
-                  setPanel(null);
-                  notify(`素材已复制到当前画布，可独立编辑。${linked.issue}`);
-                }}
-              />
+              <button
+                className="cw-wide-button"
+                onClick={() => setLibraryOpen(true)}
+              >
+                <CanvasIcon name="folder" />
+                打开资产库
+              </button>
               <h3>原创示例素材</h3>
               <div className="cw-asset-grid">
                 {["青山", "暮色", "远湖"].map((title, i) => (
                   <button
                     key={title}
                     onClick={() => {
-                      if (subjectTarget.current) {
-                        applySubjectResource(subjectTarget.current, {
-                          id: crypto.randomUUID(),
-                          kind: "image",
-                          title,
-                          src: studyImage(i, title),
-                          mimeType: "image/svg+xml",
-                        });
-                        return;
-                      }
                       const target = referenceTarget.current;
                       const n = addNode("image", undefined, {
                         title,
@@ -5570,6 +6007,7 @@ function Workspace() {
           documentTitle={doc.title}
           catalog={backendCatalog}
           nodes={[...doc.nodes, ...(doc.hiddenNodes ?? [])]}
+          visibleNodes={doc.nodes}
           selectedNodes={doc.nodes.filter((node) => selected.includes(node.id))}
           open={assistantOpen}
           layout={assistantLayout}
@@ -5663,14 +6101,6 @@ function Workspace() {
           resources={resources}
           onApply={(timeline) => applyEditorData({ timeline })}
           onRender={(result) => editorOutputs([result])}
-          onClose={closeEditor}
-        />
-      )}
-      {editing && editorMode === "default" && editing.type === "subject" && (
-        <SubjectEditor
-          node={editing}
-          resources={resources}
-          onApply={(subject) => applyEditorData({ subject })}
           onClose={closeEditor}
         />
       )}
@@ -5956,6 +6386,52 @@ function Workspace() {
   return (
     <>
       {workspace}
+      {subjectImport && (
+        <SubjectImportDialog
+          projectId={subjectImport.projectId}
+          targetId={subjectImport.nodeId}
+          initialTab={subjectImport.tab}
+          slot={subjectImport.slot}
+          targetIssue={
+            doc.id !== subjectImport.projectId
+              ? "项目已切换。"
+              : (subjectImportSelection(doc, [subjectImport.nodeId]).issue ??
+                (() => {
+                  const target = doc.nodes.find(
+                    (node) => node.id === subjectImport.nodeId,
+                  );
+                  return target &&
+                    subjectTargetIdentity(target) !== subjectImport.identity
+                    ? "目标主体已变化，请重新打开导入界面。"
+                    : null;
+                })())
+          }
+          busy={subjectLibraryBusy || switching || projectRenaming}
+          onClose={() => setSubjectImport(null)}
+          onConfirm={confirmSubjectImport}
+        />
+      )}
+      {libraryOpen && (
+        <AssetLibraryDialog
+          currentId={doc.id}
+          subjectBusy={subjectLibraryBusy || switching || projectRenaming}
+          backupSubjectIssue={
+            single?.type === "subject" &&
+            single.data.subject?.main?.src &&
+            single.data.assetState !== "missing"
+              ? null
+              : "请在画布中仅选中一个有内容的主体。"
+          }
+          onImportSubjects={(items) => importLibrarySubjects(items)}
+          onBackupSubject={backupLibrarySubject}
+          onClose={() => {
+            setLibraryOpen(false);
+            referenceTarget.current = null;
+          }}
+          onImportCanvas={importCanvasSource}
+          onInsert={insertLibraryItems}
+        />
+      )}
       {(!ready || switching) && (
         <div className="canvas-loading-screen" role="status">
           {initializationError ? (

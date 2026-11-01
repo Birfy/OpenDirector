@@ -10,7 +10,8 @@
     BlinkMacSystemFont,
     "PingFang SC",
     sans-serif;
-  font-size: 13px;
+  --cw-ui-font-size: 13px;
+  font-size: var(--cw-ui-font-size);
   isolation: isolate;
   --cw-surface: #202022;
   --cw-border: #ffffff10;
@@ -623,6 +624,92 @@
 .cw-save-status i.saved {
   background: #758d7a;
 }
+/* Node summary in the top bar. The panel is positioned against its own
+   anchor rather than portalled: the top bar is not a scroll container, so it
+   needs no follow-along measurement. Default values are the dark palette;
+   the light theme overrides the same variables in themes.css. */
+.cw-node-info {
+  position: relative;
+  flex-shrink: 0;
+  --cw-node-info-bg: #1c1c1e;
+  --cw-node-info-border: #ffffff14;
+  --cw-node-info-fg: #b4b4bb;
+  --cw-node-info-muted: #8a8a92;
+  --cw-node-info-hover-fg: #f2f2f4;
+  --cw-node-info-hover-bg: #ffffff14;
+  --cw-node-info-row: #e9e9ee;
+  --cw-node-info-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+}
+.cw-node-info-trigger {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cw-node-info-fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.cw-node-info-trigger:hover {
+  background: var(--cw-node-info-hover-bg);
+  color: var(--cw-node-info-hover-fg);
+}
+.cw-node-info-trigger:focus-visible {
+  outline: 2px solid #7a9bea;
+  outline-offset: 1px;
+}
+.cw-node-info-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 140;
+  min-width: 210px;
+  padding: 10px 6px;
+  border: 1px solid var(--cw-node-info-border);
+  border-radius: 12px;
+  background: var(--cw-node-info-bg);
+  box-shadow: var(--cw-node-info-shadow);
+  animation: cw-node-info-in 0.12s ease-out;
+}
+@keyframes cw-node-info-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-node-info-panel {
+    animation: none;
+  }
+}
+.cw-node-info-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cw-node-info-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  color: var(--cw-node-info-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cw-node-info-count {
+  color: var(--cw-node-info-row);
+  font-variant-numeric: tabular-nums;
+}
 .cw-sync-button {
   display: block;
   margin-top: 8px;
@@ -725,7 +812,7 @@
   transition:
     opacity 300ms ease,
     transform 300ms ease;
-  font-size: 13px;
+  font-size: var(--cw-ui-font-size);
   font-weight: 500;
   color: #a5a5a9;
   pointer-events: none;
@@ -1103,12 +1190,74 @@
   place-items: center;
   z-index: 2;
   border-radius: 6px;
-  color: #a6a6ae;
-  background: #25252a;
+  color: var(--cw-dismiss-fg, #a6a6ae);
+  background: var(--cw-dismiss-bg, #25252a);
 }
 .cw-composer-dismiss:hover {
-  background: #45454d;
-  color: white;
+  background: var(--cw-dismiss-hover-bg, #45454d);
+  color: var(--cw-dismiss-hover-fg, white);
+}
+
+.cw-composer-window-controls {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.cw-composer-window-controls :is(.cw-composer-dismiss, .cw-composer-expand) {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  padding: 0;
+  color: var(--cw-dismiss-fg, #a6a6ae);
+  background: var(--cw-dismiss-bg, #25252a);
+}
+.cw-composer-window-controls button:hover {
+  background: var(--cw-dismiss-hover-bg, #45454d);
+  color: var(--cw-dismiss-hover-fg, white);
+}
+.cw-composer-dock[data-expandable="true"]
+  .cw-composer-body
+  > :is(.cw-reference-strip, .cw-frame-slots) {
+  width: calc(100% - 56px);
+}
+.cw-composer-dock[data-expandable="true"]
+  .cw-composer-body:not(:has(> :is(.cw-reference-strip, .cw-frame-slots)))
+  .cw-prompt-input {
+  padding-right: 68px;
+}
+.cw-composer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: var(--cw-composer-backdrop, #0009);
+}
+.cw-composer-dock[data-expanded="true"] {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: min(1440px, calc(100vw - 48px));
+  height: min(860px, calc(100dvh - 96px));
+  max-height: calc(100dvh - 32px);
+  transform: translate(-50%, -50%);
+  z-index: 49;
+}
+.cw-composer-dock[data-expanded="true"] > .cw-composer {
+  --input-max-height: none;
+  height: 100%;
+  max-height: 100%;
+}
+
+@media (max-width: 700px) {
+  .cw-composer-dock[data-expanded="true"] {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 48px);
+  }
 }
 
 .cw-composer-dock .cw-composer {

@@ -1,14 +1,14 @@
-"""Current frontend payloads persist in the same MuseShow project directory."""
+"""Current frontend payloads persist in the same OpenDirector project directory."""
 from copy import deepcopy
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, read_json
-from museshow.infrastructure.workspace_documents import WorkspaceDocuments
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, read_json
+from opendirector.infrastructure.workspace_documents import WorkspaceDocuments
+from opendirector_api.main import create_app
 
 
 def document(project_id):
@@ -72,11 +72,11 @@ def test_text_about_blob_urls_is_not_treated_as_transient_media(workspace):
 def test_shared_media_wire_format_survives_save_and_reopen(workspace):
     _, documents, project_id, session = workspace
     value = {**document(project_id), 'version': 2, 'mediaSources': ['data:image/png;base64,YQ==']}
-    value['nodes'][0]['data']['src'] = 'opendesign-media:0'
+    value['nodes'][0]['data']['src'] = 'opendirector-media:0'
     saved = documents.save(project_id, value, 0, session)
     assert documents.read(project_id) == saved
     assert saved['document'] == value
-    for invalid in ['opendesign-media:1', 'opendesign-media:-1', 'opendesign-media:0.5', 'opendesign-media:00']:
+    for invalid in ['opendirector-media:1', 'opendirector-media:-1', 'opendirector-media:0.5', 'opendirector-media:00']:
         changed = deepcopy(value)
         changed['nodes'][0]['data']['src'] = invalid
         with pytest.raises(ProjectError): documents.save(project_id, changed, 1, session)
@@ -109,7 +109,7 @@ def test_invalid_input_or_corrupt_file_preserves_existing_bytes(workspace, probl
 
 def test_workspace_api_requires_scope_version_and_lease(workspace):
     store, _, project_id, session = workspace
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         path = f'/api/projects/{project_id}/workspace'
         assert client.get(path).json()['document'] is None
         value = dict(revision=0, document=document(project_id))
@@ -117,5 +117,5 @@ def test_workspace_api_requires_scope_version_and_lease(workspace):
         assert saved.status_code == 200 and saved.json()['revision'] == 1
         assert client.get(path).json() == saved.json()
         assert client.put(path, json={**value, 'revision': -1}).status_code == 422
-        assert client.put(path, json=value, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.put(path, json=value, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         assert client.put(path, json=value, headers={'Origin': 'https://untrusted.example'}).status_code == 403

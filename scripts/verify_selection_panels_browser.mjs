@@ -17,7 +17,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
-const headers = { "X-MuseShow-Request": "1" };
+const headers = { "X-OpenDirector-Request": "1" };
 const json = async (response) => {
   assert.ok(response.ok(), await response.text());
   return response.json();
@@ -414,7 +414,7 @@ try {
     "PASS both project formats: SAM selection, cancellation, local cutout, annotated model editing and compact panel compatibility. Simulated models only.",
   );
 } catch (error) {
-  await page.screenshot({ path: "/tmp/opendesign-sam-compat-failure.png" });
+  await page.screenshot({ path: "/tmp/opendirector-sam-compat-failure.png" });
   console.error((await page.locator("body").innerText()).slice(-2400));
   console.error(errors);
   throw error;

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'packages/core/src'))
 
 from pydantic import BaseModel, TypeAdapter
-from museshow.domain.creation.schema import ALIASES, CreationContracts
+from opendirector.domain.creation.schema import ALIASES, CreationContracts
 
 MODULES = ('base', 'assets', 'models', 'generation', 'editors', 'canvas', 'project', 'commands', 'schema')
 
@@ -22,9 +22,9 @@ MODULES = ('base', 'assets', 'models', 'generation', 'editors', 'canvas', 'proje
 def models():
     result = {}
     for module in MODULES:
-        namespace = importlib.import_module('museshow.domain.creation.' + module)
+        namespace = importlib.import_module('opendirector.domain.creation.' + module)
         for value in vars(namespace).values():
-            if inspect.isclass(value) and issubclass(value, BaseModel) and value.__module__.startswith('museshow.domain.creation'):
+            if inspect.isclass(value) and issubclass(value, BaseModel) and value.__module__.startswith('opendirector.domain.creation'):
                 result[value.__name__] = value
     return result
 
@@ -116,7 +116,7 @@ def typescript(catalogs, definitions):
 def artifacts():
     definitions = models()
     catalogs = {'input': schema_catalog('validation', definitions), 'output': schema_catalog('serialization', definitions)}
-    document = {'contractVersion': 1, 'projectFormat': 'opendesign-project', 'projectFormatVersion': 2, **catalogs}
+    document = {'contractVersion': 1, 'projectFormat': 'opendirector-project', 'projectFormatVersion': 2, **catalogs}
     return {
         ROOT / 'src/contracts/creation.schema.json': json.dumps(document, ensure_ascii=False, indent=2) + '\n',
         ROOT / 'src/contracts/generated.ts': typescript(catalogs, definitions),

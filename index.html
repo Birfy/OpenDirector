@@ -3,10 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="/src/assets/open_director_logo.png"
+    />
     <script>
       try {
         document.documentElement.dataset.theme =
-          localStorage.getItem("opendesign.theme.v1") === "light"
+          localStorage.getItem("opendirector.theme.v1") === "light"
             ? "light"
             : "dark";
       } catch {
@@ -17,7 +22,7 @@
       name="description"
       content="本地创作画布：组织素材、编辑图像、编排时间线与导演预演。"
     />
-    <title>OpenDesign · 创作画布</title>
+    <title>OpenDirector · 创作画布</title>
   </head>
   <body>
     <div id="root"></div>

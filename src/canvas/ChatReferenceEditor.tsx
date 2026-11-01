@@ -40,11 +40,13 @@ import {
   type ReferenceCategory,
 } from "./referenceMentions.ts";
 import "./reference-mentions.css";
+import { assetDisplayName } from "./assetNames.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
   openPicker: () => void;
   caret: () => Caret;
+  removeSource: (nodeId: string) => boolean;
   insert: (
     assets: ChatAsset[],
     range?: Caret,
@@ -85,14 +87,14 @@ interface Props {
   ref: Ref<ChatReferenceEditorHandle>;
 }
 type Snapshot = { content: ReferenceContent; caret: Caret };
-const CLIPBOARD = "application/x-opendesign-references";
+const CLIPBOARD = "application/x-opendirector-references";
 const defaultRules = {
   allowedKinds: ["image", "video", "audio", "text"],
   maxImages: 64,
   imageBytes: 32 * 1024 * 1024,
 };
 
-/** MuseShow's atomic content model: one reference is one editing position. */
+/** OpenDirector's atomic content model: one reference is one editing position. */
 export function ChatReferenceEditor({
   scope,
   value,
@@ -171,7 +173,7 @@ export function ChatReferenceEditor({
         const metadataOnly =
           asset && metadataOnlyKinds.includes(assetKind(asset));
         chip.title =
-          part.name +
+          assetDisplayName(part.name) +
           (part.binding === "asset" ? "（固定版本）" : "") +
           (metadataOnly ? "（仅传递素材信息）" : "");
         chip.querySelector("[data-reference-info]")?.remove();
@@ -218,13 +220,13 @@ export function ChatReferenceEditor({
         chip.contentEditable = "false";
         chip.dataset.reference = JSON.stringify(part);
         chip.className = "cw-chat-reference";
-        chip.setAttribute("aria-label", `参考：${part.name}`);
+        chip.setAttribute("aria-label", `参考：${assetDisplayName(part.name)}`);
         const icon = document.createElement("span");
         icon.dataset.referenceIcon = "1";
         icon.setAttribute("aria-hidden", "true");
         const label = document.createElement("span");
         label.className = "cw-chat-reference-label";
-        label.textContent = part.name;
+        label.textContent = assetDisplayName(part.name);
         chip.append(icon, label);
         fragment.append(chip);
       }
@@ -330,6 +332,22 @@ export function ChatReferenceEditor({
       setRange(null);
     } else if (dismissed.current !== next.start) open(next);
   }
+  useEffect(() => {
+    function selectionChanged() {
+      if (!root.current || document.activeElement !== root.current) return;
+      const at = selection(root.current);
+      if (
+        at &&
+        (at.start !== saved.current.start || at.end !== saved.current.end)
+      )
+        updateMention();
+    }
+    // selectionchange runs after the browser moves its native caret. A
+    // microtask from keydown still sees the previous position in Chromium.
+    document.addEventListener("selectionchange", selectionChanged);
+    return () =>
+      document.removeEventListener("selectionchange", selectionChanged);
+  }, [disabled, referencesDisabled]);
   async function choose(option: MentionOption) {
     if (
       disabled ||
@@ -476,6 +494,29 @@ export function ChatReferenceEditor({
     focus,
     caret,
     insert,
+    removeSource: (nodeId) => {
+      if (disabled || referencesDisabled || choosing.current) return false;
+      const at = caret();
+      const removed: number[] = [];
+      let offset = 0;
+      const next = current.current.filter((part) => {
+        const remove =
+          part.type === "reference" &&
+          part.binding !== "asset" &&
+          part.nodeId === nodeId;
+        if (remove) removed.push(offset);
+        offset += part.type === "text" ? part.text.length : 1;
+        return !remove;
+      });
+      if (!removed.length) return false;
+      const position = (point: number) =>
+        point - removed.filter((index) => index < point).length;
+      const nextCaret = { start: position(at.start), end: position(at.end) };
+      if (!publish(next, nextCaret)) return false;
+      close();
+      focus(nextCaret);
+      return true;
+    },
     openPicker: () => {
       if (rangeRef.current) {
         close();
@@ -660,6 +701,7 @@ export function ChatReferenceEditor({
           saved.current = caret();
         }}
         onPointerUp={() => {
+          close();
           saved.current = caret();
         }}
         onBlur={() => {
@@ -783,11 +825,7 @@ export function ChatReferenceEditor({
                 { start: end, end },
               );
             }
-          } else if (
-            event.key.startsWith("Arrow") ||
-            ["Home", "End"].includes(event.key)
-          )
-            queueMicrotask(updateMention);
+          }
         }}
         onCopy={(event) => clipboard(event, false)}
         onCut={(event) => clipboard(event, true)}

@@ -344,6 +344,14 @@ export interface EditorCreateCommandOperationInput {
 
 export interface EditorDocumentBaseInput extends ProjectEntityInput {
   readonly schemaVersion?: 1;
+  readonly inputConnections?: ReadonlyArray<EditorInputConnectionInput>;
+}
+
+export interface EditorInputConnectionInput extends ContractInput {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly slotId: string;
+  readonly asset: AssetRefInput;
 }
 
 export interface EditorRefInput extends ContractInput {
@@ -628,6 +636,7 @@ export interface MediaMetadataInput extends ContractInput {
 
 export interface ModelConfigPublicInput extends ModelConnectionInput {
   readonly id: string;
+  readonly providerId?: string | null;
   readonly inputRules: InputRulesInput;
 }
 
@@ -763,7 +772,7 @@ export interface ProjectRestoreCommandInput extends CommandBaseInput {
 }
 
 export interface ProjectSnapshotInput extends ContractInput {
-  readonly format?: "opendesign-project";
+  readonly format?: "opendirector-project";
   readonly formatVersion?: 2;
   readonly project: ProjectInput;
   readonly assets?: ReadonlyArray<AssetInput>;
@@ -1021,11 +1030,18 @@ export interface SubjectDataInput extends ContractInput {
   readonly main?: AssetRefInput | null;
   readonly auxiliaries?: ReadonlyArray<AssetRefInput>;
   readonly voice?: AssetRefInput | null;
+  readonly librarySource?: SubjectLibrarySourceInput | null;
 }
 
 export interface SubjectDocumentInput extends EditorDocumentBaseInput {
   readonly kind: "subject";
   readonly data: SubjectDataInput;
+}
+
+export interface SubjectLibrarySourceInput extends ContractInput {
+  readonly itemId: string;
+  readonly revision: number;
+  readonly importId: string;
 }
 
 export interface TextCanvasItemInput extends MediaCanvasItemInput {
@@ -1569,6 +1585,14 @@ export interface EditorCreateCommandOperation {
 
 export interface EditorDocumentBase extends ProjectEntity {
   readonly schemaVersion: 1;
+  readonly inputConnections: ReadonlyArray<EditorInputConnection>;
+}
+
+export interface EditorInputConnection extends Contract {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly slotId: string;
+  readonly asset: AssetRef;
 }
 
 export interface EditorRef extends Contract {
@@ -1988,7 +2012,7 @@ export interface ProjectRestoreCommand extends CommandBase {
 }
 
 export interface ProjectSnapshot extends Contract {
-  readonly format: "opendesign-project";
+  readonly format: "opendirector-project";
   readonly formatVersion: 2;
   readonly project: Project;
   readonly assets: ReadonlyArray<Asset>;
@@ -2246,11 +2270,18 @@ export interface SubjectData extends Contract {
   readonly main: AssetRef | null;
   readonly auxiliaries: ReadonlyArray<AssetRef>;
   readonly voice: AssetRef | null;
+  readonly librarySource: SubjectLibrarySource | null;
 }
 
 export interface SubjectDocument extends EditorDocumentBase {
   readonly kind: "subject";
   readonly data: SubjectData;
+}
+
+export interface SubjectLibrarySource extends Contract {
+  readonly itemId: string;
+  readonly revision: number;
+  readonly importId: string;
 }
 
 export interface TextCanvasItem extends MediaCanvasItem {

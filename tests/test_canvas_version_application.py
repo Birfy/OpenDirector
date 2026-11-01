@@ -6,10 +6,10 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.canvas_versions import apply_version, node_history
+from opendirector_api.main import create_app
 from canvas_helpers import close, context, media
 
 
@@ -106,7 +106,7 @@ def test_history_reference_restoration_does_not_apply_reference_nodes_and_missin
         assert c.reference['id'] not in canvas.snapshot(c.owner)['visibleAssetIds']
         with c.store.transaction():
             raw = c.store._inventory(c.directory); raw.pop(c.reference['id'])
-            from museshow.infrastructure.local_projects import write_json
+            from opendirector.infrastructure.local_projects import write_json
             write_json(c.directory / 'assets.json', raw)
         restore(c, node['id'], first)
         canvas.patch(c.owner, node['id'], {'prompt': '保留缺失引用，修改草稿'}, c.session)
@@ -145,7 +145,7 @@ def test_apply_endpoint_is_scoped_and_hidden_version_cannot_be_new_chat_attachme
     canvas.save_text(c.owner, node['id'], str(uuid4()), '新版', '新.md', c.session)
     other = c.store.create('另一个', str(uuid4()), str(uuid4()))
     c.generation.configs.save('agent', 'https://model.test', 'writer', 'private')
-    with TestClient(create_app(c.store, generation_provider=c.provider), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+    with TestClient(create_app(c.store, generation_provider=c.provider), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         root = f'/api/projects/{c.owner}'
         value = {'assetId': old['id'], 'expectedRevision': canvas._node(canvas.snapshot(c.owner)['canvas'], node['id'])['revision'], 'fingerprint': old['fingerprint']}
         assert old['id'] not in {a['id'] for a in client.get(root + '/assets?current_only=true').json()}

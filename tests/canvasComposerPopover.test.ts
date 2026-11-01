@@ -41,3 +41,27 @@ test("tall option lists scroll inside available space and remain usable on a sho
   );
   assert.deepEqual(short, { left: 22, top: 32, maxWidth: 356, maxHeight: 336 });
 });
+
+test("duration overlays the composer directly above its trigger and stays on screen", () => {
+  const anchor = { left: 800, top: 700, right: 860, bottom: 728 };
+  const composer = { left: 360, top: 350, right: 1040, bottom: 740 };
+  const viewport = { left: 0, top: 0, right: 1200, bottom: 800 };
+  const placed = composerPopoverPlacement(
+    anchor,
+    composer,
+    { width: 340, height: 64 },
+    viewport,
+    "above-anchor",
+  );
+  assert.equal(placed.left, 660);
+  assert.equal(placed.top, 628);
+  assert.equal(placed.top + 64, anchor.top - 8);
+  const edge = composerPopoverPlacement(
+    { ...anchor, left: 1150, right: 1190 },
+    composer,
+    { width: 340, height: 64 },
+    viewport,
+    "above-anchor",
+  );
+  assert.equal(edge.left + 340, 1188);
+});

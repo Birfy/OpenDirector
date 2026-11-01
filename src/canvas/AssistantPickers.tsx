@@ -4,7 +4,7 @@ import type { ModelConfig, ModelKind } from "../backend/rules";
 import { isGenerationModel } from "../backend/rules";
 import type { ModelSelections } from "../backend/chat";
 
-// Preserve MuseShow's keyboard-accessible model and thinking pickers.
+// Preserve OpenDirector's keyboard-accessible model and thinking pickers.
 const MODEL_KINDS = [
   { id: "agent", label: "Agent" },
   { id: "image", label: "图片" },

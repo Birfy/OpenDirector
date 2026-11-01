@@ -7,7 +7,42 @@ import {
   mentionRange,
   nodeMentionOptions,
 } from "../src/canvas/referenceMentions.ts";
-import { uploadReferences } from "../src/backend/generation.ts";
+import { fileName, uploadReferences } from "../src/backend/generation.ts";
+import { assetDisplayName } from "../src/canvas/assetNames.ts";
+import { referenceCandidates } from "../src/canvas/referenceCandidates.ts";
+
+test("asset labels collapse repeated media extensions but retain independent identities", () => {
+  for (const [name, expected] of [
+    ["原版.mp4.mp4", "原版.mp4"],
+    ["女王.jpg.jpg.jpg", "女王.jpg"],
+    ["女王.JPG.jpg", "女王.JPG"],
+    ["notes.v1.md", "notes.v1.md"],
+    ["archive.tar.gz", "archive.tar.gz"],
+  ])
+    assert.equal(assetDisplayName(name!), expected);
+  const assets = ["first", "second"].map((id) => ({
+    id,
+    name: "女王.jpg.jpg",
+    kind: "image",
+    type: "image/jpeg",
+    size: 1,
+    fingerprint: id,
+  }));
+  const choices = referenceCandidates([], assets);
+  assert.deepEqual(
+    choices.map((choice) => choice.title),
+    ["女王.jpg", "女王.jpg"],
+  );
+  assert.equal(new Set(choices.map((choice) => choice.id)).size, 2);
+  assert.equal(assets[0]!.name, "女王.jpg.jpg");
+});
+
+test("reference uploads add an extension once even when the node title includes it", () => {
+  assert.equal(fileName("原版.mp4", "mp4"), "原版.mp4");
+  assert.equal(fileName("女王.jpg.jpg", "jpg"), "女王.jpg");
+  assert.equal(fileName("女王.JPG", "jpg"), "女王.jpg");
+  assert.equal(fileName("原版", "mp4"), "原版.mp4");
+});
 
 test("a bare @ opens references; typing after it closes, and backspacing reopens", () => {
   const text = "参考 @";

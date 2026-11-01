@@ -7,11 +7,11 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from museshow.agent.loop import TOOLS
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import write_json
-from museshow.integrations.volcengine import VolcengineGeneration
-from museshow_api.main import create_app
+from opendirector.agent.loop import TOOLS
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import write_json
+from opendirector.integrations.volcengine import VolcengineGeneration
+from opendirector_api.main import create_app
 from canvas_helpers import context
 
 
@@ -23,7 +23,7 @@ def test_only_canvas_services_are_exposed(tmp_path):
     assert not any(part in path for path in paths for part in retired)
     assert {tool['function']['name'] for tool in TOOLS} == {
         'read_project', 'read_text_asset', 'save_text_asset', 'generate_asset', 'get_generation_task'}
-    with TestClient(app, headers={'X-MuseShow-Request': '1'}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1'}) as client:
         assert client.get('/api/health').status_code == 200
         assert client.get('/api/model-configs').status_code == 200
         assert client.get('/api/settings').status_code == 200
@@ -44,7 +44,7 @@ def test_inactive_legacy_files_do_not_block_canvas_history_assets_or_rename(tmp_
     node = c.generation.canvas.create(c.owner, {'id': str(uuid4()), 'kind': 'image',
         'assetId': c.reference['id']}, c.session)
     with TestClient(create_app(c.store, generation_provider=c.provider), headers={
-        'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+        'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         assert client.get(f'/api/projects/{c.owner}/canvas/nodes/{node["id"]}/versions').status_code == 200
         assert client.get(f'/api/projects/{c.owner}/assets/usage').status_code == 200
     c.store.release(c.session)
@@ -78,7 +78,7 @@ def test_provider_error_remains_persisted_and_visible_without_production(tmp_pat
             headers={'X-Request-Id': 'original-request-123'})
     provider = VolcengineGeneration(c.store, httpx.MockTransport(handle))
     with TestClient(create_app(c.store, generation_provider=provider), headers={
-        'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+        'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         root = f'/api/projects/{c.owner}/canvas'
         node = client.post(root + '/nodes', json={'id': str(uuid4()), 'kind': 'image'}).json()
         response = client.post(root + f'/nodes/{node["id"]}/generate', json={

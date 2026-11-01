@@ -45,7 +45,7 @@ Windows 使用对应虚拟环境的 Python 路径。涉及真实媒体探测、�
 .venv/bin/python tests/browser/creation_server.py --port 8019
 
 # 终端二：将前端请求代理到夹具
-MUSESHOW_API_URL=http://127.0.0.1:8019 npm run dev -- --port 5179
+OPENDIRECTOR_API_URL=http://127.0.0.1:8019 npm run dev -- --port 5179
 ```
 
 然后运行检查：

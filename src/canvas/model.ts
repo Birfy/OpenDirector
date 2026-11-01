@@ -4,6 +4,13 @@ import type { CanvasToolTask } from "./toolCatalog.ts";
 import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
 import { referenceIssue } from "./connectionPolicy.ts";
+import { SUBJECT_BASE_HEIGHT } from "./subjectLayout.ts";
+import {
+  assembleNode,
+  assemblyResource,
+  isAssemblyTarget,
+  removeAssembly,
+} from "./editorAssembly.ts";
 import {
   generationContent,
   generationContentPatch,
@@ -105,11 +112,13 @@ export interface TimelineData {
 }
 
 export interface SubjectData {
+  /** User-facing annotation; excluded from subject content and all model references. */
   description: string;
   category: string;
   main?: CanvasResource;
   auxiliaries: CanvasResource[];
   voice?: CanvasResource;
+  librarySource?: { itemId: string; revision: number; importId: string };
 }
 
 export interface StackData {
@@ -186,7 +195,9 @@ export interface CanvasEdge {
   sourceHandle?: string | null;
   targetHandle?: string | null;
   /** Missing on legacy documents means generation_input; result provenance is not a reference. */
-  intent?: "generation_input" | "post_edit_result";
+  intent?: "generation_input" | "post_edit_result" | "assembly_input";
+  /** Retained subject slot or timeline clip, independent of generation references. */
+  assemblySlotId?: string;
   /** Read-only business query projection, never an editable relationship. */
   referenceState?: "used" | "pending" | "unknown" | "unavailable";
 }
@@ -258,7 +269,7 @@ export function createNode(
     text: [300, 300],
     group: [640, 480],
     timeline: [600, 280],
-    subject: [320, 320],
+    subject: [320, SUBJECT_BASE_HEIGHT],
     stack: [320, 270],
     tool: [300, 180],
     external: [340, 180],
@@ -377,7 +388,37 @@ export function applyCommand(
   document: CanvasDocument,
   command: CanvasCommand,
 ): CanvasDocument {
-  const next = applyCanvasCommand(document, command);
+  let next = applyCanvasCommand(document, command);
+  if (
+    next !== document &&
+    (command.type === "remove-edges" ||
+      (command.type === "update-node" &&
+        command.patch.data &&
+        ("subject" in command.patch.data || "timeline" in command.patch.data)))
+  ) {
+    const logical = [...next.nodes, ...(next.hiddenNodes ?? [])];
+    const previous = [...document.nodes, ...(document.hiddenNodes ?? [])];
+    const edges = next.edges.filter((edge) => {
+      if (edge.intent !== "assembly_input") return true;
+      const current = assemblyResource(
+        logical.find((node) => node.id === edge.target),
+        edge.assemblySlotId,
+      );
+      const before = assemblyResource(
+        previous.find((node) => node.id === edge.target),
+        edge.assemblySlotId,
+      );
+      return Boolean(
+        current &&
+        before &&
+        current.id === before.id &&
+        current.kind === before.kind &&
+        current.src === before.src &&
+        current.assetId === before.assetId,
+      );
+    });
+    if (edges.length !== next.edges.length) next = { ...next, edges };
+  }
   if (
     next === document ||
     !(
@@ -392,6 +433,7 @@ export function applyCommand(
     return next;
   const logical = [...next.nodes, ...(next.hiddenNodes ?? [])];
   const sync = (node: CanvasNode) => {
+    if (isAssemblyTarget(node)) return node;
     if (
       node.data.promptContent === undefined &&
       !(
@@ -834,13 +876,34 @@ function applyCanvasCommand(
       )
     )
       return document;
-    const edges = [...document.edges, { ...command.edge }];
-    const target = document.nodes.find(
+    const target = logicalNodes.find(
       (node) => node.id === command.edge.target,
     )!;
     const source = logicalNodes.find(
       (node) => node.id === command.edge.source,
     )!;
+    if (
+      command.edge.intent !== "post_edit_result" &&
+      isAssemblyTarget(target)
+    ) {
+      const assembled = assembleNode(source, target);
+      const edge: CanvasEdge = {
+        ...command.edge,
+        intent: "assembly_input",
+        assemblySlotId: assembled.slotId,
+      };
+      const replace = (nodes: CanvasNode[]) =>
+        nodes.map((node) => (node.id === target.id ? assembled.node : node));
+      return {
+        ...document,
+        edges: [...document.edges, edge],
+        nodes: replace(document.nodes),
+        ...(document.hiddenNodes
+          ? { hiddenNodes: replace(document.hiddenNodes) }
+          : {}),
+      };
+    }
+    const edges = [...document.edges, { ...command.edge }];
     if (
       command.edge.intent === "post_edit_result" ||
       source.type !== "image" ||
@@ -877,6 +940,12 @@ function applyCanvasCommand(
   const removed = new Set(command.ids);
   for (const edge of document.edges) {
     const target = document.nodes.find((node) => node.id === edge.target);
+    const source = document.nodes.find((node) => node.id === edge.source);
+    if (
+      edge.intent === "assembly_input" &&
+      ((target && locked(target)) || (source && locked(source)))
+    )
+      removed.delete(edge.id);
     if (
       target &&
       locked(target) &&
@@ -896,6 +965,11 @@ function applyCanvasCommand(
     edges,
     nodes: document.nodes.map((node) => {
       const unlinked = disconnected.filter((edge) => edge.target === node.id);
+      if (isAssemblyTarget(node))
+        return removeAssembly(
+          node,
+          unlinked.filter((edge) => edge.intent === "assembly_input"),
+        );
       if (unlinked.length) {
         const logicalNodes = [
           ...document.nodes,

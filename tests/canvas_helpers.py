@@ -12,10 +12,10 @@ import wave
 from PIL import Image
 import pytest
 
-from museshow.application.generation import Generation
-from museshow.domain.generation import GenerationError, GenerationFailure
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
+from opendirector.application.generation import Generation
+from opendirector.domain.generation import GenerationError, GenerationFailure
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
 
 def setup(tmp_path):
     store = LocalProjects(tmp_path)

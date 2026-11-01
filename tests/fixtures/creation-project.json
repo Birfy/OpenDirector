@@ -1,5 +1,5 @@
 {
-  "format": "opendesign-project",
+  "format": "opendirector-project",
   "formatVersion": 2,
   "project": {
     "id": "00000000-0000-0000-0000-000000000001",
@@ -616,6 +616,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "subject",
       "data": {
         "description": "actor",
@@ -632,7 +633,8 @@
           "revision": 1,
           "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
           "kind": "audio"
-        }
+        },
+        "librarySource": null
       }
     },
     {
@@ -640,6 +642,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "timeline",
       "data": {
         "fps": 30,
@@ -720,6 +723,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "stack",
       "data": {
         "nodeIds": [
@@ -733,6 +737,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "tool",
       "data": {
         "kind": "palette",
@@ -761,6 +766,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "director",
       "data": {
         "background": "#ffffff",
@@ -858,6 +864,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "layers",
       "data": {
         "width": 128,
@@ -909,6 +916,7 @@
       "projectId": "00000000-0000-0000-0000-000000000001",
       "revision": 1,
       "schemaVersion": 1,
+      "inputConnections": [],
       "kind": "media_edit",
       "data": {
         "tool": "crop",

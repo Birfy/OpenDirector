@@ -7,13 +7,13 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow_api.main import create_app
-from museshow_api.models import ProjectFromMessage
-from museshow_api.project_creation import ProjectCreation
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector_api.main import create_app
+from opendirector_api.models import ProjectFromMessage
+from opendirector_api.project_creation import ProjectCreation
 
 
 def sse(delta=None, finish=None):
@@ -25,7 +25,7 @@ def setup(tmp_path):
     configs = ModelConfigs(tmp_path)
     config = configs.save('agent', 'https://api.deepseek.com', 'deepseek-flash', 'private-key')
     session = str(uuid4())
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     value = {**empty_conversation(), 'id': str(uuid4()), 'turnId': str(uuid4()), 'modelId': config['id'],
              'draft': '请为雨后江南小镇写一段开场剧本并保存到画布', 'thinking': 'high',
              'modelSelections': {'agent': config['id'], 'image': None}}
@@ -139,7 +139,7 @@ def test_invalid_input_and_old_scratch_chat_do_not_create_project(tmp_path):
 
 
 def test_creation_rollback_keeps_staged_files_for_retry(tmp_path, monkeypatch):
-    from museshow.infrastructure import local_projects
+    from opendirector.infrastructure import local_projects
     store, configs, session, _, value = setup(tmp_path)
     asset_id = str(uuid4())
     metadata = {'name': 'a.txt', 'type': 'text/plain', 'fingerprint': 'a'}

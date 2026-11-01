@@ -207,13 +207,13 @@
   justify-content: flex-end;
 }
 .image-action-editor .iae-generate {
-  background: #a991ef;
-  color: #17131e;
+  background: var(--cw-control-accent);
+  color: var(--cw-control-on-accent);
   font-weight: 600;
-  border-color: #b89dff;
+  border-color: var(--cw-control-accent);
 }
 .image-action-editor .iae-generate:hover:not(:disabled) {
-  background: #bda4ff;
+  background: var(--cw-control-accent-hover);
 }
 .iae-image-hd {
   width: min(570px, calc(100vw - 32px));

@@ -8,15 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from museshow.domain.canvas import CanvasNode
-from museshow.domain.references import project_content
-from museshow.domain.input_rules import MAX_REFERENCES
-from museshow.integrations.reference_inputs import generation_references
-from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow.integrations.chat_completions import ChatCompletions, reference_content
-from museshow.integrations.volcengine import VolcengineGeneration
-from museshow_api.main import create_app
-from museshow_api.models import ChatRequest
+from opendirector.domain.canvas import CanvasNode
+from opendirector.domain.references import project_content
+from opendirector.domain.input_rules import MAX_REFERENCES
+from opendirector.integrations.reference_inputs import generation_references
+from opendirector.infrastructure.canvas_versions import apply_version, node_history
+from opendirector.integrations.chat_completions import ChatCompletions, reference_content
+from opendirector.integrations.volcengine import VolcengineGeneration
+from opendirector_api.main import create_app
+from opendirector_api.models import ChatRequest
 from test_chat import completion, events, setup
 from canvas_helpers import close, context
 
@@ -52,9 +52,9 @@ def test_chat_saves_inline_positions_and_provider_receives_bound_reference(tmp_p
         calls.append(json.loads(request.content))
         return httpx.Response(200, text=completion())
     store, _, model, headers, _ = setup(tmp_path, ChatCompletions(httpx.MockTransport(handler)))
-    owner = store.create('引用聊天', str(uuid4()), headers['X-MuseShow-Session'])['id']
+    owner = store.create('引用聊天', str(uuid4()), headers['X-OpenDirector-Session'])['id']
     asset_id = str(uuid4())
-    store.save_asset(owner, asset_id, {'name': '说明.md', 'type': 'text/markdown', 'fingerprint': 'original'}, '原始说明'.encode(), headers['X-MuseShow-Session'])
+    store.save_asset(owner, asset_id, {'name': '说明.md', 'type': 'text/markdown', 'fingerprint': 'original'}, '原始说明'.encode(), headers['X-OpenDirector-Session'])
     asset = store.asset(owner, asset_id)[1]
     content = document(asset, '请修改', '中的名字')
     content[1]['nodeId'] = str(uuid5(UUID(owner), asset_id))
@@ -77,7 +77,7 @@ def test_chat_saves_inline_positions_and_provider_receives_bound_reference(tmp_p
 
 def test_first_project_and_draft_restore_preserve_document(tmp_path):
     store, _, model, headers, _ = setup(tmp_path, None)
-    session = headers['X-MuseShow-Session']
+    session = headers['X-OpenDirector-Session']
     asset_id = str(uuid4())
     store.save_asset('scratch', asset_id, {'name': '参考.txt', 'type': 'text/plain', 'fingerprint': 'original'}, b'notes', session)
     asset = store.asset('scratch', asset_id)[1]
@@ -149,7 +149,7 @@ def test_provider_reference_numbering_and_audio_never_speaks_labels(tmp_path):
 
 
 def test_reference_document_changes_are_protected_by_existing_adoption_guard(tmp_path):
-    from museshow.infrastructure.adoption import node_basis, reason
+    from opendirector.infrastructure.adoption import node_basis, reason
     c = context(tmp_path)
     content = document(c.reference)
     node = CanvasNode(id=uuid4(), kind='image', promptContent=content, modelConfigId=c.models['image']).model_dump(mode='json')
@@ -167,7 +167,7 @@ def test_reference_document_changes_are_protected_by_existing_adoption_guard(tmp
 
 def test_agent_tools_keep_original_chat_document_and_can_submit_structured_generation(tmp_path):
     from types import SimpleNamespace
-    from museshow.agent.loop import AgentLoop, Generate
+    from opendirector.agent.loop import AgentLoop, Generate
     c = context(tmp_path)
     config = c.generation.configs.save('agent', 'https://writer.test', 'writer-model', 'private')
     content = document(c.reference, '根据', '写剧本')

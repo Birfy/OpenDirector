@@ -5,12 +5,12 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.application.generation import Generation
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
+from opendirector.application.generation import Generation
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.canvas_versions import apply_version, node_history
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
 from test_canvas_generation import project, node, png
 
 
@@ -198,7 +198,7 @@ def test_api_rejects_upload_and_text_write_on_generated_node_without_orphan_asse
         agent_run={'id': str(uuid4()), 'modelConfigId': config['id'], 'referenceIds': []})
     before = canvas.snapshot(owner['id'])
     root = f'/api/projects/{owner["id"]}/canvas/nodes/{item["id"]}'
-    with TestClient(create_app(store), headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}) as client:
+    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         response = client.put(root + '/file', content=b'replace', headers={'X-Asset-Name': 'new.txt', 'X-Asset-Id': str(uuid4())})
         assert response.status_code == 409 and '生成节点' in response.text
         response = client.put(root + '/text', json={'id': str(uuid4()), 'name': 'new.md', 'text': 'replace'})

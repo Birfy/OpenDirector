@@ -19,7 +19,7 @@ export { portPoint, type PortSide } from "./connectionPorts";
 const hoverBlocked =
   ".cw-node-title,.cw-node-title-field,.cw-composer-dock,.cw-node-toolbar-anchor,.cw-side-panel,.cw-assistant-panel,.cw-canvas-menu,.cw-domain-dialog,[role=dialog],input,textarea,select,video,audio,button:not(.cw-reference-port),[contenteditable=true]";
 
-// MuseShow's finish handler excludes canvas UI, then resolves the enclosing
+// OpenDirector's finish handler excludes canvas UI, then resolves the enclosing
 // logical node. Node contents (including native players and title controls)
 // remain drop targets; their ordinary click/hover behavior is independent.
 const dropBlocked =

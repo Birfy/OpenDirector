@@ -6,6 +6,7 @@ import {
   type PointerEvent,
   type CSSProperties,
 } from "react";
+import { ControlSlider } from "./ControlSlider";
 import type {
   CanvasNode,
   CanvasResource,
@@ -1058,10 +1059,9 @@ export function TimelineEditor({
                 </select>
               </label>
             </div>
-            <input
+            <ControlSlider
               className="cw-timeline-seek"
               aria-label="时间线播放位置"
-              type="range"
               min={0}
               max={Math.max(0.01, duration)}
               step={1 / timeline.fps}

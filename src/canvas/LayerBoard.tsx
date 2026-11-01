@@ -159,7 +159,7 @@ export function LayerBoard({
           );
         } else
           next = {
-            format: "museshow-layers",
+            format: "opendirector-layers",
             version: 1,
             width: 1024,
             height: 1024,
@@ -979,21 +979,21 @@ export function LayerBoard({
                       draggable={!busy && !layer.locked}
                       onDragStart={(event) =>
                         event.dataTransfer.setData(
-                          "application/x-museshow-layer",
+                          "application/x-opendirector-layer",
                           layer.id,
                         )
                       }
                       onDragOver={(event) => {
                         if (
                           event.dataTransfer.types.includes(
-                            "application/x-museshow-layer",
+                            "application/x-opendirector-layer",
                           )
                         )
                           event.preventDefault();
                       }}
                       onDrop={(event) => {
                         const id = event.dataTransfer.getData(
-                          "application/x-museshow-layer",
+                          "application/x-opendirector-layer",
                         );
                         if (id) {
                           event.preventDefault();

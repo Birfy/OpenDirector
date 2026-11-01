@@ -21,7 +21,7 @@ const bootstrap = (url) =>
 try {
   const health = await (
     await page.request.get(base + "/api/creation-test-health", {
-      headers: { "X-MuseShow-Request": "1" },
+      headers: { "X-OpenDirector-Request": "1" },
     })
   ).json();
   assert.equal(health.isolated, true);
@@ -316,7 +316,7 @@ try {
         (element, payload) => {
           const clipboard = new DataTransfer();
           clipboard.setData(
-            "application/x-opendesign-references",
+            "application/x-opendirector-references",
             JSON.stringify(payload),
           );
           clipboard.setData("text/plain", "@Pinned");
@@ -360,7 +360,7 @@ try {
   assert.deepEqual(errors, []);
 } catch (error) {
   await page.screenshot({
-    path: "/tmp/opendesign-reference-parity-failure.png",
+    path: "/tmp/opendirector-reference-parity-failure.png",
   });
   console.error((await page.locator("body").innerText()).slice(-1600));
   throw error;

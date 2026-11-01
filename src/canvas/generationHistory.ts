@@ -201,7 +201,7 @@ async function historyStore<T>(
   if (!globalThis.indexedDB) throw new Error("当前环境无法保存生成历史。");
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     let blocked = false;
-    const request = indexedDB.open("opendesign-generation-history", 2);
+    const request = indexedDB.open("opendirector-generation-history", 2);
     request.onupgradeneeded = () => {
       if (blocked) {
         request.transaction?.abort();

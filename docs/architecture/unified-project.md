@@ -1,6 +1,6 @@
 # 统一项目架构
 
-本文描述 OpenDesign 的目标业务架构和公共语义，不记录实现进度。长期原则见 [开发指导](../../AGENTS.md)，交付依赖见 [发展路线](../development/roadmap.md)。
+本文描述 OpenDirector 的目标业务架构和公共语义，不记录实现进度。长期原则见 [开发指导](../../AGENTS.md)，交付依赖见 [发展路线](../development/roadmap.md)。
 
 ## 目标与范围
 

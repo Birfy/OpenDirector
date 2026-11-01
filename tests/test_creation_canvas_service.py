@@ -3,10 +3,10 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs
-from museshow.domain.creation.commands import parse_command
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
+from opendirector.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs
+from opendirector.domain.creation.commands import parse_command
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ def test_concurrent_move_and_locked_parent_do_not_overwrite_newer_state(project)
 def test_frame_mode_limits_image_sources_even_when_hidden_and_rejects_over_limit_mode_switch(project, binding):
     from io import BytesIO
     from PIL import Image
-    from museshow.application.creation_assets import CreationAssets
+    from opendirector.application.creation_assets import CreationAssets
     store, pid, session = project
     assets = CreationAssets(store)
     sources = []
@@ -155,7 +155,7 @@ def test_subject_reference_freezes_document_and_expands_assets(project):
     # Subject main images are real inspected uploads, not a synthetic subject asset.
     from PIL import Image
     from io import BytesIO
-    from museshow.application.creation_assets import CreationAssets
+    from opendirector.application.creation_assets import CreationAssets
     assets = CreationAssets(store)
     image = BytesIO()
     Image.new('RGB', (32, 32), 'blue').save(image, 'PNG')
@@ -178,6 +178,24 @@ def test_subject_reference_freezes_document_and_expands_assets(project):
     assert resolved[0].documentVersion.id == doc_id
     assert resolved[0].subjectRole == 'main'
     assert len(store.snapshot(pid).assets) == 1
+    # Subject descriptions are persisted user annotations, not model inputs.
+    from opendirector.domain.creation.generation import InputSnapshot
+    from test_creation_contracts import model, model_snapshot
+    config = model()
+    input_spec = store.snapshot(pid).generationSpecs[-1].model_copy(update={'modelConfigId': config.id})
+    before = InputSnapshot(spec=input_spec, model=model_snapshot(config), references=resolved)
+    document = store.snapshot(pid).editorDocuments[-1]
+    note = 'Private subject annotation, excluded from generation'
+    updated = document.model_dump(mode='json')
+    updated['data']['description'] = note
+    assert send(store, pid, 'editor.save', session=session, versions=[ver('editor_document', document)],
+        document=updated).status == 'applied'
+    after = InputSnapshot(spec=input_spec, model=model_snapshot(config), references=resolved_inputs(store.snapshot(pid), spec.id))
+    assert store.snapshot(pid).editorDocuments[-1].data.description == note
+    assert all(reference.asset.kind == 'image' for reference in after.references)
+    assert note not in after.model_dump_json()
+    assert after.references[0].documentVersion.revision > before.references[0].documentVersion.revision
+    assert before.fingerprint() == after.fingerprint()
 
 
 def test_hidden_group_projection_and_show_child_restore_ancestor_identity(project):

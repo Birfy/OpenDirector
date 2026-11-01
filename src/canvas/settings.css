@@ -1,5 +1,10 @@
-/* MuseShow's general/model settings layout, with OpenDesign model forms. */
+/* OpenDirector's general/model settings layout, with OpenDirector model forms. */
 .cw-settings-dialog {
+  --settings-label-size: 14px;
+  --settings-control-size: 13px;
+  --settings-caption-size: 12px;
+  --settings-control-height: 36px;
+  box-sizing: border-box;
   width: min(900px, calc(100vw - 32px));
   height: min(620px, calc(100dvh - 32px));
   max-width: none;
@@ -37,7 +42,7 @@
 }
 .cw-settings-sidebar h1 {
   margin: 0 10px 18px;
-  font-size: 13px;
+  font-size: var(--settings-control-size);
   line-height: 20px;
   font-weight: 500;
   color: var(--settings-muted);
@@ -52,6 +57,42 @@
   font: inherit;
   cursor: pointer;
 }
+.cw-settings-dialog .cw-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: var(--settings-control-height);
+  padding: 7px 10px;
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  background: var(--settings-input);
+  color: var(--settings-text);
+  line-height: 20px;
+}
+.cw-settings-dialog .cw-settings-button:hover:not(:disabled) {
+  background: var(--settings-hover);
+}
+.cw-settings-dialog .cw-settings-button-quiet,
+.cw-settings-dialog .cw-settings-button-icon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--settings-muted);
+}
+.cw-settings-dialog .cw-settings-button-icon {
+  width: 36px;
+  padding: 7px;
+}
+.cw-settings-dialog .cw-settings-button-primary {
+  border-color: var(--cw-control-accent);
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent);
+}
+.cw-settings-dialog .cw-settings-button-primary:hover:not(:disabled) {
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent-hover);
+}
 .cw-settings-navigation button {
   display: flex;
   align-items: center;
@@ -63,7 +104,7 @@
   border-radius: 9px;
   background: transparent;
   color: var(--settings-muted);
-  font-size: 14px;
+  font-size: var(--settings-label-size);
   line-height: 22px;
   text-align: left;
 }
@@ -128,37 +169,41 @@
 }
 .cw-settings-field label {
   display: block;
-  font-size: 14px;
+  font-size: var(--settings-label-size);
   line-height: 22px;
 }
 .cw-settings-field p {
   margin: 3px 0 0;
-  font-size: 12px;
+  font-size: var(--settings-caption-size);
   line-height: 20px;
   color: var(--settings-muted);
 }
 .cw-settings-dialog
-  :where(
+  :is(
     input:not([type="checkbox"], [type="radio"], [type="range"]),
     select,
     textarea
   ) {
-  padding: 9px 10px;
+  box-sizing: border-box;
+  min-height: var(--settings-control-height);
+  padding: 7px 10px;
   border: 1px solid var(--settings-border);
   border-radius: 8px;
   background: var(--settings-input);
   color: var(--settings-text);
   font: inherit;
+  font-size: var(--settings-control-size);
+  line-height: 20px;
 }
 .cw-settings-field > select {
   flex-shrink: 0;
   width: 144px;
-  min-height: 36px;
-  font-size: 12px;
+  min-height: var(--settings-control-height);
+  font-size: var(--settings-control-size);
 }
 .cw-settings-dialog :where(input, select, textarea):focus-visible,
 .cw-settings-dialog button:focus-visible {
-  outline: 2px solid #85bfff;
+  outline: 2px solid var(--cw-control-accent);
   outline-offset: 2px;
 }
 .cw-settings-switch-control {
@@ -186,7 +231,7 @@
   transition: transform 0.15s;
 }
 .cw-settings-dialog .cw-settings-switch[aria-checked="true"] {
-  background: #648a78;
+  background: var(--cw-control-accent);
 }
 .cw-settings-switch[aria-checked="true"] span {
   transform: translateX(14px);
@@ -204,7 +249,7 @@
   border-radius: 8px;
   background: var(--settings-warning-background);
   color: var(--settings-warning);
-  font-size: 12px;
+  font-size: var(--settings-caption-size);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -231,7 +276,7 @@
 }
 .cw-settings-dialog .cw-domain-section-heading h3 {
   color: var(--settings-text);
-  font-size: 14px;
+  font-size: var(--settings-label-size);
 }
 .cw-settings-dialog .cw-model-empty,
 .cw-settings-dialog .cw-model-list small,
@@ -247,12 +292,18 @@
 }
 .cw-settings-dialog .cw-domain-field {
   color: var(--settings-text);
-  font-size: 12px;
+  font-size: var(--settings-label-size);
 }
 .cw-settings-dialog .cw-domain-checkbox {
   color: var(--settings-text);
 }
 .cw-settings-dialog .cw-domain-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  min-height: var(--settings-control-height);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--settings-control-size);
   border-color: var(--settings-border);
   color: var(--settings-text);
   background: var(--settings-input);
@@ -270,8 +321,8 @@
   background: var(--settings-active);
 }
 .cw-settings-dialog .cw-domain-primary {
-  color: #fff;
-  background: #dfe5e1;
+  color: var(--cw-control-on-accent);
+  background: var(--cw-control-accent);
 }
 .cw-settings-dialog .cw-video-config,
 .cw-settings-dialog .cw-output-spec {
@@ -309,7 +360,7 @@
     flex: 1;
     gap: 6px;
     padding: 9px 4px;
-    font-size: 13px;
+    font-size: var(--settings-control-size);
   }
   .cw-settings-main {
     margin: 0 4px 4px;

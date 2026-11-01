@@ -10,14 +10,14 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.agent.video_edits import video_edit_request
-from museshow.domain.references import project_content
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow.integrations.providers import GenerationProviders
-from museshow_api.main import create_app
+from opendirector.agent.video_edits import video_edit_request
+from opendirector.domain.references import project_content
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.integrations.providers import GenerationProviders
+from opendirector_api.main import create_app
 from test_agent_canvas import sse
 from test_multimodal_references import small_video
 
@@ -90,7 +90,7 @@ def test_chat_edit_keeps_video_connection_original_prompt_and_actual_multipart(t
         return httpx.Response(200, text=sse({'content': '已保留原视频和原始替换要求，提交参考生成。'}) + sse(finish='stop'))
     provider = GenerationProviders(c.store, httpx.MockTransport(handle_generation), poll_interval=0)
     app = create_app(c.store, ChatCompletions(httpx.MockTransport(handle_chat)), provider)
-    with TestClient(app, headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         response = client.post(f'/api/data/{c.owner}/chat', json={'id': str(uuid4()), 'modelId': c.agent['id'],
             'text': 'ignored', 'content': c.content, 'assets': [c.video['id'], c.photo['id']],
             'modelSelections': {'video': c.model['id']}})
@@ -125,7 +125,7 @@ def test_edit_with_unsupported_selected_model_does_not_downgrade_or_submit(tmp_p
         return httpx.Response(200, text=sse({'content': '请选择支持视频参考的模型，尚未提交生成。'}) + sse(finish='stop'))
     app = create_app(c.store, ChatCompletions(httpx.MockTransport(handle_chat)), GenerationProviders(c.store,
         httpx.MockTransport(lambda _: pytest.fail('Must not call a media provider'))))
-    with TestClient(app, headers={'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}) as client:
+    with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}) as client:
         result = client.post(f'/api/data/{c.owner}/chat', json={'id': str(uuid4()), 'modelId': c.agent['id'],
             'text': 'ignored', 'content': c.content, 'assets': [c.video['id'], c.photo['id']], 'modelSelections': {'video': c.model['id']}})
         assert '尚未提交生成' in result.text

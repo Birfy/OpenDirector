@@ -3,7 +3,7 @@ import { refreshReferenceSources } from "../backend/referenceSources.ts";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useEffect, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
-import museshowLogo from "../assets/museshow-logo.png";
+import openDirectorLogo from "../assets/open_director_logo.png";
 import type { AssistantLayout } from "./useAssistantLayout";
 import type { BackendModels } from "../backend/models";
 import type { ChatAsset, Thinking } from "../backend/chat";
@@ -52,12 +52,13 @@ function kindOf(asset: ChatAsset) {
         : "text";
 }
 
-/** MuseShow conversation tools in an OpenDesign floating canvas window. */
+/** OpenDirector conversation tools in an OpenDirector floating canvas window. */
 export function AssistantPanel({
   documentId,
   documentTitle,
   catalog,
   nodes,
+  visibleNodes,
   selectedNodes,
   open,
   layout,
@@ -71,6 +72,7 @@ export function AssistantPanel({
   documentTitle: string;
   catalog: BackendModels;
   nodes: CanvasNode[];
+  visibleNodes: CanvasNode[];
   selectedNodes: CanvasNode[];
   open: boolean;
   layout: AssistantLayout;
@@ -252,7 +254,7 @@ export function AssistantPanel({
   };
 
   const mentionOptions = open
-    ? referenceCandidates(nodes, projectReferences.assets).map((option) => ({
+    ? referenceCandidates(visibleNodes, []).map((option) => ({
         ...option,
         disabledReason:
           option.disabledReason ||
@@ -351,11 +353,11 @@ export function AssistantPanel({
         {!value.messages.length && (
           <div className="cw-assistant-welcome">
             <div className="cw-assistant-avatar">
-              <img src={museshowLogo} alt="" />
+              <img src={openDirectorLogo} alt="" />
             </div>
             <h1>从一个想法开始</h1>
             <p>
-              和 OpenDesign 一起构思你的下一部作品。
+              和 OpenDirector 一起构思你的下一部作品。
               <br />
               描述故事，或输入 @ 添加图片、视频、音频与文本参考。
             </p>
@@ -367,7 +369,7 @@ export function AssistantPanel({
             className={`cw-assistant-message is-${message.role}`}
           >
             <div className="cw-assistant-message-heading">
-              {message.role === "user" ? "你" : "OpenDesign"}
+              {message.role === "user" ? "你" : "OpenDirector"}
               {message.role === "assistant" && message.model && (
                 <small>{message.model}</small>
               )}

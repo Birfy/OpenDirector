@@ -6,9 +6,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas_versions import node_history
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas_versions import node_history
+from opendirector_api.main import create_app
 from test_canvas_generation import png
 from test_canvas_version_application import restore
 from test_inline_references import document
@@ -192,7 +192,7 @@ def test_deleted_source_keeps_invalid_body_and_restoring_reconnects(tmp_path):
 def test_connection_endpoints_and_material_upload_guard(tmp_path):
     c = context(tmp_path); canvas = c.generation.canvas
     origin = source(c)
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': c.session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': c.session}
     with TestClient(create_app(c.store), headers=headers) as client:
         response = client.post(f'/api/projects/{c.owner}/canvas/connections', json={
             'sourceId': origin['id'], 'assetId': origin['assetId'], 'targetId': str(uuid4()),
@@ -207,8 +207,8 @@ def test_connection_endpoints_and_material_upload_guard(tmp_path):
 
 
 def test_supported_incomplete_audio_input_uses_existing_draft_and_shared_rules(media):
-    from museshow.infrastructure.model_configs import ModelConfigs
-    from museshow.integrations.reference_inputs import generation_references
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    from opendirector.integrations.reference_inputs import generation_references
     store, owner, session, canvas, image, audio, _ = media
     model = ModelConfigs(store.repository).save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', 'test')
     nodes = canvas.snapshot(owner)['canvas']['nodes']
@@ -232,11 +232,11 @@ def test_supported_incomplete_audio_input_uses_existing_draft_and_shared_rules(m
 def test_chat_resolves_current_versions_but_never_rewrites_sent_history(tmp_path):
     import httpx
     from test_chat import setup, completion, events
-    from museshow.infrastructure.canvas import CanvasProjects
-    from museshow.integrations.chat_completions import ChatCompletions
+    from opendirector.infrastructure.canvas import CanvasProjects
+    from opendirector.integrations.chat_completions import ChatCompletions
     provider = ChatCompletions(httpx.MockTransport(lambda _: httpx.Response(200, text=completion())))
     store, _, model, headers, _ = setup(tmp_path, provider)
-    session = headers['X-MuseShow-Session']
+    session = headers['X-OpenDirector-Session']
     owner = store.create('聊天版本跟随', str(uuid4()), session)['id']
     canvas = CanvasProjects(store)
     node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'image'}, session)

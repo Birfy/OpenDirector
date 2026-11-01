@@ -4,12 +4,12 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from museshow.domain.projects import ProjectError
-from museshow.application.generation import Generation
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.canvas_versions import apply_version, node_history
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
+from opendirector.domain.projects import ProjectError
+from opendirector.application.generation import Generation
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.canvas_versions import apply_version, node_history
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
 from test_canvas_generation import project, png
 from test_canvas_roles import current, undo
 from test_multimodal_references import media
@@ -155,7 +155,7 @@ def test_api_confirmation_and_revision_errors_have_stable_codes(project):
     store, owner, session, canvas = project
     node = canvas.create(owner['id'], {'id': str(uuid4()), 'kind': 'image', 'prompt': '要求'}, session)
     endpoint = f'/api/projects/{owner["id"]}/canvas/nodes/{node["id"]}/file'
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session, 'X-Asset-Id': str(uuid4()), 'X-Asset-Name': 'file.png'}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session, 'X-Asset-Id': str(uuid4()), 'X-Asset-Name': 'file.png'}
     with TestClient(create_app(store), headers=headers) as client:
         rejected = client.put(endpoint, content=png())
         assert rejected.status_code == 409 and rejected.json()['code'] == 'discard_confirmation_required'

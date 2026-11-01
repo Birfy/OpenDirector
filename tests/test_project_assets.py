@@ -9,12 +9,12 @@ import httpx
 from PIL import Image
 import pytest
 
-from museshow.domain.assets import attachment, asset_adapter
-from museshow.infrastructure.asset_catalog import AssetCatalog
-from museshow.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow.integrations.chat_completions import ChatCompletions
-from museshow_api.main import create_app
+from opendirector.domain.assets import attachment, asset_adapter
+from opendirector.infrastructure.asset_catalog import AssetCatalog
+from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation, read_json
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector_api.main import create_app
 
 
 def png():
@@ -23,12 +23,37 @@ def png():
     return data.getvalue()
 
 
+def test_inspect_asset_accepts_an_image_without_a_suffix():
+    """Canvas node titles ("图片 1") reach the importer without an extension.
+
+    The name must not decide validity when the bytes are a real image, or
+    copying a library item onto a canvas fails with "文件格式不受支持".
+    """
+    from opendirector.integrations.asset_metadata import inspect_asset
+
+    data = png()
+    bare = inspect_asset('图片 1', data)
+    suffixed = inspect_asset('图片 1.png', data)
+    assert bare == suffixed
+    assert bare['kind'] == 'image'
+    assert bare['type'] == 'image/png'
+    assert (bare['width'], bare['height']) == (12, 8)
+
+
+def test_inspect_asset_still_rejects_non_media_without_a_suffix():
+    from opendirector.domain.projects import ProjectError
+    from opendirector.integrations.asset_metadata import inspect_asset
+
+    with pytest.raises(ProjectError):
+        inspect_asset('图片 2', b'this is not an image')
+
+
 @pytest.fixture
 def project_api(tmp_path):
     store = LocalProjects(tmp_path)
     session = str(uuid4())
     project = store.create('资产项目', str(uuid4()), session)
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         yield client, store, project
 
@@ -65,7 +90,7 @@ def test_text_and_image_import_are_typed_immutable_and_survive_restart_and_renam
     assert client.get(f'/api/data/{project_id}/assets/{image_id}').content == data
     records = client.get(f'/api/projects/{project_id}/assets').json()
     assert records == [text, image]
-    store.release(client.headers['X-MuseShow-Session'])
+    store.release(client.headers['X-OpenDirector-Session'])
     renamed = store.rename(project_id, '改名后', project['name'])
     restarted = LocalProjects(tmp_path)
     assert AssetCatalog(restarted).list(project_id) == records
@@ -90,7 +115,7 @@ def test_legacy_four_kinds_and_other_attachments_are_read_without_migration(proj
                                   ('video', 'old.mp4', 'video/mp4'), ('audio', 'old.wav', 'audio/wav'), ('other', 'old.pdf', 'application/pdf')]:
         asset_id = str(uuid4())
         metadata = {'name': name, 'type': media_type, 'fingerprint': asset_id}
-        store.save_asset(project['id'], asset_id, metadata, b'legacy bytes', client.headers['X-MuseShow-Session'])
+        store.save_asset(project['id'], asset_id, metadata, b'legacy bytes', client.headers['X-OpenDirector-Session'])
         original.append((asset_id, kind))
     path = Path(project['path']) / 'assets.json'
     before = path.read_bytes()
@@ -132,21 +157,21 @@ def test_reference_checks_revision_conflicts_and_chat_detach_preserve_project_as
     draft = {**empty_conversation(), 'assets': [attachment(first)]}
     assert client.patch(f'/api/data/{project_id}/draft', json={key: draft[key] for key in ('draft', 'assets', 'thinking', 'modelSelections')}).status_code == 200
     assert client.delete(f'/api/projects/{project_id}/assets/{first["id"]}').status_code == 409
-    store.save_draft(project_id, {'assets': []}, client.headers['X-MuseShow-Session'])
+    store.save_draft(project_id, {'assets': []}, client.headers['X-OpenDirector-Session'])
     assert client.delete(f'/api/data/{project_id}/assets/{first["id"]}').status_code == 200
     assert store.asset(project_id, first['id'])[0]
-    from museshow.infrastructure.canvas import CanvasProjects
+    from opendirector.infrastructure.canvas import CanvasProjects
     canvas = CanvasProjects(store)
     for node in canvas.snapshot(project_id)['canvas']['nodes']:
         if first['id'] in node['assetIds']:
-            canvas.remove(project_id, node['id'], client.headers['X-MuseShow-Session'])
+            canvas.remove(project_id, node['id'], client.headers['X-OpenDirector-Session'])
     assert client.delete(f'/api/projects/{project_id}/assets/{first["id"]}').status_code == 204
     assert client.get(f'/api/data/{project_id}/assets/{first["id"]}').status_code == 404
 
 
 def test_failed_inventory_commit_cleans_new_file_and_delete_failure_restores_record(project_api, monkeypatch):
     client, store, project = project_api
-    from museshow.infrastructure import local_projects
+    from opendirector.infrastructure import local_projects
     asset, _ = create_text(client, project['id'])
     original = local_projects.write_json
 
@@ -182,7 +207,7 @@ def test_typed_assets_can_be_referenced_in_chat_protocol_and_history_blocks_dele
         calls.append(json.loads(request.content))
         return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"已读取资料"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
 
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': original_client.headers['X-MuseShow-Session']}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': original_client.headers['X-OpenDirector-Session']}
     model = ModelConfigs(store.repository).save('agent', 'https://example.com/v1', 'chat', 'private')
     with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(provider))), headers=headers) as client:
         text, _ = create_text(client, project['id'], text='真实参考资料')
@@ -197,7 +222,7 @@ def test_asset_writes_require_the_edit_session_and_invalid_inventory_is_preserve
     client, _, project = project_api
     endpoint = f'/api/projects/{project["id"]}/assets'
     text, _ = create_text(client, project['id'])
-    stranger = {'X-MuseShow-Session': str(uuid4())}
+    stranger = {'X-OpenDirector-Session': str(uuid4())}
     assert client.put(f'{endpoint}/{uuid4()}', content=b'data', headers={**stranger, 'X-Asset-Name': 'data.txt'}).status_code == 409
     assert client.patch(f'{endpoint}/{text["id"]}', headers=stranger, json={'name': 'other.txt', 'purpose': 'document', 'expectedRevision': 1}).status_code == 409
     assert client.delete(f'{endpoint}/{text["id"]}', headers=stranger).status_code == 409

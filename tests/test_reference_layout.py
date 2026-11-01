@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from museshow.domain.references import project_content, reference_content
-from museshow.infrastructure.canvas_versions import node_history
+from opendirector.domain.references import project_content, reference_content
+from opendirector.infrastructure.canvas_versions import node_history
 from test_inline_references import document
 from canvas_helpers import close, context
 
@@ -66,8 +66,8 @@ def test_generation_mixed_references_survive_task_snapshot_and_history(tmp_path)
 
 
 def test_mixed_references_cannot_bypass_tool_reference_limit():
-    from museshow.domain.input_rules import MAX_REFERENCES
-    from museshow.agent.loop import Generate
+    from opendirector.domain.input_rules import MAX_REFERENCES
+    from opendirector.agent.loop import Generate
     asset = {'id': str(uuid4()), 'name': '正文引用.png', 'fingerprint': 'a'}
     content = document(asset)
     extras = [str(uuid4()) for _ in range(MAX_REFERENCES)]

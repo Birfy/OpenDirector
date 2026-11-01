@@ -1,6 +1,49 @@
 node_modules/
 dist/
 .DS_Store
+
+# Locally installed toolchain (Node.js, Python, ffmpeg) - installed by
+# scripts/setup-windows.ps1, never committed.
+.toolchain/
+
+# Local start/build launchers generated for this machine.
+/start-dev.cmd
+/start.cmd
+/build.cmd
+
+# Machine-local Windows installer generated for this machine.
+/scripts/setup-windows.ps1
+
+# Windows shell and filesystem artifacts. These are produced by Explorer,
+# cmd.exe, PowerShell and MSVC on Windows machines only, so they never belong
+# to the shared source tree. Scripts the project does ship (.cmd launchers,
+# *.ps1 tools) are listed explicitly above and stay tracked.
+Thumbs.db
+ehthumbs.db
+desktop.ini
+*.lnk
+*.stackdump
+$RECYCLE.BIN/
+*.pdb
+*.ilk
+
+# Native build output from MSVC and Visual Studio.
+*.obj
+*.lib
+*.exp
+*.tlog/
+.vs/
+*.vcxproj.user
+*.suo
+
+# Editor and IDE state that is never part of the project source.
+.idea/
+*.iml
+.vscode/
+
+# Local alignment/audit notes kept for manual testing.
+/docs/ALIGNMENT-AUDIT.md
+
 .env
 .env.*
 !.env.example
@@ -18,6 +61,7 @@ __pycache__/
 /apps/api/build/
 .pytest_cache/
 /projects/
+/.opendirector/
 /.museshow/
 
 # Local historical documents stay private; shared docs live in these paths.

@@ -1,0 +1,219 @@
+"""New-format project endpoints; existing workspace routes are not switched."""
+from uuid import UUID
+import asyncio
+import json
+import re
+from urllib.parse import quote, unquote
+
+from fastapi import APIRouter, Header, Query, Request
+from fastapi.responses import Response, StreamingResponse
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
+
+from opendirector.application.creation_assets import CreationAssets
+from opendirector.application.creation_canvas import CreationCanvas
+from opendirector.application.creation_history import CreationHistory
+from opendirector.domain.creation.assets import Asset, UploadInfo
+from opendirector.domain.creation.base import MediaKind
+from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
+from opendirector.domain.creation.project import ProjectSnapshot, ViewState
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector_api.models import Session
+
+
+def creation_routes(projects: CreationProjects, generation=None):
+    router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
+    assets = CreationAssets(projects)
+    canvas = CreationCanvas(projects)
+    history = CreationHistory(projects)
+
+    @router.get('/projects')
+    def list_projects():
+        return projects.list_projects()
+
+    @router.get('/projects/{project_id}', response_model=ProjectSnapshot)
+    def snapshot(project_id: UUID):
+        return projects.snapshot(project_id)
+
+    @router.post('/projects/{project_id}/open', response_model=ProjectSnapshot)
+    def open_project(project_id: UUID, x_opendirector_session: UUID = Header()):
+        return projects.open(project_id, str(x_opendirector_session))
+
+    @router.put('/sessions/{session_id}')
+    def heartbeat(session_id: UUID, value: Session):
+        projects.heartbeat(str(session_id), value.projectId)
+        return {'ok': True}
+
+    @router.delete('/sessions/{session_id}')
+    def release(session_id: UUID):
+        projects.local.release(str(session_id))
+        return {'ok': True}
+
+    @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)
+    async def execute(project_id: UUID, value: Command, x_opendirector_session: UUID | None = Header(default=None)):
+        # Source is selected by the trusted entrypoint, never by a payload flag.
+        if value.projectId != project_id:
+            raise ProjectError('命令不属于当前工程。')
+        session = str(x_opendirector_session) if x_opendirector_session else None
+        if value.type == 'job.checkpoint':
+            raise ProjectError('任务执行事实只能由后台写入。', 403)
+        if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
+            if generation is None:
+                raise ProjectError('任务服务不可用。', 503)
+            return await generation.execute(value, session=session)
+        return await run_in_threadpool(projects.execute, value, session=session)
+
+    @router.get('/projects/{project_id}/canvas')
+    def projection(project_id: UUID):
+        return canvas.projection(project_id)
+
+    @router.post('/projects/{project_id}/queries')
+    def query(project_id: UUID, value: CreationQuery):
+        if value.projectId != project_id:
+            raise ProjectError('查询不属于当前工程。')
+        return canvas.query(value)
+
+    @router.get('/projects/{project_id}/history')
+    def operations(project_id: UUID):
+        return history.operations(project_id)
+
+    @router.get('/projects/{project_id}/reference-catalog')
+    def reference_catalog(project_id: UUID):
+        return history.reference_catalog(project_id)
+
+    @router.get('/projects/{project_id}/specs/{spec_id}/versions')
+    def versions(project_id: UUID, spec_id: UUID):
+        return history.versions(project_id, spec_id)
+
+    @router.get('/projects/{project_id}/items/{item_id}/versions')
+    def node_versions(project_id: UUID, item_id: UUID):
+        return history.node_versions(project_id, item_id)
+
+    @router.get('/projects/{project_id}/asset-list')
+    def asset_list(project_id: UUID, text: str = Query(default='', max_length=1000),
+                   usage: str = Query(default='all', pattern='^(all|used|unused)$'),
+                   offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):
+        return history.asset_list(project_id, text=text, usage=usage, offset=offset, limit=limit)
+
+    @router.post('/projects/{project_id}/asset-delete-preview')
+    def asset_delete_preview(project_id: UUID, value: dict):
+        try:
+            return history.delete_preview(project_id, value['assetIds'], value.get('clearHistory', False))
+        except (KeyError, ValueError, TypeError):
+            raise ProjectError('删除选择无效。') from None
+
+    @router.get('/projects/{project_id}/receipts/{command_id}', response_model=CommandReceipt)
+    def receipt(project_id: UUID, command_id: UUID):
+        return projects.receipt(project_id, command_id)
+
+    @router.get('/projects/{project_id}/changes')
+    def changes(project_id: UUID, after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):
+        # Pull and streaming consumers share this persisted outbox cursor.
+        return projects.changes(project_id, after=after, limit=limit)
+
+    @router.get('/projects/{project_id}/subscribe')
+    async def subscribe(project_id: UUID, request: Request, after: int = Query(default=0, ge=0)):
+        await run_in_threadpool(projects.changes, project_id, after=after)
+        # The persisted cursor is authoritative; reconnects never depend on a
+        # process-local listener. Fetch clients carry the local request headers.
+        async def events():
+            cursor = after
+            while not await request.is_disconnected():
+                changes = await run_in_threadpool(projects.changes, project_id, after=cursor)
+                if changes['events']:
+                    for event in changes['events']:
+                        yield json.dumps(event.model_dump(mode='json'), ensure_ascii=False) + '\n'
+                        cursor = event.cursor
+                else:
+                    yield '\n'  # Keep-alive; no fabricated business event.
+                    await asyncio.sleep(1)
+        return StreamingResponse(events(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store'})
+
+    @router.get('/projects/{project_id}/views/{client_id}', response_model=ViewState)
+    def read_view(project_id: UUID, client_id: UUID):
+        return projects.view(project_id, client_id)
+
+    @router.put('/projects/{project_id}/views/{client_id}', response_model=ViewState)
+    def save_view(project_id: UUID, client_id: UUID, value: ViewState, x_opendirector_session: UUID = Header()):
+        return projects.view(project_id, client_id, value, session=str(x_opendirector_session))
+
+    @router.put('/projects/{project_id}/uploads/{handle_id}', response_model=UploadInfo)
+    async def upload(project_id: UUID, handle_id: UUID, request: Request,
+                     x_opendirector_session: UUID = Header(), x_asset_name: str = Header(max_length=4096),
+                     x_asset_kind: MediaKind | None = Header(default=None)):
+        writer = await run_in_threadpool(assets.uploads.begin, project_id, handle_id, str(x_opendirector_session),
+                                        unquote(x_asset_name), expected_kind=x_asset_kind)
+        try:
+            async for chunk in request.stream():
+                await run_in_threadpool(writer.write, chunk)
+            return await run_in_threadpool(writer.finish)
+        finally:
+            # Also runs on ClientDisconnect and cancelled request bodies.
+            writer.abort()
+
+    @router.get('/projects/{project_id}/uploads/{handle_id}', response_model=UploadInfo)
+    def upload_info(project_id: UUID, handle_id: UUID, x_opendirector_session: UUID = Header()):
+        return assets.uploads.info(project_id, handle_id, str(x_opendirector_session))
+
+    @router.delete('/projects/{project_id}/uploads/{handle_id}', response_model=UploadInfo)
+    def cancel_upload(project_id: UUID, handle_id: UUID, x_opendirector_session: UUID = Header()):
+        return assets.uploads.cancel(project_id, handle_id, str(x_opendirector_session))
+
+    @router.get('/projects/{project_id}/assets', response_model=list[Asset])
+    def list_assets(project_id: UUID):
+        return assets.list(project_id)
+
+    @router.get('/projects/{project_id}/assets/{asset_id}', response_model=Asset)
+    def describe_asset(project_id: UUID, asset_id: UUID):
+        return assets.get(project_id, asset_id)
+
+    @router.get('/projects/{project_id}/assets/{asset_id}/content')
+    def content(project_id: UUID, asset_id: UUID, range_header: str | None = Header(default=None, alias='Range'),
+                if_none_match: str | None = Header(default=None, alias='If-None-Match')):
+        stream, asset = assets.open_media(project_id, asset_id)
+        size, etag = asset.metadata.size, '"' + asset.fingerprint + '"'
+        headers = {'Accept-Ranges': 'bytes', 'ETag': etag, 'Cache-Control': 'private, no-cache',
+                   'X-Content-Type-Options': 'nosniff',
+                   'Content-Disposition': ('attachment' if asset.kind == 'file' else 'inline')
+                       + "; filename*=utf-8''" + quote(asset.name, safe='')}
+        if range_header is None and if_none_match == etag:
+            stream.close()
+            return Response(status_code=304, headers=headers)
+        start, end = 0, size - 1
+        if range_header is not None:
+            try:
+                match = re.fullmatch(r'bytes=(\d*)-(\d*)', range_header) if len(range_header) <= 128 else None
+                if match is None or not any(match.groups()) or not size:
+                    raise ValueError()
+                first, last = match.groups()
+                if first:
+                    start, end = int(first), min(int(last), size - 1) if last else size - 1
+                else:
+                    suffix = int(last)
+                    if suffix <= 0:
+                        raise ValueError()
+                    start = max(0, size - suffix)
+                if start > end or start >= size:
+                    raise ValueError()
+            except ValueError:
+                stream.close()
+                return Response(status_code=416, headers={**headers, 'Content-Range': f'bytes */{size}'})
+            headers['Content-Range'] = f'bytes {start}-{end}/{size}'
+        headers['Content-Length'] = str(end - start + 1)
+        async def chunks():
+            try:
+                stream.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    data = await run_in_threadpool(stream.read, min(1024 * 1024, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+            finally:
+                stream.close()
+        return StreamingResponse(chunks(), status_code=206 if range_header else 200,
+            media_type=asset.metadata.mimeType, headers=headers, background=BackgroundTask(stream.close))
+
+    return router

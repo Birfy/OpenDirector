@@ -3,8 +3,8 @@ from uuid import uuid4
 import pytest
 
 from test_creation_canvas_service import project, text_material, media, send, ver
-from museshow.application.creation_canvas import resolved_inputs
-from museshow.domain.creation.commands import parse_command
+from opendirector.application.creation_canvas import resolved_inputs
+from opendirector.domain.creation.commands import parse_command
 
 
 def setup_reference(project):
@@ -65,7 +65,7 @@ def test_hidden_following_and_fixed_versions_survive_source_changes(project):
     source, _, spec, ref, first = setup_reference(project)
     assert send(store, pid, 'asset.writeText', session=session, name='next.md', text='v2').status == 'applied'
     second = store.snapshot(pid).assets[-1]
-    from museshow.application.creation_canvas import asset_ref
+    from opendirector.application.creation_canvas import asset_ref
     assert send(store, pid, 'canvas.materialize', session=session, versions=[ver('canvas_item', source)], itemId=source.id, asset=asset_ref(second)).status == 'applied'
     source = store.snapshot(pid).canvasItems[0]
     assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
@@ -82,7 +82,7 @@ def test_persisted_editor_undo_restores_same_identity_with_versions(project, bin
     store, pid, session = project
     source, target, spec, ref, asset = setup_reference(project)
     if binding == 'pinned':
-        from museshow.application.creation_canvas import asset_ref
+        from opendirector.application.creation_canvas import asset_ref
         receipt = send(store, pid, 'reference.update', session=session, versions=[ver('reference', ref)],
             reference={**ref.model_dump(mode='json'), 'binding': binding, 'source': asset_ref(asset).model_dump(mode='json')})
         assert receipt.status == 'applied', receipt

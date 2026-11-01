@@ -40,8 +40,8 @@ interface WorkspaceRecord {
 }
 const revisions = new Map<string, number>();
 const lastKey = creationEnabled()
-  ? "opendesign.lastUnifiedFilesystemProject"
-  : "opendesign.lastFilesystemProject";
+  ? "opendirector.lastUnifiedFilesystemProject"
+  : "opendirector.lastFilesystemProject";
 
 export const listWorkspaceProjects = () =>
   request<WorkspaceProjectList>(

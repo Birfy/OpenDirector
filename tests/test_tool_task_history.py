@@ -7,15 +7,15 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from museshow.application.creation_tool_assets import CreationToolAssets
-from museshow.application.tool_tasks import ToolTasks
-from museshow.domain.creation.commands import parse_command
-from museshow.domain.projects import ProjectError
-from museshow.infrastructure.canvas import CanvasProjects
-from museshow.infrastructure.creation_projects import CreationProjects
-from museshow.infrastructure.local_projects import LocalProjects
-from museshow.infrastructure.model_configs import ModelConfigs
-from museshow_api.main import create_app
+from opendirector.application.creation_tool_assets import CreationToolAssets
+from opendirector.application.tool_tasks import ToolTasks
+from opendirector.domain.creation.commands import parse_command
+from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.infrastructure.creation_projects import CreationProjects
+from opendirector.infrastructure.local_projects import LocalProjects
+from opendirector.infrastructure.model_configs import ModelConfigs
+from opendirector_api.main import create_app
 
 
 def png():
@@ -111,7 +111,7 @@ def test_tool_task_routes_use_the_matching_project_format(tool_project):
     store, projects, _, project_id, session, _, value, _ = tool_project
     prefix = '/api/creation' if projects else '/api'
     path = f'{prefix}/projects/{project_id}/tool-tasks'
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
         response = client.post(path, json=value)
         assert response.status_code == 202, response.text
@@ -175,7 +175,7 @@ def test_pending_result_identity_and_timing_survive_service_restart(tool_project
 
 
 def test_pending_target_contract_rejects_partial_or_source_identities(tool_project):
-    from museshow_api.models import ToolTaskCreate
+    from opendirector_api.models import ToolTaskCreate
     from pydantic import ValidationError
     _, _, _, _, _, _, value, _ = tool_project
     for extra in ({'targetNodeId': str(uuid4())},
@@ -186,7 +186,7 @@ def test_pending_target_contract_rejects_partial_or_source_identities(tool_proje
 
 
 def test_multi_output_identities_use_the_target_only_for_the_matching_first_kind():
-    from museshow.application.tool_tasks import output_item_id
+    from opendirector.application.tool_tasks import output_item_id
     task = dict(id=str(uuid4()), canvas=dict(targetNodeId=str(uuid4()), targetKind='video'))
     assert output_item_id(task, 0, 'video') == task['canvas']['targetNodeId']
     assert output_item_id(task, 0, 'image') != task['canvas']['targetNodeId']
@@ -197,8 +197,8 @@ def test_multi_output_identities_use_the_target_only_for_the_matching_first_kind
 @pytest.mark.parametrize('model_kind', ['vision', 'image', 'video'])
 def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project, monkeypatch, model_kind):
     import base64
-    from museshow.domain.capabilities import Segment
-    from museshow.integrations.model_adapters import VllmOmniSegmentation
+    from opendirector.domain.capabilities import Segment
+    from opendirector.integrations.model_adapters import VllmOmniSegmentation
     store, projects, assets, project_id, session, source, _, factory = tool_project
     configs = ModelConfigs(store.repository)
     configs.save(model_kind, 'http://fixture.invalid/v1', 'facebook/sam3', '', connection_type='self_hosted',
@@ -213,7 +213,7 @@ def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project,
         return [Segment(mask.getvalue(), (10, 8, 30, 32), .9)]
     monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
     prefix = '/api/creation' if projects else '/api'
-    headers = {'X-MuseShow-Request': '1', 'X-MuseShow-Session': session}
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     before = set(assets._records(None if projects else store.root / 'Tool history', project_id))
     with TestClient(create_app(store), headers=headers) as client:
         path = f'{prefix}/projects/{project_id}/image-selections'
@@ -225,7 +225,7 @@ def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project,
         decoded = Image.open(BytesIO(base64.b64decode(result['instances'][0]['maskDataUrl'].split(',')[1])))
         assert decoded.mode == 'RGBA'
         assert decoded.getpixel((0, 0))[3] == 0 and decoded.getpixel((15, 15))[3] == 255
-        assert client.post(path, json=value, headers={'X-MuseShow-Session': str(uuid4())}).status_code == 409
+        assert client.post(path, json=value, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
         assert client.post(path, json={**value, 'sourceAssetId': str(uuid4())}).status_code == 409
     assert len(calls) == 1
     assert factory().list(project_id) == []
@@ -284,7 +284,7 @@ def test_tool_idempotency_includes_annotation_and_model_inputs(tool_project):
 
 def test_selection_disconnect_cancels_through_request_middleware(tool_project, monkeypatch):
     import json
-    from museshow.integrations.model_adapters import VllmOmniSegmentation
+    from opendirector.integrations.model_adapters import VllmOmniSegmentation
     store, projects, _, project_id, session, source, _, factory = tool_project
     configs = ModelConfigs(store.repository)
     configs.save('vision', 'http://fixture.invalid/v1', 'facebook/sam3', '', connection_type='self_hosted', protocol='vllm_omni')
@@ -315,7 +315,7 @@ def test_selection_disconnect_cancels_through_request_middleware(tool_project, m
                      scheme='http', path=path, raw_path=path.encode(), query_string=b'',
                      server=('testserver', 80), client=('127.0.0.1', 12345),
                      headers=[(b'host', b'testserver'), (b'content-type', b'application/json'),
-                              (b'x-museshow-request', b'1'), (b'x-museshow-session', session.encode())])
+                              (b'x-opendirector-request', b'1'), (b'x-opendirector-session', session.encode())])
         app = create_app(store)
         async with app.router.lifespan_context(app):
             await asyncio.wait_for(app(scope, receive, send), 2)
