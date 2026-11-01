@@ -1,5 +1,7 @@
 """Application-wide model settings. Secrets never leave this store's API."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
