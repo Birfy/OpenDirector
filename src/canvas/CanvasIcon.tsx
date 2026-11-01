@@ -28,6 +28,16 @@ const icons: Record<string, ReactNode> = {
       <path d="M3 9h18M8 3v6M15 3v6" />
     </>
   ),
+  clapperboard: (
+    <g transform="rotate(-12 12 12)" fill="currentColor" stroke="none">
+      <path d="M4 12h16v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+      <path
+        transform="rotate(-22 4 11)"
+        fillRule="evenodd"
+        d="M5 7h14a1 1 0 0 1 1 1v3H4V8a1 1 0 0 1 1-1Zm3 0h2l-2 4H6Zm5 0h2l-2 4h-2Zm5 0h2l-2 4h-2Z"
+      />
+    </g>
+  ),
   subject: (
     <>
       <rect x="3" y="2" width="18" height="20" rx="4" />

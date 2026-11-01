@@ -1002,11 +1002,10 @@
   border-radius: 50%;
 }
 .cw-empty-orb {
-  font-size: 45px;
-  color: #cbd5cd;
+  color: #c9cbd0;
   opacity: 0.65;
   margin-bottom: 12px;
-  font-family: Georgia, serif;
+  line-height: 0;
 }
 .cw-empty h1 {
   font-size: 23px;

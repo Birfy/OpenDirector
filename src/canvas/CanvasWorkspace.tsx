@@ -4697,8 +4697,10 @@ function Workspace() {
       {!doc.nodes.length && ready && (
         <div className="cw-empty">
           <div className="cw-aurora" />
-          <div className="cw-empty-orb">✦</div>
-          <h1>开启创作，即刻造梦</h1>
+          <div className="cw-empty-orb">
+            <CanvasIcon name="clapperboard" size={56} />
+          </div>
+          <h1>你的故事，由你执导</h1>
           <p>双击画布创建节点，或拖入你的素材</p>
           <div>
             <button onClick={() => addNode("image")}>
