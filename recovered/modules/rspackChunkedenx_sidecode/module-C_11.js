@@ -1,9 +1,0 @@
-import n from "./module-vo_10.js";
-import o from "./module-Mi_10.js";
-export default function (t, r) {
-  const e = t[r];
-  if (o(e)) {
-    return undefined;
-  }
-  return n(e);
-}

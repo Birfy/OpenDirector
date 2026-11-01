@@ -1,7 +1,0 @@
-import n from "./module-Y_21.js";
-export default function (t) {
-  if (typeof t === "object" || n(t)) {
-    return t;
-  }
-  throw TypeError("Can't set " + String(t) + " as a prototype");
-}

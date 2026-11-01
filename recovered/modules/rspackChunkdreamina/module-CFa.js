@@ -1,9 +1,0 @@
-export var u = {
-  VIP_MODAL: "VIP_MODAL",
-  TEAM_VIP_MODAL: "TEAM_VIP_MODAL",
-  TEAM_SEAT_UPGRADE_CHECKOUT_MODAL: "TEAM_SEAT_UPGRADE_CHECKOUT_MODAL",
-  TEAM_CREDIT_ALLOCATION_MODAL: "TEAM_CREDIT_ALLOCATION_MODAL",
-  CREDIT_MODAL: "CREDIT_MODAL",
-  NoviceQuestionnaire: "NoviceQuestionnaire",
-  CommercialLandingModal: "CommercialLandingModal",
-};

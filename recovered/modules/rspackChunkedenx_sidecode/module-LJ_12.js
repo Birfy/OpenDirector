@@ -1,4 +1,0 @@
-import $ from "./module-Pv_13.js";
-export default /Version\/10(?:\.\d+){1,2}(?: [\w./]+)?(?: Mobile\/\w+)? Safari\//.test(
-  $,
-);

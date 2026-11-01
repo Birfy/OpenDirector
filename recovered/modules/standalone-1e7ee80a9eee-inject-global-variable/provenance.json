@@ -1,7 +1,0 @@
-{
-  "format": "unknown",
-  "strategy": "structural",
-  "modules": {
-    "1e7ee80a9eee-inject-global-variable.js": {"input": "research/prepared/standalone-1e7ee80a9eee-inject-global-variable/1e7ee80a9eee-inject-global-variable.js", "ranges": [[0,1740]], "extraction": "structural"}
-  }
-}

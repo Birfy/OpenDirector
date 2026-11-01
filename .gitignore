@@ -51,8 +51,6 @@ $RECYCLE.BIN/
 .cache/
 playwright-report/
 test-results/
-.recovery-stage-*/
-recovered.previous/
 .venv/
 __pycache__/
 *.py[cod]

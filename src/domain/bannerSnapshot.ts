@@ -1,10 +1,7 @@
 /**
- * Typed study port of module TJ, not recovered original TypeScript.
- * Evidence: research/capture/javascript/ca1fed514e5e-HomeCreate.cce29dcab8.js
- * SHA-256 d792fff43c8e9590e3835d4cff70073aa0c5c4f13fb662fa87216c8003dc46c6
- * Original UTF-8 byte interval [85718, 88644). See docs/SOURCE-MAP.md.
- * The original consumes/removes a DOM script element. This pure adapter takes
- * unknown input and reports validation failures; it never follows an action.
+ * Validate banner snapshots without reading or modifying DOM script elements.
+ * This pure adapter takes unknown input and reports validation failures;
+ * it never follows an action.
  */
 type ObjectValue = Record<string, unknown>;
 export interface BannerItem extends ObjectValue {

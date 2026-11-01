@@ -1,8 +1,0 @@
-{
-  "format": "webpack5",
-  "strategy": "structural",
-  "modules": {
-    "entry.js": {"input": "research/prepared/standalone-dafd5b92b9f0-__sidecode_runtime__.fd4721e360/dafd5b92b9f0-__sidecode_runtime__.fd4721e360.js", "ranges": [[1604,1815],[1816,1909],[1910,1944],[1945,1964]], "extraction": "structural"},
-    "module-O.js": {"input": "research/prepared/standalone-dafd5b92b9f0-__sidecode_runtime__.fd4721e360/dafd5b92b9f0-__sidecode_runtime__.fd4721e360.js", "ranges": [], "extraction": "structural"}
-  }
-}

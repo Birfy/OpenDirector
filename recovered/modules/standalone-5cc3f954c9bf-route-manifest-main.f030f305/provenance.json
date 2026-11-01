@@ -1,7 +1,0 @@
-{
-  "format": "unknown",
-  "strategy": "structural",
-  "modules": {
-    "5cc3f954c9bf-route-manifest-main.f030f305.js": {"input": "research/prepared/standalone-5cc3f954c9bf-route-manifest-main.f030f305/5cc3f954c9bf-route-manifest-main.f030f305.js", "ranges": [[0,20210]], "extraction": "structural"}
-  }
-}

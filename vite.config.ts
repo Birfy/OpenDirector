@@ -19,12 +19,8 @@ const api: Record<string, ProxyOptions> = {
   },
 };
 
-// research/ and recovered/ hold byte-exact capture and decompiled evidence:
-// roughly 37,500 files that the app never imports. Watching them made the dev
-// server spend minutes crawling on startup before answering its first request.
-const evidence = [
-  "**/research/**",
-  "**/recovered/**",
+// Machine-local toolchains and project data are not frontend source files.
+const ignoredDirectories = [
   "**/.toolchain/**",
   "**/.venv/**",
   "**/projects/**",
@@ -37,7 +33,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: api,
-    watch: { ignored: evidence },
+    watch: { ignored: ignoredDirectories },
   },
   preview: { host: "127.0.0.1", proxy: api },
 });

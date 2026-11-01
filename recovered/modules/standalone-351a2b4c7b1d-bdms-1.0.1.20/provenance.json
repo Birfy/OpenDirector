@@ -1,7 +1,0 @@
-{
-  "format": "unknown",
-  "strategy": "structural",
-  "modules": {
-    "351a2b4c7b1d-bdms-1.0.1.20.js": {"input": "research/prepared/standalone-351a2b4c7b1d-bdms-1.0.1.20/351a2b4c7b1d-bdms-1.0.1.20.js", "ranges": [[0,148043]], "extraction": "structural"}
-  }
-}

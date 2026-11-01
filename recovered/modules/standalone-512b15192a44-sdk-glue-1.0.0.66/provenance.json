@@ -1,7 +1,0 @@
-{
-  "format": "unknown",
-  "strategy": "structural",
-  "modules": {
-    "512b15192a44-sdk-glue-1.0.0.66.js": {"input": "research/prepared/standalone-512b15192a44-sdk-glue-1.0.0.66/512b15192a44-sdk-glue-1.0.0.66.js", "ranges": [[0,103292]], "extraction": "structural"}
-  }
-}

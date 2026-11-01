@@ -1,5 +1,4 @@
 /** Authored local task contract. These descriptors are not a private API client.
- * Evidence: research/canvas/features/README.md and its attributed source lines.
  * Unverified dynamic model, price, distance, brightness and resolution options require capabilities.
  */
 export type CanvasToolId =
@@ -65,7 +64,6 @@ export interface CanvasToolDefinition {
   /** Task protocol coverage. Observed UI choices can be present while the protocol remains entry-only. */
   parameterCoverage: "verified" | "partial" | "entry-only";
   fields: readonly ToolField[];
-  evidence: string;
 }
 export interface ToolSource {
   nodeId: string;
@@ -145,11 +143,7 @@ const choice = (
   options: values.map((value) => ({ value, label: value })),
   required: true,
 });
-const runtime =
-  "research/canvas/features/readable/async-canvas-feature-runtime.9b86f42393.js";
-const main = "research/canvas/readable/js/545ec3537fff-main.303f6eac20.js";
-const director = "research/canvas/features/readable/2232.9df5e1610c.js";
-const live = "docs/AI-LIVE-TESTS.md";
+
 const multiSizePresets = [
   { ratio: "1:1", width: 1200, height: 1200 },
   { ratio: "3:4", width: 1200, height: 1600 },
@@ -165,7 +159,6 @@ function tool(
   title: string,
   description: string,
   fields: readonly ToolField[],
-  evidence: string,
   options: Partial<CanvasToolDefinition> = {},
 ): CanvasToolDefinition {
   return {
@@ -179,7 +172,6 @@ function tool(
     maxSources: 1,
     parameterCoverage: "partial",
     fields,
-    evidence,
     ...options,
   };
 }
@@ -189,17 +181,12 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "图层工作台",
     "新增图层、变换、手绘蒙版、撤销与 PNG 合成。",
     [],
-    "research/canvas/features/readable/async-canvas-image-layer-board-fullscreen.928d9bf172.js:3155",
     { execution: "local-editor", parameterCoverage: "verified" },
   ),
-  tool(
-    "crop",
-    "裁剪与调色",
-    "本地裁剪、旋转、翻转和色彩调整。",
-    [],
-    `${main}:17224`,
-    { execution: "local-editor", parameterCoverage: "verified" },
-  ),
+  tool("crop", "裁剪与调色", "本地裁剪、旋转、翻转和色彩调整。", [], {
+    execution: "local-editor",
+    parameterCoverage: "verified",
+  }),
   tool(
     "smart-edit",
     "智能改图",
@@ -209,7 +196,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       prompt,
       choice("resolution", "清晰度", ["2K"]),
     ],
-    `${runtime}:6020`,
   ),
   tool(
     "outpaint",
@@ -230,29 +216,21 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       number("outputWidth", "输出宽度", 1536, 1),
       number("outputHeight", "输出高度", 1536, 1),
     ],
-    `${runtime}:4987`,
     { parameterCoverage: "verified" },
   ),
-  tool(
-    "cutout",
-    "抠图",
-    "自动识别主体或使用你提供的蒙版，输出透明背景素材。",
-    [
-      choice(
-        "selectionMode",
-        "选择方式",
-        ["auto-subject", "manual"],
-        "auto-subject",
-      ),
-    ],
-    `${runtime}:4797`,
-  ),
+  tool("cutout", "抠图", "自动识别主体或使用你提供的蒙版，输出透明背景素材。", [
+    choice(
+      "selectionMode",
+      "选择方式",
+      ["auto-subject", "manual"],
+      "auto-subject",
+    ),
+  ]),
   tool(
     "inpainting-remove",
     "消除笔",
     "用有效蒙版指定要消除的区域；填补内容依赖生成服务。",
     [],
-    `${runtime}:5264`,
   ),
   tool(
     "image-hd",
@@ -263,39 +241,26 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       dynamic("resolution", "清晰度"),
       number("detailStrength", "细节强度", 0.5, 0.01, 1, 0.01),
     ],
-    `${runtime}:5204`,
     { maxSources: 20 },
   ),
-  tool(
-    "view-control",
-    "多角度",
-    "调节相机水平角、俯仰角与距离。",
-    [
-      number("yaw", "水平角", 0),
-      number("pitch", "俯仰角", 0),
-      dynamic("distance", "距离"),
-    ],
-    `${runtime}:5075`,
-  ),
-  tool(
-    "lighting",
-    "智能打光",
-    "设置主光方向、软硬光、强度与颜色。",
-    [
-      number("yaw", "主光水平角", 0),
-      number("pitch", "主光俯仰角", 30, -90, 90),
-      dynamic("brightness", "亮度"),
-      choice("texture", "光质", ["soft", "hard"]),
-      {
-        key: "lightColor",
-        label: "光源颜色",
-        type: "color",
-        default: "#ffffff",
-        required: true,
-      },
-    ],
-    `${runtime}:5105`,
-  ),
+  tool("view-control", "多角度", "调节相机水平角、俯仰角与距离。", [
+    number("yaw", "水平角", 0),
+    number("pitch", "俯仰角", 0),
+    dynamic("distance", "距离"),
+  ]),
+  tool("lighting", "智能打光", "设置主光方向、软硬光、强度与颜色。", [
+    number("yaw", "主光水平角", 0),
+    number("pitch", "主光俯仰角", 30, -90, 90),
+    dynamic("brightness", "亮度"),
+    choice("texture", "光质", ["soft", "hard"]),
+    {
+      key: "lightColor",
+      label: "光源颜色",
+      type: "color",
+      default: "#ffffff",
+      required: true,
+    },
+  ]),
   tool(
     "layer-decompose",
     "图层分解",
@@ -317,7 +282,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       { ...prompt, hint: "按描述拆分时必须填写；智能拆分无需描述。" },
       choice("resolution", "清晰度", ["auto"]),
     ],
-    `${runtime}:5166; ${live}`,
     { parameterCoverage: "entry-only" },
   ),
   tool(
@@ -329,14 +293,12 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       dynamic("resolution", "清晰度"),
       prompt,
     ],
-    `${runtime}:4898`,
   ),
   tool(
     "product-replacement",
     "商品替换",
     "使用场景图和商品图替换主体，支持选区与提示词；原站已实测自动主体识别和 2K 结果。",
     [prompt, choice("resolution", "清晰度", ["2K", "4K"])],
-    `${runtime}:4932; ${live}`,
     { minSources: 2, maxSources: 2 },
   ),
   tool(
@@ -375,7 +337,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         hint: "仅自定义画幅使用，单位像素；服务上限未确认。",
       },
     ],
-    `${main}:16913; ${live}`,
     { parameterCoverage: "entry-only" },
   ),
   tool(
@@ -387,7 +348,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
       choice("model", "模型", ["Seedance 2.5"]),
       choice("resolution", "清晰度", ["480P", "720P", "1080P"]),
     ],
-    `${main}:17129; ${live}`,
     { parameterCoverage: "entry-only" },
   ),
   tool(
@@ -402,7 +362,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         hint: "本轮只核对 1:1；其他画幅待服务确认。",
       },
     ],
-    live,
     { maxSources: 6, parameterCoverage: "entry-only" },
   ),
   tool(
@@ -410,40 +369,33 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "图像预设",
     "三视图、连续分镜、多机位等预设由模型能力加载。",
     [dynamic("preset", "预设")],
-    `${main}:16857`,
   ),
   tool(
     "grid-split",
     "九宫格拆图",
     "在本地按可调行列网格实际裁切图片，不自动推断分镜边界。",
     [],
-    `${main}:17179`,
     { execution: "local-editor", parameterCoverage: "entry-only" },
   ),
-  tool("composition", "构图", "调整构图的独立编辑入口。", [], `${main}:17224`, {
+  tool("composition", "构图", "调整构图的独立编辑入口。", [], {
     execution: "local-editor",
     parameterCoverage: "entry-only",
   }),
-  tool(
-    "annotation",
-    "标注",
-    "矩形、椭圆、箭头、画笔与文字标注。",
-    [],
-    "research/canvas/features/readable/async-canvas-feature-overlays.778674dbae.js:16866",
-    { execution: "local-editor", parameterCoverage: "entry-only" },
-  ),
+  tool("annotation", "标注", "矩形、椭圆、箭头、画笔与文字标注。", [], {
+    execution: "local-editor",
+    parameterCoverage: "entry-only",
+  }),
   ...(
     [
-      ["video-extend", "视频延长", 16473],
-      ["video-partial-reshoot", "局部重拍", 17512],
+      ["video-extend", "视频延长"],
+      ["video-partial-reshoot", "局部重拍"],
     ] as const
-  ).map(([id, title, line]) =>
+  ).map(([id, title]) =>
     tool(
       id,
       title,
       "此功能有独立任务与能力约束，参数需由已连接服务提供。",
       [],
-      `${main}:${line}`,
       {
         category: "video",
         sources: ["video"],
@@ -472,7 +424,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         hint: "仅保存拟用工具，不会生成视频标注数据。",
       },
     ],
-    `${main}:16450; ${live}`,
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
@@ -480,7 +431,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "深度动作捕捉",
     "原站实测提供 480P / 720P；实际输出和当前报价由真实服务确定。",
     [choice("resolution", "清晰度", ["480P", "720P"])],
-    `${main}:16558; ${live}`,
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
@@ -488,7 +438,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "字幕擦除",
     "本轮原站实测没有额外设置；实际视频处理依赖真实服务。",
     [],
-    `${main}:16703; ${live}`,
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
@@ -508,7 +457,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         ],
       },
     ],
-    `${main}:16737; ${live}`,
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
@@ -516,7 +464,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "视频翻译",
     "静态代码存在候选入口，本轮原站未见；当前可用性和参数未知。",
     [],
-    `${main}:16596; ${live}`,
     { category: "video", sources: ["video"], parameterCoverage: "entry-only" },
   ),
   tool(
@@ -524,7 +471,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "视频超清",
     "视频增强有 2K 与 4K 输出路径，支持条件由服务判断。",
     [choice("resolution", "清晰度", ["2K", "4K"])],
-    `${runtime}:15350`,
     { category: "video", sources: ["video"] },
   ),
   tool(
@@ -532,16 +478,15 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "视频补帧",
     "补帧能力和输出帧率由服务提供。",
     [dynamic("fps", "输出帧率")],
-    `${main}:16680`,
     { category: "video", sources: ["video"] },
   ),
   ...(
     [
-      ["video-trim", "时长裁剪", 16582],
-      ["video-crop", "画幅裁剪", 16765],
-      ["video-frame-capture", "视频取帧", 16509],
+      ["video-trim", "时长裁剪"],
+      ["video-crop", "画幅裁剪"],
+      ["video-frame-capture", "视频取帧"],
     ] as const
-  ).map(([id, title, line]) =>
+  ).map(([id, title]) =>
     tool(
       id,
       title,
@@ -549,7 +494,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         ? "按原视频像素裁剪画幅，保留可捕获音轨，本地重编码 WebM。"
         : "打开对应的本地媒体编辑器。",
       [],
-      `${main}:${line}`,
       {
         category: "video",
         sources: ["video"],
@@ -563,7 +507,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "提取音频",
     "将视频音轨另存为音频素材；对应本轮原站「声音分离 → 分离音频」。",
     [],
-    `${main}:16624`,
     {
       category: "audio",
       sources: ["video"],
@@ -576,26 +519,18 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
     "音频分离",
     "仅保留静态候选入口。本轮未见人声/伴奏分离；视频「声音分离」实测仅为提取音频，不能据此确认此能力。",
     [],
-    `${main}:16827; ${live}`,
     {
       category: "audio",
       sources: ["video", "audio"],
       parameterCoverage: "entry-only",
     },
   ),
-  tool(
-    "audio-trim",
-    "音频裁剪",
-    "裁剪音频时长并导出新素材。",
-    [],
-    `${main}:16812`,
-    {
-      category: "audio",
-      sources: ["audio"],
-      execution: "local-editor",
-      parameterCoverage: "entry-only",
-    },
-  ),
+  tool("audio-trim", "音频裁剪", "裁剪音频时长并导出新素材。", [], {
+    category: "audio",
+    sources: ["audio"],
+    execution: "local-editor",
+    parameterCoverage: "entry-only",
+  }),
   tool(
     "director-stage",
     "导演台",
@@ -612,7 +547,6 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
         default: false,
       },
     ],
-    `${director}:28755`,
     {
       category: "director",
       execution: "local-editor",

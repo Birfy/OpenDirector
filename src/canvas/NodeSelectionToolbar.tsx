@@ -87,8 +87,7 @@ const editLabels: Partial<Record<CanvasNode["type"], string>> = {
 };
 
 /** Selection actions stay distinct from generation controls. Empty media has no post-edit toolbar.
- * Source menu identities: research/canvas/readable/js/545ec3537fff-main.303f6eac20.js:16051–17512.
- * The local editors and tool drafts implement a subset of those services; labels do not assert parity.
+ * Local editors and tool drafts keep their own capability constraints.
  */
 export function NodeSelectionToolbar({
   node,
