@@ -193,10 +193,11 @@ try {
     ).status,
     "applied",
   );
-  await fetch(api + `/api/sessions/${seedSession}`, {
+  const released = await fetch(api + `/api/creation/sessions/${seedSession}`, {
     method: "DELETE",
     headers: { "X-OpenDirector-Request": "1" },
   });
+  assert.ok(released.ok, await released.text());
   const media = [];
   for (const color of ["red", "blue"]) {
     const path = join(evidence, color + ".mp4");

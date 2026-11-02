@@ -3,6 +3,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
+from legacy_fixtures import legacy_project
 from uuid import uuid4
 
 import pytest
@@ -63,14 +64,13 @@ def fail_at(store, stage):
 
 def test_new_project_reopens_without_changing_existing_project_storage(projects):
     assert not projects.root.exists()
-    legacy = projects.local.create('Legacy', str(uuid4()))
+    legacy = legacy_project(projects.local)
     legacy_bytes = (Path(legacy['path']) / 'project.json').read_bytes()
     command = create(projects)
     reloaded = restarted(projects)
     assert_committed(reloaded, command, name='Example', cursor=1)
     assert reloaded.execute(command) == projects.receipt(command.projectId, command.commandId)
     assert len(reloaded.list_projects()['projects']) == 1
-    assert projects.local.list_projects()['projects'] == [legacy]
     assert (Path(legacy['path']) / 'project.json').read_bytes() == legacy_bytes
 
 
@@ -191,7 +191,7 @@ def test_leases_expiry_external_moves_and_closed_rename_guards(projects):
 
 
 def test_duplicate_ids_unknown_projects_and_legacy_formats_are_rejected(projects):
-    legacy = projects.local.create('Legacy', str(uuid4()))
+    legacy = legacy_project(projects.local)
     legacy_before = (Path(legacy['path']) / 'project.json').read_bytes()
     with pytest.raises(ProjectError) as error:
         projects.snapshot(legacy['id'])

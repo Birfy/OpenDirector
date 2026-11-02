@@ -38,9 +38,8 @@ const task = {
 };
 const list = () => Response.json({ tasks: [task] });
 
-// Only the legacy output conversion needs DOM decoding. Network requests,
-// deadlines, response bodies, caches and history projection remain real.
-function browser(t: TestContext, unified: boolean) {
+// Media decoding uses DOM fixtures; requests, caches and history projection remain real.
+function browser(t: TestContext) {
   const host = globalThis as unknown as Record<string, unknown>;
   class ImageFixture {
     naturalWidth = 64;
@@ -68,7 +67,7 @@ function browser(t: TestContext, unified: boolean) {
     }
   }
   const values = {
-    window: { location: { search: unified ? "" : "" } },
+    window: { location: { search: "" } },
     Image: ImageFixture,
     HTMLImageElement: ImageFixture,
     HTMLMediaElement: class {},
@@ -93,13 +92,12 @@ function browser(t: TestContext, unified: boolean) {
 }
 
 {
-  const unified = true;
-  const mode = unified ? "unified" : "workspace";
-  const prefix = unified ? "/api/creation/projects/" : "/api/projects/";
-  const assetPath = unified ? "/assets/asset/content" : "/data/";
+  const mode = "unified";
+  const prefix = "/api/creation/projects/";
+  const assetPath = "/assets/asset/content";
 
   test(`${mode}: active history list recovers from stalled headers and body`, async (t) => {
-    browser(t, unified);
+    browser(t);
     let calls = 0;
     const paths: string[] = [];
     globalThis.fetch = (async (url, options) => {
@@ -120,7 +118,7 @@ function browser(t: TestContext, unified: boolean) {
   });
 
   test(`${mode}: real history output reads recover and retain stable rows`, async (t) => {
-    browser(t, unified);
+    browser(t);
     const project = crypto.randomUUID();
     let downloads = 0;
     globalThis.fetch = (async (url, options) => {
@@ -149,7 +147,7 @@ function browser(t: TestContext, unified: boolean) {
   });
 
   test(`${mode}: failed shared downloads expire and the next poll can recover`, async (t) => {
-    browser(t, unified);
+    browser(t);
     const project = crypto.randomUUID();
     let downloads = 0;
     let healthy = false;
@@ -175,7 +173,7 @@ function browser(t: TestContext, unified: boolean) {
   });
 
   test(`${mode}: HTTP rejections stop immediately and missing files stay distinct`, async (t) => {
-    browser(t, unified);
+    browser(t);
     for (const status of [401, 404, 422]) {
       let downloads = 0;
       globalThis.fetch = (async (url) => {
@@ -210,7 +208,7 @@ function browser(t: TestContext, unified: boolean) {
   });
 
   test(`${mode}: cancelling a consumer leaves its peer's media read intact`, async (t) => {
-    browser(t, unified);
+    browser(t);
     const project = crypto.randomUUID();
     const controller = new AbortController();
     let downloads = 0;
@@ -241,15 +239,14 @@ function browser(t: TestContext, unified: boolean) {
     const rows = await peer;
     assert.equal(downloads, 1);
     assert.equal(rows[0]!.toolTask!.unavailable, false);
-    if (unified)
-      assert.equal(
-        await creationClient(project).mediaUrl("asset"),
-        rows[0]!.outputs![0]!.kind !== "text" && rows[0]!.outputs![0]!.src,
-      );
+    assert.equal(
+      await creationClient(project).mediaUrl("asset"),
+      rows[0]!.outputs![0]!.kind !== "text" && rows[0]!.outputs![0]!.src,
+    );
   });
 
   test(`${mode}: abandoning a history read cancels its status request`, async (t) => {
-    browser(t, unified);
+    browser(t);
     const controller = new AbortController();
     let calls = 0;
     let attemptSignal: AbortSignal | undefined;

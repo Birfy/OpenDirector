@@ -12,10 +12,11 @@ import httpx
 from PIL import Image
 import pytest
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_tool_assets import CreationToolAssets
+from generation_helpers import new_project, prepared as prepare_command, tasks
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.canvas import CanvasProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
@@ -125,10 +126,8 @@ class FakeOmni:
 
 @pytest.fixture
 def project(tmp_path):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4())
-    value = store.create('接续测试', str(uuid4()), session)
-    return store, value, session, CanvasProjects(store)
+    store, pid, session = new_project(tmp_path, '接续测试')
+    return store, {'id': str(pid)}, session, CreationToolAssets(store)
 
 
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
@@ -138,19 +137,21 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=64x48:d=0.5', '-f', 'lavfi', '-i', 'sine=d=0.5',
                     '-shortest', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(clip)], check=True)
     server = FakeOmni(clip.read_bytes())
-    configs = ModelConfigs(store.repository)
-    config = configs.save('video', H3['url'], H3['modelId'], 'token')
+    configs = ModelConfigs(store.local.repository)
+    config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
 
     async def generate(inputs):
-        item = canvas.create(value['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
-        task = await manager.submit(value['id'], item['id'], {'id': str(uuid4()), 'modelConfigId': config['id'],
-            'expectedRevision': item['revision'], 'inputs': {'title': '', 'promptContent': None, **inputs}}, session)
+        parameters = dict(videoMode=inputs['videoMode'])
+        task, pinned, private = prepare_command(manager, (store, value['id'], session), config,
+            prompt=inputs['prompt'], parameters=parameters, references=inputs['referenceIds'])
+        manager._launch(task, pinned, private)
         await asyncio.gather(*(job.future for job in manager.jobs.values()))
-        return next(item for item in canvas.snapshot(value['id'])['tasks'] if item['id'] == task['id'])
+        return tasks(manager, value['id'])[-1]
 
     async def run():
         nonlocal manager
-        manager = Generation(store, configs, GenerationProviders(store, httpx.MockTransport(server), poll_interval=0))
+        manager = CreationGeneration(store, configs)
+        manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server), poll_interval=0)
         first = await generate({'prompt': '灯塔在黄昏亮起', 'referenceIds': [], 'videoMode': 'first_frame'})
         assert first['status'] == 'succeeded' and first['externalTaskId'] == 'video_gen_1', (first['error'], first['errorDetails'])
         assert json.loads(server.posts[0][0]['extra_params']) == {'task': 't2va', 'aspect_ratio': '16:9'}
@@ -160,17 +161,19 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         fields, files = server.posts[1]
         assert json.loads(fields['extra_params']) == {'task': 't2va', 'continue_from': 'video_gen_1'}
         assert (fields['size'], fields['num_frames']) == ('64x48', '124') and files == []
-        assert {'role': 'continuation_source', 'transmission': 'latent'}.items() <= second['referenceInputs']['references'][0].items()
+        reference = store.snapshot(value['id']).jobs[-1].inputSnapshot.references[0]
+        assert reference.role == 'continuation' and reference.transmission == 'latent'
+        assert str(reference.asset.assetId) == first['assetId']
 
         # The server lost its cache (e.g. restarted): the failure is explicit, not a silent new clip.
         server.cached.clear()
         third = await generate({'prompt': '海浪拍岸', 'referenceIds': [second['assetId']], 'videoMode': 'continuation'})
-        assert third['status'] == 'failed' and '接续缓存' in third['error']
+        assert third['status'] == 'failed' and '接续缓存' in third['errorDetails']['message']
 
-        uploaded = canvas.assets.import_file(value['id'], str(uuid4()), 'upload.mp4', clip.read_bytes(), session)
+        uploaded = canvas.import_file(value['id'], str(uuid4()), 'upload.mp4', clip.read_bytes(), session)
         with pytest.raises(ProjectError, match='不能接续'):
             await generate({'prompt': '接着上传的视频', 'referenceIds': [uploaded['id']], 'videoMode': 'continuation'})
-        with pytest.raises(ProjectError, match='需要引用上一段'):
+        with pytest.raises(ProjectError, match='Continuation requires one prior video'):
             await generate({'prompt': '没有上一段', 'referenceIds': [], 'videoMode': 'continuation'})
         await manager.close()
 
@@ -188,27 +191,26 @@ def test_other_models_keep_rejecting_video_references(project):
 
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='media fixtures require ffmpeg')
 def test_requested_length_and_canvas_reach_the_h3_request(project, tmp_path):
-    store, value, session, canvas = project
+    store, value, session, _ = project
     clip = tmp_path / 'clip.mp4'
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=64x48:d=0.5', '-pix_fmt', 'yuv420p', str(clip)], check=True)
     server = FakeOmni(clip.read_bytes())
-    configs = ModelConfigs(store.repository)
+    configs = ModelConfigs(store.local.repository)
     config = configs.save('video', H3['url'], H3['modelId'], 'token', connection_type='self_hosted', protocol='vllm_omni', auth_mode='bearer')
-
     async def run():
-        manager = Generation(store, configs, GenerationProviders(store, httpx.MockTransport(server), poll_interval=0))
-        item = canvas.create(value['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
-        task = await manager.submit(value['id'], item['id'], {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': item['revision'],
-            'inputs': {'title': '', 'prompt': '雨夜街头', 'referenceIds': [], 'videoMode': 'first_frame', 'durationSeconds': 10, 'aspectRatio': '9:16'}}, session)
+        manager = CreationGeneration(store, configs)
+        manager.provider = GenerationProviders(manager.store, httpx.MockTransport(server), poll_interval=0)
+        task, pinned, private = prepare_command(manager, (store, value['id'], session), config, prompt='雨夜街头',
+            parameters=dict(videoMode='first_frame', durationSeconds=10, aspectRatio='9:16'))
+        manager._launch(task, pinned, private)
         await asyncio.gather(*(job.future for job in manager.jobs.values()))
-        done = next(item for item in canvas.snapshot(value['id'])['tasks'] if item['id'] == task['id'])
-        assert done['status'] == 'succeeded', (done['error'], done['errorDetails'])
+        done = tasks(manager, value['id'])[-1]
+        assert done['status'] == 'succeeded', done['errorDetails']
         assert (done['parameters']['duration'], done['parameters']['ratio']) == (10, '9:16')
-        # The node keeps only its generation inputs.
-        node = next(node for node in canvas.snapshot(value['id'])['canvas']['nodes'] if node['id'] == item['id'])
-        assert 'durationSeconds' not in node and node['prompt'] == '雨夜街头'
+        intent = store.snapshot(value['id']).generationSpecs[-1]
+        assert intent.parameters.durationSeconds == 10 and intent.prompt == '雨夜街头'
         fields, _ = server.posts[0]
-        assert fields['num_frames'] == str(h3_frames(10)) and json.loads(fields['extra_params']) == {'task': 't2va', 'aspect_ratio': '9:16'}
+        assert fields['num_frames'] == str(h3_frames(10))
+        assert fields['size'] == '480x832' and json.loads(fields['extra_params']) == {'task': 't2va'}
         await manager.close()
-
     asyncio.run(run())

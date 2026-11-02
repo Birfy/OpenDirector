@@ -6,7 +6,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from generation_helpers import new_project, prepared
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.video_output import apply_video_resolution, h3_output_size
@@ -14,7 +15,6 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.vllm_omni import VllmOmniGeneration
-from opendirector_api.models import GenerateNode
 
 
 @pytest.mark.parametrize('resolution, ratio, expected', [
@@ -29,23 +29,14 @@ def test_native_h3_resolutions_use_valid_buckets_and_32_pixel_alignment(resoluti
 
 
 def prepare(tmp_path, *, resolution=None, model='FastH3-Omni-3090', references=(), duration_seconds=None):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4())
-    project = store.create('输出分辨率', str(uuid4()), session)
+    project = new_project(tmp_path)
     configs = ModelConfigs(tmp_path)
     config = configs.save('video', 'http://model.test/v1', model, '', connection_type='self_hosted')
-    class Provider:
-        def validate(self, *args): pass
-    manager = Generation(store, configs, Provider())
-    node = manager.canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
-    payload = {'id': str(uuid4()), 'expectedRevision': node['revision'], 'modelConfigId': config['id'],
-        'inputs': {'prompt': '山间日出', 'referenceIds': list(references), 'videoMode': 'reference', 'aspectRatio': '16:9'}}
-    if resolution is not None: payload['inputs']['resolution'] = resolution
-    if duration_seconds is not None: payload['inputs']['durationSeconds'] = duration_seconds
-    # Exercise the same API schema and input extraction as the real route.
-    request = GenerateNode.model_validate(payload).model_dump(mode='json', exclude_unset=True)
-    task, _, private = manager._prepare(project['id'], node['id'], request, session)
-    return store, task, private
+    runner = CreationGeneration(project[0], configs)
+    parameters = dict(videoMode='reference', aspectRatio='16:9', resolution='auto' if resolution in (None, '自动') else resolution)
+    if duration_seconds is not None: parameters['durationSeconds'] = duration_seconds
+    task, _, private = prepared(runner, project, config, parameters=parameters, references=references, prompt='山间日出')
+    return runner.store, task, private
 
 
 @pytest.mark.parametrize('seconds', [4, 7, 10, 15])
@@ -78,10 +69,10 @@ def test_panel_duration_survives_api_receipt_and_actual_video_request(tmp_path, 
 
 
 @pytest.mark.parametrize('resolution', [None, '自动', 'auto'])
-def test_legacy_and_automatic_requests_keep_fasth3_480p_default(tmp_path, resolution):
+def test_automatic_requests_keep_fasth3_480p_default(tmp_path, resolution):
     _, task, _ = prepare(tmp_path, resolution=resolution)
     assert task['parameters']['size'] == '832x480'
-    assert 'resolution' not in task['parameters']
+    assert task['parameters']['resolution'] == '480p'
 
 
 @pytest.mark.parametrize('resolution, expected', [('480P', '832x480'), ('768P', '1344x768')])
@@ -134,7 +125,7 @@ def test_explicit_ratio_wins_over_references_and_automatic_fit_prefers_video():
 
 @pytest.mark.parametrize('resolution', ['720P', '1080P', '4K'])
 def test_unsupported_h3_resolutions_are_rejected_before_task_acceptance(tmp_path, resolution):
-    with pytest.raises(ProjectError, match='不支持所选分辨率'):
+    with pytest.raises(ProjectError, match='Unsupported output resolution'):
         prepare(tmp_path, resolution=resolution)
     assert not list(tmp_path.glob('projects/*/tasks/*.json'))
 

@@ -8,7 +8,6 @@ import httpx
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, trust_environment
 
 from opendirector.domain.projects import ProjectError
-from opendirector.integrations.reference_inputs import reference_content  # noqa: F401  # Re-exported for tests.
 from opendirector.integrations.generation_errors import checked, provider_failure, transport_failure
 
 
@@ -22,8 +21,6 @@ def chat_payload(config: dict, messages: list[dict], thinking: str) -> dict:
     if len(json.dumps(value, ensure_ascii=False).encode()) > 48 * 1024 * 1024:
         raise ProjectError("对话及参考图片过大，请在新项目中继续或减少参考图片。", 413)
     return value
-
-
 
 
 class ChatCompletions:

@@ -15,7 +15,6 @@ import pytest
 from opendirector.application.creation_canvas import asset_ref
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from opendirector.application.generation import Generation
 from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -46,8 +45,7 @@ def setup(project, kind, parameters, handler, *, model='fixture', protocol='open
     configs = ModelConfigs(store.local.repository)
     config = configs.save('agent' if kind == 'text' else kind, url, model, 'fixture-key' if protocol == 'volcengine' else '',
                           connection_type='self_hosted', protocol=protocol, auth_mode='bearer' if protocol == 'volcengine' else 'none', video_capabilities=caps)
-    legacy = Generation(store.local, configs)
-    runner = CreationGeneration(store, configs, legacy)
+    runner = CreationGeneration(store, configs)
     runner.provider = GenerationProviders(runner.store, transport=httpx.MockTransport(handler), poll_interval=0)
     item, spec = media(project, kind)
     updated = spec.model_copy(update={'prompt': 'Make an output', 'modelConfigId': UUID(config['id']), 'parameters': type(spec.parameters).model_validate(parameters)})

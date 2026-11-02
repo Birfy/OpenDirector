@@ -72,6 +72,10 @@ async function crop(itemId) {
 }
 async function apply() {
   await page.getByRole("button", { name: "应用编辑", exact: true }).click();
+  // Persisted state can precede the acknowledgement that clears this edit.
+  await page
+    .getByRole("combobox", { name: "裁剪比例" })
+    .waitFor({ state: "hidden" });
 }
 try {
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
@@ -214,6 +218,9 @@ try {
     .getByLabel("图层文字内容", { exact: true })
     .fill("Crop then layers");
   await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  await page
+    .getByRole("button", { name: "应用到画布", exact: true })
+    .waitFor({ state: "hidden" });
   snapshot = await until((s) =>
     s.canvasItems
       .find((i) => i.id === copy.id)

@@ -12,7 +12,6 @@ from uuid import UUID
 import os
 import time
 
-from filelock import Timeout
 from pydantic import ValidationError, model_validator
 
 from opendirector.domain.creation.base import Contract, Digest, ObjectVersion, digest
@@ -211,8 +210,6 @@ class CreationProjects:
         project_id = identifier(str(project_id))
         if project_id in self._blocked:
             raise ProjectError('工程提交需要恢复；请检查磁盘及工程文件后重试。', 409, code='storage_unavailable')
-        if db.execute('SELECT 1 FROM renames WHERE id=?', (project_id,)).fetchone():
-            raise ProjectError('工程存在未恢复的重命名，原文件已保留。', 409, code='storage_unavailable')
         grouped, unsupported, conflicts, _ = self._scan()
         if project_id in conflicts:
             raise ProjectError('projects 中存在同标识工程，请移走重复目录后重试。', 409)
@@ -268,11 +265,6 @@ class CreationProjects:
     def _closed(self, db, project_id, snapshot):
         if db.execute('SELECT 1 FROM sessions WHERE project_id=? AND expires>?', (str(project_id), time.time())).fetchone():
             raise ProjectError('请先保存并关闭工程后再重命名。', 409)
-        try:
-            with self.local.chat_lock(str(project_id)):
-                pass
-        except Timeout:
-            raise ProjectError('工程仍在生成回复，请先停止回复。', 409) from None
         if any(job.status in {'queued', 'running'} for job in snapshot.jobs):
             raise ProjectError('工程仍在生成素材，请等待或取消任务后再重命名。', 409)
         path, _ = self._find(db, project_id)

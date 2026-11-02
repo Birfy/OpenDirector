@@ -9,7 +9,6 @@ import pytest
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.creation_history import CreationHistory
-from opendirector.application.generation import Generation
 from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -52,7 +51,7 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     config = configs.save('image', 'http://127.0.0.1:12345/v1', 'test-image', '',
         connection_type='self_hosted', protocol='openai', auth_mode='none')
     provider = Images()
-    runner = CreationGeneration(store, configs, Generation(store.local, configs, provider), provider)
+    runner = CreationGeneration(store, configs, provider)
     source, a1 = text_material(project, 'A', 'first source version')
     target, spec = media(project, 'image', title='B')
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)],
@@ -192,7 +191,7 @@ async def test_unknown_submission_is_never_automatically_repeated_on_recovery_or
     assert job.recovery == 'review' and not job.resumeAllowed
     await runner.recover(str(pid), str(job.id))
     await runner.close()
-    second = CreationGeneration(store, runner.configs, Generation(store.local, runner.configs, provider), provider)
+    second = CreationGeneration(store, runner.configs, provider)
     await second.start()
     assert len(provider.calls) == 1
     assert not store.snapshot(pid).results
@@ -236,7 +235,7 @@ async def test_complete_bytes_recover_locally_after_registration_failure_without
     assert failed.recovery == 'local' and failed.resumeAllowed
     await runner.close()
     reopened = CreationProjects(LocalProjects(store.local.repository))
-    second = CreationGeneration(reopened, runner.configs, Generation(store.local, runner.configs, provider), provider)
+    second = CreationGeneration(reopened, runner.configs, provider)
     await second.start()
     await drain(second)
     done = reopened.snapshot(pid)
@@ -269,9 +268,7 @@ async def test_interrupted_remote_video_resumes_original_external_id_after_resta
     configs = ModelConfigs(store.local.repository)
     config = configs.save('video', 'http://127.0.0.1:12345/v1', 'MiniMax-H3', '', connection_type='self_hosted', protocol='vllm_omni', auth_mode='none')
     provider = Remote()
-    legacy = Generation(store.local, configs, provider)
-    runner = CreationGeneration(store, configs, legacy, provider)
-    assert runner.limit is legacy.limit and runner.remote_limits is legacy.remote_limits
+    runner = CreationGeneration(store, configs, provider)
     item, spec = media(project, 'video')
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)],
         spec=spec.model_copy(update={'modelConfigId': UUID(config['id']), 'prompt': 'A blue scene'})).status == 'applied'
@@ -282,7 +279,7 @@ async def test_interrupted_remote_video_resumes_original_external_id_after_resta
     assert interrupted.recovery == 'remote' and interrupted.resumeAllowed
     await runner.close()
     reopened = CreationProjects(LocalProjects(store.local.repository))
-    second = CreationGeneration(reopened, configs, Generation(store.local, configs, provider), provider)
+    second = CreationGeneration(reopened, configs, provider)
     await second.start()
     await drain(second)
     final = reopened.snapshot(pid)
@@ -345,7 +342,7 @@ async def test_two_runtime_owners_cannot_submit_the_same_durable_job_twice(proje
     _, receipt = await submit(first, project, spec.id, item.id)
     await asyncio.wait_for(provider.started.wait(), 3)
     second = CreationGeneration(CreationProjects(LocalProjects(store.local.repository)), first.configs,
-        Generation(store.local, first.configs, provider), provider)
+        provider)
     await second.recover(str(pid), str(receipt.jobIds[0]))
     await drain(second)
     assert len(provider.calls) == 1
@@ -408,7 +405,7 @@ async def test_batch_results_are_presented_without_execution_nodes_and_hidden_ba
     config = configs.save('image', 'http://127.0.0.1:12345/v1', 'test-image', '',
         connection_type='self_hosted', protocol='openai', auth_mode='none')
     provider = HeldImages()
-    runner = CreationGeneration(store, configs, Generation(store.local, configs, provider), provider)
+    runner = CreationGeneration(store, configs, provider)
     item, spec = media(project, 'image')
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)],
         spec=spec.model_copy(update={'modelConfigId': UUID(config['id']), 'prompt': 'A batch of images'})).status == 'applied'

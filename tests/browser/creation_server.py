@@ -152,6 +152,19 @@ def health():
                 selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls)
 
 
+@app.post('/api/creation-test-legacy-projects')
+async def legacy_fixture(request: Request):
+    import json
+    from opendirector.domain.projects import identifier, project_name
+    value = await request.json()
+    project_id, name = identifier(value['id']), project_name(value['name'])
+    directory = root / 'projects' / name
+    directory.mkdir(parents=True, exist_ok=False)
+    (directory / 'project.json').write_text(json.dumps(dict(formatVersion=1, id=project_id, name=name)))
+    (directory / 'conversation.json').write_text('{"version":1,"messages":[],"draft":"preserve"}')
+    return dict(id=project_id, name=name, path=str(directory))
+
+
 @app.post('/api/creation-test-gate')
 async def gate(request: Request):
     value = await request.json()

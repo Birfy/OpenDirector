@@ -3,12 +3,12 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from filelock import Timeout
 from starlette.concurrency import run_in_threadpool
@@ -16,40 +16,21 @@ from starlette.concurrency import run_in_threadpool
 from opendirector.domain.projects import ProjectError, identifier
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.settings import GeneralSettings, GeneralSettingsPatch
-from opendirector.domain.assets import MAX_ASSET_BYTES, ProjectAsset
-from opendirector.application.generation import Generation
 from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
-from opendirector.application.chat_references import validate_chat_references
+from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
-from opendirector_api.creation import creation_routes
-from opendirector_api.library import library_routes
-from opendirector.infrastructure.model_configs import ModelConfigs
-from opendirector.infrastructure.model_configs import connection_fields, model_fields
+from opendirector.infrastructure.model_configs import ModelConfigs, connection_fields, model_fields
 from opendirector.domain.input_rules import input_rules
 from opendirector.integrations.model_capabilities import read_service_models, read_video_capabilities
-from opendirector.infrastructure.canvas_versions import apply_version, node_history
-from opendirector_api.models import ReferenceSourceBind, ApplyCanvasVersion
-from opendirector_api.models import AssetBatchDelete, AssetSelection
-from opendirector_api.chat import Chat
-from opendirector_api.project_creation import ProjectCreation
-from opendirector_api.models import AssetDelete, AssetProbe, AssetUpdate, ChatRequest, Conversation, Draft, GenerateNode, ModelConfigInput, ModelConfigPublic, NodeCreate, NodePatch, NodeText, ProjectCreate, ProjectRename, Session, SessionClose, TextAssetCreate
-from opendirector_api.models import ProjectFromMessage
-from opendirector_api.models import ToolTaskCreate, ToolPlacement, ImageSelectionCreate
-from opendirector_api.models import CanvasArrange, CanvasHistoryAction, CanvasMove, CanvasRemove, ChatReferenceValidation, CanvasConnect, CanvasDisconnect
-from opendirector_api.models import AgentModelTest, ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput
-from opendirector.integrations.chat_completions import chat_payload
-
-
-async def asset_bytes(request: Request) -> bytes:
-    data = bytearray()
-    async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > MAX_ASSET_BYTES:
-            raise ProjectError("素材超过 50 MB。", 413)
-    return bytes(data)
+from opendirector.integrations.chat_completions import ChatCompletions, chat_payload
+from opendirector_api.creation import creation_routes
+from opendirector_api.library import library_routes
+from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
+    ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
+    ToolTaskCreate, ToolPlacement, ImageSelectionCreate)
 
 
 def create_app(store: LocalProjects | None = None, chat_provider=None, generation_provider=None) -> FastAPI:
@@ -57,26 +38,19 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     if store is None:
         store = LocalProjects(repository)
     model_configs = ModelConfigs(store.repository)
-    generation = Generation(store, model_configs, generation_provider)
+    settings = AppSettings(store.repository)
     creation_projects = CreationProjects(store)
-    creation_generation = CreationGeneration(creation_projects, model_configs, generation, generation_provider)
-    canvas = generation.canvas
-    assets = canvas.assets
-    tools = ToolTasks(store, model_configs, assets)
+    creation_generation = CreationGeneration(creation_projects, model_configs, generation_provider)
     creation_tools = ToolTasks(store, model_configs, CreationToolAssets(creation_projects), projects=creation_projects)
-    chat = Chat(store, model_configs, chat_provider, generation)
-    project_creation = ProjectCreation(store, model_configs, chat.provider)
+    model_tester = chat_provider or ChatCompletions()
 
     @asynccontextmanager
     async def lifespan(app):
-        await generation.start()
         await creation_generation.start()
         try:
             yield
         finally:
-            await tools.close()
             await creation_tools.close()
-            await generation.close()
             await creation_generation.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.0", lifespan=lifespan)
@@ -127,11 +101,11 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.get('/api/settings', response_model=GeneralSettings)
     def get_settings():
-        return generation.settings.get()
+        return settings.get()
 
     @app.patch('/api/settings', response_model=GeneralSettings)
     def update_settings(value: GeneralSettingsPatch):
-        return generation.settings.update(value.model_dump())
+        return settings.update(value.model_dump())
 
     @app.delete('/api/model-services/{config_id}', status_code=204)
     def delete_model_service(config_id: UUID):
@@ -171,7 +145,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         received = False
         try:
             async with asyncio.timeout(30):
-                async for event in chat.provider.stream(config, payload):
+                async for event in model_tester.stream(config, payload):
                     if event['type'] == 'delta' and event['text'].strip():
                         received = True
         except TimeoutError:
@@ -211,145 +185,9 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def delete_model_config(config_id: UUID):
         model_configs.delete(str(config_id))
 
-    @app.get("/api/projects")
-    def projects():
-        return store.list_projects()
-
-    @app.post("/api/projects")
-    def create(value: ProjectCreate, x_opendirector_session: str = Header()):
-        return store.create(value.name, str(value.id), identifier(x_opendirector_session))
-
-    @app.post("/api/projects/from-message")
-    async def create_from_message(value: ProjectFromMessage, x_opendirector_session: str = Header()):
-        return await project_creation.create(value, identifier(x_opendirector_session))
-
-    @app.post("/api/projects/{project_id}/open")
-    def open_project(project_id: str, x_opendirector_session: str = Header()):
-        return store.open(project_id, identifier(x_opendirector_session))
-
-    @app.put("/api/sessions/{session}")
-    def heartbeat(session: str, value: Session):
-        store.heartbeat(identifier(session), str(value.projectId))
-        return {"ok": True}
-
-    @app.delete("/api/sessions/{session}")
-    def close_session(session: str):
-        store.release(identifier(session))
-        return {"ok": True}
-
-    @app.post("/api/sessions/{session}/close")
-    def close_with_conversation(session: str, value: SessionClose):
-        saved = store.close_with_conversation(str(value.projectId), value.conversation.model_dump(mode="json"), identifier(session))
-        return {"ok": True, "draftSaved": saved}
-
-    @app.patch("/api/projects/{project_id}")
-    def rename(project_id: str, value: ProjectRename):
-        return store.rename(project_id, value.name, value.expectedName)
-
-    @app.get("/api/projects/{project_id}/assets", response_model=list[ProjectAsset])
-    def project_assets(project_id: UUID, current_only: bool = False):
-        if current_only:
-            snapshot = canvas.snapshot(str(project_id))
-            available = set(snapshot['availableAssetIds'])
-            return [asset for asset in snapshot['assets'] if asset['id'] in available]
-        return assets.list(str(project_id))
-
-    @app.get("/api/projects/{project_id}/canvas")
-    def get_canvas(project_id: UUID):
-        return canvas.snapshot(str(project_id))
-
-    @app.post('/api/projects/{project_id}/chat-references/validate')
-    def check_chat_references(project_id: UUID, value: ChatReferenceValidation):
-        fields = value.model_dump(mode='json')
-        return validate_chat_references(store, str(project_id), fields['content'], fields['selections'])
-
-
-    @app.post("/api/projects/{project_id}/assets/{asset_id}/probe-audio", response_model=ProjectAsset)
-    def probe_video_audio(project_id: UUID, asset_id: UUID, value: AssetProbe, x_opendirector_session: str = Header()):
-        return assets.probe_video_audio(str(project_id), str(asset_id), value.expectedRevision, identifier(x_opendirector_session))
-
-
-    @app.post('/api/projects/{project_id}/canvas/arrange')
-    def arrange_canvas(project_id: UUID, value: CanvasArrange, x_opendirector_session: str = Header()):
-        return canvas.arrange(str(project_id), value.expectedRevision, identifier(x_opendirector_session), value.model_dump(mode='json')['heights'])
-
-    @app.post('/api/projects/{project_id}/canvas/history/{direction}')
-    def canvas_history(project_id: UUID, direction: str, value: CanvasHistoryAction, x_opendirector_session: str = Header()):
-        return canvas.history(str(project_id), direction, str(value.entryId), str(value.id), identifier(x_opendirector_session))
-
-    @app.put('/api/projects/{project_id}/canvas/files/{asset_id}')
-    async def import_canvas_file(project_id: UUID, asset_id: UUID, request: Request, x_asset_name: str = Header(), x_canvas_operation: UUID = Header(), x_opendirector_session: str = Header()):
-        data = await asset_bytes(request)
-        return await run_in_threadpool(canvas.import_file, str(project_id), str(asset_id), unquote(x_asset_name), data, identifier(x_opendirector_session), str(x_canvas_operation))
-
-    @app.post('/api/projects/{project_id}/canvas/move')
-    def move_canvas_nodes(project_id: UUID, value: CanvasMove, x_opendirector_session: str = Header()):
-        return canvas.move_many(str(project_id), value.model_dump(mode='json')['nodes'], identifier(x_opendirector_session))
-
-    @app.post('/api/projects/{project_id}/canvas/remove')
-    def remove_canvas_nodes(project_id: UUID, value: CanvasRemove, x_opendirector_session: str = Header()):
-        return canvas.remove_many(str(project_id), value.model_dump(mode='json')['nodes'], identifier(x_opendirector_session))
-
-    @app.post('/api/projects/{project_id}/canvas/connections')
-    def connect_canvas_nodes(project_id: UUID, value: CanvasConnect, x_opendirector_session: str = Header()):
-        return canvas.connect(str(project_id), value.model_dump(mode='json'), identifier(x_opendirector_session))
-
-    @app.delete('/api/projects/{project_id}/canvas/nodes/{node_id}/references/{source_id}')
-    def disconnect_canvas_nodes(project_id: UUID, node_id: UUID, source_id: UUID, value: CanvasDisconnect, x_opendirector_session: str = Header()):
-        return canvas.disconnect(str(project_id), str(node_id), str(source_id), value.expectedRevision, identifier(x_opendirector_session))
-
-    @app.post("/api/projects/{project_id}/canvas/nodes")
-    def create_node(project_id: UUID, value: NodeCreate, x_opendirector_session: str = Header()):
-        node = value.model_dump(mode="json", exclude_none=True)
-        return canvas.create(str(project_id), node, identifier(x_opendirector_session), remember=True)
-
-    @app.patch("/api/projects/{project_id}/canvas/nodes/{node_id}")
-    def patch_node(project_id: UUID, node_id: UUID, value: NodePatch, x_opendirector_session: str = Header()):
-        changes = value.model_dump(mode="json", exclude_unset=True)
-        return canvas.patch(str(project_id), str(node_id), changes, identifier(x_opendirector_session), remember=True)
-
-    @app.post('/api/projects/{project_id}/canvas/nodes/{node_id}/references/expand')
-    def expand_node_references(project_id: UUID, node_id: UUID, value: AssetProbe, x_opendirector_session: str = Header()):
-        return canvas.expand_references(str(project_id), str(node_id), value.expectedRevision, identifier(x_opendirector_session))
-
-    @app.get('/api/projects/{project_id}/canvas/nodes/{node_id}/versions')
-    def canvas_node_versions(project_id: UUID, node_id: UUID):
-        return node_history(canvas, str(project_id), str(node_id))
-
-    @app.post('/api/projects/{project_id}/canvas/nodes/{node_id}/versions/apply')
-    def apply_canvas_version(project_id: UUID, node_id: UUID, value: ApplyCanvasVersion, x_opendirector_session: str = Header()):
-        return apply_version(canvas, str(project_id), str(node_id), str(value.assetId),
-            value.expectedRevision, value.fingerprint, identifier(x_opendirector_session))
-
-    @app.delete("/api/projects/{project_id}/canvas/nodes/{node_id}", status_code=204)
-    def delete_node(project_id: UUID, node_id: UUID, x_opendirector_session: str = Header()):
-        canvas.remove(str(project_id), str(node_id), identifier(x_opendirector_session), remember=True)
-
-    @app.put("/api/projects/{project_id}/canvas/nodes/{node_id}/text")
-    def save_node_text(project_id: UUID, node_id: UUID, value: NodeText, x_opendirector_session: str = Header()):
-        if not value.name.strip().lower().endswith((".txt", ".md")):
-            raise ProjectError("文本名称需以 .txt 或 .md 结尾。")
-        return canvas.save_text(str(project_id), str(node_id), str(value.id), value.text, value.name, identifier(x_opendirector_session),
-                                expected_revision=value.expectedRevision, discard_inputs=value.discardInputs, remember=True)
-
-    @app.put("/api/projects/{project_id}/canvas/nodes/{node_id}/file")
-    async def upload_node_file(project_id: UUID, node_id: UUID, request: Request, x_asset_name: str = Header(), x_asset_id: UUID = Header(), x_opendirector_session: str = Header(), x_node_revision: int | None = Header(default=None, ge=1), x_discard_inputs: bool = Header(default=False)):
-        data = await asset_bytes(request)
-        return await run_in_threadpool(canvas.upload, str(project_id), str(node_id), str(x_asset_id), unquote(x_asset_name), data,
-                                       identifier(x_opendirector_session), expected_revision=x_node_revision, discard_inputs=x_discard_inputs)
-
-    @app.put('/api/projects/{project_id}/canvas/nodes/{node_id}/source')
-    def bind_reference_source(project_id: UUID, node_id: UUID, value: ReferenceSourceBind, x_opendirector_session: str = Header()):
-        return canvas.bind_reference_source(str(project_id), str(node_id), str(value.assetId), value.fingerprint,
-            value.expectedRevision, identifier(x_opendirector_session), discard_inputs=value.discardInputs)
-
-    @app.post("/api/projects/{project_id}/canvas/nodes/{node_id}/generate")
-    async def generate_node(project_id: UUID, node_id: UUID, value: GenerateNode, x_opendirector_session: str = Header()):
-        return await generation.submit(str(project_id), str(node_id), value.model_dump(mode="json", exclude_unset=True), identifier(x_opendirector_session))
-
     @app.get('/api/tools')
     def tool_catalog():
-        return tools.catalog()
+        return creation_tools.catalog()
 
     def register_selection_route(service, prefix):
         @app.post(prefix)
@@ -377,7 +215,6 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                         task.cancel()
                 await asyncio.gather(work, disconnect, return_exceptions=True)
 
-    register_selection_route(tools, '/api/projects/{project_id}/image-selections')
     register_selection_route(creation_tools, '/api/creation/projects/{project_id}/image-selections')
 
     def register_tool_routes(service, prefix):
@@ -401,94 +238,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         def placement(project_id: UUID, task_id: UUID, value: ToolPlacement, x_opendirector_session: str = Header()):
             return service.placement(str(project_id), str(task_id), value.state, identifier(x_opendirector_session), policy=value.policy)
 
-    register_tool_routes(tools, '/api/projects/{project_id}/tool-tasks')
     register_tool_routes(creation_tools, '/api/creation/projects/{project_id}/tool-tasks')
-
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/cancel")
-    async def cancel_generation(project_id: UUID, task_id: UUID, x_opendirector_session: str = Header()):
-        return await generation.cancel(str(project_id), str(task_id), identifier(x_opendirector_session))
-
-    @app.post('/api/projects/{project_id}/tasks/{task_id}/recover')
-    async def recover_generation(project_id: UUID, task_id: UUID, x_opendirector_session: str = Header()):
-        return await generation.recover(str(project_id), str(task_id), identifier(x_opendirector_session))
-
-    @app.post("/api/projects/{project_id}/assets/text", response_model=ProjectAsset)
-    def create_text_asset(project_id: UUID, value: TextAssetCreate, x_opendirector_session: str = Header()):
-        if not value.name.strip().lower().endswith((".txt", ".md")):
-            raise ProjectError("文本资产名称需以 .txt 或 .md 结尾。")
-        return assets.import_file(str(project_id), str(value.id), value.name, value.text.encode("utf-8"), identifier(x_opendirector_session), source="manual")
-
-    @app.put("/api/projects/{project_id}/assets/{asset_id}", response_model=ProjectAsset)
-    async def import_project_asset(project_id: UUID, asset_id: UUID, request: Request, x_asset_name: str = Header(), x_opendirector_session: str = Header()):
-        data = await asset_bytes(request)
-        return await run_in_threadpool(assets.import_file, str(project_id), str(asset_id), unquote(x_asset_name), data, identifier(x_opendirector_session))
-
-    @app.patch("/api/projects/{project_id}/assets/{asset_id}", response_model=ProjectAsset)
-    def update_project_asset(project_id: UUID, asset_id: UUID, value: AssetUpdate, x_opendirector_session: str = Header()):
-        return assets.update(str(project_id), str(asset_id), value.model_dump(mode="json"), identifier(x_opendirector_session))
-
-    @app.get('/api/projects/{project_id}/assets/usage')
-    def project_asset_usage(project_id: UUID, x_opendirector_session: str = Header()):
-        return assets.usage(str(project_id), identifier(x_opendirector_session))
-
-    @app.post('/api/projects/{project_id}/assets/deletion-preview')
-    def preview_assets_deletion(project_id: UUID, value: AssetSelection, x_opendirector_session: str = Header()):
-        return assets.batch_deletion_preview(str(project_id), list(map(str, value.assetIds)), identifier(x_opendirector_session))
-
-    @app.post('/api/projects/{project_id}/assets/delete')
-    def delete_project_assets(project_id: UUID, value: AssetBatchDelete, x_opendirector_session: str = Header()):
-        return assets.delete_many(str(project_id), list(map(str, value.assetIds)), value.expectedState, value.clearHistory, identifier(x_opendirector_session))
-
-    @app.get("/api/projects/{project_id}/assets/{asset_id}/deletion")
-    def preview_asset_deletion(project_id: UUID, asset_id: UUID, x_opendirector_session: str = Header()):
-        return assets.deletion_preview(str(project_id), str(asset_id), identifier(x_opendirector_session))
-
-    @app.delete("/api/projects/{project_id}/assets/{asset_id}", status_code=204)
-    def delete_project_asset(project_id: UUID, asset_id: UUID, value: AssetDelete | None = None, x_opendirector_session: str = Header()):
-        assets.delete(str(project_id), str(asset_id), identifier(x_opendirector_session),
-                      expected_state=value.expectedState if value else None, clear_history=value.clearHistory if value else False)
-
-    @app.get("/api/data/{owner}/conversation", response_model=Conversation)
-    def conversation(owner: UUID):
-        return store.conversation(str(owner))
-
-    @app.put("/api/data/{owner}/conversation")
-    def save_conversation(owner: UUID, value: Conversation, x_opendirector_session: str = Header()):
-        store.save_conversation(str(owner), value.model_dump(mode="json"), identifier(x_opendirector_session))
-        return {"ok": True}
-
-    @app.patch("/api/data/{owner}/draft")
-    def save_draft(owner: UUID, value: Draft, x_opendirector_session: str = Header()):
-        store.save_draft(str(owner), value.model_dump(mode="json"), identifier(x_opendirector_session))
-        return {"ok": True}
-
-    @app.post("/api/data/{owner}/chat")
-    async def chat_turn(owner: UUID, value: ChatRequest, x_opendirector_session: str = Header()):
-        turn = await run_in_threadpool(chat.prepare, str(owner), x_opendirector_session, value)
-        return StreamingResponse(chat.stream(turn), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-    @app.post("/api/data/{owner}/chat/{turn_id}/stop")
-    async def stop_chat(owner: UUID, turn_id: UUID, x_opendirector_session: str = Header()):
-        chat.stop(str(owner), str(turn_id), identifier(x_opendirector_session))
-        return {"ok": True}
-
-    @app.put("/api/data/{owner}/assets/{asset_id}")
-    async def save_asset(owner: str, asset_id: str, request: Request, x_opendirector_session: str = Header(),
-                         x_asset_name: str = Header(), x_reuse_asset_id: UUID | None = Header(default=None), x_target_node_id: UUID | None = Header(default=None)):
-        data = await asset_bytes(request)
-        return await run_in_threadpool(assets.import_file, owner, asset_id, unquote(x_asset_name), bytes(data), identifier(x_opendirector_session),
-                                       as_reference=True, reuse_asset_id=str(x_reuse_asset_id) if x_reuse_asset_id else None,
-                                       target_node_id=str(x_target_node_id) if x_target_node_id else None)
-
-    @app.get("/api/data/{owner}/assets/{asset_id}")
-    def asset(owner: str, asset_id: str):
-        data, metadata = store.asset(owner, asset_id)
-        return Response(data, media_type=metadata["type"] or "application/octet-stream", headers={"X-Content-Type-Options": "nosniff"})
-
-    @app.delete("/api/data/{owner}/assets/{asset_id}")
-    def remove_asset(owner: str, asset_id: str, x_opendirector_session: str = Header()):
-        store.remove_asset(owner, asset_id, identifier(x_opendirector_session))
-        return {"ok": True}
 
     dist = repository / "dist"
     if dist.is_dir():

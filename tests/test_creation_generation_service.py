@@ -6,7 +6,6 @@ import pytest
 
 from opendirector.application.creation_canvas import resolved_inputs
 from opendirector.application.creation_generation import CreationGeneration
-from opendirector.application.generation import Generation
 from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.model_configs import ModelConfigs
 from test_creation_canvas_service import project, media, send, text_material, ver
@@ -38,8 +37,7 @@ def runtime(project, provider):
     configs = ModelConfigs(store.local.repository)
     config = configs.save('agent', 'http://127.0.0.1:12345/v1', 'test-agent', '',
         connection_type='self_hosted', protocol='openai', auth_mode='none')
-    legacy = Generation(store.local, configs, provider)
-    return CreationGeneration(store, configs, legacy, provider), config
+    return CreationGeneration(store, configs, provider), config
 
 
 def configure(project, config):

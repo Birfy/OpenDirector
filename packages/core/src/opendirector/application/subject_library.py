@@ -1,6 +1,4 @@
 """Complete subject snapshots: owned library bytes, verified slots and provenance."""
-import base64
-from copy import deepcopy
 import hashlib
 import mimetypes
 from pathlib import Path
@@ -12,8 +10,6 @@ from opendirector.application.library import Library
 from opendirector.domain.creation.library import LibraryOrigin, LibrarySubjectSnapshot
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_uploads import inspect_file
-from opendirector.infrastructure.local_projects import child
-from opendirector.infrastructure.workspace_documents import WorkspaceDocuments
 
 
 class SubjectLibrary:
@@ -158,42 +154,17 @@ class SubjectLibrary:
 
     def backup(self, project_id, node_id):
         """Read the source without acquiring or changing its editing session."""
-        try:
-            snapshot = self.projects.snapshot(project_id)
-        except ProjectError as error:
-            if error.code != 'unsupported_format':
-                raise
-            document = WorkspaceDocuments(self.projects.local).read(str(project_id))['document']
-            nodes = document.get('nodes', []) + document.get('hiddenNodes', [])
-            node = next((node for node in nodes if node['id'] == str(node_id)), None)
-            if node is None or node.get('type') != 'subject':
-                raise ProjectError('请选择一个主体节点。', 422)
-            subject = deepcopy(node['data'].get('subject', {}))
-            title = node['data']['title']
-            def read(resource):
-                src = resource.get('src', '')
-                if src.startswith('opendirector-media:'):
-                    src = document['mediaSources'][int(src.split(':')[1])]
-                if not src.startswith('data:') or ';base64,' not in src:
-                    asset_id = resource.get('assetId')
-                    if asset_id:
-                        return self.projects.local.asset(str(project_id), str(asset_id))[0]
-                    raise ProjectError('主体素材尚未完整保存，请先保存画布。', 409)
-                try:
-                    return base64.b64decode(src.split(',', 1)[1], validate=True)
-                except (ValueError, TypeError):
-                    raise ProjectError('主体素材内容无效。', 422) from None
-        else:
-            node = next((item for item in snapshot.canvasItems if item.id == UUID(str(node_id))), None)
-            if node is None or node.kind != 'subject':
-                raise ProjectError('请选择一个主体节点。', 422)
-            doc = next(doc for doc in snapshot.editorDocuments if doc.id == node.binding.objectRef.id)
-            subject = doc.data.model_dump(mode='json')
-            title = node.title
-            def read(resource):
-                stream, _ = CreationAssets(self.projects).open_media(project_id, resource['assetId'])
-                with stream:
-                    return stream.read()
+        snapshot = self.projects.snapshot(project_id)
+        node = next((item for item in snapshot.canvasItems if item.id == UUID(str(node_id))), None)
+        if node is None or node.kind != 'subject':
+            raise ProjectError('请选择一个主体节点。', 422)
+        doc = next(doc for doc in snapshot.editorDocuments if doc.id == node.binding.objectRef.id)
+        subject = doc.data.model_dump(mode='json')
+        title = node.title
+        def read(resource):
+            stream, _ = CreationAssets(self.projects).open_media(project_id, resource['assetId'])
+            with stream:
+                return stream.read()
         if not subject.get('main'):
             raise ProjectError('空白主体不能加入主体库。', 422)
         slots = [('main', subject['main']), *[(f'auxiliary:{i}', value) for i, value in enumerate(subject.get('auxiliaries', []))]]
@@ -250,65 +221,3 @@ class SubjectLibrary:
                         spec = next(spec for spec in after.generationSpecs if spec.id == ref.targetSpecId)
                         if spec.kind not in downstream_kinds(after, item):
                             raise ProjectError('导入主体与已有下游节点类型不兼容，请先调整连线。', 422)
-
-    def validate_legacy_imports(self, previous, document, known=None):
-        imports = dict(known or {})
-        old = {node['id']: node for node in (previous or {}).get('nodes', []) + (previous or {}).get('hiddenNodes', [])}
-        nodes = {node['id']: node for node in document.get('nodes', []) + document.get('hiddenNodes', [])}
-        for node in nodes.values():
-            if node.get('type') != 'subject':
-                continue
-            subject = node['data'].get('subject') or {}
-            origin = subject.get('librarySource')
-            previous_subject = old.get(node['id'], {}).get('data', {}).get('subject') or {}
-            if not origin or previous_subject.get('librarySource') == origin:
-                continue
-            target = old.get(node['id'])
-            seen = set()
-            while target:
-                if target['id'] in seen:
-                    raise ProjectError('主体所属分组存在循环。', 422)
-                seen.add(target['id'])
-                if target.get('locked'):
-                    raise ProjectError('节点或所属分组已锁定。', 422)
-                target = old.get(target.get('parentId'))
-            from opendirector.domain.creation.editors import SubjectLibrarySource
-            try:
-                source = SubjectLibrarySource.model_validate(origin)
-            except ValueError:
-                raise ProjectError('主体库来源记录无效。', 422) from None
-            receipt = imports.get(str(source.importId))
-            if receipt:
-                if receipt['source'] != source.model_dump(mode='json'):
-                    raise ProjectError('主体导入身份不能用于其他库来源。', 422)
-                media = receipt['media']
-            else:
-                media = self.prepare([dict(id=source.itemId, revision=source.revision)])[0]['media']
-            expected = {value['slot']: value['sha'] for value in media}
-            slots = dict(main=subject.get('main'), **{f'auxiliary:{i}': resource for i, resource in enumerate(subject.get('auxiliaries', []))})
-            if subject.get('voice'):
-                slots['voice'] = subject['voice']
-            if set(slots) != set(expected):
-                raise ProjectError('主体导入槽位不完整。', 422)
-            for slot, resource in slots.items():
-                src = resource.get('src', '') if isinstance(resource, dict) else ''
-                if src.startswith('opendirector-media:'):
-                    src = document['mediaSources'][int(src.split(':')[1])]
-                try:
-                    data = base64.b64decode(src.split(',', 1)[1], validate=True) if src.startswith('data:') and ';base64,' in src else b''
-                except (ValueError, TypeError):
-                    data = b''
-                expected_kind = next(value['kind'] for value in media if value['slot'] == slot)
-                if not isinstance(resource, dict) or resource.get('kind') != expected_kind or hashlib.sha256(data).hexdigest() != expected[slot]:
-                    raise ProjectError('主体导入素材与库中快照不一致。', 422)
-            allowed = {'video'} if media[0]['kind'] == 'video' else {'image', 'video', 'audio'}
-            for edge in document.get('edges', []):
-                if edge.get('intent') == 'post_edit_result':
-                    continue
-                if edge.get('target') == node['id']:
-                    raise ProjectError('导入主体需要清理原有入站装配连线。', 422)
-                if edge.get('source') == node['id'] and nodes.get(edge.get('target'), {}).get('type') not in allowed:
-                    raise ProjectError('导入主体与已有下游节点类型不兼容，请先调整连线。', 422)
-
-            imports[str(source.importId)] = dict(source=source.model_dump(mode='json'), media=media)
-        return imports

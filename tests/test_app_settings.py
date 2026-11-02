@@ -6,12 +6,14 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.infrastructure.model_configs import ModelConfigs
+from generation_helpers import new_project, command, prepared, tasks
+from test_tool_tasks import png
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.infrastructure.local_projects import LocalProjects, read_json
 from opendirector_api.main import create_app
-from canvas_helpers import setup
 
 
 def test_default_and_saved_settings_survive_application_restart(tmp_path):
@@ -81,49 +83,50 @@ def test_failed_atomic_replace_preserves_settings_and_removes_temporary_file(tmp
 @pytest.mark.parametrize('kind', ['image', 'video', 'audio', 'text'])
 @pytest.mark.parametrize('remove', [False, True])
 def test_task_snapshots_settings_and_duplicate_submission_keeps_original(tmp_path, kind, remove):
-    store, session, project, _, generation, _ = setup(tmp_path)
-    config = generation.configs.save('agent' if kind == 'text' else kind, 'https://ark.test', kind, 'private')
+    project = new_project(tmp_path)
+    store, pid, session = project
+    configs = ModelConfigs(tmp_path)
+    generation = CreationGeneration(store, configs)
+    config = configs.save('agent' if kind == 'text' else kind, 'https://ark.test', 'seed-tts-2.0' if kind == 'audio' else kind, 'private')
     generation.settings.update({'removeWatermark': remove})
-    node = generation.canvas.create(project['id'], {'id': str(uuid4()), 'kind': kind}, session)
-    request = {'id': str(uuid4()), 'expectedRevision': 1, 'modelConfigId': config['id'], 'inputs': {'prompt': '测试'}}
-    task, _, _ = generation._prepare(project['id'], node['id'], request, session)
-    if kind in {'image', 'video'}:
-        assert task['parameters']['watermark'] is not remove
-    else:
-        assert 'watermark' not in task['parameters']
-    path = Path(project['path']) / 'tasks' / (task['id'] + '.json')
-    before = path.read_bytes()
+    request = command(project, config)
+    receipt = generation.prepare(request, session=session)
+    assert receipt.status == 'accepted', receipt
+    task = tasks(generation, pid)[0]
+    if kind in {'image', 'video'}: assert task['parameters']['watermark'] is not remove
+    else: assert 'watermark' not in task['parameters']
+    before = store.snapshot(pid)
     generation.settings.update({'removeWatermark': not remove})
-    duplicate, _, config = generation._prepare(project['id'], node['id'], request, session)
-    assert config is None and duplicate == task and path.read_bytes() == before
-    new_node = generation.canvas.create(project['id'], {'id': str(uuid4()), 'kind': kind}, session)
-    new_task, _, _ = generation._prepare(project['id'], new_node['id'], {**request, 'id': str(uuid4())}, session)
-    if kind in {'image', 'video'}:
-        assert new_task['parameters']['watermark'] is remove
+    assert generation.prepare(request, session=session) == receipt
+    assert store.snapshot(pid) == before
+    new_task, _, _ = prepared(generation, project, config)
+    if kind in {'image', 'video'}: assert new_task['parameters']['watermark'] is remove
 
 
 def test_queued_task_recovery_uses_saved_parameters_after_restart(tmp_path):
-    store, session, project, config, generation, provider = setup(tmp_path)
-    node = generation.canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'image'}, session)
-    task, _, _ = generation._prepare(project['id'], node['id'], {'id': str(uuid4()), 'expectedRevision': 1,
-        'modelConfigId': config['id'], 'inputs': {'prompt': '原任务'}}, session)
+    project = new_project(tmp_path)
+    store, pid, session = project
+    configs = ModelConfigs(tmp_path)
+    config = configs.save('image', 'https://ark.test', 'image', 'private')
+    generation = CreationGeneration(store, configs)
+    task, _, _ = prepared(generation, project, config)
     assert task['parameters']['watermark'] is False
     generation.settings.update({'removeWatermark': False})
     calls = []
-    original = provider.generate
-    async def capture(config, task, submitted):
-        calls.append(deepcopy(task))
-        return await original(config, task, submitted)
-    provider.generate = capture
+    class Provider:
+        def validate(self, *args): pass
+        async def generate(self, config, task, submitted):
+            calls.append(deepcopy(task))
+            return 'png', png()
     async def run():
-        restarted = Generation(store, generation.configs, provider)
-        await restarted.recover(project['id'], task['id'], session)
+        restarted = CreationGeneration(store, configs, Provider())
+        await restarted.recover(pid, task['id'])
         await asyncio.gather(*(job.future for job in list(restarted.jobs.values())))
         assert len(calls) == 1 and calls[0]['parameters']['watermark'] is False
-        snapshot = restarted.canvas.snapshot(project['id'])
-        assert snapshot['tasks'][0]['status'] == 'succeeded'
-        saved = store.asset(project['id'], snapshot['tasks'][0]['assetId'])[0]
+        snapshot = store.snapshot(pid)
+        assert snapshot.jobs[0].status == 'succeeded'
+        saved = restarted.store.asset(pid, snapshot.assets[0].id)[0]
         restarted.settings.update({'removeWatermark': True})
-        assert store.asset(project['id'], snapshot['tasks'][0]['assetId'])[0] == saved
+        assert restarted.store.asset(pid, snapshot.assets[0].id)[0] == saved
         await restarted.close()
     asyncio.run(run())

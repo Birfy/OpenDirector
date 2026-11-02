@@ -1,21 +1,21 @@
-"""Unified jobs reuse the existing provider execution/recovery machinery.
+"""Unified jobs, fixed provider inputs and atomic result publication.
 
-The provider compatibility facade only reads immutable media. It never creates
-legacy nodes, tasks or catalogs. All business writes publish creation commits.
+ProviderMedia reads immutable assets for the protocol adapters. Execution uses
+GenerationRuntime; every business write publishes a creation commit.
 """
 import asyncio
 from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import re
-from types import SimpleNamespace
 from uuid import uuid4, uuid5
 
 from filelock import FileLock, Timeout
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs, visible_item_ids
-from opendirector.application.generation import Generation, _self_hosted_video
+from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
+from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
@@ -70,18 +70,14 @@ class ProviderMedia:
         return self.runtime.task(self.runtime.get_job(project_id, job_id))
 
 
-class CreationGeneration(Generation):
-    def __init__(self, projects, configs, legacy, provider=None):
+class CreationGeneration(GenerationRuntime):
+    def __init__(self, projects, configs, provider=None):
+        super().__init__()
         self.projects, self.configs = projects, configs
         self.assets = CreationAssets(projects)
         self.store = ProviderMedia(self)
-        self.settings = legacy.settings
+        self.settings = AppSettings(projects.local.repository)
         self.provider = provider or GenerationProviders(self.store)
-        self.canvas = SimpleNamespace(task_write=self.checkpoint)
-        self.jobs, self.accepting = {}, {}
-        self.cancelled, self.committing = set(), set()
-        # Both compatibility and unified projects share the same resource gates.
-        self.limit, self.remote_limits = legacy.limit, legacy.remote_limits
 
     def directory(self, project_id):
         with self.projects.local.transaction() as db:
@@ -216,7 +212,7 @@ class CreationGeneration(Generation):
             mode = self.recovery(task, pinned)
             if mode not in {'submit', 'remote', 'download', 'local'} or latest.cancelRequested and (latest.remoteCancellation == 'confirmed' or mode == 'submit'):
                 return
-            if mode != 'local' and config is None:
+            if mode in {'submit', 'remote'} and config is None:
                 config = self.configs.resolve(task['modelConfigId'], 'agent' if task['kind'] == 'text' else task['kind'])
             token = _INPUTS.set(latest)
             await super()._run(task, pinned, config, mode)
@@ -286,9 +282,9 @@ class CreationGeneration(Generation):
                 batchId=command.payload.batchId, showAdditionalResult=command.payload.showAdditionalResult)
             task = self.task(stub)
             records = {str(a.id): media_record(a) for a in before.assets}
-            if hasattr(self.provider, 'prepare_inputs'):
-                self.provider.prepare_inputs(str(command.projectId), task, config)
             try:
+                if hasattr(self.provider, 'prepare_inputs'):
+                    self.provider.prepare_inputs(str(command.projectId), task, config)
                 parameters = self._parameters(spec, config, task, records)
             except ProjectError as error:
                 raise ContractError('invalid_input', str(error), spec.id) from error
@@ -512,9 +508,15 @@ class CreationGeneration(Generation):
             except ProjectError:
                 valid = False
             if not valid:
-                task.update(status='interrupted', recovery='review', resumeAllowed=False)
-                await asyncio.to_thread(self.checkpoint, project_id, task, pinned)
-                return job
+                if mode == 'download':
+                    # The private locator belongs to the accepted result, not
+                    # the current model selection. Never attach another model's
+                    # credentials or turn this read into a new submission.
+                    config = None
+                else:
+                    task.update(status='interrupted', recovery='review', resumeAllowed=False)
+                    await asyncio.to_thread(self.checkpoint, project_id, task, pinned)
+                    return job
         self._launch(task, pinned, config, mode)
         return job
 

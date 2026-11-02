@@ -14,19 +14,18 @@ import httpx
 from PIL import Image
 import pytest
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_tool_assets import CreationToolAssets
+from generation_helpers import new_project
 from opendirector.domain.input_rules import MAX_REFERENCES, input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.references import project_content
-from opendirector.infrastructure.canvas import CanvasProjects
-from opendirector.infrastructure.canvas_versions import apply_version, node_history
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.generation_errors import provider_failure
 from opendirector.integrations.reference_inputs import generation_references, reference_content, request_size
 from opendirector.integrations.volcengine import VolcengineGeneration
 from opendirector_api.main import create_app
-from test_chat import completion, events
 
 BASE = 'https://ark.cn-beijing.volces.com/api/plan/v3'
 
@@ -38,11 +37,11 @@ def config(kind='video'):
 
 @pytest.fixture
 def media(tmp_path):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4()); project = store.create('四类参考', str(uuid4()), session)
-    canvas = CanvasProjects(store); owner = project['id']
+    projects, pid, session = new_project(tmp_path, '四类参考')
+    store = CreationGeneration(projects, ModelConfigs(tmp_path)).store
+    canvas = CreationToolAssets(projects); owner = str(pid)
     def add(name, data):
-        return canvas.import_file(owner, str(uuid4()), name, data, session, str(uuid4()))
+        return canvas.import_file(owner, str(uuid4()), name, data, session)
     buf = io.BytesIO(); Image.new('RGB', (640, 640), 'teal').save(buf, 'PNG')
     image = add('场景.png', buf.getvalue())
     buf = io.BytesIO()
@@ -110,32 +109,6 @@ def test_generation_limits_modes_and_audio_combinations_preserve_inputs(media):
     assert original == saved
 
 
-def test_ten_images_survive_api_generation_history_and_undo(media):
-    store, owner, session, canvas, image, _, _ = media
-    images = [image] + [canvas.import_file(owner, str(uuid4()), f'图{i}.png', store.asset(owner, image['id'])[0], session, str(uuid4())) for i in range(9)]
-    refs = [a['id'] for a in images]
-    manager = Generation(store, ModelConfigs(store.repository))
-    model = manager.configs.save('image', BASE, config('image')['modelId'], 'private')
-    node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'image'}, session)
-    value = {'id': str(uuid4()), 'expectedRevision': 1, 'modelConfigId': model['id'], 'inputs': {'prompt': '十图融合', 'referenceIds': refs}}
-    receipt, directory, _ = manager._prepare(owner, node['id'], value, session)
-    assert receipt['referenceIds'] == refs and len(receipt['referenceInputs']['references']) == 10
-    assert receipt['referenceInputs']['profile'] == 'seedream-5.0-pro'
-    canvas.task_write(owner, {**receipt, 'status': 'cancelled'}, directory)
-    extra = canvas.import_file(owner, str(uuid4()), '第十一图.png', store.asset(owner, image['id'])[0], session, str(uuid4()))
-    target = canvas.create(owner, {'id': str(uuid4()), 'kind': 'image'}, session)
-    before = canvas.snapshot(owner)
-    with pytest.raises(ProjectError, match='最多使用 10'):
-        manager._prepare(owner, target['id'], {**value, 'id': str(uuid4()), 'inputs': {'prompt': '超限', 'referenceIds': refs + [extra['id']]}}, session)
-    assert canvas.snapshot(owner) == before
-    # Draft and API models permit >8 references; provider limits remain separate.
-    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
-    with TestClient(create_app(store), headers=headers) as client:
-        response = client.patch(f'/api/data/{owner}/draft', json={'draft': '对比这些图', 'assets': [{k: a[k] for k in ('id', 'name', 'type', 'size', 'fingerprint')} for a in images], 'thinking': 'auto'})
-        assert response.status_code == 200
-        assert len(client.get(f'/api/data/{owner}/conversation').json()['assets']) == 10
-
-
 def test_real_adapter_encodes_reference_roles_and_resume_never_reads_sources(media, monkeypatch):
     store, owner, _, _, image, audio, _ = media
     calls = []
@@ -157,28 +130,6 @@ def test_real_adapter_encodes_reference_roles_and_resume_never_reads_sources(med
     assert len(calls) == 1
 
 
-def test_video_mode_history_apply_and_inflight_guards(media):
-    from opendirector.infrastructure.adoption import node_basis, reason
-    store, owner, session, canvas, image, _, _ = media
-    model = ModelConfigs(store.repository).save('video', BASE, 'doubao-seedance-2.0', 'private')
-    node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'video'}, session)
-    node = canvas.patch(owner, node['id'], {'videoMode': 'reference', 'prompt': '多图要求', 'referenceIds': [image['id']], 'modelConfigId': model['id']}, session, remember=True)
-    snapshot = canvas.snapshot(owner)['canvas']
-    undone = canvas.history(owner, 'undo', snapshot['history']['undo']['id'], str(uuid4()), session)
-    assert canvas._node(undone, node['id'])['videoMode'] == 'first_frame'
-    snapshot = canvas.snapshot(owner)['canvas']
-    canvas.history(owner, 'redo', snapshot['history']['redo']['id'], str(uuid4()), session)
-    manager = Generation(store, ModelConfigs(store.repository))
-    value = canvas._node(canvas.snapshot(owner)['canvas'], node['id'])
-    receipt, _, _ = manager._prepare(owner, node['id'], {'id': str(uuid4()), 'expectedRevision': value['revision'], 'modelConfigId': model['id']}, session)
-    assert receipt['videoMode'] == receipt['inputSnapshot']['node']['videoMode'] == 'reference'
-    # An intentional mode edit while generation runs must keep the late result a candidate.
-    current = canvas._node(canvas.snapshot(owner)['canvas'], node['id'])
-    changed = {**current, 'videoMode': 'first_frame'}
-    directory = store.root / '四类参考'; records = canvas.assets._records(directory, owner)
-    assert reason(receipt, directory, changed, records, manager.configs) == 'node_changed'
-
-
 def test_reference_error_classification_is_specific_and_redacted():
     error = provider_failure({'error': {'code': 'InvalidParameter', 'message': 'reference_audio cannot be the only reference input https://private.test/?token=secret'}}, stage='submit', http_status=400, secrets=('secret',))
     assert error.details.category == 'reference' and '图片' in error.details.message
@@ -198,76 +149,12 @@ def small_video(tmp_path_factory):
     return path.read_bytes()
 
 
-def test_history_application_restores_mode_and_references_atomically(media, small_video):
-    store, owner, session, canvas, image, audio, _ = media
-    manager = Generation(store, ModelConfigs(store.repository))
-    model = manager.configs.save('video', BASE, 'doubao-seedance-2.0', 'private')
-    node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'video'}, session)
-    versions = []
-    for mode, refs in [('reference', [image['id'], audio['id']]), ('first_frame', [image['id']])]:
-        current = canvas._node(canvas.snapshot(owner)['canvas'], node['id'])
-        receipt, directory, _ = manager._prepare(owner, node['id'], {'id': str(uuid4()), 'expectedRevision': current['revision'], 'modelConfigId': model['id'],
-            'inputs': {'prompt': f'{mode}要求', 'referenceIds': refs, 'videoMode': mode}}, session)
-        asset = canvas.assets.import_file(owner, str(uuid4()), '结果.mp4', small_video, session, source='generated', generation=receipt)
-        canvas.attach(owner, node['id'], asset['id'])
-        canvas.task_write(owner, {**receipt, 'status': 'succeeded', 'assetId': asset['id'], 'adopted': True}, directory)
-        versions.append(asset)
-    history = node_history(canvas, owner, node['id'])
-    assert [v['videoMode'] for v in history['versions']] == ['reference', 'first_frame']
-    receipts = {p: p.read_bytes() for p in (store.root / '四类参考' / 'tasks').glob('*.json')}
-    applied = apply_version(canvas, owner, node['id'], versions[0]['id'], history['node']['revision'], versions[0]['fingerprint'], session)
-    assert applied['videoMode'] == 'reference' and applied['referenceIds'] == [image['id'], audio['id']]
-    state = canvas.snapshot(owner)['canvas']
-    undone = canvas.history(owner, 'undo', state['history']['undo']['id'], str(uuid4()), session)
-    assert canvas._node(undone, node['id'])['videoMode'] == 'first_frame'
-    assert {p: p.read_bytes() for p in receipts} == receipts
-
-
-def test_audio_reference_first_message_can_create_project_and_chat(media):
-    from opendirector.integrations.chat_completions import ChatCompletions
-    store, _, session, _, _, audio, _ = media
-    data = store.asset(audio['projectId'], audio['id'])[0]
-    scratch_id = str(uuid4())
-    store.save_asset('scratch', scratch_id, {'name': '节奏.wav', 'type': 'audio/wav', 'fingerprint': 'fixture'}, data, session)
-    attachment = store.asset('scratch', scratch_id)[1]
-    model = ModelConfigs(store.repository).save('agent', 'https://api.deepseek.com', 'deepseek-flash', 'private')
-    calls = []
-    def handler(request):
-        calls.append(json.loads(request.content)); return httpx.Response(200, text=completion('素材项目'))
-    content = [{'type': 'reference', 'assetId': scratch_id, 'name': '节奏.wav', 'fingerprint': 'fixture'}, {'type': 'text', 'text': '\n请记录此素材'}]
-    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
-    with TestClient(create_app(store, ChatCompletions(httpx.MockTransport(handler))), headers=headers) as client:
-        created = client.post('/api/projects/from-message', json={'id': str(uuid4()), 'turnId': str(uuid4()), 'modelId': model['id'],
-            'draft': 'ignored', 'draftContent': content, 'assets': [{k: attachment[k] for k in ('id', 'name', 'type', 'size', 'fingerprint')}], 'thinking': 'auto'})
-        assert created.status_code == 200
-        owner = created.json()['id']
-        from uuid import UUID, uuid5
-        content[0]['nodeId'] = str(uuid5(UUID(owner), scratch_id))
-        sent = client.post(f'/api/data/{owner}/chat', json={'id': str(uuid4()), 'modelId': model['id'], 'text': '', 'content': content, 'assets': [scratch_id]})
-        user = events(sent)[-1]['conversation']['messages'][-2]
-        assert user['content'] == content and user['referenceInputs'][0]['transmission'] == 'metadata'
-        assert 'data:audio' not in json.dumps(calls)
-
-
-def test_video_reference_rejection_is_atomic_before_task_creation(media, small_video):
-    store, owner, session, canvas, image, _, _ = media
-    video = canvas.import_file(owner, str(uuid4()), '已有视频.mp4', small_video, session, str(uuid4()))
-    model = ModelConfigs(store.repository).save('video', BASE, 'doubao-seedance-2.0', 'private')
-    manager = Generation(store, ModelConfigs(store.repository))
-    node = canvas.create(owner, {'id': str(uuid4()), 'kind': 'video'}, session)
-    before = canvas.snapshot(owner)
-    with pytest.raises(ProjectError, match='当前模型不支持视频参考'):
-        manager._prepare(owner, node['id'], {'id': str(uuid4()), 'expectedRevision': 1, 'modelConfigId': model['id'],
-            'inputs': {'prompt': '参考视频制作', 'videoMode': 'reference', 'referenceIds': [image['id'], video['id']]}}, session)
-    assert canvas.snapshot(owner) == before
-
-
 @pytest.mark.parametrize(('count', 'seconds'), [(4, 3), (2, 8)])
 def test_audio_count_and_total_duration_are_checked_together(media, count, seconds):
     store, owner, session, canvas, image, _, _ = media
     buf = io.BytesIO()
     with wave.open(buf, 'wb') as wav:
         wav.setparams((1, 2, 24000, 0, 'NONE', 'not compressed')); wav.writeframes(b'\0\0' * 24000 * seconds)
-    audios = [canvas.import_file(owner, str(uuid4()), f'音频{i}.wav', buf.getvalue(), session, str(uuid4())) for i in range(count)]
+    audios = [canvas.import_file(owner, str(uuid4()), f'音频{i}.wav', buf.getvalue(), session) for i in range(count)]
     with pytest.raises(ProjectError, match='最多 3 段，总时长不超过 15 秒'):
         generation_references(store, task(owner, [image, *audios]), config())

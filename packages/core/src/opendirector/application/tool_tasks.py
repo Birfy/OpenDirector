@@ -45,7 +45,7 @@ def output_item_id(task, index, kind):
 
 
 class ToolTasks:
-    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects=None):
+    def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects):
         self.store, self.configs, self.assets = store, configs, assets
         self.transport, self.poll_interval = transport, poll_interval
         self.jobs: dict[tuple[str, str], asyncio.Task] = {}
@@ -100,9 +100,7 @@ class ToolTasks:
             records = self.assets._records(directory, project_id)
             if source_id not in records or records[source_id]['kind'] != 'image':
                 raise ProjectError('来源图片不存在，请重新上传。', 409)
-            if self.projects is not None:
-                return media.open_image(self.assets.read_bytes(project_id, source_id))
-            return media.open_image(child(child(directory, 'assets'), source_id).read_bytes())
+            return media.open_image(self.assets.read_bytes(project_id, source_id))
 
         image = await asyncio.to_thread(read)
         config, adapter = self._model('image.segment', value.get('modelConfigId'))
@@ -146,13 +144,11 @@ class ToolTasks:
 
     def _directory(self, project_id, session=None):
         with self.store.transaction() as db:
-            if self.projects is not None:
-                self.projects._recover()
-                path, _, _ = self.projects._load(db, project_id)
-                if session is not None:
-                    self.projects._lease(db, project_id, path, session)
-                return path
-            return self.store._owner(db, project_id, session)
+            self.projects._recover()
+            path, _, _ = self.projects._load(db, project_id)
+            if session is not None:
+                self.projects._lease(db, project_id, path, session)
+            return path
 
     def list(self, project_id):
         directory = self._directory(project_id)
@@ -165,13 +161,13 @@ class ToolTasks:
         with self.store.transaction():
             directory = self._directory(project_id, session)
             task = self.get(project_id, task_id)
-            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and state == 'unplaced':
+            if task['status'] in {'failed', 'cancelled', 'interrupted'} and state == 'unplaced':
                 return self._settle_terminal(project_id, task_id, session)
             if task['status'] != 'succeeded':
                 raise ProjectError('工具任务尚未完成。', 409)
             if task.get('placement') == 'placed' and policy != 'explicit':
                 return task
-            if self.projects is not None and state == 'placed':
+            if state == 'placed':
                 from .creation_tool_drafts import publish_outputs
                 state = publish_outputs(self, task, session, policy)
             task['placement'] = state
@@ -184,7 +180,7 @@ class ToolTasks:
         with self.store.transaction():
             directory = self._directory(project_id, session)
             task = read_json(child(self._folder(directory), task_id + '.json'))
-            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
+            if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
                 from .creation_tool_drafts import release_placeholder
                 task['placement'] = release_placeholder(self, task, session)
                 self._write(directory, task)
@@ -207,7 +203,7 @@ class ToolTasks:
             # The service restarted mid-run; the work cannot resume.
             task.update(status='interrupted', phase=None, error='服务重启，任务已中断，请重新提交。', finishedAt=_now())
             self._write(path.parent.parent, task)
-        if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
+        if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
             task = self._settle_terminal(project_id, task_id, session)
         if 'sourceFingerprint' not in task and task.get('sourceAssetIds'):
             records = self.assets._records(path.parent.parent, project_id)
@@ -269,10 +265,8 @@ class ToolTasks:
         canvas = value.get('canvas')
         if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
             raise ProjectError('工具任务的画布来源不匹配。', 422)
-        frozen = {}
-        if self.projects is not None:
-            from .creation_tool_drafts import freeze_inputs
-            frozen = freeze_inputs(self, project_id, value)
+        from .creation_tool_drafts import freeze_inputs
+        frozen = freeze_inputs(self, project_id, value)
         models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
         if self.providers().get('text.chat'):
             models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
@@ -309,7 +303,7 @@ class ToolTasks:
         pending = asyncio.create_task(asyncio.to_thread(self._write, directory, dict(task)))
         try:
             await asyncio.shield(pending)
-            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'}:
+            if task['status'] in {'failed', 'cancelled', 'interrupted'}:
                 settled = await asyncio.to_thread(self._settle_terminal, task['projectId'], task['id'])
                 task.update(settled)
         except asyncio.CancelledError:
@@ -326,7 +320,7 @@ class ToolTasks:
 
                 def read(asset_id):
                     record = records[asset_id]
-                    return Source(record['kind'], self.assets.read_bytes(task['projectId'], asset_id) if self.projects is not None else child(child(directory, 'assets'), asset_id).read_bytes(), record['name'])
+                    return Source(record['kind'], self.assets.read_bytes(task['projectId'], asset_id), record['name'])
                 sources = await asyncio.to_thread(lambda: [read(item) for item in task['sourceAssetIds']])
                 mask = (await asyncio.to_thread(read, task['maskAssetId'])).data if task['maskAssetId'] else None
                 annotation = (await asyncio.to_thread(read, task['annotationAssetId'])).data if task.get('annotationAssetId') else None

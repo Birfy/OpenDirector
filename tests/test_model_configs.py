@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.local_projects import LocalProjects, empty_conversation
+from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector_api.main import create_app
 
@@ -99,30 +99,6 @@ def test_corrupt_configuration_is_reported_without_overwriting(tmp_path):
         assert store.path.read_bytes() == before
 
 
-def test_project_selections_and_history_survive_config_changes(api):
-    client, store = api
-    config = client.post("/api/model-configs", json=payload()).json()
-    project_id = str(uuid4())
-    client.post("/api/projects", json={"id": project_id, "name": "模型选择"})
-    # Legacy JSON omits the new field and still loads normally.
-    legacy = empty_conversation()
-    legacy.pop("modelSelections")
-    legacy["model"] = "openai"
-    legacy["messages"] = [{"id": str(uuid4()), "role": "assistant", "text": "历史回复", "assets": [],
-                           "model": "openai", "thinking": "auto", "status": "complete"}]
-    (store.root / "模型选择" / "conversation.json").write_text(json.dumps(legacy))
-    value = client.get(f"/api/data/{project_id}/conversation").json()
-    assert value["modelSelections"] == {}
-    assert "model" not in value
-    value["modelSelections"] = {"agent": config["id"], "image": None}
-    assert client.put(f"/api/data/{project_id}/conversation", json={**value, "model": "openai"}).status_code == 200
-    assert "model" not in json.loads((store.root / "模型选择" / "conversation.json").read_text())
-    assert client.patch(f"/api/model-configs/{config['id']}", json=payload(modelId="changed", apiKey="")).status_code == 200
-    assert client.delete(f"/api/model-configs/{config['id']}").status_code == 204
-    assert client.get(f"/api/data/{project_id}/conversation").json() == value
-    assert "test-secret" not in (store.root / "模型选择" / "conversation.json").read_text()
-
-
 def test_model_config_routes_keep_local_request_protection(api):
     client, _ = api
     assert client.get("/api/model-configs", headers={"Origin": "https://untrusted.example"}).status_code == 403
@@ -182,17 +158,17 @@ def test_segmentation_rejects_generation_specific_configuration_and_wrong_catego
 
 
 @pytest.mark.parametrize('kind', ['image', 'video'])
-def test_legacy_generation_boundary_rejects_sam_before_creating_a_task(tmp_path, kind):
-    from canvas_helpers import setup
-    store, session, project, _, generation, provider = setup(tmp_path)
-    sam = generation.configs.save(kind, 'http://fixture.invalid/v1', 'sam3', '',
-                                  connection_type='self_hosted', protocol='vllm_omni_segmentation')
-    node = generation.canvas.create(project['id'], {'id': str(uuid4()), 'kind': kind}, session)
+def test_generation_boundary_rejects_sam_before_creating_a_task(tmp_path, kind):
+    from generation_helpers import new_project, prepared
+    from opendirector.application.creation_generation import CreationGeneration
+    project = new_project(tmp_path)
+    configs = ModelConfigs(tmp_path)
+    generation = CreationGeneration(project[0], configs)
+    sam = configs.save(kind, 'http://fixture.invalid/v1', 'sam3', '',
+        connection_type='self_hosted', protocol='vllm_omni_segmentation')
     with pytest.raises(ProjectError, match='视觉分割模型'):
-        generation._prepare(project['id'], node['id'], {'id': str(uuid4()), 'expectedRevision': 1,
-            'modelConfigId': sam['id'], 'inputs': {'prompt': 'generate'}}, session)
-    assert provider.calls == []
-    assert generation.canvas.snapshot(project['id'])['tasks'] == []
+        prepared(generation, project, sam)
+    assert project[0].snapshot(project[1]).jobs == ()
 
 
 def test_agent_model_test_uses_draft_without_saving(api, monkeypatch):

@@ -1,5 +1,4 @@
 import re
-import unicodedata
 from uuid import UUID
 
 
@@ -31,14 +30,3 @@ def identifier(value: str) -> str:
     except (ValueError, AttributeError):
         raise ProjectError("无效的项目或素材标识。") from None
     return value
-
-
-def suggested_project_name(value: str) -> str:
-    """Turn an untrusted title or first message into a short directory name."""
-    value = unicodedata.normalize("NFC", value).strip().splitlines()[0] if value.strip() else ""
-    value = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', " ", value)
-    value = re.sub(r"\s+", " ", value).strip(" .\"'`“”‘’")[:28].rstrip(" .")
-    try:
-        return project_name(value)
-    except ProjectError:
-        return "新项目"

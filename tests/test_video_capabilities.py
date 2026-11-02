@@ -8,7 +8,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from generation_helpers import new_project, prepared
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -16,7 +17,6 @@ from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_capabilities import read_video_capabilities
 from opendirector.integrations.providers import GenerationProviders
 from opendirector_api.main import create_app
-from opendirector_api.models import GenerateNode
 
 
 CAPS = {'outputs': [
@@ -92,22 +92,15 @@ def test_legacy_alias_is_pinned_while_new_unknown_model_does_not_become_fasth3(t
 
 
 def prepare(tmp_path, resolution='720P', seconds=7, *, explicit=True):
-    store = LocalProjects(tmp_path)
+    project = new_project(tmp_path)
     configs = ModelConfigs(tmp_path)
     public = configs.save('video', 'http://model.test/v1', 'custom-video', 'test-secret',
-                          connection_type='self_hosted', auth_mode='bearer', video_adapter='standard', video_capabilities=CAPS)
-    session = str(uuid4())
-    project = store.create('配置验收', str(uuid4()), session)
-    class Provider:
-        def validate(self, *args): pass
-    manager = Generation(store, configs, Provider())
-    node = manager.canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
-    inputs = {'prompt': '山间日出', 'referenceIds': [], 'videoMode': 'first_frame', 'aspectRatio': '16:9'}
-    if explicit: inputs.update(resolution=resolution, durationSeconds=seconds)
-    value = GenerateNode.model_validate({'id': str(uuid4()), 'expectedRevision': node['revision'],
-                                       'modelConfigId': public['id'], 'inputs': inputs}).model_dump(mode='json', exclude_unset=True)
-    task, _, config = manager._prepare(project['id'], node['id'], value, session)
-    return store, task, config
+        connection_type='self_hosted', auth_mode='bearer', video_adapter='standard', video_capabilities=CAPS)
+    runner = CreationGeneration(project[0], configs)
+    parameters = dict(videoMode='first_frame', **({} if explicit else {'aspectRatio': '16:9'}))
+    if explicit: parameters.update(resolution=resolution, durationSeconds=seconds)
+    task, _, config = prepared(runner, project, public, parameters=parameters, prompt='山间日出')
+    return runner.store, task, config
 
 
 @pytest.mark.parametrize('explicit', [True, False])
@@ -136,7 +129,7 @@ def test_custom_contract_reaches_generic_wire_without_fasth3_sampling_fields(tmp
 
 
 def test_invalid_duration_resolution_pair_never_accepts_a_task(tmp_path):
-    with pytest.raises(ProjectError, match='组合'):
+    with pytest.raises(ProjectError, match='Unsupported duration/resolution combination'):
         prepare(tmp_path, '540P', 7)
     assert not list(tmp_path.glob('projects/*/tasks/*.json'))
 

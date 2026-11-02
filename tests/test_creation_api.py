@@ -1,3 +1,4 @@
+from legacy_fixtures import legacy_project
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -52,7 +53,7 @@ def test_create_open_release_rename_and_reopen_via_typed_commands(api):
     assert [event['commandId'] for event in events['events']] == [change['commandId']]
     assert events['nextCursor'] == events['currentCursor'] == 2
     assert client.get('/api/creation/projects').json()['projects'][0]['name'] == 'Renamed'
-    assert local.list_projects()['projects'] == []
+    assert client.get('/api/projects').status_code == 404
 
 
 def test_conflicting_command_id_and_stale_version_have_distinct_outcomes(api):
@@ -89,12 +90,12 @@ def test_api_exposes_only_implemented_commands_and_never_accepts_snapshot_replac
 
 def test_unknown_and_legacy_projects_are_not_reinitialized(api):
     client, local = api
-    legacy = local.create('Legacy', str(uuid4()))
+    legacy = legacy_project(local)
     response = client.get('/api/creation/projects/' + legacy['id'])
     assert response.status_code == 409 and response.json()['code'] == 'unsupported_format'
     assert client.get(f'/api/creation/projects/{uuid4()}').status_code == 404
     assert client.get('/api/creation/projects').json()['projects'] == []
-    assert client.get('/api/projects').json()['projects'] == [legacy]
+    assert client.get('/api/projects').status_code == 404
 
 
 def test_views_queries_and_revision_scoped_history_do_not_replace_business_state(api):

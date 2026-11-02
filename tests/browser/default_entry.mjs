@@ -22,9 +22,11 @@ const health = await api("/creation-test-health");
 assert.equal(health.isolated, true);
 const initiallyEmpty = (await api("/creation/projects")).projects.length === 0;
 // Seed a real old-format directory only in the isolated fixture, then check byte-for-byte preservation.
-const old = await api("/projects", {
+const old = await api("/creation-test-legacy-projects", {
   id: crypto.randomUUID(),
-  name: initiallyEmpty ? "未命名画布" : "Old format " + crypto.randomUUID().slice(0, 8),
+  name: initiallyEmpty
+    ? "未命名画布"
+    : "Old format " + crypto.randomUUID().slice(0, 8),
 });
 async function files(path) {
   const result = {};
@@ -156,11 +158,14 @@ try {
   );
 } catch (error) {
   console.error(await page.locator("body").innerText());
-  console.error({errors, legacy});
+  console.error({ errors, legacy });
   throw error;
 } finally {
   for (const session of sessions) {
-    await fetch(base + `/api/creation/sessions/${session}`, {method: "DELETE", headers}).catch(() => {});
+    await fetch(base + `/api/creation/sessions/${session}`, {
+      method: "DELETE",
+      headers,
+    }).catch(() => {});
   }
   await browser.close();
 }

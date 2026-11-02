@@ -3,7 +3,10 @@ from uuid import uuid4
 
 import pytest
 
-from opendirector.application.generation import Generation, _execution_timeout
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.generation_runtime import _execution_timeout
+from generation_helpers import new_project, prepared, tasks, cancel
+from test_tool_tasks import mp4
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -14,22 +17,16 @@ import httpx
 
 
 @pytest.fixture
-def context(tmp_path, monkeypatch):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4())
-    project = store.create('自部署排队', str(uuid4()), session)
+def context(tmp_path):
+    store, pid, session = new_project(tmp_path, '自部署排队')
     configs = ModelConfigs(tmp_path)
     config = configs.save('video', 'http://127.0.0.1:18092/v1', 'FastH3-Omni', '', connection_type='self_hosted')
-    monkeypatch.setattr('opendirector.integrations.asset_metadata.probe', lambda *args: {
-        'kind': 'video', 'durationMs': 4000, 'width': 480, 'height': 832, 'frameRate': 24, 'hasAudio': False})
-    return store, session, project, configs, config
+    return store, session, {'id': str(pid)}, configs, config
 
 
 def prepare(manager, context):
-    _, session, project, _, config = context
-    node = manager.canvas.create(project['id'], {'id': str(uuid4()), 'kind': 'video'}, session)
-    return manager._prepare(project['id'], node['id'], {'id': str(uuid4()), 'expectedRevision': node['revision'],
-        'modelConfigId': config['id'], 'inputs': {'prompt': '生成测试', 'videoMode': 'reference'}}, session)
+    store, session, project, _, config = context
+    return prepared(manager, (store, project['id'], session), config, parameters={'videoMode': 'reference'})
 
 
 def test_same_video_service_remains_queued_until_previous_task_finishes(context):
@@ -48,24 +45,24 @@ def test_same_video_service_remains_queued_until_previous_task_finishes(context)
                 await submitted(f'remote-{index}')
                 started[index].set()
                 await gates[index].wait()
-                return 'mp4', b'fixture-video'
+                return 'mp4', mp4()
 
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         first, second = prepare(manager, context), prepare(manager, context)
         try:
             manager._launch(*first)
             await asyncio.wait_for(started[0].wait(), 5)
             manager._launch(*second)
             await asyncio.sleep(.05)
-            receipt = next(t for t in manager.canvas.snapshot(project['id'])['tasks'] if t['id'] == second[0]['id'])
+            receipt = next(t for t in tasks(manager, project['id']) if t['id'] == second[0]['id'])
             assert receipt['status'] == 'queued' and receipt['phase'] == 'queued'
             assert receipt['externalTaskId'] is None and provider.calls == [first[0]['id']]
             gates[0].set()
             await asyncio.wait_for(started[1].wait(), 5)
             gates[1].set()
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            assert all(t['status'] == 'succeeded' for t in manager.canvas.snapshot(project['id'])['tasks'])
+            assert all(t['status'] == 'succeeded' for t in tasks(manager, project['id']))
             assert provider.calls == [first[0]['id'], second[0]['id']]
         finally:
             gates[0].set(); gates[1].set()
@@ -77,7 +74,7 @@ def test_timeout_keeps_remote_id_and_explains_cloud_execution_continues(context,
     store, _, project, configs, _ = context
     assert _execution_timeout({'kind': 'video', 'protocol': 'vllm_omni'}) == 14400
     assert _execution_timeout({'kind': 'image'}) == 1800
-    monkeypatch.setattr('opendirector.application.generation._execution_timeout', lambda task: 1)
+    monkeypatch.setattr('opendirector.application.generation_runtime._execution_timeout', lambda task: 1)
 
     class Provider:
         calls = 0
@@ -89,14 +86,14 @@ def test_timeout_keeps_remote_id_and_explains_cloud_execution_continues(context,
 
     async def run():
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         try:
             manager._launch(*prepare(manager, context))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            task = manager.canvas.snapshot(project['id'])['tasks'][0]
+            task = tasks(manager, project['id'])[0]
             assert task['status'] == 'interrupted' and task['recovery'] == 'remote'
             assert task['externalTaskId'] == 'existing-remote-job' and provider.calls == 1
-            assert '云端任务未自动取消' in task['error'] and '磁盘' not in task['error']
+            assert '云端任务未自动取消' in task['errorDetails']['message'] and '磁盘' not in task['errorDetails']['message']
         finally:
             await manager.close()
     asyncio.run(run())
@@ -107,7 +104,7 @@ def test_failed_video_finalization_keeps_remote_task_for_recovery_without_resubm
 
     def fail(*args):
         raise ProjectError('保留原片音轨或时长失败；请检查 FFmpeg，稍后继续下载原任务，无需重新生成。', 409)
-    monkeypatch.setattr('opendirector.application.generation.finalize_video_edit', fail)
+    monkeypatch.setattr('opendirector.application.generation_runtime.finalize_video_edit', fail)
 
     class Provider:
         calls = 0
@@ -115,15 +112,15 @@ def test_failed_video_finalization_keeps_remote_task_for_recovery_without_resubm
         async def generate(self, config, task, submitted):
             self.calls += 1
             await submitted('paid-remote-job')
-            return 'mp4', b'fixture-video'
+            return 'mp4', mp4()
 
     async def run():
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         try:
             manager._launch(*prepare(manager, context))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            task = manager.canvas.snapshot(project['id'])['tasks'][0]
+            task = tasks(manager, project['id'])[0]
             assert task['status'] == 'failed' and task['recovery'] == 'remote' and task['resumeAllowed'] is True
             assert task['externalTaskId'] == 'paid-remote-job' and provider.calls == 1
         finally:
@@ -140,7 +137,7 @@ def test_recovering_failed_finalization_downloads_again_without_a_second_submiss
         if request.method == 'POST':
             return httpx.Response(200, json={'id': 'paid-remote-job', 'status': 'queued'})
         if request.url.path.endswith('/content'):
-            return httpx.Response(200, content=b'fixture-video', headers={'content-type': 'video/mp4'})
+            return httpx.Response(200, content=mp4(), headers={'content-type': 'video/mp4'})
         return httpx.Response(200, json={'status': 'completed'})
 
     attempts = []
@@ -149,24 +146,25 @@ def test_recovering_failed_finalization_downloads_again_without_a_second_submiss
         if len(attempts) == 1:
             raise ProjectError('保留原片音轨或时长失败；请检查 FFmpeg，稍后继续下载原任务，无需重新生成。', 409)
         return suffix, data
-    monkeypatch.setattr('opendirector.application.generation.finalize_video_edit', finalize)
+    monkeypatch.setattr('opendirector.application.generation_runtime.finalize_video_edit', finalize)
 
     async def run():
-        manager = Generation(store, configs, GenerationProviders(store, httpx.MockTransport(respond), .001))
+        manager = CreationGeneration(store, configs)
+        manager.provider = GenerationProviders(manager.store, httpx.MockTransport(respond), .001)
         try:
             manager._launch(*prepare(manager, context))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            failed = manager.canvas.snapshot(project['id'])['tasks'][0]
+            failed = tasks(manager, project['id'])[0]
             assert failed['status'] == 'failed' and failed['recovery'] == 'remote' and failed['resumeAllowed'] is True
-            await manager.recover(project['id'], failed['id'], session)
+            await manager.recover(project['id'], failed['id'])
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            task = manager.canvas.snapshot(project['id'])['tasks'][0]
+            task = tasks(manager, project['id'])[0]
             assert task['status'] == 'succeeded' and task['id'] == failed['id']
             assert task['externalTaskId'] == 'paid-remote-job' and task['assetId']
         finally:
             await manager.close()
     asyncio.run(run())
-    assert attempts == [b'fixture-video', b'fixture-video']
+    assert attempts == [mp4(), mp4()]
     assert [path for method, path in requests if method == 'POST'] == ['/v1/videos']
     assert sum(path.endswith('/content') for _, path in requests) == 2
 
@@ -182,16 +180,16 @@ def test_interrupted_remote_video_can_be_cancelled_without_resubmission(context,
 
     async def run():
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         task, pinned, _ = prepare(manager, context)
         task.update(status=state, externalTaskId='timed-out-remote', recovery='remote', resumeAllowed=True)
-        manager.canvas.task_write(project['id'], task, pinned)
+        manager.checkpoint(project['id'], task, pinned)
         try:
-            await manager.cancel(project['id'], task['id'], session)
-            receipt = manager.canvas.snapshot(project['id'])['tasks'][0]
+            await cancel(manager, project['id'], task['id'], session)
+            receipt = tasks(manager, project['id'])[0]
             assert provider.cancelled == ['timed-out-remote']
-            assert receipt['status'] == 'cancelled' and receipt['recovery'] == 'retry'
-            assert not receipt['resumeAllowed'] and not manager.jobs
+            assert receipt['status'] == 'cancelled' and receipt['recovery'] == 'remote'
+            assert receipt['resumeAllowed'] and not manager.jobs
         finally:
             await manager.close()
     asyncio.run(run())
@@ -211,9 +209,9 @@ def test_waiting_for_one_service_does_not_block_other_services_and_can_be_cancel
                 await submitted('remote-' + task['id'])
                 await started.put(task['id'])
                 await release.wait()
-                return 'mp4', b'fixture-video'
+                return 'mp4', mp4()
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         first, queued = prepare(manager, context), prepare(manager, context)
         other = prepare(manager, (store, session, project, configs, other_config))
         try:
@@ -223,10 +221,10 @@ def test_waiting_for_one_service_does_not_block_other_services_and_can_be_cancel
             manager._launch(*other)
             assert await asyncio.wait_for(started.get(), 5) == other[0]['id']
             assert queued[0]['id'] not in provider.calls
-            await manager.cancel(project['id'], queued[0]['id'], session)
+            await cancel(manager, project['id'], queued[0]['id'], session)
             release.set()
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            receipt = next(t for t in manager.canvas.snapshot(project['id'])['tasks'] if t['id'] == queued[0]['id'])
+            receipt = next(t for t in tasks(manager, project['id']) if t['id'] == queued[0]['id'])
             assert receipt['status'] == 'cancelled' and receipt['externalTaskId'] is None
             assert provider.calls == [first[0]['id'], other[0]['id']]
         finally:
@@ -242,7 +240,7 @@ def test_queue_wait_is_not_part_of_execution_timeout(context, monkeypatch):
     def execution_timeout(seconds):
         timed.append(seconds)
         return real_timeout(seconds)
-    monkeypatch.setattr('opendirector.application.generation.asyncio.timeout', execution_timeout)
+    monkeypatch.setattr('opendirector.application.generation_runtime.asyncio.timeout', execution_timeout)
 
     async def run():
         started, release = asyncio.Event(), asyncio.Event()
@@ -252,8 +250,8 @@ def test_queue_wait_is_not_part_of_execution_timeout(context, monkeypatch):
                 await submitted('known-' + task['id'])
                 started.set()
                 await release.wait()
-                return 'mp4', b'fixture-video'
-        manager = Generation(store, configs, Provider())
+                return 'mp4', mp4()
+        manager = CreationGeneration(store, configs, Provider())
         try:
             manager._launch(*prepare(manager, context))
             await asyncio.wait_for(started.wait(), 5)
@@ -263,7 +261,7 @@ def test_queue_wait_is_not_part_of_execution_timeout(context, monkeypatch):
             release.set()
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
             assert timed == [14400, 14400]
-            assert all(t['status'] == 'succeeded' for t in manager.canvas.snapshot(project['id'])['tasks'])
+            assert all(t['status'] == 'succeeded' for t in tasks(manager, project['id']))
         finally:
             release.set()
             await manager.close()
@@ -278,18 +276,18 @@ def test_interrupted_task_resumes_same_id_with_no_new_submission(context):
         async def generate(self, config, task, submitted):
             assert task['externalTaskId'] == 'original-remote'
             self.recovered.append((task['id'], task['externalTaskId']))
-            return 'mp4', b'fixture-video'
+            return 'mp4', mp4()
     async def run():
         provider = Provider()
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         task, pinned, _ = prepare(manager, context)
         task.update(status='interrupted', phase='poll', externalTaskId='original-remote', recovery='remote', resumeAllowed=True)
-        manager.canvas.task_write(project['id'], task, pinned)
+        manager.checkpoint(project['id'], task, pinned)
         try:
-            await asyncio.gather(*(manager.recover(project['id'], task['id'], session) for _ in range(2)))
+            await asyncio.gather(*(manager.recover(project['id'], task['id']) for _ in range(2)))
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
             assert provider.recovered == [(task['id'], 'original-remote')]
-            assert manager.canvas.snapshot(project['id'])['tasks'][0]['status'] == 'succeeded'
+            assert tasks(manager, project['id'])[0]['status'] == 'succeeded'
         finally:
             await manager.close()
     asyncio.run(run())
@@ -301,16 +299,17 @@ def test_cancel_interrupted_task_rejects_changed_service(context):
         def validate(self, *args): pass
         async def cancel(self, *args): raise AssertionError('Must not cancel on a different service')
     async def run():
-        manager = Generation(store, configs, Provider())
+        manager = CreationGeneration(store, configs, Provider())
         task, pinned, _ = prepare(manager, context)
         task.update(status='interrupted', phase='poll', externalTaskId='original-remote', recovery='remote', resumeAllowed=True)
-        manager.canvas.task_write(project['id'], task, pinned)
+        manager.checkpoint(project['id'], task, pinned)
         configs.save('video', 'http://127.0.0.1:19999/v1', 'FastH3-Omni', '', config['id'], connection_type='self_hosted')
         try:
-            with pytest.raises(ProjectError, match='配置已变化'):
-                await manager.cancel(project['id'], task['id'], session)
-            receipt = manager.canvas.snapshot(project['id'])['tasks'][0]
-            assert receipt['status'] == 'interrupted' and receipt['externalTaskId'] == 'original-remote'
+            await cancel(manager, project['id'], task['id'], session)
+            receipt = tasks(manager, project['id'])[0]
+            assert receipt['status'] == 'cancelled' and receipt['externalTaskId'] == 'original-remote'
+            assert receipt['errorDetails']['stage'] == 'cancel'
+            assert store.snapshot(project['id']).jobs[0].remoteCancellation == 'unknown'
         finally:
             await manager.close()
     asyncio.run(run())
@@ -351,18 +350,18 @@ def test_confirmed_failed_video_does_not_recover_or_generate_again(context):
             'status': 'failed', 'error': {'code': 500, 'message': 'private-diagnostic'}})
     provider = GenerationProviders(store, httpx.MockTransport(handle), retry_delays=())
     async def run():
-        manager = Generation(store, configs, provider)
+        manager = CreationGeneration(store, configs, provider)
         task, pinned, config = prepare(manager, context)
         task.update(phase='poll', externalTaskId='original-remote')
-        manager.canvas.task_write(project['id'], task, pinned)
+        manager.checkpoint(project['id'], task, pinned)
         try:
             manager._launch(task, pinned, config, 'remote')
             await asyncio.gather(*(job.future for job in list(manager.jobs.values())))
-            receipt = manager.canvas.snapshot(project['id'])['tasks'][0]
+            receipt = tasks(manager, project['id'])[0]
             assert receipt['status'] == 'failed' and receipt['recovery'] == 'retry'
             assert not receipt['resumeAllowed'] and receipt['errorDetails']['providerStatus'] == 'failed'
             for _ in range(2):
-                await manager.recover(project['id'], task['id'], session)
+                await manager.recover(project['id'], task['id'])
             assert calls == ['GET']
         finally:
             await manager.close()

@@ -61,33 +61,3 @@ def project_content(content, *, speech=False):
     if len(references) > MAX_REFERENCES or len(prompt) > 20000:
         raise ValueError(f'正文最多 20000 字、{MAX_REFERENCES} 份不同参考')
     return prompt, references
-
-
-def reference_content(prompt, reference_ids, records, content=None):
-    """Retain positioned parts; put only unlocated references on the first line."""
-    body = [part.model_dump(mode='json') for part in content_adapter.validate_python(content)] if content is not None else (
-        [{'type': 'text', 'text': prompt}] if prompt else [])
-    located = {part['assetId'] for part in body if part['type'] == 'reference'}
-    unlocated = [asset_id for asset_id in dict.fromkeys(map(str, reference_ids)) if asset_id not in located]
-    if not unlocated:
-        return body
-    header = []
-    for asset_id in unlocated:
-        if header:
-            header.append({'type': 'text', 'text': ' '})
-        asset = records.get(asset_id, {})
-        header.append({'type': 'reference', 'assetId': asset_id, 'name': asset.get('name') or '参考缺失',
-                       'fingerprint': asset.get('fingerprint')})
-    return header + ([{'type': 'text', 'text': '\n'}] + body if any(
-        part['type'] == 'reference' or part['text'] for part in body) else [])
-
-
-def replace_inputs(original, updates, records=None):
-    """Legacy text/reference edits invalidate an older structured draft."""
-    result = {**original, **updates}
-    if 'promptContent' not in updates and {'prompt', 'referenceIds'} & updates.keys():
-        result['promptContent'] = None
-    elif updates.get('promptContent') is not None and 'referenceIds' in updates:
-        result['promptContent'] = reference_content(result.get('prompt', ''), updates['referenceIds'],
-                                                    records or {}, updates['promptContent'])
-    return result

@@ -6,8 +6,6 @@ import json
 from opendirector.domain.input_rules import MAX_REFERENCES, input_rules
 from opendirector.domain.projects import ProjectError
 from opendirector.domain.references import project_content
-from opendirector.infrastructure.execution import read_generation_task
-from opendirector.infrastructure.local_projects import child
 
 
 def reference_text(data):
@@ -84,12 +82,7 @@ def continuation_source(store, project_id, meta, config):
     if not meta.get('generationTaskId'):
         raise ProjectError(message, 409)
     try:
-        if hasattr(store, 'generation_task'):
-            source = store.generation_task(project_id, meta['generationTaskId'])
-        else:
-            with store.transaction() as db:
-                directory = store._owner(db, project_id)
-            source = read_generation_task(child(child(directory, 'tasks'), str(meta['generationTaskId']) + '.json'))
+        source = store.generation_task(project_id, meta['generationTaskId'])
     except (OSError, ValueError, KeyError, ProjectError):
         raise ProjectError(message, 409) from None
     if (source['kind'] != 'video' or source['status'] != 'succeeded' or not source.get('externalTaskId')

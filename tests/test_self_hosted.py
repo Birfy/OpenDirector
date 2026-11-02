@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
-from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.application.creation_generation import CreationGeneration
+from opendirector.application.creation_tool_assets import CreationToolAssets
+from generation_helpers import new_project, prepared
 from opendirector.integrations.providers import GenerationProviders
 from opendirector.integrations.reference_inputs import generation_references
 from opendirector.integrations.chat_completions import ChatCompletions
@@ -49,7 +51,7 @@ def test_legacy_settings_keep_provider_and_key_after_migration(tmp_path):
 
 def test_fasth3_multipart_carries_video_and_image_and_resumes_without_reupload(tmp_path):
     store=LocalProjects(tmp_path)
-    session=str(uuid4()); owner=store.create('参考验证',str(uuid4()),session)['id']
+    owner=str(uuid4())
     configs=ModelConfigs(store.repository)
     public=configs.save('video','http://localhost:18091/v1','FastH3-Omni','',connection_type='self_hosted')
     config=configs.resolve(public['id'],'video')
@@ -89,20 +91,21 @@ def test_fasth3_multipart_carries_video_and_image_and_resumes_without_reupload(t
     asyncio.run(run())
 
 
-def test_video_reference_connects_to_fasth3_but_not_seedance(tmp_path,monkeypatch):
-    store=LocalProjects(tmp_path); session=str(uuid4())
-    project=store.create('视频连线',str(uuid4()),session); canvas=CanvasProjects(store)
-    monkeypatch.setattr('opendirector.integrations.asset_metadata.probe',lambda *args: {'kind':'video','durationMs':3000,'width':320,'height':240,'frameRate':24,'hasAudio':False})
-    asset=canvas.import_file(project['id'],str(uuid4()),'输入.mp4',b'video',session,str(uuid4()))
-    configs=ModelConfigs(store.repository)
-    hosted=configs.save('video','http://localhost:18091/v1','FastH3-Omni','',connection_type='self_hosted')
-    source=next(n for n in canvas.snapshot(project['id'])['canvas']['nodes'] if n['assetId']==asset['id'])
-    target=canvas.connect(project['id'],{'sourceId':source['id'],'assetId':asset['id'],'targetId':str(uuid4()),'kind':'video','x':500,'y':50},session)
-    assert target['modelConfigId']==hosted['id'] and target['videoMode']=='reference'
-    assert asset['id'] in target['referenceIds'] and canvas.snapshot(project['id'])['edges']
-    managed=configs.save('video','https://ark.cn-beijing.volces.com/api/plan/v3','doubao-seedance-2.0','key')
+def test_video_reference_acceptance_follows_model_rules(tmp_path):
+    from test_tool_tasks import mp4
+    project = new_project(tmp_path)
+    store, owner, session = project
+    configs = ModelConfigs(tmp_path)
+    hosted = configs.save('video', 'http://localhost:18091/v1', 'FastH3-Omni', '', connection_type='self_hosted')
+    assets = CreationToolAssets(store)
+    asset = assets.import_file(owner, uuid4(), '输入.mp4', mp4(), session)
+    runner = CreationGeneration(store, configs)
+    task, _, _ = prepared(runner, project, hosted, parameters=dict(videoMode='reference'), references=[asset['id']])
+    assert task['videoMode'] == 'reference' and task['referenceIds'] == [asset['id']]
+    managed = configs.save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3', 'doubao-seedance-2.0', 'key')
     with pytest.raises(ProjectError):
-        generation_references(store,{'kind':'video','projectId':project['id'],'prompt':'参考','referenceIds':[asset['id']],'videoMode':'reference'},configs.resolve(managed['id'],'video'))
+        prepared(runner, project, managed, parameters=dict(videoMode='reference'), references=[asset['id']])
+    assert len(store.snapshot(owner).jobs) == 1
 
 
 def test_self_hosted_image_and_audio_use_compatible_routes_without_auth(tmp_path):
@@ -129,24 +132,16 @@ def test_self_hosted_image_and_audio_use_compatible_routes_without_auth(tmp_path
 
 @pytest.mark.parametrize('dimensions,expected', [((32,64),'480x832'),((64,32),'832x480')])
 def test_fasth3_480p_follows_reference_orientation(tmp_path, dimensions, expected):
-    from opendirector.application.generation import Generation
-    store=LocalProjects(tmp_path)
-    session=str(uuid4()); owner=store.create('方向验证',str(uuid4()),session)['id']
-    configs=ModelConfigs(store.repository)
-    config=configs.save('video','http://localhost:18091/v1','FastH3-Omni','',connection_type='self_hosted')
-    canvas=CanvasProjects(store)
-    data=io.BytesIO(); Image.new('RGB',dimensions,'red').save(data,'PNG')
-    asset=canvas.import_file(owner,str(uuid4()),'角色.png',data.getvalue(),session,str(uuid4()))
-    source=next(n for n in canvas.snapshot(owner)['canvas']['nodes'] if n['assetId']==asset['id'])
-    target=canvas.connect(owner,{'sourceId':source['id'],'assetId':asset['id'],'targetId':str(uuid4()),
-        'kind':'video','x':500,'y':40,'modelConfigId':config['id'],'videoMode':'reference'},session)
-    target=canvas.patch(owner,target['id'],{'expectedRevision':target['revision'],'prompt':'让人物自然挥手'},session)
-    class Provider:
-        def validate(self, kind, config): pass
-    task,_,_=Generation(store,configs,Provider())._prepare(owner,target['id'],{
-        'id':str(uuid4()),'modelConfigId':config['id'],'expectedRevision':target['revision']},session)
-    assert task['parameters']['size']==expected
-    assert task['parameters']['num_inference_steps']==8
+    project = new_project(tmp_path)
+    store, owner, session = project
+    configs = ModelConfigs(tmp_path)
+    config = configs.save('video', 'http://localhost:18091/v1', 'FastH3-Omni', '', connection_type='self_hosted')
+    data = io.BytesIO(); Image.new('RGB', dimensions, 'red').save(data, 'PNG')
+    asset = CreationToolAssets(store).import_file(owner, uuid4(), '角色.png', data.getvalue(), session)
+    task, _, _ = prepared(CreationGeneration(store, configs), project, config,
+        parameters=dict(videoMode='reference'), references=[asset['id']])
+    assert task['parameters']['size'] == expected
+    assert task['parameters']['num_inference_steps'] == 8
 
 
 @pytest.mark.parametrize('origin,expected_auth', [('http://localhost:9999','Bearer private-token'),('https://cdn.example',None)])

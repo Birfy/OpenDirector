@@ -7,7 +7,8 @@ import httpx
 from PIL import Image
 import pytest
 
-from opendirector.application.generation import Generation
+from opendirector.application.creation_generation import CreationGeneration
+from generation_helpers import new_project, prepared, tasks
 from opendirector.domain.generation import GenerationError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -21,10 +22,8 @@ SIGNED_URL = 'https://cdn.test/output?signature=secret-signature'
 
 @pytest.fixture
 def project(tmp_path):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4())
-    project = store.create('错误诊断', str(uuid4()), session)
-    return store, project, session
+    store, pid, session = new_project(tmp_path)
+    return store, {'id': str(pid)}, session
 
 
 @pytest.mark.parametrize(('status', 'code', 'category'), [
@@ -149,10 +148,9 @@ def test_transport_failure_reports_phase_without_leaking_request(project, stage)
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('stage', ['save', 'adopt'])
-def test_local_processing_failure_is_distinct_from_provider_failure(project, stage, monkeypatch):
-    store, project, session = project
-    configs = ModelConfigs(store.repository)
+def test_local_processing_failure_is_distinct_from_provider_failure(project, monkeypatch):
+    store, value, session = project
+    configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'https://ark.test', 'image', SECRET)
     output = io.BytesIO(); Image.new('RGB', (16, 12)).save(output, 'PNG')
     class Provider:
@@ -163,17 +161,15 @@ def test_local_processing_failure_is_distinct_from_provider_failure(project, sta
             return 'png', output.getvalue()
     provider = Provider()
     async def run():
-        generation = Generation(store, configs, provider)
+        generation = CreationGeneration(store, configs, provider)
         def fail(*args, **kwargs): raise OSError(SECRET + SIGNED_URL)
-        if stage == 'save': monkeypatch.setattr(generation.canvas.assets, 'import_file', fail)
-        else: monkeypatch.setattr(generation.canvas, 'attach', fail)
-        await generation.submit(project['id'], str(uuid4()), {'id': str(uuid4()), 'modelConfigId': config['id'], 'expectedRevision': 1,
-            'inputs': {'prompt': '生成'}}, session, create={'kind': 'image'})
+        monkeypatch.setattr(generation, '_commit_output', fail)
+        generation._launch(*prepared(generation, (store, value['id'], session), config))
         await asyncio.gather(*(job.future for job in generation.jobs.values()))
-        receipt = generation.canvas.snapshot(project['id'])['tasks'][0]
+        receipt = tasks(generation, value['id'])[0]
         assert receipt['status'] == 'failed' and receipt['errorDetails']['category'] == 'local'
-        assert receipt['errorDetails']['stage'] == stage and provider.calls == 1
-        assert SECRET not in json.dumps(receipt) and 'secret-signature' not in receipt['error']
+        assert receipt['errorDetails']['stage'] == 'save' and provider.calls == 1
+        assert SECRET not in json.dumps(receipt) and 'secret-signature' not in json.dumps(receipt)
         await generation.close()
     asyncio.run(run())
 

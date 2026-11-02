@@ -1,6 +1,4 @@
 """Read-only node sources with stable identity; copies never borrow edit leases."""
-import base64
-from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +8,6 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import current_asset, visible_item_ids
 from opendirector.application.subject_library import SubjectLibrary
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.workspace_documents import WorkspaceDocuments
 from opendirector.infrastructure.creation_uploads import inspect_file
 
 
@@ -19,80 +16,36 @@ class CanvasSources:
         self.projects = projects
 
     def _read(self, project_id):
-        try:
-            snapshot = self.projects.snapshot(project_id)
-        except ProjectError as error:
-            if error.code != 'unsupported_format':
-                raise
-            document = WorkspaceDocuments(self.projects.local).read(str(project_id))['document']
-            if document is None:
-                return [], lambda resource: b''
-            nodes = document.get('nodes', [])
-            def read(resource):
-                if resource.get('kind') == 'text':
-                    return resource.get('text', '').encode('utf-8')
-                src = resource.get('src', '')
-                if src.startswith('opendirector-media:'):
-                    src = document['mediaSources'][int(src.split(':')[1])]
-                if src.startswith('data:') and ';base64,' in src:
-                    try:
-                        return base64.b64decode(src.split(',', 1)[1], validate=True)
-                    except (ValueError, TypeError):
-                        raise ProjectError('来源素材内容无效。', 422) from None
-                if resource.get('assetId'):
-                    return self.projects.local.asset(str(project_id), str(resource['assetId']))[0]
-                raise ProjectError('来源素材尚未保存或不可用。', 410)
-            rows = []
-            for node in nodes:
-                kind, data = node.get('type'), node.get('data', {})
-                if kind == 'subject':
-                    subject = deepcopy(data.get('subject') or {})
-                    if not subject.get('main'):
-                        continue
-                    content = subject
-                elif kind in {'image', 'video', 'audio', 'file', 'text'}:
-                    if not data.get('src') and not data.get('text'):
-                        continue
-                    content = dict(main=dict(id=node['id'], kind=kind, title=data.get('title', ''), src=data.get('src', ''),
-                        text=data.get('text', ''), assetId=data.get('backendAssetId'), **(data.get('media') or {})))
-                else:
+        snapshot = self.projects.snapshot(project_id)
+        assets = {asset.id: asset for asset in snapshot.assets}
+        documents = {doc.id: doc for doc in snapshot.editorDocuments}
+        def resource(ref):
+            asset = assets[ref.assetId]
+            return dict(id=str(asset.id), assetId=str(asset.id), kind=asset.kind, title=asset.name,
+                        **asset.metadata.model_dump(mode='json'), fingerprint=asset.fingerprint)
+        def read(value):
+            stream, _ = CreationAssets(self.projects).open_media(project_id, value['assetId'])
+            with stream:
+                return stream.read()
+        rows = []
+        visible = visible_item_ids(snapshot)
+        for item in snapshot.canvasItems:
+            if item.id not in visible:
+                continue
+            if item.kind == 'subject':
+                data = documents[item.binding.objectRef.id].data
+                if not data.main:
                     continue
-                # Expand wire references for preview and subsequent media reads.
-                for resource in self._resources(content).values():
-                    if resource and resource.get('src', '').startswith('opendirector-media:'):
-                        resource['src'] = document['mediaSources'][int(resource['src'].split(':')[1])]
-                rows.append(self._row(node['id'], data.get('title', ''), kind, content))
-            return rows, read
-        else:
-            assets = {asset.id: asset for asset in snapshot.assets}
-            documents = {doc.id: doc for doc in snapshot.editorDocuments}
-            def resource(ref):
-                asset = assets[ref.assetId]
-                return dict(id=str(asset.id), assetId=str(asset.id), kind=asset.kind, title=asset.name,
-                            **asset.metadata.model_dump(mode='json'), fingerprint=asset.fingerprint)
-            def read(value):
-                stream, _ = CreationAssets(self.projects).open_media(project_id, value['assetId'])
-                with stream:
-                    return stream.read()
-            rows = []
-            visible = visible_item_ids(snapshot)
-            for item in snapshot.canvasItems:
-                if item.id not in visible:
+                content = dict(description=data.description, category=data.category, main=resource(data.main),
+                    auxiliaries=[resource(ref) for ref in data.auxiliaries], voice=resource(data.voice) if data.voice else None)
+            else:
+                asset = current_asset(snapshot, item)
+                if asset is None:
                     continue
-                if item.kind == 'subject':
-                    data = documents[item.binding.objectRef.id].data
-                    if not data.main:
-                        continue
-                    content = dict(description=data.description, category=data.category, main=resource(data.main),
-                        auxiliaries=[resource(ref) for ref in data.auxiliaries], voice=resource(data.voice) if data.voice else None)
-                else:
-                    asset = current_asset(snapshot, item)
-                    if asset is None:
-                        continue
-                    from opendirector.application.creation_canvas import asset_ref
-                    content = dict(main=resource(asset_ref(asset)))
-                rows.append(self._row(str(item.id), item.title, item.kind, content))
-            return rows, read
+                from opendirector.application.creation_canvas import asset_ref
+                content = dict(main=resource(asset_ref(asset)))
+            rows.append(self._row(str(item.id), item.title, item.kind, content))
+        return rows, read
 
     @staticmethod
     def _resources(content):

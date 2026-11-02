@@ -12,7 +12,8 @@ from PIL import Image
 
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.canvas import CanvasProjects
+from opendirector.application.creation_tool_assets import CreationToolAssets
+from generation_helpers import new_project
 from opendirector.infrastructure.local_projects import LocalProjects, child
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.model_adapters import OpenAIImages, adapter_for, capabilities_of
@@ -38,23 +39,19 @@ def mp4(seconds=1, size='64x36'):
 
 @pytest.fixture
 def project(tmp_path):
-    store = LocalProjects(tmp_path)
-    session = str(uuid4())
-    value = store.create('工具测试', str(uuid4()), session)
-    return store, value['id'], session
+    store, pid, session = new_project(tmp_path, '工具测试')
+    return store, str(pid), session
 
 
 def configure(store, *models):
-    configs = ModelConfigs(store.repository)
+    configs = ModelConfigs(store.local.repository)
     for kind, url, model in models:
         configs.save(kind, url, model, '', connection_type='self_hosted', protocol='vllm_omni' if kind in {'video', 'vision'} else 'openai')
     return configs
 
 
 def upload(store, project_id, session, name, data):
-    asset_id = str(uuid4())
-    CanvasProjects(store).assets.import_file(project_id, asset_id, name, data, session)
-    return asset_id
+    return CreationToolAssets(store).import_file(project_id, uuid4(), name, data, session)['id']
 
 
 def images_server(calls, color='red'):
@@ -70,7 +67,7 @@ def images_server(calls, color='red'):
 
 def run(store, configs, transport, project_id, session, value):
     async def go():
-        tools = ToolTasks(store, configs, CanvasProjects(store).assets, transport=transport, poll_interval=0)
+        tools = ToolTasks(store.local, configs, CreationToolAssets(store), transport=transport, poll_interval=0, projects=store)
         try:
             task = await tools.submit(project_id, {'id': str(uuid4()), 'boxes': [], 'parameters': {}, **value}, session)
             await asyncio.gather(*tools.jobs.values(), return_exceptions=True)
@@ -81,9 +78,9 @@ def run(store, configs, transport, project_id, session, value):
 
 
 def output_image(store, project_id, task, index=0):
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
-    return Image.open(io.BytesIO(child(child(directory, 'assets'), task['outputs'][index]['id']).read_bytes())).convert('RGB')
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
+    return Image.open(io.BytesIO(CreationToolAssets(store).read_bytes(project_id, task['outputs'][index]['id']))).convert('RGB')
 
 
 def test_adapters_declare_capabilities_from_profiles_not_operations():
@@ -102,13 +99,13 @@ def test_adapters_declare_capabilities_from_profiles_not_operations():
 
 def test_catalog_reports_availability_by_capability(project):
     store, _, _ = project
-    empty = ToolTasks(store, ModelConfigs(store.repository), None).catalog()
+    empty = ToolTasks(store.local, ModelConfigs(store.local.repository), None, projects=store).catalog()
     tools = {item['id']: item for item in empty['tools']}
     assert not tools['outpaint']['available'] and '图生图' in tools['outpaint']['reason']
     assert tools['audio-separation']['available'] and not tools['video-edit']['available']
     # Local recipes need no model at all.
     assert tools['image-hd']['available'] and tools['video-upscale']['available']
-    configured = ToolTasks(store, configure(store, ZIMAGE, H3, TTS, CHAT), None).catalog()
+    configured = ToolTasks(store.local, configure(store, ZIMAGE, H3, TTS, CHAT), None, projects=store).catalog()
     tools = {item['id']: item for item in configured['tools']}
     assert tools['outpaint']['available'] and tools['dynamic-poster']['available'] and tools['video-subtitle-erasure']['available']
     assert tools['outpaint']['models']['image.edit'][0]['label'] == 'Z-Image-Turbo'
@@ -182,12 +179,12 @@ def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project)
 def test_submission_rejects_tools_without_a_capable_model(project):
     store, project_id, session = project
     source = upload(store, project_id, session, 'blue.png', png())
-    tools = ToolTasks(store, configure(store, TTS), CanvasProjects(store).assets)
+    tools = ToolTasks(store.local, configure(store, TTS), CreationToolAssets(store), projects=store)
     for tool, message in (('outpaint', '没有可用的「图生图/图片编辑」模型'), ('layer-decompose', '图像分割')):
         with pytest.raises(ProjectError, match=message):
             asyncio.run(tools.submit(project_id, {'id': str(uuid4()), 'tool': tool, 'sourceAssetIds': [source], 'parameters': {}}, session))
     with pytest.raises(ProjectError, match='类型与工具不匹配'):
-        asyncio.run(ToolTasks(store, configure(store, ZIMAGE), CanvasProjects(store).assets).submit(
+        asyncio.run(ToolTasks(store.local, configure(store, ZIMAGE), CreationToolAssets(store), projects=store).submit(
             project_id, {'id': str(uuid4()), 'tool': 'video-upscale', 'sourceAssetIds': [source], 'parameters': {}}, session))
 
 
@@ -220,7 +217,7 @@ def test_dynamic_poster_runs_first_frame_video_and_cancel_reaches_the_service(pr
 
     async def cancel():
         log.clear()
-        tools = ToolTasks(store, configs, CanvasProjects(store).assets, transport=httpx.MockTransport(video_server(log, hold=True)), poll_interval=0.01)
+        tools = ToolTasks(store.local, configs, CreationToolAssets(store), transport=httpx.MockTransport(video_server(log, hold=True)), poll_interval=0.01, projects=store)
         task = await tools.submit(project_id, {'id': str(uuid4()), 'tool': 'dynamic-poster', 'sourceAssetIds': [source], 'parameters': {}}, session)
         while not any(method == 'GET' for method, _ in log):
             await asyncio.sleep(0.01)
@@ -342,15 +339,15 @@ def test_audio_separation_is_local(project):
                {'tool': 'audio-separation', 'sourceAssetIds': [mono], 'parameters': {'mode': 'backgroundSound'}})
     assert task['status'] == 'failed' and '单声道' in task['error']
     with pytest.raises(ProjectError, match='音轨分离'):
-        asyncio.run(ToolTasks(store, configs, CanvasProjects(store).assets).submit(
+        asyncio.run(ToolTasks(store.local, configs, CreationToolAssets(store), projects=store).submit(
             project_id, {'id': str(uuid4()), 'tool': 'audio-separation', 'sourceAssetIds': [clip], 'parameters': {'mode': 'soundEffects'}}, session))
 
 
 def test_interrupted_tasks_are_reported_after_restart(project):
     store, project_id, session = project
-    tools = ToolTasks(store, configure(store), CanvasProjects(store).assets)
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
+    tools = ToolTasks(store.local, configure(store), CreationToolAssets(store), projects=store)
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
     task_id = str(uuid4())
     folder = child(directory, 'tool-tasks')
     folder.mkdir(exist_ok=True)
@@ -377,7 +374,7 @@ def test_qwen_image_edits_with_condition_images_on_its_grid_without_strength():
 
 def test_cutout_keeps_original_pixels_with_the_model_matte(project):
     store, project_id, session = project
-    configs = ModelConfigs(store.repository)
+    configs = ModelConfigs(store.local.repository)
     configs.save('image', 'http://gpu:8210/v1', 'Qwen/Qwen-Image-2.1', '', connection_type='self_hosted', protocol='openai')
     source = upload(store, project_id, session, 'blue.png', png((64, 48), 'blue'))
     bodies = []
@@ -392,9 +389,9 @@ def test_cutout_keeps_original_pixels_with_the_model_matte(project):
     task = run(store, configs, httpx.MockTransport(matte), project_id, session, {'tool': 'cutout', 'sourceAssetIds': [source]})
     assert task['status'] == 'succeeded', task['error']
     assert b'name="background"' in bodies[0] and b'RGBA' in bodies[0]
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
-    image = Image.open(io.BytesIO(child(child(directory, 'assets'), task['outputs'][0]['id']).read_bytes()))
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
+    image = Image.open(io.BytesIO(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id'])))
     assert image.mode == 'RGBA' and image.getpixel((32, 24)) == (0, 0, 255, 255) and image.getpixel((2, 2))[3] == 0
 
 
@@ -422,17 +419,17 @@ def segmentation_server(log, answers, *, edits=None):
 
 
 def output_rgba(store, project_id, task, index=0):
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
-    return Image.open(io.BytesIO(child(child(directory, 'assets'), task['outputs'][index]['id']).read_bytes())).convert('RGBA')
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
+    return Image.open(io.BytesIO(CreationToolAssets(store).read_bytes(project_id, task['outputs'][index]['id']))).convert('RGBA')
 
 
 def test_vision_models_default_to_the_vllm_omni_protocol(project):
     store, _, _ = project
-    saved = ModelConfigs(store.repository).save('vision', 'http://gpu:8230/v1', 'facebook/sam3', '', connection_type='self_hosted')
+    saved = ModelConfigs(store.local.repository).save('vision', 'http://gpu:8230/v1', 'facebook/sam3', '', connection_type='self_hosted')
     assert saved['protocol'] == 'vllm_omni' and saved['inputRules']['profile'] == 'vllm-omni-segmentation'
     with pytest.raises(ProjectError, match='不兼容'):
-        ModelConfigs(store.repository).save('vision', 'http://gpu:8230/v1', 'facebook/sam3', '', connection_type='self_hosted', protocol='openai')
+        ModelConfigs(store.local.repository).save('vision', 'http://gpu:8230/v1', 'facebook/sam3', '', connection_type='self_hosted', protocol='openai')
 
 
 def test_layer_decompose_splits_distinct_objects_and_fills_the_background(project):
@@ -486,8 +483,8 @@ def test_selection_preview_returns_alpha_masks_without_output_assets(project):
     log = []
     answers = {'person': [(0.9, (0, 0, 32, 48))], 'animal': [(0.6, (0, 0, 32, 48))],
                'vehicle': [(0.8, (40, 10, 60, 30))]}
-    tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
-                      transport=httpx.MockTransport(segmentation_server(log, answers)))
+    tools = ToolTasks(store.local, configure(store, SAM3), CreationToolAssets(store),
+                      transport=httpx.MockTransport(segmentation_server(log, answers)), projects=store)
     preview = asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': source}, session))
     assert preview['sourceAssetId'] == source and (preview['width'], preview['height']) == (64, 48)
     assert [item['label'] for item in preview['instances']] == ['人物', '交通工具']
@@ -495,8 +492,8 @@ def test_selection_preview_returns_alpha_masks_without_output_assets(project):
     mask = Image.open(io.BytesIO(base64.b64decode(preview['instances'][0]['maskDataUrl'].split(',', 1)[1])))
     assert mask.mode == 'RGBA' and mask.getpixel((10, 20)) == (255, 255, 255, 255)
     assert mask.getpixel((50, 20))[3] == 0
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
     assert set(tools.assets._records(directory, project_id)) == {source}
     assert not child(directory, 'tool-tasks').exists() and tools.catalog()['selectionPreview']['available']
 
@@ -505,8 +502,8 @@ def test_selection_preview_checks_source_authority_and_box_bounds(project):
     store, project_id, session = project
     source = upload(store, project_id, session, 'blue.png', png())
     log = []
-    tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
-                      transport=httpx.MockTransport(segmentation_server(log, {})))
+    tools = ToolTasks(store.local, configure(store, SAM3), CreationToolAssets(store),
+                      transport=httpx.MockTransport(segmentation_server(log, {})), projects=store)
     with pytest.raises(ProjectError):
         asyncio.run(tools.selection_preview(project_id, {'sourceAssetId': source}, str(uuid4())))
     with pytest.raises(ProjectError, match='来源图片不存在'):
@@ -532,8 +529,8 @@ def test_selection_preview_cancellation_closes_upstream_work(project):
                 cancelled.set()
                 raise
 
-        tools = ToolTasks(store, configure(store, SAM3), CanvasProjects(store).assets,
-                          transport=httpx.MockTransport(provider))
+        tools = ToolTasks(store.local, configure(store, SAM3), CreationToolAssets(store),
+                          transport=httpx.MockTransport(provider), projects=store)
         preview = asyncio.create_task(tools.selection_preview(project_id, {'sourceAssetId': source, 'prompt': 'person'}, session))
         await asyncio.wait_for(entered.wait(), 2)
         preview.cancel()
@@ -615,8 +612,8 @@ def test_selection_api_uses_owned_source_and_accepts_only_supported_prompts(proj
         return [Segment(base64.b64decode(box_mask((64, 48), (12, 10, 30, 30))), (12, 10, 30, 30), 0.9)]
 
     monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
-    with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
-        path = f'/api/projects/{project_id}/image-selections'
+    with TestClient(create_app(store.local), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
+        path = f'/api/creation/projects/{project_id}/image-selections'
         response = client.post(path, json={'sourceAssetId': source, 'boxes': [{'x': 10, 'y': 8, 'width': 22, 'height': 24}]})
         assert response.status_code == 200, response.text
         assert response.json()['instances'][0]['box'] == {'x': 12, 'y': 10, 'width': 18, 'height': 20}
@@ -653,9 +650,10 @@ def test_video_matting_keeps_the_tracked_subject_over_the_chosen_background(proj
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'green'}})
     assert task['status'] == 'succeeded', task['error']
     assert log == ['person'] and task['outputs'][0]['type'] == 'video/mp4'
-    with store.transaction() as db:
-        directory = store._owner(db, project_id)
-    path = child(child(directory, 'assets'), task['outputs'][0]['id'])
+    with store.local.transaction() as db:
+        directory = store._find(db, project_id)[0]
+    path = tmp_path / ('output.' + task['outputs'][0]['type'].split('/')[-1])
+    path.write_bytes(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id']))
     frame = Image.open(io.BytesIO(subprocess.run(['ffmpeg', '-v', 'error', '-i', str(path), '-frames:v', '1', '-f', 'image2', '-c:v', 'png', 'pipe:1'],
                                                  capture_output=True, check=True).stdout)).convert('RGB')
     red, green, blue = frame.getpixel((58, 18))
@@ -664,7 +662,8 @@ def test_video_matting_keeps_the_tracked_subject_over_the_chosen_background(proj
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'transparent', 'prompt': '狗'}})
     assert task['status'] == 'succeeded', task['error']
     assert log[-1] == 'dog' and task['outputs'][0]['type'] == 'video/webm'
-    path = child(child(directory, 'assets'), task['outputs'][0]['id'])
+    path = tmp_path / ('output.' + task['outputs'][0]['type'].split('/')[-1])
+    path.write_bytes(CreationToolAssets(store).read_bytes(project_id, task['outputs'][0]['id']))
     assert probe(path, 'stream_tags=alpha_mode').get('tags', {}).get('alpha_mode') == '1'
     task = run(store, configs, httpx.MockTransport(tracking_server(log, empty=True)), project_id, session,
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'black'}})
@@ -679,8 +678,8 @@ def test_cancel_drains_an_inflight_write_so_the_task_never_stays_running(project
     log = []
 
     async def cancel():
-        tools = ToolTasks(store, configs, CanvasProjects(store).assets,
-                          transport=httpx.MockTransport(video_server(log, hold=True)), poll_interval=0.01)
+        tools = ToolTasks(store.local, configs, CreationToolAssets(store),
+                          transport=httpx.MockTransport(video_server(log, hold=True)), poll_interval=0.01, projects=store)
         write = tools._write
         running = asyncio.Event()
 
@@ -703,3 +702,20 @@ def test_cancel_drains_an_inflight_write_so_the_task_never_stays_running(project
     assert cancelled['status'] == 'cancelled'
     assert final['status'] == 'cancelled', final['status']
     assert final['finishedAt'] == cancelled['finishedAt']
+
+
+@pytest.mark.parametrize('box', [
+    {'x': 32, 'y': 0, 'width': 33, 'height': 36},
+    {'x': 0, 'y': 0, 'width': 64, 'height': 37},
+    {'x': -1, 'y': 0, 'width': 32, 'height': 36},
+])
+def test_video_edit_rejects_out_of_bounds_selection_before_acceptance(project, box):
+    store, project_id, session = project
+    source = upload(store, project_id, session, 'clip.mp4', mp4())
+    service = ToolTasks(store.local, configure(store, H3), CreationToolAssets(store), projects=store)
+    before = store.snapshot(project_id)
+    with pytest.raises(ProjectError, match='超出实际来源媒体'):
+        asyncio.run(service.submit(project_id, dict(id=str(uuid4()), tool='video-edit',
+            sourceAssetIds=[source], parameters={'prompt': 'change'}, boxes=[box]), session))
+    assert service.list(project_id) == [] and not service.jobs
+    assert store.snapshot(project_id) == before

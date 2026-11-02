@@ -9,7 +9,6 @@ from PIL import Image
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import asset_ref, current_asset
 from opendirector.application.creation_generation import CreationGeneration
-from opendirector.application.generation import Generation
 from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -39,7 +38,7 @@ async def generated(project):
     configs = ModelConfigs(store.local.repository)
     config = configs.save('image', 'http://127.0.0.1:12345/v1', 'test-image', '',
         connection_type='self_hosted', protocol='openai', auth_mode='none')
-    runner = CreationGeneration(store, configs, Generation(store.local, configs, provider), provider)
+    runner = CreationGeneration(store, configs, provider)
     item, spec = media(project, 'image')
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)],
         spec=spec.model_copy(update={'prompt': 'A purple square', 'modelConfigId': UUID(config['id'])})).status == 'applied'

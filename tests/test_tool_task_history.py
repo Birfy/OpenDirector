@@ -1,4 +1,4 @@
-"""Tool execution history survives reloads in both project formats."""
+"""Tool execution history survives reloads in the unified project."""
 import asyncio
 from io import BytesIO
 from uuid import uuid4
@@ -11,7 +11,6 @@ from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.projects import ProjectError
-from opendirector.infrastructure.canvas import CanvasProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
@@ -24,26 +23,21 @@ def png():
     return out.getvalue()
 
 
-@pytest.fixture(params=[False, True], ids=['workspace', 'unified'])
-def tool_project(tmp_path, request):
+@pytest.fixture
+def tool_project(tmp_path):
     store = LocalProjects(tmp_path)
     project_id, session, node_id = str(uuid4()), str(uuid4()), str(uuid4())
-    projects = CreationProjects(store) if request.param else None
-    if projects:
-        projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id,
-            type='project.create', payload=dict(name='Tool history'))))
-        projects.open(project_id, session)
-        assets = CreationToolAssets(projects)
-    else:
-        store.create('Tool history', project_id, session)
-        assets = CanvasProjects(store).assets
+    projects = CreationProjects(store)
+    projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id,
+        type='project.create', payload=dict(name='Tool history'))))
+    projects.open(project_id, session)
+    assets = CreationToolAssets(projects)
     source = assets.import_file(project_id, str(uuid4()), 'source.png', png(), session)
-    if projects:
-        from opendirector.application.creation_canvas import asset_ref
-        material = assets.assets.get(project_id, source['id'])
-        receipt = projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
-            payload=dict(item=dict(id=node_id, projectId=project_id, kind='image', binding=dict(role='material', objectRef=asset_ref(material)))))), session=session)
-        assert receipt.status == 'applied'
+    from opendirector.application.creation_canvas import asset_ref
+    material = assets.assets.get(project_id, source['id'])
+    receipt = projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
+        payload=dict(item=dict(id=node_id, projectId=project_id, kind='image', binding=dict(role='material', objectRef=asset_ref(material)))))), session=session)
+    assert receipt.status == 'applied'
     configs = ModelConfigs(store.repository)
     def service():
         return ToolTasks(store, configs, assets, projects=projects)
@@ -68,11 +62,10 @@ def test_history_is_service_owned_and_placement_acknowledgement_survives_restart
             assert len(task['outputs']) == 1
             output = task['outputs'][0]
             assert output['canvasItemId'] != output['id']
-            if projects:
-                material = assets.assets.get(project_id, output['id'])
-                assert material.provenance.sources[0].assetId == uuid_from(source['id'])
-                assert not (store.root / 'Tool history' / 'assets.json').exists()
-                assert projects.snapshot(project_id).jobs == ()  # not a fabricated GenerationSpec job
+            material = assets.assets.get(project_id, output['id'])
+            assert material.provenance.sources[0].assetId == uuid_from(source['id'])
+            assert not (store.root / 'Tool history' / 'assets.json').exists()
+            assert projects.snapshot(project_id).jobs == ()  # not a fabricated GenerationSpec job
             restarted = factory()
             assert restarted.list(project_id)[0]['status'] == 'succeeded'
             with pytest.raises(ProjectError):
@@ -113,9 +106,9 @@ def test_queued_cancel_has_a_terminal_cancelled_record(tool_project):
     asyncio.run(run())
 
 
-def test_tool_task_routes_use_the_matching_project_format(tool_project):
+def test_tool_task_routes_use_unified_project_authority(tool_project):
     store, projects, _, project_id, session, _, value, _ = tool_project
-    prefix = '/api/creation' if projects else '/api'
+    prefix = '/api/creation'
     path = f'{prefix}/projects/{project_id}/tool-tasks'
     headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
     with TestClient(create_app(store), headers=headers) as client:
@@ -144,13 +137,10 @@ def test_project_rename_waits_for_background_tool_tasks(tool_project):
             await service.submit(project_id, value, session)
             store.release(session)
             with pytest.raises(ProjectError, match='工具任务'):
-                if projects:
-                    snapshot = projects.snapshot(project_id)
-                    projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='project.rename',
-                        expectedVersions=[dict(objectType='project', id=project_id, revision=snapshot.project.revision)],
-                        payload=dict(name='Renamed'))))
-                else:
-                    store.rename(project_id, 'Renamed', 'Tool history')
+                snapshot = projects.snapshot(project_id)
+                projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='project.rename',
+                    expectedVersions=[dict(objectType='project', id=project_id, revision=snapshot.project.revision)],
+                    payload=dict(name='Renamed'))))
         finally:
             service.limit.release()
             await service.close()
@@ -160,9 +150,8 @@ def test_project_rename_waits_for_background_tool_tasks(tool_project):
 def test_pending_result_identity_and_timing_survive_service_restart(tool_project):
     _, projects, _, project_id, session, _, value, factory = tool_project
     target = str(uuid4())
-    if projects:
-        assert projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
-            payload=dict(item=dict(id=target, projectId=project_id, kind='image', title='Pending result', binding=dict(role='empty'))))), session=session).status == 'applied'
+    assert projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
+        payload=dict(item=dict(id=target, projectId=project_id, kind='image', title='Pending result', binding=dict(role='empty'))))), session=session).status == 'applied'
     value = {**value, 'canvas': {**value['canvas'], 'targetNodeId': target,
                                'targetKind': 'image', 'targetTitle': 'Pending result'}}
     async def run():
@@ -204,7 +193,7 @@ def test_multi_output_identities_use_the_target_only_for_the_matching_first_kind
 
 
 @pytest.mark.parametrize('model_kind', ['vision', 'image', 'video'])
-def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project, monkeypatch, model_kind):
+def test_selection_route_uses_owned_assets_in_unified_projects(tool_project, monkeypatch, model_kind):
     import base64
     from opendirector.domain.capabilities import Segment
     from opendirector.integrations.model_adapters import VllmOmniSegmentation
@@ -221,9 +210,9 @@ def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project,
         calls.append(request)
         return [Segment(mask.getvalue(), (10, 8, 30, 32), .9)]
     monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
-    prefix = '/api/creation' if projects else '/api'
+    prefix = '/api/creation'
     headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}
-    before = set(assets._records(None if projects else store.root / 'Tool history', project_id))
+    before = set(assets._records(None, project_id))
     with TestClient(create_app(store), headers=headers) as client:
         path = f'{prefix}/projects/{project_id}/image-selections'
         value = dict(sourceAssetId=source['id'], boxes=[dict(x=8, y=6, width=26, height=30)])
@@ -238,9 +227,8 @@ def test_selection_route_uses_owned_assets_in_both_project_formats(tool_project,
         assert client.post(path, json={**value, 'sourceAssetId': str(uuid4())}).status_code == 409
     assert len(calls) == 1
     assert factory().list(project_id) == []
-    assert set(assets._records(None if projects else store.root / 'Tool history', project_id)) == before
-    if projects:
-        assert not (store.root / 'Tool history' / 'assets.json').exists()
+    assert set(assets._records(None, project_id)) == before
+    assert not (store.root / 'Tool history' / 'assets.json').exists()
 
 
 def test_selection_cancellation_releases_upstream_and_creates_no_task(tool_project):
@@ -307,7 +295,7 @@ def test_selection_disconnect_cancels_through_request_middleware(tool_project, m
             finally:
                 cancelled.set()
         monkeypatch.setattr(VllmOmniSegmentation, 'segment', segment)
-        prefix = '/api/creation' if projects else '/api'
+        prefix = '/api/creation'
         path = f'{prefix}/projects/{project_id}/image-selections'
         body = json.dumps(dict(sourceAssetId=source['id'], boxes=[dict(x=8, y=6, width=26, height=30)])).encode()
         sent = False

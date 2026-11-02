@@ -70,9 +70,9 @@ def freeze_inputs(service, project_id, value):
                     or (auxiliary.metadata.width, auxiliary.metadata.height) != (first.metadata.width, first.metadata.height)):
                 raise ProjectError('选区或标注尺寸与实际来源图片不一致。', 422)
     for box in value.get('boxes', []):
-        if (first.kind != 'image' or box['x'] < 0 or box['y'] < 0 or box['width'] <= 0 or box['height'] <= 0
+        if (first.kind not in {'image', 'video'} or box['x'] < 0 or box['y'] < 0 or box['width'] <= 0 or box['height'] <= 0
                 or box['x'] + box['width'] > first.metadata.width or box['y'] + box['height'] > first.metadata.height):
-            raise ProjectError('选区矩形超出实际来源图片。', 422)
+            raise ProjectError('选区矩形超出实际来源媒体。', 422)
     target = None
     if canvas and canvas.get('targetNodeId'):
         target = editable(snapshot, canvas['targetNodeId'])

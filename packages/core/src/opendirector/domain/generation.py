@@ -1,11 +1,9 @@
 """Generation receipt identity and execution state, independent of adoption."""
 
 from typing import Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from opendirector.domain.canvas import NodeKind
 from opendirector.domain.projects import ProjectError
 
 
@@ -18,13 +16,6 @@ class ResultCheck(BaseModel):
     facts: dict = Field(default_factory=dict)
     message: str
     humanReviewRequired: bool = True
-
-
-class AdoptionDecision(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    status: Literal['adopted', 'candidate']
-    reason: str | None = None
-    message: str
 
 
 class GenerationFailure(BaseModel):
@@ -44,23 +35,3 @@ class GenerationError(ProjectError):
     def __init__(self, details: GenerationFailure, status=502, message=None):
         super().__init__(message or f'{details.message} {details.suggestion} 不会自动重新提交。', status)
         self.details = details
-
-
-class GenerationReceipt(BaseModel):
-    # Retain provider parameters and the existing input snapshot verbatim.
-    model_config = ConfigDict(extra='allow')
-    schemaVersion: Literal[1] = 1
-    id: UUID
-    nodeId: UUID
-    kind: NodeKind
-    status: Literal['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted']
-    assetId: UUID | None = None
-    adopted: bool = False  # Whether this result is the canvas node's selection.
-    resumeAllowed: bool = False
-    errorDetails: GenerationFailure | None = None
-    phase: Literal['queued', 'submit', 'poll', 'download', 'save', 'adopt', 'complete'] | None = None
-    recovery: Literal['submit', 'remote', 'download', 'local', 'review', 'retry', 'done'] | None = None
-    adoptionPolicy: Literal['if_current', 'candidate_only'] | None = None
-    inputSnapshot: dict | None = None
-    technicalCheck: ResultCheck | None = None
-    canvasAdoption: AdoptionDecision | None = None
