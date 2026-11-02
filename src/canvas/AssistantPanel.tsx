@@ -8,6 +8,7 @@ import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import "./assistant-panel.css";
 import { AgentPicker } from "./AgentPicker";
 import { ChoicePicker, ModelPicker } from "./AssistantPickers";
+import { SkillPicker } from "./SkillPicker";
 import { CanvasIcon } from "./CanvasIcon";
 import {
   currentReferences,
@@ -89,6 +90,7 @@ export function AssistantPanel({
   const uploads = useReferenceUploads(documentId);
   const projectReferences = useProjectMentionAssets(documentId);
   const editor = useRef<ChatReferenceEditorHandle>(null);
+  const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -350,6 +352,8 @@ export function AssistantPanel({
                   ).map((part, index) =>
                     part.type === "text" ? (
                       part.text
+                    ) : part.type === "skill" ? (
+                      <span key={index} className="cw-chat-skill-token">/{part.name}</span>
                     ) : (
                       <span
                         key={index}
@@ -490,13 +494,13 @@ export function AssistantPanel({
           <ChatReferenceEditor
             key={documentId}
             ref={editor}
+            onSlashChange={setSlashQuery}
+            skillsEnabled
             scope={documentId}
-            value={referenceContent(
-              value.draft,
-              value.assets.map((asset) => asset.id),
-              value.assets,
-              value.draftContent,
-            )}
+            value={(() => {
+              const content = referenceContent(value.draft, value.assets.map(asset => asset.id), value.assets, value.draftContent);
+              return value.skills?.length && !content.some(part => part.type === "skill") ? [...content, ...value.skills.map(name => ({type: "skill" as const, name}))] : content;
+            })()}
             assets={chat.referenceAssets}
             previews={assetPreviews}
             options={mentionOptions}
@@ -612,6 +616,13 @@ export function AssistantPanel({
               disabled={!chat.loaded || chat.sending}
               onChange={chat.selectAgent}
               onConfigure={onOpenSettings}
+            />
+            <SkillPicker
+              projectId={documentId}
+              selected={value.skills ?? []}
+              slashQuery={slashQuery}
+              disabled={referenceDisabled || chat.sending}
+              onChange={(skills, fromSlash) => editor.current?.setSkill(skills[0] ?? null, fromSlash)}
             />
             <ModelPicker
               includeAgent={false}
