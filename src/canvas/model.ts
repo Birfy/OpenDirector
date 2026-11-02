@@ -148,6 +148,8 @@ export interface AgentNodeSettings {
 
 export interface CanvasNodeData extends Record<string, unknown> {
   backendAssetId?: string;
+  /** Temporary clipboard origin, consumed by the unified save adapter. */
+  copiedSourceId?: string;
   kind: CanvasNodeKind;
   title: string;
   prompt: string;
@@ -170,6 +172,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   tool?: ToolData;
   external?: ExternalData;
   layers?: LayerDocument;
+  imageCrop?: import("./imageCrop.ts").ImageCropState;
   localStage?: LocalStageDocument;
   taskDraft?: CanvasToolTask;
   media?: { width?: number; height?: number; durationSeconds?: number };
@@ -629,6 +632,7 @@ function applyCanvasCommand(
           "backendAssetId",
           "byteSize",
           "layers",
+          "imageCrop",
           "taskDraft",
           "media",
           "mimeType",

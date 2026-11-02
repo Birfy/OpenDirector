@@ -1,9 +1,9 @@
 """Self-hosted vLLM-Omni image models (Z-Image-Turbo, Qwen-Image-2.1) for canvas nodes.
 
 Reference documents are inlined as text. Z-Image-Turbo draws from the prompt
-alone; Qwen-Image-2.1 also takes connected images as condition images. Images
-land on H3's 16:9 canvas so a keyframe can become an H3 first frame without
-cropping. The model API itself is reached through the capability adapter.
+alone; Qwen-Image-2.1 also takes connected images as condition images. Automatic
+output uses H3's 16:9 canvas; explicit output uses the frozen request dimensions.
+The model API itself is reached through the capability adapter.
 """
 
 import asyncio
@@ -34,7 +34,9 @@ class VllmOmniImageGeneration:
         prepared = await asyncio.to_thread(generation_references, self.store, task, config)
         references = tuple(base64.b64decode(uri.split(',', 1)[1]) for uri in prepared['images'])
         adapter = adapter_for(config, self.transport)
-        result = await adapter.image(config, ImageRequest(prompt=prepared['prompt'], width=WIDTH, height=HEIGHT,
+        size = task.get('parameters', {}).get('size', '')
+        width, height = map(int, size.split('x')) if 'x' in size else (WIDTH, HEIGHT)
+        result = await adapter.image(config, ImageRequest(prompt=prepared['prompt'], width=width, height=height,
                                                           image=references[0] if references else None, references=references[1:]))
         if result.suffix != 'png':
             raise protocol_failure('submit')

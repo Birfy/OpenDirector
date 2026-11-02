@@ -66,7 +66,9 @@ class VllmOmniGeneration:
         mode = task.get('videoMode', 'first_frame')
         seconds = task['parameters'].get('duration', 5)
         ratio = task['parameters'].get('ratio')
-        fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'fps': str(FPS), 'num_frames': str(h3_frames(seconds))}
+        fields = {'model': config['modelId'], 'prompt': prepared['prompt'],
+                  'fps': str(task['parameters'].get('fps', FPS)),
+                  'num_frames': str(task['parameters'].get('num_frames', h3_frames(seconds)))}
         if task['parameters'].get('resolution') and task['parameters'].get('size'):
             fields['size'] = task['parameters']['size']
         files, extra = [], {}

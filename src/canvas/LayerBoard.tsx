@@ -40,6 +40,8 @@ export interface LayerBoardProps {
   src?: string;
   title: string;
   initialDocument?: LayerDocument;
+  /** Standalone documents embed pixels; project-backed callers retain sources. */
+  embedSourcesOnApply?: boolean;
   onApply: (src: string, document: LayerDocument) => void;
   onClose: () => void;
   onBack?: () => void;
@@ -84,6 +86,7 @@ export function LayerBoard({
   src,
   title,
   initialDocument,
+  embedSourcesOnApply = true,
   onApply,
   onClose,
   onBack,
@@ -663,7 +666,9 @@ export function LayerBoard({
             throw new Error("PNG 导出失败，请缩小画布尺寸后重试。");
           callbacks.current.onApply(
             result,
-            portableLayerDocument(document, images),
+            embedSourcesOnApply
+              ? portableLayerDocument(document, images)
+              : document,
           );
           callbacks.current.onClose();
         } else {

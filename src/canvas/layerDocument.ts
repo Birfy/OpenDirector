@@ -258,9 +258,19 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
     let content: LayerContent;
     if (source.kind === "image") {
       const src = string(source.src, 90_000_000);
-      if (!/^data:image\/[a-z\d.+-]+[;,]/i.test(src) && !/^\/(?!\/)/.test(src))
+      const localBlob =
+        src.startsWith("blob:") &&
+        typeof location !== "undefined" &&
+        location.origin !== "null" &&
+        URL.canParse(src) &&
+        new URL(src).origin === location.origin;
+      if (
+        !/^data:image\/[a-z\d.+-]+[;,]/i.test(src) &&
+        !/^\/(?!\/)/.test(src) &&
+        !localBlob
+      )
         throw new Error(
-          "图层图片必须内嵌于文件或来自本应用路径，不会请求外站资源。",
+          "图层图片必须内嵌于文件或来自本应用资源，不会请求外站资源。",
         );
       content = {
         kind: "image",

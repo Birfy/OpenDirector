@@ -267,6 +267,7 @@ export function pasteFragment(
   const nodes = fragment.nodes.map((node) => {
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
+    if (copy.type === "image") copy.data.copiedSourceId = node.id;
     copy.data = remapDataReferences(copy.data, remapped);
     if (copy.data.promptContent && copy.data.settings && node.data.settings) {
       for (const field of ["firstFrameNodeId", "lastFrameNodeId"] as const) {

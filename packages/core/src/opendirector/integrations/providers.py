@@ -139,16 +139,21 @@ class GenerationProviders(VolcengineGeneration):
                     return result.suffix, result.data
                 if kind == 'image':
                     prepared = await asyncio.to_thread(generation_references, self.store, task, config)
+                    size = task['parameters'].get('size', '')
+                    # Older canvas tasks use a provider label; unified tasks
+                    # already freeze the dimensions resolved by this adapter.
+                    size = size if 'x' in size else '1024x1024'
+                    fields = {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': size}
                     if prepared['images']:
                         files = [('image', (meta['name'], data, image_type(data)))
                                  for data, meta, source_kind in references(self.store, task['projectId'], task['referenceIds']) if source_kind == 'image']
                         async with client.stream('POST', endpoint(config['url'], '/images/edits'), headers=auth_headers(config),
-                            data={'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024'}, files=files,
-                            extensions={'model_parameters': {'fields': {'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024'}, 'file_count': len(files)}}) as response:
+                            data=fields, files=files,
+                            extensions={'model_parameters': {'fields': fields, 'file_count': len(files)}}) as response:
                             value = json.loads(await bounded(response, stage=stage, secrets=secrets))
                     else:
                         async with client.stream('POST', endpoint(config['url'], '/images/generations'), headers=auth_headers(config),
-                            json={'model': config['modelId'], 'prompt': prepared['prompt'], 'size': '1024x1024', 'n': 1}) as response:
+                            json={**fields, 'n': 1}) as response:
                             value = json.loads(await bounded(response, stage=stage, secrets=secrets))
                     result = value['data'][0]
                     if result.get('b64_json'):

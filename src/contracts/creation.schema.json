@@ -334,6 +334,19 @@
             "default": null,
             "title": "Jobid"
           },
+          "toolTaskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltaskid"
+          },
           "editorDocumentId": {
             "anyOf": [
               {
@@ -843,6 +856,24 @@
       "AudioParameters": {
         "additionalProperties": false,
         "properties": {
+          "creationType": {
+            "default": "audio",
+            "enum": [
+              "audio",
+              "music"
+            ],
+            "title": "Creationtype",
+            "type": "string"
+          },
+          "mode": {
+            "default": "tts",
+            "enum": [
+              "tts",
+              "unified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "voice": {
             "anyOf": [
               {
@@ -919,8 +950,10 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "canvas.applyEdit": "#/$defs/CanvasApplyEditCommandOperation",
                   "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommandOperation",
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
+                  "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
@@ -956,10 +989,16 @@
                   "$ref": "#/$defs/CanvasMaterializeCommandOperation"
                 },
                 {
+                  "$ref": "#/$defs/CanvasApplyEditCommandOperation"
+                },
+                {
                   "$ref": "#/$defs/CanvasConfigureCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasEditorAttachCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasEditorDetachCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/SpecCreateCommandOperation"
@@ -1065,6 +1104,106 @@
           "pose"
         ],
         "title": "CameraRig",
+        "type": "object"
+      },
+      "CanvasApplyEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "source",
+          "asset",
+          "editorId"
+        ],
+        "title": "CanvasApplyEdit",
+        "type": "object"
+      },
+      "CanvasApplyEditCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.applyEdit",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasApplyEdit"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasApplyEditCommand",
+        "type": "object"
+      },
+      "CanvasApplyEditCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.applyEdit",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasApplyEdit"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasApplyEditCommandOperation",
         "type": "object"
       },
       "CanvasConfigure": {
@@ -1254,6 +1393,77 @@
           "payload"
         ],
         "title": "CanvasEditorAttachCommandOperation",
+        "type": "object"
+      },
+      "CanvasEditorDetachCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.detachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorDetachCommand",
+        "type": "object"
+      },
+      "CanvasEditorDetachCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.detachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorDetachCommandOperation",
         "type": "object"
       },
       "CanvasHide": {
@@ -2283,6 +2493,7 @@
             "discriminator": {
               "mapping": {
                 "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
                 "layers": "#/$defs/LayerDocument",
                 "media_edit": "#/$defs/MediaEditDocument",
                 "stack": "#/$defs/StackDocument",
@@ -2301,6 +2512,9 @@
               },
               {
                 "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
               },
               {
                 "$ref": "#/$defs/StackDocument"
@@ -2324,9 +2538,11 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.applyEdit": "#/$defs/CanvasApplyEditCommand",
                 "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
                 "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
                 "canvas.configure": "#/$defs/CanvasConfigureCommand",
+                "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
@@ -2398,6 +2614,9 @@
                 "$ref": "#/$defs/CanvasMaterializeCommand"
               },
               {
+                "$ref": "#/$defs/CanvasApplyEditCommand"
+              },
+              {
                 "$ref": "#/$defs/NodeVersionApplyCommand"
               },
               {
@@ -2405,6 +2624,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasEditorAttachCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasEditorDetachCommand"
               },
               {
                 "$ref": "#/$defs/SpecCreateCommand"
@@ -3089,6 +3311,7 @@
               "tool",
               "director",
               "layers",
+              "image_crop",
               "media_edit"
             ],
             "title": "Kind",
@@ -3180,6 +3403,7 @@
             "discriminator": {
               "mapping": {
                 "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
                 "layers": "#/$defs/LayerDocument",
                 "media_edit": "#/$defs/MediaEditDocument",
                 "stack": "#/$defs/StackDocument",
@@ -3198,6 +3422,9 @@
               },
               {
                 "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
               },
               {
                 "$ref": "#/$defs/StackDocument"
@@ -4199,6 +4426,184 @@
         "title": "ImageCanvasItem",
         "type": "object"
       },
+      "ImageCropData": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "options": {
+            "$ref": "#/$defs/ImageCropOptions"
+          },
+          "width": {
+            "minimum": 1,
+            "title": "Width",
+            "type": "integer"
+          },
+          "height": {
+            "minimum": 1,
+            "title": "Height",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "options",
+          "width",
+          "height"
+        ],
+        "title": "ImageCropData",
+        "type": "object"
+      },
+      "ImageCropDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
+          "kind": {
+            "const": "image_crop",
+            "title": "Kind",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/$defs/ImageCropData"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "kind",
+          "data"
+        ],
+        "title": "ImageCropDocument",
+        "type": "object"
+      },
+      "ImageCropOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "rotation": {
+            "default": 0,
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "flipX": {
+            "default": false,
+            "title": "Flipx",
+            "type": "boolean"
+          },
+          "flipY": {
+            "default": false,
+            "title": "Flipy",
+            "type": "boolean"
+          },
+          "aspect": {
+            "default": "original",
+            "enum": [
+              "free",
+              "original",
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16"
+            ],
+            "title": "Aspect",
+            "type": "string"
+          },
+          "zoom": {
+            "default": 100,
+            "maximum": 400,
+            "minimum": 100,
+            "title": "Zoom",
+            "type": "number"
+          },
+          "freeWidth": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Freewidth",
+            "type": "number"
+          },
+          "freeHeight": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Freeheight",
+            "type": "number"
+          },
+          "x": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          },
+          "brightness": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Brightness",
+            "type": "number"
+          },
+          "contrast": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Contrast",
+            "type": "number"
+          },
+          "saturation": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Saturation",
+            "type": "number"
+          }
+        },
+        "title": "ImageCropOptions",
+        "type": "object"
+      },
       "ImageExecution": {
         "additionalProperties": false,
         "properties": {
@@ -4212,13 +4617,20 @@
             "type": "string"
           },
           "responseFormat": {
-            "default": "url",
-            "enum": [
-              "url",
-              "b64_json"
+            "anyOf": [
+              {
+                "enum": [
+                  "url",
+                  "b64_json"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Responseformat",
-            "type": "string"
+            "default": null,
+            "title": "Responseformat"
           },
           "outputFormat": {
             "const": "png",
@@ -4496,13 +4908,56 @@
         "title": "ImageLayerContent",
         "type": "object"
       },
+      "ImageOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "aspectRatio": {
+            "pattern": "^(?:auto|[1-9]\\d?:[1-9]\\d?)$",
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "size": {
+            "pattern": "^(?:2K|[1-9]\\d{2,3}x[1-9]\\d{2,3})$",
+            "title": "Size",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aspectRatio",
+          "size"
+        ],
+        "title": "ImageOutput",
+        "type": "object"
+      },
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
           "size": {
-            "const": "2K",
-            "default": "2K",
+            "default": "auto",
+            "pattern": "^(?:auto|2K|[1-9]\\d{2,3}x[1-9]\\d{2,3})$",
             "title": "Size",
+            "type": "string"
+          },
+          "aspectRatio": {
+            "anyOf": [
+              {
+                "pattern": "^[1-9]\\d?:[1-9]\\d?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Aspectratio"
+          },
+          "preset": {
+            "default": "none",
+            "enum": [
+              "none",
+              "product-views"
+            ],
+            "title": "Preset",
             "type": "string"
           },
           "responseFormat": {
@@ -4583,6 +5038,14 @@
               "type": "string"
             },
             "title": "Videomodes",
+            "type": "array"
+          },
+          "imageOutputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ImageOutput"
+            },
+            "title": "Imageoutputs",
             "type": "array"
           },
           "outputResolutions": {
@@ -5505,11 +5968,20 @@
             "title": "Sources",
             "type": "array"
           },
+          "sourceItems": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Sourceitems",
+            "type": "array"
+          },
           "parameters": {
             "additionalProperties": {
               "anyOf": [
                 {
-                  "maxLength": 20000,
+                  "maxLength": 100000,
                   "type": "string"
                 },
                 {
@@ -6920,6 +7392,7 @@
               "discriminator": {
                 "mapping": {
                   "director": "#/$defs/DirectorDocument",
+                  "image_crop": "#/$defs/ImageCropDocument",
                   "layers": "#/$defs/LayerDocument",
                   "media_edit": "#/$defs/MediaEditDocument",
                   "stack": "#/$defs/StackDocument",
@@ -6938,6 +7411,9 @@
                 },
                 {
                   "$ref": "#/$defs/LayerDocument"
+                },
+                {
+                  "$ref": "#/$defs/ImageCropDocument"
                 },
                 {
                   "$ref": "#/$defs/StackDocument"
@@ -9719,6 +10195,39 @@
         "title": "ToolDocument",
         "type": "object"
       },
+      "ToolDraftBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "editorRevision": {
+            "minimum": 1,
+            "title": "Editorrevision",
+            "type": "integer"
+          },
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "itemRevision": {
+            "minimum": 1,
+            "title": "Itemrevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "editorId",
+          "editorRevision",
+          "itemId",
+          "itemRevision"
+        ],
+        "title": "ToolDraftBinding",
+        "type": "object"
+      },
       "ToolField": {
         "additionalProperties": false,
         "properties": {
@@ -10224,9 +10733,16 @@
             "title": "Watermark"
           },
           "generateAudio": {
-            "default": true,
-            "title": "Generateaudio",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generateaudio"
           }
         },
         "required": [
@@ -10399,6 +10915,11 @@
       "VideoParameters": {
         "additionalProperties": false,
         "properties": {
+          "generateAudio": {
+            "default": true,
+            "title": "Generateaudio",
+            "type": "boolean"
+          },
           "videoMode": {
             "default": "first_frame",
             "enum": [
@@ -10644,6 +11165,7 @@
         "discriminator": {
           "mapping": {
             "director": "#/$defs/DirectorDocument",
+            "image_crop": "#/$defs/ImageCropDocument",
             "layers": "#/$defs/LayerDocument",
             "media_edit": "#/$defs/MediaEditDocument",
             "stack": "#/$defs/StackDocument",
@@ -10662,6 +11184,9 @@
           },
           {
             "$ref": "#/$defs/LayerDocument"
+          },
+          {
+            "$ref": "#/$defs/ImageCropDocument"
           },
           {
             "$ref": "#/$defs/StackDocument"
@@ -10685,9 +11210,11 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.applyEdit": "#/$defs/CanvasApplyEditCommand",
             "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
             "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
             "canvas.configure": "#/$defs/CanvasConfigureCommand",
+            "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
@@ -10759,6 +11286,9 @@
             "$ref": "#/$defs/CanvasMaterializeCommand"
           },
           {
+            "$ref": "#/$defs/CanvasApplyEditCommand"
+          },
+          {
             "$ref": "#/$defs/NodeVersionApplyCommand"
           },
           {
@@ -10766,6 +11296,9 @@
           },
           {
             "$ref": "#/$defs/CanvasEditorAttachCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasEditorDetachCommand"
           },
           {
             "$ref": "#/$defs/SpecCreateCommand"
@@ -11266,6 +11799,19 @@
             "default": null,
             "title": "Jobid"
           },
+          "toolTaskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tooltaskid"
+          },
           "editorDocumentId": {
             "anyOf": [
               {
@@ -11354,6 +11900,7 @@
         "required": [
           "source",
           "jobId",
+          "toolTaskId",
           "editorDocumentId",
           "editorRevision",
           "sources",
@@ -11807,6 +12354,24 @@
       "AudioParameters": {
         "additionalProperties": false,
         "properties": {
+          "creationType": {
+            "default": "audio",
+            "enum": [
+              "audio",
+              "music"
+            ],
+            "title": "Creationtype",
+            "type": "string"
+          },
+          "mode": {
+            "default": "tts",
+            "enum": [
+              "tts",
+              "unified"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "voice": {
             "anyOf": [
               {
@@ -11822,6 +12387,8 @@
           }
         },
         "required": [
+          "creationType",
+          "mode",
           "voice"
         ],
         "title": "AudioParameters",
@@ -11888,8 +12455,10 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "canvas.applyEdit": "#/$defs/CanvasApplyEditCommandOperation",
                   "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommandOperation",
                   "canvas.configure": "#/$defs/CanvasConfigureCommandOperation",
+                  "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommandOperation",
                   "canvas.hide": "#/$defs/CanvasHideCommandOperation",
                   "canvas.materialize": "#/$defs/CanvasMaterializeCommandOperation",
                   "canvas.move": "#/$defs/CanvasMoveCommandOperation",
@@ -11925,10 +12494,16 @@
                   "$ref": "#/$defs/CanvasMaterializeCommandOperation"
                 },
                 {
+                  "$ref": "#/$defs/CanvasApplyEditCommandOperation"
+                },
+                {
                   "$ref": "#/$defs/CanvasConfigureCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/CanvasEditorAttachCommandOperation"
+                },
+                {
+                  "$ref": "#/$defs/CanvasEditorDetachCommandOperation"
                 },
                 {
                   "$ref": "#/$defs/SpecCreateCommandOperation"
@@ -12035,6 +12610,108 @@
           "keyframes"
         ],
         "title": "CameraRig",
+        "type": "object"
+      },
+      "CanvasApplyEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "itemId",
+          "source",
+          "asset",
+          "editorId"
+        ],
+        "title": "CanvasApplyEdit",
+        "type": "object"
+      },
+      "CanvasApplyEditCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.applyEdit",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasApplyEdit"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasApplyEditCommand",
+        "type": "object"
+      },
+      "CanvasApplyEditCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.applyEdit",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasApplyEdit"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasApplyEditCommandOperation",
         "type": "object"
       },
       "CanvasConfigure": {
@@ -12229,6 +12906,79 @@
           "payload"
         ],
         "title": "CanvasEditorAttachCommandOperation",
+        "type": "object"
+      },
+      "CanvasEditorDetachCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.detachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasEditorDetachCommand",
+        "type": "object"
+      },
+      "CanvasEditorDetachCommandOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "canvas.detachEditor",
+            "title": "Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasEditorAttach"
+          }
+        },
+        "required": [
+          "type",
+          "payload"
+        ],
+        "title": "CanvasEditorDetachCommandOperation",
         "type": "object"
       },
       "CanvasHide": {
@@ -13293,6 +14043,7 @@
             "discriminator": {
               "mapping": {
                 "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
                 "layers": "#/$defs/LayerDocument",
                 "media_edit": "#/$defs/MediaEditDocument",
                 "stack": "#/$defs/StackDocument",
@@ -13311,6 +14062,9 @@
               },
               {
                 "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
               },
               {
                 "$ref": "#/$defs/StackDocument"
@@ -13334,9 +14088,11 @@
                 "asset.import": "#/$defs/AssetImportCommand",
                 "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
                 "asset.writeText": "#/$defs/AssetWriteTextCommand",
+                "canvas.applyEdit": "#/$defs/CanvasApplyEditCommand",
                 "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
                 "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
                 "canvas.configure": "#/$defs/CanvasConfigureCommand",
+                "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
@@ -13408,6 +14164,9 @@
                 "$ref": "#/$defs/CanvasMaterializeCommand"
               },
               {
+                "$ref": "#/$defs/CanvasApplyEditCommand"
+              },
+              {
                 "$ref": "#/$defs/NodeVersionApplyCommand"
               },
               {
@@ -13415,6 +14174,9 @@
               },
               {
                 "$ref": "#/$defs/CanvasEditorAttachCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasEditorDetachCommand"
               },
               {
                 "$ref": "#/$defs/SpecCreateCommand"
@@ -14132,6 +14894,7 @@
               "tool",
               "director",
               "layers",
+              "image_crop",
               "media_edit"
             ],
             "title": "Kind",
@@ -14226,6 +14989,7 @@
             "discriminator": {
               "mapping": {
                 "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
                 "layers": "#/$defs/LayerDocument",
                 "media_edit": "#/$defs/MediaEditDocument",
                 "stack": "#/$defs/StackDocument",
@@ -14244,6 +15008,9 @@
               },
               {
                 "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
               },
               {
                 "$ref": "#/$defs/StackDocument"
@@ -15304,6 +16071,201 @@
         "title": "ImageCanvasItem",
         "type": "object"
       },
+      "ImageCropData": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "options": {
+            "$ref": "#/$defs/ImageCropOptions"
+          },
+          "width": {
+            "minimum": 1,
+            "title": "Width",
+            "type": "integer"
+          },
+          "height": {
+            "minimum": 1,
+            "title": "Height",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source",
+          "options",
+          "width",
+          "height"
+        ],
+        "title": "ImageCropData",
+        "type": "object"
+      },
+      "ImageCropDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "inputConnections": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/EditorInputConnection"
+            },
+            "title": "Inputconnections",
+            "type": "array"
+          },
+          "kind": {
+            "const": "image_crop",
+            "title": "Kind",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/$defs/ImageCropData"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "revision",
+          "schemaVersion",
+          "inputConnections",
+          "kind",
+          "data"
+        ],
+        "title": "ImageCropDocument",
+        "type": "object"
+      },
+      "ImageCropOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "rotation": {
+            "default": 0,
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "flipX": {
+            "default": false,
+            "title": "Flipx",
+            "type": "boolean"
+          },
+          "flipY": {
+            "default": false,
+            "title": "Flipy",
+            "type": "boolean"
+          },
+          "aspect": {
+            "default": "original",
+            "enum": [
+              "free",
+              "original",
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16"
+            ],
+            "title": "Aspect",
+            "type": "string"
+          },
+          "zoom": {
+            "default": 100,
+            "maximum": 400,
+            "minimum": 100,
+            "title": "Zoom",
+            "type": "number"
+          },
+          "freeWidth": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Freewidth",
+            "type": "number"
+          },
+          "freeHeight": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Freeheight",
+            "type": "number"
+          },
+          "x": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          },
+          "brightness": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Brightness",
+            "type": "number"
+          },
+          "contrast": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Contrast",
+            "type": "number"
+          },
+          "saturation": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 0,
+            "title": "Saturation",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rotation",
+          "flipX",
+          "flipY",
+          "aspect",
+          "zoom",
+          "freeWidth",
+          "freeHeight",
+          "x",
+          "y",
+          "brightness",
+          "contrast",
+          "saturation"
+        ],
+        "title": "ImageCropOptions",
+        "type": "object"
+      },
       "ImageExecution": {
         "additionalProperties": false,
         "properties": {
@@ -15317,13 +16279,20 @@
             "type": "string"
           },
           "responseFormat": {
-            "default": "url",
-            "enum": [
-              "url",
-              "b64_json"
+            "anyOf": [
+              {
+                "enum": [
+                  "url",
+                  "b64_json"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Responseformat",
-            "type": "string"
+            "default": null,
+            "title": "Responseformat"
           },
           "outputFormat": {
             "const": "png",
@@ -15620,13 +16589,56 @@
         "title": "ImageLayerContent",
         "type": "object"
       },
+      "ImageOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "aspectRatio": {
+            "pattern": "^(?:auto|[1-9]\\d?:[1-9]\\d?)$",
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "size": {
+            "pattern": "^(?:2K|[1-9]\\d{2,3}x[1-9]\\d{2,3})$",
+            "title": "Size",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aspectRatio",
+          "size"
+        ],
+        "title": "ImageOutput",
+        "type": "object"
+      },
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
           "size": {
-            "const": "2K",
-            "default": "2K",
+            "default": "auto",
+            "pattern": "^(?:auto|2K|[1-9]\\d{2,3}x[1-9]\\d{2,3})$",
             "title": "Size",
+            "type": "string"
+          },
+          "aspectRatio": {
+            "anyOf": [
+              {
+                "pattern": "^[1-9]\\d?:[1-9]\\d?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Aspectratio"
+          },
+          "preset": {
+            "default": "none",
+            "enum": [
+              "none",
+              "product-views"
+            ],
+            "title": "Preset",
             "type": "string"
           },
           "responseFormat": {
@@ -15644,6 +16656,8 @@
         },
         "required": [
           "size",
+          "aspectRatio",
+          "preset",
           "responseFormat",
           "outputFormat"
         ],
@@ -15714,6 +16728,14 @@
             "title": "Videomodes",
             "type": "array"
           },
+          "imageOutputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ImageOutput"
+            },
+            "title": "Imageoutputs",
+            "type": "array"
+          },
           "outputResolutions": {
             "default": [],
             "items": {
@@ -15759,6 +16781,7 @@
           "videoBytes",
           "requestBytes",
           "videoModes",
+          "imageOutputs",
           "outputResolutions",
           "referenceImageResolutions",
           "videoCapabilities"
@@ -16682,11 +17705,20 @@
             "title": "Sources",
             "type": "array"
           },
+          "sourceItems": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Sourceitems",
+            "type": "array"
+          },
           "parameters": {
             "additionalProperties": {
               "anyOf": [
                 {
-                  "maxLength": 20000,
+                  "maxLength": 100000,
                   "type": "string"
                 },
                 {
@@ -16723,6 +17755,7 @@
         "required": [
           "tool",
           "sources",
+          "sourceItems",
           "parameters",
           "selection"
         ],
@@ -18134,6 +19167,7 @@
               "discriminator": {
                 "mapping": {
                   "director": "#/$defs/DirectorDocument",
+                  "image_crop": "#/$defs/ImageCropDocument",
                   "layers": "#/$defs/LayerDocument",
                   "media_edit": "#/$defs/MediaEditDocument",
                   "stack": "#/$defs/StackDocument",
@@ -18152,6 +19186,9 @@
                 },
                 {
                   "$ref": "#/$defs/LayerDocument"
+                },
+                {
+                  "$ref": "#/$defs/ImageCropDocument"
                 },
                 {
                   "$ref": "#/$defs/StackDocument"
@@ -21083,6 +22120,39 @@
         "title": "ToolDocument",
         "type": "object"
       },
+      "ToolDraftBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "editorRevision": {
+            "minimum": 1,
+            "title": "Editorrevision",
+            "type": "integer"
+          },
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "itemRevision": {
+            "minimum": 1,
+            "title": "Itemrevision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "editorId",
+          "editorRevision",
+          "itemId",
+          "itemRevision"
+        ],
+        "title": "ToolDraftBinding",
+        "type": "object"
+      },
       "ToolField": {
         "additionalProperties": false,
         "properties": {
@@ -21608,9 +22678,16 @@
             "title": "Watermark"
           },
           "generateAudio": {
-            "default": true,
-            "title": "Generateaudio",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generateaudio"
           }
         },
         "required": [
@@ -21800,6 +22877,11 @@
       "VideoParameters": {
         "additionalProperties": false,
         "properties": {
+          "generateAudio": {
+            "default": true,
+            "title": "Generateaudio",
+            "type": "boolean"
+          },
           "videoMode": {
             "default": "first_frame",
             "enum": [
@@ -21845,6 +22927,7 @@
           }
         },
         "required": [
+          "generateAudio",
           "videoMode",
           "durationSeconds",
           "aspectRatio",
@@ -22061,6 +23144,7 @@
         "discriminator": {
           "mapping": {
             "director": "#/$defs/DirectorDocument",
+            "image_crop": "#/$defs/ImageCropDocument",
             "layers": "#/$defs/LayerDocument",
             "media_edit": "#/$defs/MediaEditDocument",
             "stack": "#/$defs/StackDocument",
@@ -22079,6 +23163,9 @@
           },
           {
             "$ref": "#/$defs/LayerDocument"
+          },
+          {
+            "$ref": "#/$defs/ImageCropDocument"
           },
           {
             "$ref": "#/$defs/StackDocument"
@@ -22102,9 +23189,11 @@
             "asset.import": "#/$defs/AssetImportCommand",
             "asset.updateMetadata": "#/$defs/AssetMetadataCommand",
             "asset.writeText": "#/$defs/AssetWriteTextCommand",
+            "canvas.applyEdit": "#/$defs/CanvasApplyEditCommand",
             "canvas.applyVersion": "#/$defs/NodeVersionApplyCommand",
             "canvas.attachEditor": "#/$defs/CanvasEditorAttachCommand",
             "canvas.configure": "#/$defs/CanvasConfigureCommand",
+            "canvas.detachEditor": "#/$defs/CanvasEditorDetachCommand",
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
@@ -22176,6 +23265,9 @@
             "$ref": "#/$defs/CanvasMaterializeCommand"
           },
           {
+            "$ref": "#/$defs/CanvasApplyEditCommand"
+          },
+          {
             "$ref": "#/$defs/NodeVersionApplyCommand"
           },
           {
@@ -22183,6 +23275,9 @@
           },
           {
             "$ref": "#/$defs/CanvasEditorAttachCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasEditorDetachCommand"
           },
           {
             "$ref": "#/$defs/SpecCreateCommand"

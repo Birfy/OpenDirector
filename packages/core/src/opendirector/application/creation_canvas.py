@@ -10,7 +10,7 @@ from opendirector.domain.creation.base import ObjectVersion
 from opendirector.domain.creation.generation import ResolvedReference
 from opendirector.domain.creation.canvas import node_capabilities
 from opendirector.domain.creation.models import ModelConfigPublic
-from opendirector.domain.creation.project import ProjectSnapshot
+from opendirector.domain.creation.project import ProjectSnapshot, asset_references
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
 from opendirector.domain.projects import ProjectError
@@ -200,7 +200,16 @@ class CreationCanvas:
         data = before.model_dump(mode='json')
         operations = command.payload.operations if command.type == 'creation.batch' else [command]
         for operation in operations:
-            self._mutate(data, operation.type, operation.payload)
+            if operation.type != 'canvas.applyEdit':
+                self._mutate(data, operation.type, operation.payload)
+        # Publish against the final document in this atomic batch.
+        published = set()
+        for operation in operations:
+            if operation.type == 'canvas.applyEdit':
+                if operation.payload.itemId in published:
+                    raise ContractError('invalid_input', '一次提交只能对同一节点应用一次编辑。')
+                published.add(operation.payload.itemId)
+                self._apply_edit(data, operation.payload, before, command)
         previous_specs = {str(spec.id): spec.model_dump(mode='json') for spec in before.generationSpecs}
         for spec in data['generationSpecs']:
             previous = previous_specs.get(spec['id'])
@@ -238,6 +247,60 @@ class CreationCanvas:
                     raise ContractError('invalid_input', '请先读取视频或音频的实际时长，再添加到目标节点。', value.sourceId)
                 self._available(actual)
         return result
+
+    def _apply_edit(self, data, payload, before, command):
+        item = self._editable(data, payload.itemId)
+        if item['kind'] != 'image' or item['binding']['role'] not in {'material', 'generation'}:
+            raise ContractError('role_restricted', '图片编辑只能应用到已有图片内容。', payload.itemId)
+        snapshot = ProjectSnapshot.model_validate(data)
+        current = current_asset(snapshot, next(i for i in snapshot.canvasItems if i.id == payload.itemId))
+        if current is None or asset_ref(current) != payload.source:
+            raise ContractError('revision_conflict', '编辑来源已变化，请重新打开图片编辑器。', payload.itemId)
+        doc = next((d for d in snapshot.editorDocuments if d.id == payload.editorId), None)
+        if doc is None or doc.kind not in {'layers', 'image_crop'} or not any(ref['id'] == str(doc.id) for ref in item['editors']):
+            raise ContractError('reference_invalid', '请先关联本次图片编辑文档。', payload.editorId)
+        old_doc = next((d for d in before.editorDocuments if d.id == doc.id), None)
+        if doc.kind == 'image_crop':
+            # A reopened crop keeps its original input; a new crop starts at the
+            # current image. Swapping unrelated sources is not a crop operation.
+            prior_item = next((i for i in before.canvasItems if i.id == payload.itemId), None)
+            retained = old_doc is not None and old_doc.kind == 'image_crop' and old_doc.data.source == doc.data.source and prior_item is not None and any(ref.id == doc.id for ref in prior_item.editors)
+            if doc.data.source != payload.source and not retained:
+                raise ContractError('reference_invalid', '裁剪来源不属于当前图片或保留的编辑文档。', doc.id)
+            source_asset = self.assets._reference(snapshot, doc.data.source)
+            if not source_asset.metadata.width or not source_asset.metadata.height:
+                raise ContractError('invalid_input', '裁剪来源缺少实际图片尺寸。', source_asset.id)
+            if doc.data.options.output_size(source_asset.metadata.width, source_asset.metadata.height) != (doc.data.width, doc.data.height):
+                raise ContractError('invalid_input', '裁剪参数与输出尺寸不一致。', doc.id)
+
+        expected = {(v.objectType, v.id): v.revision for v in command.expectedVersions}
+        if old_doc and expected.get(('editor_document', doc.id)) != old_doc.revision:
+            raise ContractError('revision_conflict', '应用编辑需要编辑文档版本。', doc.id)
+        output = self.assets._reference(snapshot, payload.asset)
+        if output.kind != 'image' or output.id == current.id:
+            raise ContractError('invalid_input', '编辑输出必须是独立图片素材。', output.id)
+        if (output.metadata.width, output.metadata.height) != (doc.data.width, doc.data.height):
+            raise ContractError('invalid_input', '编辑输出尺寸与编辑文档不一致。', output.id)
+        if output.provenance.source != 'upload' or any(ref.assetId == output.id for ref in asset_references(snapshot)):
+            raise ContractError('role_restricted', '编辑输出已被使用，请保留其原有来源。', output.id)
+        # A detached historical upload is not an unpublished render artifact.
+        if any(ref.assetId == output.id for record in self.projects.history(before.project.id)
+               for ref in asset_references(record.snapshot)):
+            raise ContractError('role_restricted', '编辑输出已有历史用途，不能改写其来源。', output.id)
+        sources = {current.id: asset_ref(current)}
+        for ref in asset_references(doc):
+            sources[ref.assetId] = ref
+        for ref in (*sources.values(), payload.asset):
+            self._available(self.assets._reference(snapshot, ref))
+        revision = 1 if old_doc is None else old_doc.revision + (old_doc != doc)
+        asset = self._get(data, 'asset', output.id)
+        asset['provenance'] = dict(source='edited', editorDocumentId=str(doc.id),
+            editorRevision=revision, sources=[ref.model_dump(mode='json') for ref in sources.values()])
+        item['editors'] = [ref for ref in item['editors'] if ref['kind'] not in {'layers', 'image_crop'} or ref['id'] == str(doc.id)]
+        if item['binding']['role'] == 'generation':
+            item['binding']['materialOverride'] = payload.asset.model_dump(mode='json')
+        else:
+            item['binding']['objectRef'] = payload.asset.model_dump(mode='json')
 
     @staticmethod
     def _get(data, kind, object_id):
@@ -282,7 +345,8 @@ class CreationCanvas:
             for item in data['canvasItems']:
                 binding = item['binding']
                 ref = binding.get('objectRef') or binding.get('draftSpec')
-                if ref and str(ref.get('id')) == str(obj['id']):
+                attached = any(str(editor['id']) == str(obj['id']) for editor in item.get('editors', []))
+                if (ref and str(ref.get('id')) == str(obj['id'])) or attached:
                     self._editable(data, item['id'])
             old.update(obj)
         elif kind == 'canvas.show':
@@ -330,6 +394,8 @@ class CreationCanvas:
                 if (spec['prompt'] or spec['modelConfigId'] or spec['promptContent']) and not payload.discardGenerationDraft:
                     raise ContractError('revision_conflict', '替换已有生成草稿需要明确确认。', payload.itemId)
             item['binding'] = {'role': 'material', 'objectRef': payload.asset.model_dump(mode='json')}
+            if item['kind'] == 'image':
+                item['editors'] = [ref for ref in item.get('editors', []) if ref['kind'] not in {'layers', 'image_crop'}]
         elif kind == 'canvas.configure':
             item = self._editable(data, payload.itemId)
             spec = self._get(data, 'generation_spec', payload.specId)
@@ -354,7 +420,15 @@ class CreationCanvas:
             if 'editors' not in item:
                 raise ContractError('role_restricted', '仅媒体节点可附加媒体编辑器。', payload.itemId)
             if not any(ref['id'] == doc['id'] for ref in item['editors']):
+                if any(ref['kind'] == doc['kind'] for ref in item['editors']):
+                    raise ContractError('role_restricted', '节点已有同类型编辑文档，请更新或先解除关联。', payload.itemId)
                 item['editors'].append({'objectType': 'editor_document', 'id': doc['id'], 'kind': doc['kind']})
+        elif kind == 'canvas.detachEditor':
+            item = self._editable(data, payload.itemId)
+            self._get(data, 'editor_document', payload.editorId)
+            if 'editors' not in item:
+                raise ContractError('role_restricted', '仅媒体节点可解除附属编辑器。', payload.itemId)
+            item['editors'] = [ref for ref in item['editors'] if ref['id'] != str(payload.editorId)]
         elif kind in {'reference.add', 'reference.update', 'reference.restore'}:
             ref = payload.reference.model_dump(mode='json')
             changed_source = False
@@ -440,6 +514,7 @@ class CreationCanvas:
             for item in data['canvasItems']:
                 if item['binding'].get('objectRef', {}).get('id') == spec['id'] and item['binding']['role'] == 'generation':
                     item['binding']['materialOverride'] = None
+                    item['editors'] = [ref for ref in item.get('editors', []) if ref['kind'] not in {'layers', 'image_crop'}]
         else:
             raise ContractError('capability_unsupported', '未实现该业务命令。')
 

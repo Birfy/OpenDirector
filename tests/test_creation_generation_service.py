@@ -138,3 +138,33 @@ async def test_changed_intent_retains_candidate_without_overwriting_edits(projec
     assert snapshot.generationSpecs[-1].currentResultId is None
     assert len(snapshot.results) == len(snapshot.assets) == 1
     await runner.close()
+
+
+def test_plain_text_video_freezes_effective_mode_without_rewriting_intent(project):
+    store, pid, session = project
+    provider = Provider()
+    runner, _ = runtime(project, provider)
+    config = runner.configs.save('video', 'http://127.0.0.1:12345/v1', 'standard-video-fixture', '',
+        connection_type='self_hosted', protocol='vllm_omni', auth_mode='none', video_adapter='standard',
+        video_capabilities={'outputs': [{'resolution': '480P', 'width': 832, 'height': 480, 'durations': [5]}],
+                            'defaultResolution': '480P', 'defaultDuration': 5, 'dimensionStep': 2})
+    target, spec = media(project, 'video')
+    spec = spec.model_copy(update={'prompt': 'A blue sky', 'modelConfigId': UUID(config['id']),
+        'parameters': spec.parameters.model_copy(update={'videoMode': 'reference', 'resolution': '480P'})})
+    assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=spec).status == 'applied'
+    before = store.snapshot(pid)
+    spec, target = before.generationSpecs[-1], before.canvasItems[-1]
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+        expectedVersions=[ver('generation_spec', spec), ver('canvas_item', target)],
+        payload=dict(specId=spec.id, expectedSpecRevision=spec.revision, originItemId=target.id)))
+    receipt = runner.prepare(command, session=session)
+    assert receipt.status == 'accepted', receipt
+    after = store.snapshot(pid)
+    assert after.generationSpecs[-1].parameters.videoMode == 'reference'
+    job = after.jobs[-1]
+    assert job.inputSnapshot.spec.parameters.videoMode == 'first_frame'
+    assert runner.task(job)['videoMode'] == 'first_frame'
+    assert job.execution.size == '832x480'
+    assert job.execution.durationSeconds == 5
+    assert runner.prepare(command, session=session) == receipt
+    assert len(store.snapshot(pid).jobs) == 1

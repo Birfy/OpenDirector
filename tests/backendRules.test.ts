@@ -41,6 +41,7 @@ const config = (
 const h3 = config("video", {});
 const zimage = config("image", {
   profile: "vllm-omni-image",
+  imageOutputs: [{ aspectRatio: "1:1", size: "768x768" }],
   allowedKinds: ["text"],
   maxImages: 0,
   videoModes: [],
@@ -203,6 +204,7 @@ test("input rules bound references, duration and model availability", () => {
   const image = {
     ...generationDefaults("image"),
     modelConfigId: zimage.id,
+    resolution: "自动",
     prompt: "灯塔",
   };
   assert.match(
@@ -270,4 +272,14 @@ test("service results without a canvas source are placed right of the content", 
   assert.equal(added[0]!.data.text, "第一幕");
   assert.ok(added.every((node) => node.position.x >= 100 + existing.width));
   assert.equal(result.document.edges.length, 0);
+});
+
+test("FastH3 preserves supported reference mode for text-only generation", () => {
+  const fast = {
+    ...h3,
+    inputRules: { ...h3.inputRules, videoModes: ["reference" as const] },
+  };
+  const settings = video({ videoMode: "reference" });
+  assert.equal(backendVideoMode(settings, [], fast), "reference");
+  assert.equal(backendBlocker(settings, [], [fast]), null);
 });

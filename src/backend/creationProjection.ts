@@ -26,6 +26,7 @@ import {
   createLocalStage,
   parseLocalStageValue,
 } from "../canvas/stageDocument.ts";
+import { mediaBlobDataUrl } from "../canvas/localMediaRuntime.ts";
 import { generationContentPatch } from "../canvas/generationReferenceContent.ts";
 import { assemblyResource } from "../canvas/editorAssembly.ts";
 import {
@@ -54,6 +55,7 @@ export class CreationProjection {
   baseline!: CanvasDocument;
   basis!: ProjectSnapshot;
   private imported = new Map<string, Promise<AssetRef>>();
+  private masks = new Map<string, Promise<string>>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
     this.client = client;
@@ -117,6 +119,22 @@ export class CreationProjection {
         throw error;
       });
       this.imported.set(key, pending);
+    }
+    return pending;
+  }
+
+  private maskSource(ref: AssetRef) {
+    const key = `${ref.assetId}:${ref.fingerprint}`;
+    let pending = this.masks.get(key);
+    if (!pending) {
+      pending = this.client
+        .blob(ref.assetId)
+        .then((blob) => mediaBlobDataUrl(blob, new AbortController().signal))
+        .catch((error) => {
+          this.masks.delete(key);
+          throw error;
+        });
+      this.masks.set(key, pending);
     }
     return pending;
   }
@@ -230,8 +248,66 @@ export class CreationProjection {
             ),
           },
         };
-      case "media_edit":
-        return {}; // Dedicated tool command bridge is C13.
+      case "image_crop":
+        return {
+          imageCrop: {
+            src: await this.client.mediaUrl(doc.data.source.assetId),
+            options: doc.data.options,
+            width: doc.data.width,
+            height: doc.data.height,
+          },
+        };
+      case "media_edit": {
+        // A changed source starts a fresh edit; keep the old document in history
+        // rather than applying its mask to unrelated pixels of the same size.
+        const ids = doc.data.sourceItems;
+        if (
+          !ids.length ||
+          ids.some((id, index) => {
+            const item = this.client.snapshot.canvasItems.find(
+              (item) => item.id === id,
+            );
+            const actual = item && currentAsset(this.client.snapshot, item);
+            return (
+              actual?.id !== doc.data.sources[index]?.assetId ||
+              actual?.fingerprint !== doc.data.sources[index]?.fingerprint
+            );
+          })
+        )
+          return {};
+        const selection = doc.data.selection;
+        const maskDataUrl = selection?.mask
+          ? await this.maskSource(selection.mask)
+          : undefined;
+        if (selection?.mask && maskDataUrl)
+          this.imported.set(
+            `::image:${maskDataUrl}`,
+            Promise.resolve(selection.mask),
+          );
+        return {
+          taskDraft: {
+            version: 1,
+            tool: doc.data.tool,
+            sourceNodeIds: [...ids],
+            parameters: { ...doc.data.parameters },
+            ...(selection
+              ? {
+                  selection: {
+                    sourceNodeId: ids[0]!,
+                    width: selection.width,
+                    height: selection.height,
+                    boxes: selection.boxes.map((box) => ({ ...box })),
+                    ...(selection.mask
+                      ? {
+                          maskDataUrl,
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+        };
+      }
     }
   }
   async read(snapshot = this.client.snapshot): Promise<CanvasDocument> {
@@ -389,6 +465,16 @@ export class CreationProjection {
               modelConfigId: spec.modelConfigId ?? undefined,
               prompt: node.data.prompt,
               count: view.generationCounts?.[item.id] ?? 1,
+              ...(spec.kind === "image"
+                ? {
+                    aspectRatio: spec.parameters.aspectRatio ?? "自动",
+                    resolution:
+                      spec.parameters.size === "auto"
+                        ? "自动"
+                        : spec.parameters.size,
+                    imagePreset: spec.parameters.preset,
+                  }
+                : {}),
               ...(spec.kind === "video"
                 ? {
                     videoMode:
@@ -398,14 +484,21 @@ export class CreationProjection {
                     durationSeconds:
                       spec.parameters.durationSeconds ??
                       DEFAULT_SETTINGS.durationSeconds,
-                    aspectRatio:
-                      spec.parameters.aspectRatio ??
-                      DEFAULT_SETTINGS.aspectRatio,
-                    resolution: spec.parameters.resolution,
+                    aspectRatio: spec.parameters.aspectRatio ?? "自动",
+                    audioEnabled: spec.parameters.generateAudio,
+                    resolution:
+                      spec.parameters.resolution === "auto"
+                        ? "自动"
+                        : spec.parameters.resolution,
+                    frameSlotsInitialized: true,
                   }
                 : {}),
               ...(spec.kind === "audio"
-                ? { voiceName: spec.parameters.voice ?? undefined }
+                ? {
+                    voiceName: spec.parameters.voice ?? undefined,
+                    audioCreationType: spec.parameters.creationType,
+                    audioMode: spec.parameters.mode,
+                  }
                 : {}),
             };
           if (spec.kind === "video" && node.data.settings) {
@@ -532,14 +625,34 @@ export class CreationProjection {
         return {
           ...common,
           kind: "image",
-          parameters:
-            current?.kind === "image" ? current.parameters : { size: "2K" },
+          parameters: {
+            size:
+              !node.data.settings?.resolution ||
+              // Empty/tool placeholder nodes still use the shared "1024"
+              // initializer, which means no explicit output selection.
+              node.data.settings.resolution === "1024" ||
+              node.data.settings.resolution === "自动"
+                ? "auto"
+                : node.data.settings.resolution,
+            aspectRatio:
+              !node.data.settings?.aspectRatio ||
+              node.data.settings.aspectRatio === "自动"
+                ? null
+                : node.data.settings.aspectRatio,
+            preset: node.data.settings?.imagePreset ?? "none",
+            responseFormat: "url",
+            outputFormat: "png",
+          },
         };
       case "audio":
         return {
           ...common,
           kind: "audio",
-          parameters: { voice: node.data.settings?.voiceName ?? null },
+          parameters: {
+            voice: node.data.settings?.voiceName ?? null,
+            creationType: node.data.settings?.audioCreationType ?? "audio",
+            mode: node.data.settings?.audioMode ?? "tts",
+          },
         };
       case "video": {
         const settings = node.data.settings;
@@ -552,7 +665,11 @@ export class CreationProjection {
                 ? "first_frame"
                 : (settings?.videoMode ?? "first_frame"),
             durationSeconds: settings?.durationSeconds ?? null,
-            aspectRatio: settings?.aspectRatio ?? null,
+            aspectRatio:
+              settings?.aspectRatio === "自动"
+                ? null
+                : (settings?.aspectRatio ?? null),
+            generateAudio: settings?.audioEnabled ?? true,
             resolution:
               settings?.resolution === "自动"
                 ? "auto"
@@ -570,6 +687,7 @@ export class CreationProjection {
     kind: EditorDocument["kind"],
     current?: EditorDocument,
     edges: CanvasDocument["edges"] = [],
+    nodes: readonly CanvasNode[] = [],
   ): Promise<EditorDocumentInput> {
     const common = {
       id: current?.id ?? crypto.randomUUID(),
@@ -600,6 +718,44 @@ export class CreationProjection {
     };
     const ref = (resource: CanvasResource) => this.importResource(resource);
     switch (kind) {
+      case "media_edit": {
+        const task = node.data.taskDraft!;
+        const sources = task.sourceNodeIds.map((id) => {
+          const source = nodes.find((item) => item.id === id);
+          const asset =
+            source?.data.src && this.client.assetForSource(source.data.src);
+          if (!asset)
+            throw new Error("工具来源尚未保存或已变化，请重新打开编辑器。");
+          return assetReference(asset);
+        });
+        const selection = task.selection;
+        return {
+          ...common,
+          inputConnections: [],
+          kind,
+          data: {
+            tool: task.tool,
+            sources,
+            sourceItems: [...task.sourceNodeIds],
+            parameters: { ...task.parameters },
+            selection: selection
+              ? {
+                  source: sources[0]!,
+                  width: selection.width,
+                  height: selection.height,
+                  boxes: selection.boxes?.map((box) => ({ ...box })) ?? [],
+                  mask: selection.maskDataUrl
+                    ? await this.importResource({
+                        kind: "image",
+                        title: "工具选区.png",
+                        src: selection.maskDataUrl,
+                      })
+                    : null,
+                }
+              : null,
+          },
+        };
+      }
       case "subject": {
         // A partially populated node must not throw while projecting the canvas.
         const data = node.data.subject ?? {
@@ -688,6 +844,23 @@ export class CreationProjection {
         } = node.data.localStage ?? createLocalStage();
         return { ...common, kind, data };
       }
+      case "image_crop": {
+        const crop = node.data.imageCrop!;
+        return {
+          ...common,
+          kind,
+          data: {
+            source: await this.importResource({
+              kind: "image",
+              src: crop.src,
+              title: node.data.title,
+            }),
+            options: crop.options,
+            width: crop.width,
+            height: crop.height,
+          },
+        };
+      }
       case "layers": {
         const {
           format: _format,
@@ -739,6 +912,10 @@ export class CreationProjection {
     );
     const items = new Map(basis.canvasItems.map((i) => [i.id, i]));
     const operations: CreationOperation[] = [];
+    const editedOutputs = new Map<
+      string,
+      { source: AssetRef; asset: AssetRef }
+    >();
     const versions = new Map<string, ObjectVersion>();
     const expect = (
       type: ObjectVersion["objectType"],
@@ -767,10 +944,11 @@ export class CreationProjection {
     };
     const specs = new Map<string, string>();
     const moves: { itemId: string; position: { x: number; y: number } }[] = [];
-    for (const node of [
+    const writableNodes = [
       ...document.nodes,
       ...(document.hiddenNodes ?? []).filter((node) => !items.has(node.id)),
-    ]) {
+    ];
+    for (const node of writableNodes) {
       const old = oldNodes.get(node.id),
         item = items.get(node.id);
       if (
@@ -805,15 +983,58 @@ export class CreationProjection {
             item && node.type === "text"
               ? currentAsset(basis, item)
               : undefined;
-          const ref = await this.importResource({
-            kind: node.type as Asset["kind"],
-            title: node.data.title,
-            src: node.data.src,
-            text: node.data.text,
-            identity: node.type === "text" ? node.id : undefined,
-            previous: previous ? assetReference(previous) : undefined,
-          });
-          if (item)
+          const layerEdit =
+            item &&
+            node.type === "image" &&
+            (node.data.layers || node.data.imageCrop);
+          const source = layerEdit ? currentAsset(basis, item) : undefined;
+          const copiedSource =
+            !item && node.data.copiedSourceId
+              ? items.get(node.data.copiedSourceId)
+              : undefined;
+          const copiedAsset =
+            !item && node.type === "image"
+              ? (basis.assets.find(
+                  (asset) =>
+                    asset.id === node.data.backendAssetId &&
+                    asset.kind === "image",
+                ) ??
+                (copiedSource &&
+                oldNodes.get(copiedSource.id)?.data.src === node.data.src
+                  ? currentAsset(basis, copiedSource)
+                  : undefined))
+              : undefined;
+          if (copiedSource) {
+            expect("canvas_item", copiedSource);
+            const copiedSpec = itemSpec(basis, copiedSource);
+            if (copiedSpec) expect("generation_spec", copiedSpec);
+          }
+          const ref = copiedAsset
+            ? assetReference(copiedAsset)
+            : await this.importResource({
+                kind: node.type as Asset["kind"],
+                title: node.data.title,
+                src: node.data.src,
+                text: node.data.text,
+                identity: layerEdit
+                  ? `${node.id}:edit:${JSON.stringify(node.data.layers ?? node.data.imageCrop)}`
+                  : node.type === "text"
+                    ? node.id
+                    : undefined,
+                previous: previous ? assetReference(previous) : undefined,
+              });
+          if (layerEdit && source) {
+            editedOutputs.set(node.id, {
+              source: assetReference(source),
+              asset: ref,
+            });
+            expect(
+              "asset",
+              this.client.snapshot.assets.find(
+                (asset) => asset.id === ref.assetId,
+              )!,
+            );
+          } else if (item)
             operations.push({
               type: "canvas.materialize",
               payload: {
@@ -823,9 +1044,11 @@ export class CreationProjection {
               },
             });
           binding =
-            item?.binding.role === "generation" && node.type === "text"
-              ? { ...item.binding, materialOverride: ref }
-              : { role: "material", objectRef: ref };
+            layerEdit && source
+              ? item.binding
+              : item?.binding.role === "generation" && node.type === "text"
+                ? { ...item.binding, materialOverride: ref }
+                : { role: "material", objectRef: ref };
         }
         if (node.type !== "file") {
           const current = item ? itemSpec(basis, item) : undefined;
@@ -985,6 +1208,61 @@ export class CreationProjection {
           });
         if (!same(node.position, old?.position))
           moves.push({ itemId: node.id, position: node.position });
+      }
+    }
+    // Retained image editors and the published output share one commit.
+    for (const node of writableNodes.filter((node) =>
+      ["image", "video", "audio"].includes(node.type),
+    )) {
+      const item = items.get(node.id);
+      const output = editedOutputs.get(node.id);
+      for (const [field, kind] of [
+        ["layers", "layers"],
+        ["imageCrop", "image_crop"],
+        ["taskDraft", "media_edit"],
+      ] as const) {
+        const attached =
+          item && "editors" in item
+            ? item.editors.find((ref) => ref.kind === kind)
+            : undefined;
+        const current = attached
+          ? basis.editorDocuments.find((doc) => doc.id === attached.id)
+          : undefined;
+        const old = oldNodes.get(node.id);
+        const state = node.data[field];
+        if (!(output && state) && same(state, old?.data[field])) continue;
+        if (state) {
+          const next = await this.editorInput(
+            node,
+            kind,
+            current,
+            [],
+            [...document.nodes, ...(document.hiddenNodes ?? [])],
+          );
+          if (current) expect("editor_document", current);
+          if (item) expect("canvas_item", item);
+          operations.push(
+            current
+              ? { type: "editor.save", payload: { document: next } }
+              : { type: "editor.create", payload: { document: next } },
+          );
+          if (!attached)
+            operations.push({
+              type: "canvas.attachEditor",
+              payload: { itemId: node.id, editorId: next.id },
+            });
+          if (output && kind !== "media_edit")
+            operations.push({
+              type: "canvas.applyEdit",
+              payload: { itemId: node.id, editorId: next.id, ...output },
+            });
+        } else if (attached && item) {
+          expect("canvas_item", item);
+          operations.push({
+            type: "canvas.detachEditor",
+            payload: { itemId: item.id, editorId: attached.id },
+          });
+        }
       }
     }
     if (moves.length)

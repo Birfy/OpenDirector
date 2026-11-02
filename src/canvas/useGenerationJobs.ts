@@ -12,7 +12,11 @@ import {
   type GenerationJob,
 } from "./generationHistory";
 import { creationClient, creationEnabled } from "../backend/creationClient.ts";
-import { creationJobs } from "../backend/creationJobs.ts";
+import {
+  creationJobs,
+  creationJobPreview,
+  applyCreationPreview,
+} from "../backend/creationJobs.ts";
 import { toolHistoryJobs } from "../backend/tools.ts";
 import { abortable } from "../backend/resilientRead.ts";
 
@@ -28,6 +32,7 @@ export function useGenerationJobs(
   const [revision, setRevision] = useState(0);
   const cacheCursors = useRef(new Map<string, number>());
   const reads = useRef(new Map<string, number>());
+  const previews = useRef(new Map<string, Promise<void>>());
   const error = useRef(onError);
   error.current = onError;
   const readJobs = useCallback(
@@ -44,6 +49,7 @@ export function useGenerationJobs(
                 mergeGenerationJobs(saved, cache.current.get(documentId) ?? []),
               );
               loaded.current.add(documentId);
+              setRevision((n) => n + 1);
             })
             .catch((reason) => {
               // Tool history is service-owned, including when browser storage is
@@ -62,38 +68,53 @@ export function useGenerationJobs(
       const snapshot = creationEnabled()
         ? creationClient(documentId).snapshot
         : undefined;
-      const [normal, tools] = await abortable(
-        Promise.all([
-          snapshot &&
-          snapshot.eventCursor > (cacheCursors.current.get(documentId) ?? -1)
-            ? creationJobs(snapshot)
-            : Promise.resolve(undefined),
-          toolHistoryJobs(documentId, cache.current.get(documentId), {
-            signal,
-          }),
-        ]),
+      const publish = (next: GenerationJob[]) => {
+        cache.current.set(documentId, next);
+        setRevision((n) => n + 1);
+      };
+      if (
+        snapshot &&
+        snapshot.eventCursor > (cacheCursors.current.get(documentId) ?? -1)
+      ) {
+        const current = cache.current.get(documentId) ?? [];
+        publish([
+          ...creationJobs(snapshot, current),
+          ...current.filter((job) => job.tool),
+        ]);
+        cacheCursors.current.set(documentId, snapshot.eventCursor);
+      }
+      // Each preview hydrates independently. Late files only patch matching
+      // preview identities, never status, phase, adoption or cancellation.
+      for (const job of cache.current.get(documentId) ?? []) {
+        if (!snapshot || job.preview?.state !== "pending") continue;
+        const key = `${documentId}:${job.id}:${job.preview.assetId}`;
+        if (previews.current.has(key)) continue;
+        const asset = snapshot.assets.find(
+          (asset) => asset.id === job.preview?.assetId,
+        );
+        if (!asset) continue;
+        const pending = creationJobPreview(documentId, asset)
+          .then((preview) => {
+            const current = cache.current.get(documentId) ?? [];
+            publish(
+              current.map((entry) =>
+                entry.id === job.id
+                  ? applyCreationPreview(entry, preview)
+                  : entry,
+              ),
+            );
+          })
+          .finally(() => previews.current.delete(key));
+        previews.current.set(key, pending);
+      }
+      const tools = await abortable(
+        toolHistoryJobs(documentId, cache.current.get(documentId), { signal }),
         signal,
       );
       signal?.throwIfAborted();
       if (reads.current.get(documentId) !== token)
         return cache.current.get(documentId) ?? [];
       const current = cache.current.get(documentId) ?? [];
-      const base =
-        normal &&
-        snapshot &&
-        snapshot.eventCursor >= (cacheCursors.current.get(documentId) ?? -1)
-          ? normal
-          : creationEnabled()
-            ? current.filter((job) => !job.tool)
-            : current;
-      if (normal && snapshot)
-        cacheCursors.current.set(
-          documentId,
-          Math.max(
-            snapshot.eventCursor,
-            cacheCursors.current.get(documentId) ?? -1,
-          ),
-        );
       // Tool jobs are queried from their ledger. A creation snapshot owns only
       // GenerationSpec jobs and must never erase an accepted tool execution.
       const pending = current.filter(
@@ -101,7 +122,7 @@ export function useGenerationJobs(
           job.tool && !job.taskId && !tools.some((tool) => tool.id === job.id),
       );
       const next = [
-        ...base.filter((job) => !job.tool),
+        ...current.filter((job) => !job.tool),
         ...tools,
         ...pending,
       ].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
@@ -109,7 +130,7 @@ export function useGenerationJobs(
         next.length !== current.length ||
         next.some((job, index) => job !== current[index])
       )
-        cache.current.set(documentId, next);
+        publish(next);
       return cache.current.get(documentId) ?? [];
     },
     [documentId, connected],
@@ -117,25 +138,17 @@ export function useGenerationJobs(
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    let generation = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = creationEnabled()
       ? creationClient(documentId).listen(() => {
-          const token = ++generation;
-          const before = cache.current.get(documentId);
-          void readJobs(controller.signal)
-            .then((next) => {
-              if (active && token === generation && next !== before)
-                setRevision((n) => n + 1);
-            })
-            .catch((reason) => active && error.current(String(reason)));
+          void readJobs(controller.signal).catch(
+            (reason) => active && error.current(String(reason)),
+          );
         })
       : undefined;
     const poll = async () => {
       try {
-        const before = cache.current.get(documentId);
-        const next = await readJobs(controller.signal);
-        if (active && before !== next) setRevision((n) => n + 1);
+        await readJobs(controller.signal);
       } catch (reason) {
         if (active) error.current(String(reason));
       }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import type {
   ProjectSnapshot,
   ObjectVersion,
@@ -10,6 +11,7 @@ import type {
 } from "../src/contracts/generated.ts";
 import {
   CreationClient,
+  CreationCommandError,
   assetReference,
   type CreationOperation,
 } from "../src/backend/creationClient.ts";
@@ -320,6 +322,7 @@ test("reference replacement and hiding preserve the intended project relationshi
     provenance: {
       source: "manual",
       jobId: null,
+      toolTaskId: null,
       editorDocumentId: null,
       editorRevision: null,
       sources: [],
@@ -625,6 +628,112 @@ test("reference replacement and hiding preserve the intended project relationshi
             op.type === "reference.remove" && op.payload.referenceId === ref.id,
         ),
       );
+    }
+  }
+});
+
+test("cancel while refreshing a queued submit never sends a generation command", async () => {
+  const snapshot = empty(),
+    client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  let release!: () => void;
+  client.refresh = async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return snapshot;
+  };
+  let commands = 0;
+  client.command = async () => {
+    commands++;
+    throw new Error("unexpected delivery");
+  };
+  const controller = new AbortController();
+  const pending = client.submit(
+    "node",
+    "if_current",
+    undefined,
+    controller.signal,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  release();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(commands, 0);
+});
+
+test("cancel compares the same execution after confirmed progress conflicts, never retries unknown delivery or recovery", async () => {
+  for (const scenario of [
+    "progress",
+    "unknown",
+    "changed-input",
+    "recover",
+  ] as const) {
+    const snapshot = JSON.parse(
+      readFileSync(
+        new URL("./fixtures/creation-project.json", import.meta.url),
+        "utf8",
+      ),
+    ) as ProjectSnapshot;
+    const client = new CreationClient(snapshot.project.id);
+    let job = { ...snapshot.jobs[0]!, status: "running" as const };
+    client.install({ ...snapshot, jobs: [job] });
+    client.refresh = async () => {
+      client.install({ ...snapshot, jobs: [job] });
+      return client.snapshot;
+    };
+    let calls = 0;
+    client.command = async (_type, _payload, versions) => {
+      calls++;
+      assert.equal(versions?.[0]?.revision, job.revision);
+      if (calls === 1) {
+        if (scenario === "unknown") throw new TypeError("receipt unavailable");
+        job = {
+          ...job,
+          revision: job.revision + 1,
+          ...(scenario === "changed-input"
+            ? { inputFingerprint: "b".repeat(64) }
+            : {}),
+        };
+        throw new CreationCommandError({
+          commandId: crypto.randomUUID(),
+          projectId: client.id,
+          inputFingerprint: "a".repeat(64),
+          status: "rejected",
+          changed: [],
+          jobIds: [],
+          issues: [
+            {
+              code: "revision_conflict",
+              message: "checkpoint advanced",
+              objectId: job.id,
+              field: null,
+            },
+          ],
+          eventCursor: 1,
+        });
+      }
+      return {
+        commandId: crypto.randomUUID(),
+        projectId: client.id,
+        inputFingerprint: "a".repeat(64),
+        status: "applied",
+        changed: [],
+        jobIds: [],
+        issues: [],
+        eventCursor: 2,
+      };
+    };
+    const result = client.control(
+      job.id,
+      scenario === "recover" ? "recover" : "cancel",
+    );
+    if (scenario === "progress") {
+      assert.equal((await result).status, "applied");
+      assert.equal(calls, 2);
+    } else {
+      await assert.rejects(result);
+      assert.equal(calls, 1);
     }
   }
 });

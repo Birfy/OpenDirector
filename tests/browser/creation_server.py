@@ -97,7 +97,7 @@ class FixtureProvider:
             raise ProjectError('Unsupported fixture generation kind')
 
     async def generate(self, config, task, submitted, *, result_ready=None):
-        self.calls.append(dict(id=task['id'], kind=task['kind'], referenceIds=task['referenceIds']))
+        self.calls.append(dict(id=task['id'], kind=task['kind'], referenceIds=task['referenceIds'], parameters=task['parameters']))
         await self.gate.wait()
         await asyncio.sleep(.2)
         if task['kind'] == 'text':
@@ -114,7 +114,8 @@ class FixtureProvider:
                  '-t', '0.3', '-threads', '1', '-c:a', 'pcm_s16le', '-f', 'wav', 'pipe:1'], capture_output=True, check=True).stdout)
             return 'wav', data
         image = BytesIO()
-        Image.new('RGB', (320, 240), 'purple').save(image, 'PNG')
+        size = tuple(map(int, task['parameters']['size'].split('x'))) if config['modelId'] == 'parameters-image' else (320, 240)
+        Image.new('RGB', size, 'purple').save(image, 'PNG')
         return 'png', image.getvalue()
 
 

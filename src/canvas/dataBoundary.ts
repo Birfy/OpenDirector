@@ -1,3 +1,4 @@
+import { parseImageCrop } from "./imageCrop.ts";
 import { parseCanvasToolTaskValue, sameCanvasToolTask } from "./toolCatalog.ts";
 import { parseLocalStageValue, sameLocalStage } from "./stageDocument.ts";
 import type {
@@ -691,6 +692,18 @@ export function parseNodeData(
       };
     }
   }
+  if (typeof value.copiedSourceId === "string")
+    result.copiedSourceId = value.copiedSourceId;
+  if (value.imageCrop !== undefined) {
+    try {
+      result.imageCrop = parseImageCrop(value.imageCrop);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "图片编辑文档无效。",
+      };
+    }
+  }
   if (value.layers !== undefined) {
     try {
       result.layers = parseLayerDocumentValue(value.layers);
@@ -879,6 +892,7 @@ export function sameNodeData(a: CanvasNodeData, b: CanvasNodeData): boolean {
           a.current?.versionId === b.current?.versionId,
       ) &&
       sameLayerDocument(a.layers, b.layers) &&
+      JSON.stringify(a.imageCrop) === JSON.stringify(b.imageCrop) &&
       sameLocalStage(a.localStage, b.localStage) &&
       sameCanvasToolTask(a.taskDraft, b.taskDraft) &&
       sameOptional(

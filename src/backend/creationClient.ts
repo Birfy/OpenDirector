@@ -45,6 +45,16 @@ const viewClientId = (() => {
   }
 })();
 
+/** A confirmed rejection is distinct from an unknown delivery outcome. */
+export class CreationCommandError extends Error {
+  readonly receipt: CommandReceipt;
+  constructor(receipt: CommandReceipt) {
+    super(receipt.issues.map((issue) => issue.message).join("\n"));
+    this.name = "CreationCommandError";
+    this.receipt = receipt;
+  }
+}
+
 /** One server snapshot and one command queue per open project. No writable
  * business graph, browser result ownership or generation history is persisted. */
 export class CreationClient {
@@ -209,9 +219,7 @@ export class CreationClient {
       if (this.deliveries.get(intent) === body) this.deliveries.delete(intent);
       this.saveDeliveries();
       if (receipt.status === "rejected")
-        throw new Error(
-          receipt.issues.map((issue) => issue.message).join("\n"),
-        );
+        throw new CreationCommandError(receipt);
       return receipt;
     };
     const pending = this.queue.then(perform, perform);
@@ -379,13 +387,37 @@ export class CreationClient {
     );
   }
   async control(jobId: string, action: "cancel" | "recover") {
-    const job = this.snapshot.jobs.find((j) => j.id === jobId);
-    if (!job) throw new Error("任务不存在。");
-    return this.command(
-      action === "cancel" ? "job.cancel" : "job.recover",
-      { jobId },
-      [objectVersion("job", job)],
-    );
+    await this.refresh();
+    const original = this.snapshot.jobs.find((j) => j.id === jobId);
+    if (!original) throw new Error("任务不存在。");
+    for (let attempt = 0; ; attempt++) {
+      const job = this.snapshot.jobs.find((j) => j.id === jobId);
+      if (!job || job.inputFingerprint !== original.inputFingerprint)
+        throw new Error("任务执行依据已变化，请重新核对任务。");
+      try {
+        return await this.command(
+          action === "cancel" ? "job.cancel" : "job.recover",
+          { jobId },
+          [objectVersion("job", job)],
+        );
+      } catch (error) {
+        // Only a confirmed stale-version rejection may be reconsidered.
+        // Cancellation is monotonic intent for this SAME immutable execution;
+        // checkpoint progress must not make an immediate cancel unreliable.
+        // Unknown deliveries, recovery and changes to inputs never auto-retry.
+        if (
+          action !== "cancel" ||
+          attempt >= 2 ||
+          !(error instanceof CreationCommandError) ||
+          !error.receipt.issues.length ||
+          error.receipt.issues.some(
+            (issue) => issue.code !== "revision_conflict",
+          )
+        )
+          throw error;
+        await this.refresh();
+      }
+    }
   }
   async selectResult(specId: string, resultId: string) {
     const spec = this.snapshot.generationSpecs.find((s) => s.id === specId)!;
@@ -400,8 +432,12 @@ export class CreationClient {
     itemId: string,
     policy: "if_current" | "candidate_only" = "if_current",
     batchId?: string,
+    signal?: AbortSignal,
   ) {
-    const run = () => this.submitCurrent(itemId, policy, batchId);
+    const run = () => {
+      signal?.throwIfAborted();
+      return this.submitCurrent(itemId, policy, batchId, signal);
+    };
     const pending = this.submissions.then(run, run);
     this.submissions = pending;
     return pending;
@@ -410,8 +446,10 @@ export class CreationClient {
     itemId: string,
     policy: "if_current" | "candidate_only",
     batchId?: string,
+    signal?: AbortSignal,
   ) {
     await this.refresh();
+    signal?.throwIfAborted();
     const item = this.snapshot.canvasItems.find((i) => i.id === itemId);
     if (
       !item ||

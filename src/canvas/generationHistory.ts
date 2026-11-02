@@ -56,6 +56,8 @@ export interface GenerationJob {
     settings: GenerationSettings;
   };
   outputs?: ServiceResult[];
+  /** Rebuildable unified history preview; independent of execution status. */
+  preview?: { assetId: string; state: "pending" | "ready" | "unavailable" };
   /** The AI tool request behind a tool task, so a reopened canvas can follow it. */
   tool?: CanvasToolTask;
   /** The pending result node a tool task fills, linked from its source. */

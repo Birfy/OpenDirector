@@ -29,6 +29,7 @@
       "provenance": {
         "source": "upload",
         "jobId": null,
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -49,8 +50,8 @@
       "metadata": {
         "mimeType": "image/png",
         "size": 100,
-        "width": null,
-        "height": null,
+        "width": 128,
+        "height": 128,
         "durationSeconds": null,
         "frameRate": null,
         "hasAudio": null,
@@ -60,6 +61,7 @@
       "provenance": {
         "source": "upload",
         "jobId": null,
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -91,6 +93,7 @@
       "provenance": {
         "source": "upload",
         "jobId": null,
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -122,6 +125,7 @@
       "provenance": {
         "source": "upload",
         "jobId": null,
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -153,6 +157,7 @@
       "provenance": {
         "source": "upload",
         "jobId": null,
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -173,8 +178,8 @@
       "metadata": {
         "mimeType": "image/png",
         "size": 100,
-        "width": null,
-        "height": null,
+        "width": 128,
+        "height": 128,
         "durationSeconds": null,
         "frameRate": null,
         "hasAudio": null,
@@ -184,10 +189,11 @@
       "provenance": {
         "source": "generated",
         "jobId": "00000000-0000-0000-0000-000000000046",
+        "toolTaskId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
-        "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945",
+        "inputFingerprint": "e74318d3b8ecd3052b04b10df4a542b9f51c0456d2b05cd7dea1223e96fc0474",
         "agentRunId": null,
         "modelSnapshot": null,
         "prompt": null
@@ -206,7 +212,9 @@
       "currentResultId": "00000000-0000-0000-0000-000000000047",
       "kind": "image",
       "parameters": {
-        "size": "2K",
+        "size": "auto",
+        "aspectRatio": null,
+        "preset": "none",
         "responseFormat": "url",
         "outputFormat": "png"
       }
@@ -928,6 +936,7 @@
             "kind": "image"
           }
         ],
+        "sourceItems": [],
         "parameters": {
           "ratio": "1:1"
         },
@@ -965,7 +974,9 @@
           "currentResultId": null,
           "kind": "image",
           "parameters": {
-            "size": "2K",
+            "size": "auto",
+            "aspectRatio": null,
+            "preset": "none",
             "responseFormat": "url",
             "outputFormat": "png"
           }
@@ -982,11 +993,11 @@
         },
         "references": []
       },
-      "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945",
+      "inputFingerprint": "e74318d3b8ecd3052b04b10df4a542b9f51c0456d2b05cd7dea1223e96fc0474",
       "execution": {
         "kind": "image",
         "size": "2K",
-        "responseFormat": "url",
+        "responseFormat": null,
         "outputFormat": "png",
         "watermark": null
       },
@@ -1029,7 +1040,7 @@
         "fingerprint": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
         "kind": "image"
       },
-      "inputFingerprint": "577b3f0f5b3549f7e06da564c9fec6ba19a3e95c2fb2755bbe31f22c2c86f945"
+      "inputFingerprint": "e74318d3b8ecd3052b04b10df4a542b9f51c0456d2b05cd7dea1223e96fc0474"
     }
   ],
   "eventCursor": 0,

@@ -7,11 +7,12 @@ from opendirector.domain.creation.base import Contract, digest
 from opendirector.domain.creation.project import ProjectSnapshot, asset_references
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure.local_projects import child, read_json
 
 EDITABLE = {'canvasItems', 'generationSpecs', 'references', 'editorDocuments'}
 ABSENT = object()
 UNDOABLE = {'creation.batch', 'canvas.show', 'canvas.hide', 'canvas.move', 'canvas.update', 'canvas.configure',
-    'canvas.materialize', 'canvas.applyVersion', 'canvas.attachEditor', 'generationSpec.update', 'generationSpec.restore',
+    'canvas.materialize', 'canvas.applyEdit', 'canvas.applyVersion', 'canvas.attachEditor', 'canvas.detachEditor', 'generationSpec.update', 'generationSpec.restore',
     'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'result.select', 'editor.save', 'generationSpec.setPrompt'}
 
 
@@ -287,6 +288,18 @@ class CreationHistory:
             if document.kind == 'stack' and any(item.id in document.data.nodeIds and (asset := current_asset(snapshot, item)) is not None
                                               and asset.id == asset_id for item in snapshot.canvasItems):
                 reasons.append(dict(type='editor_document', id=str(document.id)))
+        # Tool ledgers retain execution facts even after a draft changes or
+        # its output is hidden. Those pinned inputs cannot be deleted as unused.
+        with self.projects.local.transaction() as db:
+            path, _, _ = self.projects._load(db, snapshot.project.id)
+            folder = child(path, 'tool-tasks')
+            if folder.exists():
+                for entry in folder.glob('*.json'):
+                    task = read_json(child(folder, entry.name))
+                    ids = {*task.get('sourceAssetIds', []), task.get('maskAssetId'), task.get('annotationAssetId'),
+                           *(output['id'] for output in task.get('outputs', []))}
+                    if str(asset_id) in ids:
+                        reasons.append(dict(type='tool_task', id=task['id']))
         records = self.projects.history(snapshot.project.id)
         historical_pins = {ref.id for record in records for ref in record.snapshot.references
                            if ref.binding == 'pinned' and ref.source.assetId == asset_id}

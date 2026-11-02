@@ -1,3 +1,4 @@
+import { deliverTool, pendingToolDelivery } from "../backend/toolDeliveries";
 import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
@@ -320,6 +321,8 @@ type ServiceRun = ActiveGeneration & {
   controller: AbortController;
   projectId?: string;
   taskId?: string;
+  /** Pending unified delivery, not a persisted or synthetic Job. */
+  unified?: boolean;
   /** Tool tasks are cancelled through the tool task route. */
   tool?: CanvasToolId;
   targetNodeId?: string;
@@ -571,12 +574,22 @@ function Workspace() {
     () =>
       generationActivities(
         [
+          ...activeGenerations.filter(
+            (run) =>
+              !creationEnabled() ||
+              !jobs.some(
+                (job) =>
+                  !job.tool &&
+                  job.nodeId === run.nodeId &&
+                  job.status === "running",
+              ),
+          ),
           ...(creationEnabled()
             ? jobActivities(
                 jobs.filter((job) => !job.tool),
                 doc.id,
               )
-            : activeGenerations),
+            : []),
           ...jobActivities(
             jobs.filter((job) => job.tool),
             doc.id,
@@ -2517,7 +2530,9 @@ function Workspace() {
   const refreshRunning = () =>
     setActiveGenerations(
       [...serviceRuns.current.values()]
-        .filter((run) => !run.tool && !run.controller.signal.aborted)
+        .filter(
+          (run) => !run.tool && (!run.controller.signal.aborted || run.unified),
+        )
         .map(({ documentId, nodeId, phase, startedAt, expectedMs }) => ({
           documentId,
           nodeId,
@@ -2708,6 +2723,21 @@ function Workspace() {
     resultMode: GenerationResultMode = "replace",
   ) => {
     if (creationEnabled()) {
+      const id = crypto.randomUUID();
+      const run: ServiceRun = {
+        controller: new AbortController(),
+        unified: true,
+        documentId: origin.documentId,
+        nodeId: origin.nodeId,
+        phase: "preparing",
+        startedAt: Date.now(),
+        expectedMs: expectedDuration(
+          `generate:${request.kind}:${request.config.id}`,
+          request.kind,
+        ),
+      };
+      serviceRuns.current.set(id, run);
+      refreshRunning();
       try {
         const current = historyRef.current.present;
         const configured = {
@@ -2741,15 +2771,28 @@ function Workspace() {
         };
         change(() => configured);
         if (!(await persist(configured))) return;
+        run.controller.signal.throwIfAborted();
+        run.phase = "submitting";
+        refreshRunning();
         const receipt = await creationClient(origin.documentId).submit(
           origin.nodeId,
           resultMode === "additional" ? "candidate_only" : "if_current",
           request.batchId,
+          run.controller.signal,
         );
-        if (receipt.status === "accepted")
+        if (run.controller.signal.aborted) {
+          // Once sent, await the original receipt before cancelling its jobs.
+          // Never abort delivery and mint a replacement command.
+          for (const jobId of receipt.jobIds)
+            await creationClient(origin.documentId).control(jobId, "cancel");
+        } else if (receipt.status === "accepted")
           notify("生成任务已提交，结果将保存到当前工程。");
       } catch (error) {
-        notify(errorMessage(error));
+        if (!(error instanceof DOMException && error.name === "AbortError"))
+          notify(errorMessage(error));
+      } finally {
+        serviceRuns.current.delete(id);
+        refreshRunning();
       }
       return;
     }
@@ -2888,7 +2931,27 @@ function Workspace() {
   /** Submit once; the service ledger owns progress/history in both modes. */
   const runToolTask = async (origin: ResultSource, task: CanvasToolTask) => {
     const present = historyRef.current.present;
-    if (present.id !== origin.documentId) return;
+    if (
+      present.id !== origin.documentId ||
+      [...serviceRuns.current.values()].some(
+        (run) =>
+          run.documentId === origin.documentId && run.nodeId === origin.nodeId,
+      )
+    )
+      return;
+    if (creationEnabled()) {
+      const pending = pendingToolDelivery(present.id, origin.nodeId);
+      if (pending) {
+        try {
+          await deliverTool(present.id, origin.nodeId, pending);
+          setJobs(await readJobs());
+          notify("已确认上一次工具提交，请查看原任务进度与结果。");
+        } catch (error) {
+          notify(errorMessage(error));
+        }
+        return;
+      }
+    }
     const entry = toolCatalog.tools.find((item) => item.id === task.tool);
     if (!entry?.available) {
       notify(entry?.reason ?? "本地服务未提供此工具。");
@@ -2949,15 +3012,6 @@ function Workspace() {
       }
       prepared = pending.document;
     }
-    const submissionDocument = prepared;
-    change(() => submissionDocument);
-    if (!(await persist(submissionDocument))) {
-      if (targetNodeId)
-        change((current) => removePendingResult(current, targetNodeId, title));
-      return;
-    }
-    if (historyRef.current.present.id !== origin.documentId) return;
-    closeAction();
     const run: ServiceRun = {
       controller: new AbortController(),
       documentId: origin.documentId,
@@ -2985,13 +3039,31 @@ function Workspace() {
         targetKind: outputKind ?? undefined,
         targetTitle: targetNodeId ? title : undefined,
         durationKey: `tool:${task.tool}`,
-        message: "正在上传素材",
+        message: "正在准备工具任务",
         tool: { ...task, selection: undefined },
         resultSource: origin,
       },
       ...current,
     ]);
+    const submissionDocument = prepared;
+    change(() => submissionDocument);
+    closeAction();
     try {
+      if (!(await persist(submissionDocument))) {
+        updateJob(id, {
+          status: "failed",
+          message: "工程保存失败，未提交工具任务。",
+        });
+        if (targetNodeId && historyRef.current.present.id === origin.documentId)
+          change((current) =>
+            removePendingResult(current, targetNodeId, title),
+          );
+        return;
+      }
+      if (historyRef.current.present.id !== origin.documentId)
+        run.controller.abort();
+      run.controller.signal.throwIfAborted();
+      updateJob(id, { message: "正在上传素材" });
       const submitted = await submitToolTask(
         {
           id,
@@ -3142,6 +3214,19 @@ function Workspace() {
         const origin = job.resultSource!;
         const current = () => historyRef.current.present;
         if (!mounted.current || current().id !== origin.documentId) return;
+        if (creationEnabled()) {
+          // The service validates frozen sources/locks and publishes the owned
+          // outputs atomically. React Flow only observes the resulting snapshot.
+          if (!(await persist(current()))) return;
+          await acknowledgeToolPlacement(
+            origin.documentId,
+            job.taskId!,
+            "placed",
+          );
+          await creationClient(origin.documentId).refresh();
+          setJobs(await readJobs());
+          return;
+        }
         // Stable output IDs and the server acknowledgement cover a lost reply,
         // a reload after saving, and outputs intentionally hidden in C04.
         const outputs = job.outputs!.flatMap((output) =>
@@ -3300,7 +3385,7 @@ function Workspace() {
       kind: settings.mode,
       prompt: settings.prompt,
       title: node.data.title,
-      videoMode: backendVideoMode(settings, references),
+      videoMode: backendVideoMode(settings, references, config),
       durationSeconds: config.inputRules.videoCapabilities
         ? settings.durationSeconds
         : undefined,
@@ -3369,6 +3454,9 @@ function Workspace() {
       )
         run.controller.abort();
     if (creationEnabled()) {
+      for (const run of serviceRuns.current.values())
+        if (run.unified && run.documentId === doc.id && run.nodeId === nodeId)
+          run.controller.abort();
       const client = creationClient(doc.id);
       for (const job of client.snapshot.jobs)
         if (
@@ -5727,27 +5815,49 @@ function Workspace() {
                 void (async () => {
                   const toolEntries = entries.filter((entry) => entry.tool);
                   if (toolEntries.length && !requests) {
-                    const outputs = toolEntries.flatMap(
-                      (job) => job.outputs ?? [],
-                    );
-                    if (!outputs.length) return;
-                    const next = appendServiceResults(
-                      historyRef.current.present,
-                      outputs,
-                    );
-                    change(() => next.document);
-                    if (!(await persist(next.document))) return;
-                    for (const entry of toolEntries)
-                      if (entry.taskId)
-                        await acknowledgeToolPlacement(
-                          doc.id,
-                          entry.taskId,
-                          "placed",
-                        );
-                    setSelected(next.ids);
-                    revealResults(next.ids);
-                    setJobs(await readJobs());
-
+                    if (creationEnabled()) {
+                      if (!(await persist(historyRef.current.present))) return;
+                      const adoptedIds: string[] = [];
+                      for (const entry of toolEntries)
+                        if (entry.taskId) {
+                          const placed = await acknowledgeToolPlacement(
+                            doc.id,
+                            entry.taskId,
+                            "placed",
+                            "explicit",
+                          );
+                          adoptedIds.push(
+                            ...placed.outputs.map(
+                              (output) => output.canvasItemId,
+                            ),
+                          );
+                        }
+                      await creationClient(doc.id).refresh();
+                      setSelected(adoptedIds);
+                      revealResults(adoptedIds);
+                      setJobs(await readJobs());
+                    } else {
+                      const outputs = toolEntries.flatMap(
+                        (job) => job.outputs ?? [],
+                      );
+                      if (!outputs.length) return;
+                      const next = appendServiceResults(
+                        historyRef.current.present,
+                        outputs,
+                      );
+                      change(() => next.document);
+                      if (!(await persist(next.document))) return;
+                      for (const entry of toolEntries)
+                        if (entry.taskId)
+                          await acknowledgeToolPlacement(
+                            doc.id,
+                            entry.taskId,
+                            "placed",
+                          );
+                      setSelected(next.ids);
+                      revealResults(next.ids);
+                      setJobs(await readJobs());
+                    }
                     entries = entries.filter((entry) => !entry.tool);
                     if (!entries.length) return;
                   }
@@ -6034,16 +6144,20 @@ function Workspace() {
             node={editing}
             initialTab={editorMode === "layers" ? "layers" : "crop"}
             initialLayers={editing.data.layers}
+            embedSourcesOnApply={!creationEnabled()}
             onClose={closeEditor}
-            onApply={(src, layers) => {
+            onApply={(src, layers, crop) => {
               applyEditorData({
                 src,
                 mimeType: "image/png",
                 assetState: "ready",
                 layers,
-                media: layers
-                  ? { width: layers.width, height: layers.height }
-                  : undefined,
+                imageCrop: creationEnabled() ? crop : undefined,
+                media: crop
+                  ? { width: crop.width, height: crop.height }
+                  : layers
+                    ? { width: layers.width, height: layers.height }
+                    : undefined,
                 taskDraft: undefined,
               });
               closeEditor();

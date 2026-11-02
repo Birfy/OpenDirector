@@ -86,6 +86,13 @@ class CanvasMaterialize(Contract):
     discardGenerationDraft: bool = False
 
 
+class CanvasApplyEdit(Contract):
+    itemId: UUID
+    source: AssetRef
+    asset: AssetRef
+    editorId: UUID
+
+
 class CanvasConfigure(Contract):
     itemId: UUID
     specId: UUID
@@ -186,7 +193,9 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
-        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.configure', 'canvas.attachEditor', 'canvas.applyVersion'}:
+        elif self.type == 'canvas.applyEdit':
+            required = [('canvas_item', payload.itemId), ('asset', payload.asset.assetId), ('editor_document', payload.editorId)]
+        elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
         elif self.type == 'canvas.move':
             required = [('canvas_item', item.itemId) for item in payload.items]
@@ -238,9 +247,11 @@ _COMMANDS = (
     ('CanvasUpdateCommand', 'canvas.update', CanvasPresentationUpdate),
     ('CanvasHideCommand', 'canvas.hide', CanvasHide),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize),
+    ('CanvasApplyEditCommand', 'canvas.applyEdit', CanvasApplyEdit),
     ('NodeVersionApplyCommand', 'canvas.applyVersion', NodeVersionApply),
     ('CanvasConfigureCommand', 'canvas.configure', CanvasConfigure),
     ('CanvasEditorAttachCommand', 'canvas.attachEditor', CanvasEditorAttach),
+    ('CanvasEditorDetachCommand', 'canvas.detachEditor', CanvasEditorAttach),
     ('SpecCreateCommand', 'generationSpec.create', SpecWrite),
     ('SpecUpdateCommand', 'generationSpec.update', SpecWrite),
     ('SpecRestoreCommand', 'generationSpec.restore', SpecRestore),
@@ -265,8 +276,8 @@ for _name, _type, _payload in _COMMANDS:
     COMMAND_MODELS[_type] = _model
     globals()[_name] = _model
 
-_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize',
-                'canvas.configure', 'canvas.attachEditor', 'generationSpec.create', 'generationSpec.update',
+_BATCH_TYPES = {'canvas.show', 'canvas.move', 'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit',
+                'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'generationSpec.create', 'generationSpec.update',
                 'reference.add', 'reference.update', 'reference.restore', 'reference.remove', 'editor.create', 'editor.save', 'result.select', 'generationSpec.setPrompt'}
 _OPERATIONS = tuple(create_model(name + 'Operation', __base__=Contract,
                     type=(Literal[kind], ...), payload=(payload, ...))

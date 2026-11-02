@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import model_validator, BaseModel, ConfigDict, Field, SecretStr
 
+from opendirector.domain.creation.editors import ToolDraftBinding
 from opendirector.domain.input_rules import MAX_REFERENCES, VideoMode
 from opendirector.domain.references import ReferenceContent, project_content
 from opendirector.domain.assets import AssetPurpose
@@ -335,6 +336,7 @@ class ToolBox(Model):
 
 
 class ToolTaskCreate(Model):
+    draft: ToolDraftBinding | None = None
     id: UUID
     tool: str = Field(min_length=1, max_length=64, pattern=r'^[a-z0-9-]+$')
     sourceAssetIds: list[UUID] = Field(min_length=1, max_length=20)
@@ -378,3 +380,4 @@ class ToolCanvasOrigin(Model):
 
 class ToolPlacement(Model):
     state: Literal['placed', 'unplaced']
+    policy: Literal['if_current', 'explicit'] = 'if_current'

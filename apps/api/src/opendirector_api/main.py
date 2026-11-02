@@ -401,7 +401,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
         @app.post(prefix + '/{task_id}/placement')
         def placement(project_id: UUID, task_id: UUID, value: ToolPlacement, x_opendirector_session: str = Header()):
-            return service.placement(str(project_id), str(task_id), value.state, identifier(x_opendirector_session))
+            return service.placement(str(project_id), str(task_id), value.state, identifier(x_opendirector_session), policy=value.policy)
 
     register_tool_routes(tools, '/api/projects/{project_id}/tool-tasks')
     register_tool_routes(creation_tools, '/api/creation/projects/{project_id}/tool-tasks')

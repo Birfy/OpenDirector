@@ -35,6 +35,9 @@ def _model_label(config):
 
 
 def output_item_id(task, index, kind):
+    outputs = task.get('outputs', [])
+    if index < len(outputs) and outputs[index].get('canvasItemId'):
+        return outputs[index]['canvasItemId']
     canvas = task.get('canvas') or {}
     if index == 0 and canvas.get('targetNodeId') and canvas.get('targetKind') == kind:
         return canvas['targetNodeId']
@@ -156,7 +159,7 @@ class ToolTasks:
         tasks = [self.get(project_id, path.stem) for path in self._folder(directory).glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
 
-    def placement(self, project_id, task_id, state, session):
+    def placement(self, project_id, task_id, state, session, *, policy="if_current"):
         # Serialize acknowledgement with task writes/project moves. This never
         # adopts a GenerationSpec result or changes a terminal execution state.
         with self.store.transaction():
@@ -164,8 +167,11 @@ class ToolTasks:
             task = self.get(project_id, task_id)
             if task['status'] != 'succeeded':
                 raise ProjectError('工具任务尚未完成。', 409)
-            if task.get('placement') == 'placed':
+            if task.get('placement') == 'placed' and policy != 'explicit':
                 return task
+            if self.projects is not None and state == 'placed':
+                from .creation_tool_drafts import publish_outputs
+                state = publish_outputs(self, task, session, policy)
             task['placement'] = state
             self._write(directory, task)
             return task
@@ -196,6 +202,12 @@ class ToolTasks:
     # Submission ----------------------------------------------------------------
 
     def _prepare(self, project_id, value, session):
+        # Snapshot validation and accepted ledger publication share the project
+        # lock. A source cannot be replaced between checking and acceptance.
+        with self.store.transaction():
+            return self._prepare_locked(project_id, value, session)
+
+    def _prepare_locked(self, project_id, value, session):
         identifier(project_id)
         task_id = identifier(str(value['id']))
         spec = TOOLS.get(value.get('tool'))
@@ -222,6 +234,7 @@ class ToolTasks:
                     or existing.get('boxes', []) != (value.get('boxes') or [])
                     or existing.get('canvas') != value.get('canvas')
                     or existing.get('annotationAssetId') != annotation_id
+                    or existing.get('draftBinding') != value.get('draft')
                     or existing.get('requestedModelConfigIds', existing.get('modelConfigIds', {})) != chosen):
                 raise ProjectError('工具任务标识已使用。', 409)
             return existing, directory, None
@@ -240,13 +253,22 @@ class ToolTasks:
         canvas = value.get('canvas')
         if canvas and (len(canvas['sourceNodeIds']) != len(source_ids) or canvas['sourceNodeIds'][0] != canvas['nodeId']):
             raise ProjectError('工具任务的画布来源不匹配。', 422)
+        frozen = {}
+        if self.projects is not None:
+            from .creation_tool_drafts import freeze_inputs
+            frozen = freeze_inputs(self, project_id, value)
+        models = {capability: self._model(capability, chosen.get(capability))[0] for capability in needs}
+        if self.providers().get('text.chat'):
+            models['text.chat'] = self._model('text.chat', chosen.get('text.chat'))[0]
         task = {'schemaVersion': 1, 'id': task_id, 'projectId': project_id, 'tool': spec.id, 'status': 'queued', 'phase': '排队中',
                 'sourceAssetIds': source_ids, 'maskAssetId': mask_id, 'annotationAssetId': annotation_id,
                 'boxes': value.get('boxes') or [], 'parameters': parameters,
-                'modelConfigIds': {item: chosen[item] for item in needs if chosen.get(item)}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
+                'modelConfigIds': {item: config['id'] for item, config in models.items()},
+                'modelSnapshots': {item: {key: val for key, val in config.items() if key != 'apiKey'} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
                 'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None,
                 'canvas': canvas, 'sourceFingerprint': records[source_ids[0]]['fingerprint'],
                 'sourceKind': records[source_ids[0]]['kind'], 'placement': 'pending'}
+        task.update(frozen)
         self._write(directory, task)
         return task, directory, records
 
@@ -285,7 +307,7 @@ class ToolTasks:
 
                 def read(asset_id):
                     record = records[asset_id]
-                    return Source(record['kind'], child(child(directory, 'assets'), asset_id).read_bytes(), record['name'])
+                    return Source(record['kind'], self.assets.read_bytes(task['projectId'], asset_id) if self.projects is not None else child(child(directory, 'assets'), asset_id).read_bytes(), record['name'])
                 sources = await asyncio.to_thread(lambda: [read(item) for item in task['sourceAssetIds']])
                 mask = (await asyncio.to_thread(read, task['maskAssetId'])).data if task['maskAssetId'] else None
                 annotation = (await asyncio.to_thread(read, task['annotationAssetId'])).data if task.get('annotationAssetId') else None
@@ -293,14 +315,22 @@ class ToolTasks:
                 async def progress(message):
                     await self._update(directory, task, phase=message)
 
+                def frozen_model(capability):
+                    config, adapter = self._model(capability, task['modelConfigIds'].get(capability))
+                    frozen = task.get('modelSnapshots', {}).get(capability)
+                    if frozen and any(config.get(key) != frozen.get(key) for key in ('id', 'modelId', 'url', 'protocol', 'connectionType', 'videoAdapter')):
+                        raise ProjectError('已接受工具任务的模型配置已变化，请新建尝试。', 409)
+                    # Runtime credentials remain separate; execution options
+                    # come from acceptance, not later configuration edits.
+                    return ({**frozen, 'apiKey': config.get('apiKey', '')} if frozen else config), adapter
+
                 async def image_model(request):
-                    config, adapter = self._model('image.edit' if request.image is not None else 'image.generate',
-                                                  task['modelConfigIds'].get('image.edit' if request.image is not None else 'image.generate'))
+                    config, adapter = frozen_model('image.edit' if request.image is not None else 'image.generate')
                     return await adapter.image(config, request)
 
                 async def video_model(request, submitted):
                     capability = 'video.first_frame' if request.first_frame is not None else 'video.generate'
-                    config, adapter = self._model(capability, task['modelConfigIds'].get(capability))
+                    config, adapter = frozen_model(capability)
 
                     async def remember(external_id):
                         self.remote[key] = (config, external_id)
@@ -309,37 +339,37 @@ class ToolTasks:
                     return await adapter.video(config, request, submitted=remember)
 
                 async def cutout_model(request):
-                    config, adapter = self._model('image.cutout', task['modelConfigIds'].get('image.cutout'))
+                    config, adapter = frozen_model('image.cutout')
                     return await adapter.cutout(config, request)
 
                 async def edit_model(request, submitted):
-                    config, adapter = self._model('video.edit', task['modelConfigIds'].get('video.edit'))
+                    config, adapter = frozen_model('video.edit')
 
                     async def remember(external_id):
                         self.remote[key] = (config, external_id)
                     return await adapter.edit_video(config, request, submitted=remember)
 
                 async def segment_model(request):
-                    config, adapter = self._model('image.segment', task['modelConfigIds'].get('image.segment'))
+                    config, adapter = frozen_model('image.segment')
                     return await adapter.segment(config, request)
 
                 async def track_model(request):
-                    config, adapter = self._model('video.matting', task['modelConfigIds'].get('video.matting'))
+                    config, adapter = frozen_model('video.matting')
                     return await adapter.track(config, request)
 
                 keeps_layout, edit_max_images = True, 1
                 if 'image.edit' in task['requires']:
-                    _, painter = self._model('image.edit', task['modelConfigIds'].get('image.edit'))
+                    _, painter = frozen_model('image.edit')
                     keeps_layout = bool(getattr(painter, 'strength', False))
                     edit_max_images = int(getattr(painter, 'max_images', 1))
                 limits = (4.0, 15.0)
                 if 'video.edit' in task['requires']:
-                    _, editor = self._model('video.edit', task['modelConfigIds'].get('video.edit'))
+                    _, editor = frozen_model('video.edit')
                     limits = (4.0, float(getattr(editor, 'MAX_SECONDS', 15)))
                 chat_model = None
-                if self.providers().get('text.chat'):
+                if 'text.chat' in task['modelConfigIds']:
                     async def chat_model(request):
-                        config, adapter = self._model('text.chat', task['modelConfigIds'].get('text.chat'))
+                        config, adapter = frozen_model('text.chat')
                         return await adapter.chat(config, request)
 
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],

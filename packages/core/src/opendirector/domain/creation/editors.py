@@ -1,4 +1,5 @@
 """Typed retained editors. AssetRef replaces transient src/data/blob URLs."""
+from math import floor
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -384,12 +385,33 @@ ToolId = Literal['layers', 'crop', 'smart-edit', 'outpaint', 'cutout', 'inpainti
     'extract-audio', 'audio-separation', 'video-trim', 'audio-trim', 'video-frame-capture', 'director-stage']
 
 
+class ToolDraftBinding(Contract):
+    editorId: UUID
+    editorRevision: PositiveInt
+    itemId: UUID
+    itemRevision: PositiveInt
+
+
 class MediaEditData(Contract):
     tool: ToolId
     sources: tuple[AssetRef, ...] = ()
+    sourceItems: tuple[UUID, ...] = ()
     parameters: dict[Annotated[str, Field(min_length=1, max_length=100)],
-                     Annotated[StrictStr, Field(max_length=20000)] | StrictBool | StrictInt | StrictFloat] = Field(default_factory=dict, max_length=100)
+                     Annotated[StrictStr, Field(max_length=100000)] | StrictBool | StrictInt | StrictFloat] = Field(default_factory=dict, max_length=100)
     selection: ToolSelection | None = None
+
+    @model_validator(mode='after')
+    def source_bindings(self):
+        unique(self.sourceItems, 'tool source item IDs')
+        if self.sourceItems and len(self.sourceItems) != len(self.sources):
+            raise ValueError('Tool source identities must match their pinned assets')
+        if self.selection:
+            selection = self.selection
+            if not self.sources or selection.source != self.sources[0]:
+                raise ValueError('Tool selection must belong to the first pinned source')
+            if len(selection.boxes) > 100 or any(box.x < 0 or box.y < 0 or box.x + box.width > selection.width or box.y + box.height > selection.height for box in selection.boxes):
+                raise ValueError('Tool selection boxes exceed source bounds')
+        return self
 
 
 class EditorInputConnection(Contract):
@@ -442,6 +464,51 @@ class LayerDocument(EditorDocumentBase):
     data: LayerData
 
 
+class ImageCropOptions(Contract):
+    rotation: Literal[0, 90, 180, 270] = 0
+    flipX: bool = False
+    flipY: bool = False
+    aspect: Literal['free', 'original', '1:1', '4:3', '3:4', '16:9', '9:16'] = 'original'
+    zoom: Annotated[float, Field(strict=True, ge=100, le=400)] = 100
+    freeWidth: Annotated[float, Field(strict=True, ge=1, le=100)] = 100
+    freeHeight: Annotated[float, Field(strict=True, ge=1, le=100)] = 100
+    x: Annotated[float, Field(strict=True, ge=0, le=100)] = 50
+    y: Annotated[float, Field(strict=True, ge=0, le=100)] = 50
+    brightness: Annotated[float, Field(strict=True, ge=0, le=200)] = 100
+    contrast: Annotated[float, Field(strict=True, ge=0, le=200)] = 100
+    saturation: Annotated[float, Field(strict=True, ge=0, le=200)] = 100
+
+    def output_size(self, width, height):
+        if self.rotation % 180:
+            width, height = height, width
+        if self.aspect == 'free':
+            out_width, out_height = max(1, width * self.freeWidth / 100), max(1, height * self.freeHeight / 100)
+        else:
+            ratio_width, ratio_height = (width, height) if self.aspect == 'original' else [int(v) for v in self.aspect.split(':')]
+            ratio = ratio_width / ratio_height
+            out_width = min(width, height * ratio) / (self.zoom / 100)
+            out_height = out_width / ratio
+        return max(1, floor(out_width + .5)), max(1, floor(out_height + .5))
+
+
+class ImageCropData(Contract):
+    source: AssetRef
+    options: ImageCropOptions
+    width: PositiveInt
+    height: PositiveInt
+
+    @model_validator(mode='after')
+    def image_source(self):
+        if self.source.kind != 'image':
+            raise ValueError('Image crop requires an image source')
+        return self
+
+
+class ImageCropDocument(EditorDocumentBase):
+    kind: Literal['image_crop']
+    data: ImageCropData
+
+
 class StackDocument(EditorDocumentBase):
     kind: Literal['stack']
     data: StackData
@@ -462,5 +529,5 @@ class MediaEditDocument(EditorDocumentBase):
     data: MediaEditData
 
 
-EditorDocument = Annotated[TimelineDocument | SubjectDocument | LayerDocument | StackDocument |
+EditorDocument = Annotated[TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument |
     ToolDocument | DirectorDocument | MediaEditDocument, Field(discriminator='kind')]

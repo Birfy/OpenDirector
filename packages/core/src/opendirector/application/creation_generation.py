@@ -20,7 +20,7 @@ from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.canvas import TextCanvasItem, ImageCanvasItem, VideoCanvasItem, AudioCanvasItem
 from opendirector.domain.creation.base import ObjectVersion
 from opendirector.domain.creation.commands import parse_command
-from opendirector.domain.creation.generation import InputSnapshot, Job, ResultVersion, validate_generation
+from opendirector.domain.creation.generation import InputSnapshot, Job, ResultVersion, execution_spec, validate_generation
 from opendirector.domain.creation.models import ModelConfigPublic, ModelSnapshot
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.creation.validation import ContractError
@@ -125,13 +125,23 @@ class CreationGeneration(Generation):
         intent = spec.parameters.model_dump(exclude_none=True)
         if spec.kind == 'text':
             params.update(thinking=intent['thinking'], max_tokens=intent['maxTokens'])
+        if spec.kind == 'image':
+            from opendirector.domain.image_output import resolve_image_output
+            params['size'] = resolve_image_output(config, input_rules(config), intent)
         if spec.kind == 'audio' and intent.get('voice'):
-            params['voice'] = intent['voice']
+            params['voice' if config['protocol'] == 'openai' else 'speaker'] = intent['voice']
         if spec.kind == 'video':
             rules = input_rules(config)
+            if config['protocol'] == 'volcengine':
+                params['generate_audio'] = intent['generateAudio']
+            else:
+                params.pop('generate_audio', None)
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
+                # FastH3's wire contract sends duration; its derived frame
+                # estimate is not an explicitly submitted execution parameter.
+                params.pop('num_frames', None)
             elif rules['profile'] == 'standard-video':
                 params = {}
             if seconds is None and config.get('videoCapabilities'):
@@ -140,8 +150,21 @@ class CreationGeneration(Generation):
                 params['duration'] = seconds
             if intent.get('aspectRatio'):
                 params['ratio'] = intent['aspectRatio']
-            apply_video_resolution(params, node, records, config, intent)
-        if spec.kind in {'image', 'video'} and config['protocol'] != 'vllm_omni':
+            output = dict(intent)
+            if output.get('resolution') == 'auto' and output.get('aspectRatio') and rules['profile'] in {'standard-video', 'fasth3-omni', 'vllm-omni-h3'}:
+                if node.get('videoMode') == 'continuation':
+                    raise ProjectError('接续沿用上一段视频的画幅，请将比例设为自动。', 422)
+                caps = rules.get('videoCapabilities') or {}
+                choices = [item for item in caps.get('outputs', []) if seconds is None or seconds in item['durations']]
+                if not choices:
+                    raise ProjectError('指定视频比例前，请在模型接入中配置输出规格。', 422)
+                preferred = next((item for item in choices if item['resolution'] == caps.get('defaultResolution')), choices[0])
+                output['resolution'] = preferred['resolution']
+            apply_video_resolution(params, node, records, config, output)
+            if rules['profile'] == 'vllm-omni-h3':
+                from opendirector.integrations.vllm_omni import FPS, h3_frames
+                params.update(fps=FPS, num_frames=h3_frames(params['duration']))
+        if spec.kind in {'image', 'video'} and config['protocol'] == 'volcengine':
             params['watermark'] = not self.settings.get()['removeWatermark']
         return params
 
@@ -151,8 +174,8 @@ class CreationGeneration(Generation):
             return dict(kind=kind, thinking=parameters['thinking'], maxTokens=parameters['max_tokens'])
         if kind == 'image':
             profile = input_rules(config)['profile']
-            return dict(kind=kind, size='1024x1024' if config['protocol'] == 'openai' else parameters['size'],
-                responseFormat='b64_json' if profile == 'vllm-omni-image' else 'url',
+            return dict(kind=kind, size=parameters['size'],
+                responseFormat='b64_json' if profile in {'vllm-omni-image', 'vllm-omni-qwen-image'} else 'url' if config['protocol'] == 'volcengine' else None,
                 outputFormat='png', watermark=parameters.get('watermark'))
         if kind == 'audio':
             return dict(kind=kind, voice=parameters.get('voice') or ('default' if config['connectionType'] == 'self_hosted' else 'alloy') if config['protocol'] == 'openai' else None,
@@ -241,7 +264,11 @@ class CreationGeneration(Generation):
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
             public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': input_rules(config)})
             resolved = resolved_inputs(intermediate, spec.id, public.inputRules)
-            validate_generation(spec, public, resolved)
+            spec = execution_spec(spec, resolved, public.inputRules)
+            try:
+                validate_generation(spec, public, resolved)
+            except (ValueError, ProjectError) as error:
+                raise ContractError('invalid_input', str(error), spec.id) from error
             for reference in resolved:
                 if reference.transmission != 'context_only':
                     self.assets.reference_available(command.projectId, reference.asset.assetId)
@@ -261,7 +288,10 @@ class CreationGeneration(Generation):
             records = {str(a.id): media_record(a) for a in before.assets}
             if hasattr(self.provider, 'prepare_inputs'):
                 self.provider.prepare_inputs(str(command.projectId), task, config)
-            parameters = self._parameters(spec, config, task, records)
+            try:
+                parameters = self._parameters(spec, config, task, records)
+            except ProjectError as error:
+                raise ContractError('invalid_input', str(error), spec.id) from error
             job = Job.model_validate({**stub.model_dump(), 'adapterParameters': parameters, 'execution': self._execution(spec.kind, parameters, config)})
             data['jobs'].append(job.model_dump(mode='json'))
             return ProjectSnapshot.model_validate(data)
@@ -374,8 +404,10 @@ class CreationGeneration(Generation):
             eligible = not current_job.cancelRequested
             same_selection = current_spec.currentResultId == current_job.adoptionResultId
             try:
-                now = InputSnapshot(spec=current_spec.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
-                    model=current_job.inputSnapshot.model, references=resolved_inputs(current, spec.id, current_job.inputSnapshot.model.inputRules))
+                references = resolved_inputs(current, spec.id, current_job.inputSnapshot.model.inputRules)
+                effective = execution_spec(current_spec, references, current_job.inputSnapshot.model.inputRules)
+                now = InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
+                    model=current_job.inputSnapshot.model, references=references)
                 eligible = eligible and now.fingerprint() == current_job.inputFingerprint
             except (ValueError, ContractError):
                 eligible = False
@@ -409,8 +441,9 @@ class CreationGeneration(Generation):
             if adopt and item:
                 width, height = self._media_size(item, asset)
                 binding = item.binding.model_copy(update={'materialOverride': None}) if item.binding.role == 'generation' else item.binding
-                if (width, height, binding) != (item.width, item.height, item.binding):
-                    adopted_item = item.model_copy(update={'binding': binding, 'width': width, 'height': height, 'revision': item.revision + 1})
+                editors = tuple(ref for ref in item.editors if ref.kind not in {'layers', 'image_crop'})
+                if (width, height, binding, editors) != (item.width, item.height, item.binding, item.editors):
+                    adopted_item = item.model_copy(update={'binding': binding, 'editors': editors, 'width': width, 'height': height, 'revision': item.revision + 1})
             return current.model_copy(update={'assets': (*current.assets, asset), 'results': (*current.results, result),
                 'jobs': tuple(completed if j.id == job.id else j for j in current.jobs),
                 'canvasItems': (*tuple(adopted_item if item and i.id == item.id else i for i in current.canvasItems), *([additional] if additional else [])),

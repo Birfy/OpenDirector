@@ -38,6 +38,12 @@ def tool_project(tmp_path, request):
         store.create('Tool history', project_id, session)
         assets = CanvasProjects(store).assets
     source = assets.import_file(project_id, str(uuid4()), 'source.png', png(), session)
+    if projects:
+        from opendirector.application.creation_canvas import asset_ref
+        material = assets.assets.get(project_id, source['id'])
+        receipt = projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
+            payload=dict(item=dict(id=node_id, projectId=project_id, kind='image', binding=dict(role='material', objectRef=asset_ref(material)))))), session=session)
+        assert receipt.status == 'applied'
     configs = ModelConfigs(store.repository)
     def service():
         return ToolTasks(store, configs, assets, projects=projects)
@@ -152,8 +158,11 @@ def test_project_rename_waits_for_background_tool_tasks(tool_project):
 
 
 def test_pending_result_identity_and_timing_survive_service_restart(tool_project):
-    _, _, _, project_id, session, _, value, factory = tool_project
+    _, projects, _, project_id, session, _, value, factory = tool_project
     target = str(uuid4())
+    if projects:
+        assert projects.execute(parse_command(dict(commandId=uuid4(), projectId=project_id, type='canvas.show',
+            payload=dict(item=dict(id=target, projectId=project_id, kind='image', title='Pending result', binding=dict(role='empty'))))), session=session).status == 'applied'
     value = {**value, 'canvas': {**value['canvas'], 'targetNodeId': target,
                                'targetKind': 'image', 'targetTitle': 'Pending result'}}
     async def run():

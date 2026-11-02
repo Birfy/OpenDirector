@@ -10,30 +10,19 @@ import type { CanvasNode } from "./model";
 import { LayerBoard } from "./LayerBoard";
 import type { LayerDocument } from "./layerDocument";
 import "./image-editor.css";
+import { INITIAL_CROP_OPTIONS, type ImageCropState } from "./imageCrop.ts";
+import type { ImageCropOptions as EditOptions } from "../contracts/generated.ts";
 
 export interface ImageEditorProps {
   node: CanvasNode;
-  onApply: (src: string, layers?: LayerDocument) => void;
+  onApply: (src: string, layers?: LayerDocument, crop?: ImageCropState) => void;
   onClose: () => void;
   initialTab?: "crop" | "layers";
   initialLayers?: LayerDocument;
+  embedSourcesOnApply?: boolean;
 }
 
-type Aspect = "free" | "original" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
-interface EditOptions {
-  rotation: number;
-  flipX: boolean;
-  flipY: boolean;
-  aspect: Aspect;
-  zoom: number;
-  freeWidth: number;
-  freeHeight: number;
-  x: number;
-  y: number;
-  brightness: number;
-  contrast: number;
-  saturation: number;
-}
+type Aspect = EditOptions["aspect"];
 interface Crop {
   x: number;
   y: number;
@@ -43,20 +32,7 @@ interface Crop {
   imageHeight: number;
 }
 
-const INITIAL_OPTIONS: EditOptions = {
-  rotation: 0,
-  flipX: false,
-  flipY: false,
-  aspect: "original",
-  zoom: 100,
-  freeWidth: 100,
-  freeHeight: 100,
-  x: 50,
-  y: 50,
-  brightness: 100,
-  contrast: 100,
-  saturation: 100,
-};
+const INITIAL_OPTIONS = INITIAL_CROP_OPTIONS;
 
 function calculateCrop(image: HTMLImageElement, options: EditOptions): Crop {
   const turned = options.rotation % 180 !== 0;
@@ -146,6 +122,7 @@ function failureMessage(error: unknown): string {
 export function ImageEditor({
   initialTab = "crop",
   initialLayers,
+  embedSourcesOnApply,
   ...props
 }: ImageEditorProps) {
   const [tab, setTab] = useState(initialTab);
@@ -156,6 +133,7 @@ export function ImageEditor({
       src={layerSource}
       title={props.node.data.title}
       initialDocument={layers}
+      embedSourcesOnApply={embedSourcesOnApply}
       onApply={props.onApply}
       onClose={props.onClose}
     />
@@ -256,11 +234,11 @@ function CropEditor({
   useEffect(() => {
     let cancelled = false;
     setImage(null);
-    setOptions({ ...INITIAL_OPTIONS });
+    setOptions({ ...(node.data.imageCrop?.options ?? INITIAL_OPTIONS) });
     setLoadError("");
     setRenderError("");
     setLoading(true);
-    const src = node.data.src;
+    const src = node.data.imageCrop?.src ?? node.data.src;
     if (!src) {
       setLoadError("这张图片还没有可编辑的本地素材。请先导入图片。");
       setLoading(false);
@@ -296,7 +274,7 @@ function CropEditor({
       source.onload = null;
       source.onerror = null;
     };
-  }, [node.id, node.data.src]);
+  }, [node.id, node.data.src, node.data.imageCrop]);
 
   useEffect(() => {
     if (!image) return;
@@ -384,7 +362,12 @@ function CropEditor({
         throw new Error(
           "图片尺寸超出当前浏览器的导出能力，请增加裁剪缩放后重试。",
         );
-      onApply(src);
+      onApply(src, undefined, {
+        src: node.data.imageCrop?.src ?? node.data.src!,
+        options,
+        width: output.width,
+        height: output.height,
+      });
       onClose();
     } catch (error) {
       setRenderError(`无法应用编辑：${failureMessage(error)}`);
@@ -460,7 +443,11 @@ function CropEditor({
                 try {
                   const unchanged = (
                     Object.keys(INITIAL_OPTIONS) as (keyof EditOptions)[]
-                  ).every((key) => options[key] === INITIAL_OPTIONS[key]);
+                  ).every(
+                    (key) =>
+                      options[key] ===
+                      (node.data.imageCrop?.options ?? INITIAL_OPTIONS)[key],
+                  );
                   if (unchanged && node.data.src)
                     onOpenLayers(node.data.src, true);
                   else {
@@ -595,7 +582,11 @@ function CropEditor({
                   type="button"
                   disabled={!image}
                   onClick={() =>
-                    update("rotation", (options.rotation + 90) % 360)
+                    update(
+                      "rotation",
+                      ((options.rotation + 90) %
+                        360) as EditOptions["rotation"],
+                    )
                   }
                 >
                   <span aria-hidden="true">↻</span>旋转 90°

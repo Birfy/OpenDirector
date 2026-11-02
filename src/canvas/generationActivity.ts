@@ -83,6 +83,7 @@ export function generationPhase(
     case "submit":
       return "submitting";
     case "download":
+    case "check":
     case "save":
     case "adopt":
       return "finishing";

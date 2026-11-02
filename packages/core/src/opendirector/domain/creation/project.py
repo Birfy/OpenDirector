@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from .assets import Asset, AssetRef
 from .base import Contract, NonNegative, ObjectVersion, Point, ProjectEntity, Revision, unique
 from .canvas import CanvasItem, EditorBinding, GenerationBinding, MaterialBinding, MediaCanvasItem
-from .editors import EditorDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
+from .editors import EditorDocument, MediaEditDocument, LayerDocument, StackDocument, SubjectDocument, TimelineDocument
 from .generation import FollowingReference, GenerationSpec, Job, PromptReference, Reference, ResultVersion
 
 
@@ -91,6 +91,11 @@ class ProjectSnapshot(Contract):
                 spec = specs.get(item.binding.objectRef.id)
                 if spec is None or spec.kind != item.kind or spec.purpose != 'generation':
                     raise ValueError('Generation node points to a missing or wrong-kind spec')
+                # Retained images are verified generation outputs or published edits.
+                if item.kind == 'image' and item.binding.materialOverride:
+                    output = assets[item.binding.materialOverride.assetId]
+                    if output.provenance.source not in {'generated', 'edited'} or (output.provenance.source == 'edited' and not output.provenance.sources):
+                        raise ValueError('Image overrides require recorded generation or edit provenance')
             elif item.binding.role == 'empty' and item.binding.draftSpec:
                 spec_id = item.binding.draftSpec.id
                 spec = specs.get(spec_id)
@@ -163,6 +168,18 @@ class ProjectSnapshot(Contract):
                 if doc is None or provenance.editorRevision > doc.revision:
                     raise ValueError('Edited asset references a missing or future document')
         for doc in self.editorDocuments:
+            if isinstance(doc, MediaEditDocument):
+                if any(source_id not in items for source_id in doc.data.sourceItems):
+                    raise ValueError('Tool draft refers to a missing logical source')
+                selection = doc.data.selection
+                if selection:
+                    source = assets[selection.source.assetId]
+                    if (selection.width, selection.height) != (source.metadata.width, source.metadata.height):
+                        raise ValueError('Tool selection dimensions must match the actual source')
+                    if selection.mask:
+                        mask = assets[selection.mask.assetId]
+                        if (mask.metadata.width, mask.metadata.height) != (selection.width, selection.height):
+                            raise ValueError('Tool mask dimensions must match the actual source')
             if isinstance(doc, StackDocument):
                 if any(item_id not in items for item_id in doc.data.nodeIds):
                     raise ValueError('Stack refers to a missing logical node')

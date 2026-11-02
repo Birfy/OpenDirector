@@ -1,3 +1,4 @@
+import { deliverTool } from "./toolDeliveries.ts";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, assetBlob, errorMessage, json, request } from "./api.ts";
 import {
@@ -220,23 +221,52 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       : await request<BackendAsset[]>(`/projects/${projectId}/assets`, {
           signal,
         });
-    const sourceAssetIds: string[] = [];
-    for (const source of value.sources) {
-      signal.throwIfAborted();
-      const blob = await (await fetch(source.src, { signal })).blob();
-      sourceAssetIds.push(
-        await uploadAsset(projectId, known, blob, source.title, signal),
-      );
-    }
-    const maskAssetId = value.maskDataUrl
-      ? await uploadAsset(
-          projectId,
-          known,
-          await (await fetch(value.maskDataUrl, { signal })).blob(),
-          "选区",
-          signal,
-        )
-      : undefined;
+    const client = creationEnabled() ? creationClient(projectId) : undefined;
+    const owner = client?.snapshot.canvasItems.find(
+      (item) => item.id === value.canvas?.nodeId,
+    );
+    const editorRef =
+      owner && "editors" in owner
+        ? owner.editors.find((ref) => ref.kind === "media_edit")
+        : undefined;
+    const editor =
+      editorRef &&
+      client?.snapshot.editorDocuments.find((doc) => doc.id === editorRef.id);
+    if (client && (!owner || !editor || editor.kind !== "media_edit"))
+      throw new Error("请先保存工具编辑设置，再提交任务。");
+    const draft =
+      owner && editor
+        ? {
+            itemId: owner.id,
+            itemRevision: owner.revision,
+            editorId: editor.id,
+            editorRevision: editor.revision,
+          }
+        : undefined;
+    const sourceAssetIds: string[] =
+      editor?.kind === "media_edit"
+        ? editor.data.sources.map((ref) => ref.assetId)
+        : [];
+    if (!client)
+      for (const source of value.sources) {
+        signal.throwIfAborted();
+        const blob = await (await fetch(source.src, { signal })).blob();
+        sourceAssetIds.push(
+          await uploadAsset(projectId, known, blob, source.title, signal),
+        );
+      }
+    const maskAssetId =
+      editor?.kind === "media_edit"
+        ? editor.data.selection?.mask?.assetId
+        : value.maskDataUrl
+          ? await uploadAsset(
+              projectId,
+              known,
+              await (await fetch(value.maskDataUrl, { signal })).blob(),
+              "选区",
+              signal,
+            )
+          : undefined;
     const annotationAssetId = value.annotatedDataUrl
       ? await uploadAsset(
           projectId,
@@ -248,22 +278,21 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       : undefined;
     signal.throwIfAborted();
     attempted = true;
-    const task = await request<ToolTask>(
-      toolTaskPath(projectId),
-      json("POST", {
-        id: value.id,
-        canvas: value.canvas,
-        tool: value.tool,
-        sourceAssetIds,
-        ...(maskAssetId ? { maskAssetId } : {}),
-        ...(annotationAssetId ? { annotationAssetId } : {}),
-        ...(value.modelConfigIds
-          ? { modelConfigIds: value.modelConfigIds }
-          : {}),
-        boxes: value.boxes ?? [],
-        parameters: value.parameters,
-      }),
-    );
+    const body = {
+      id: value.id,
+      ...(draft ? { draft } : {}),
+      canvas: value.canvas,
+      tool: value.tool,
+      sourceAssetIds,
+      ...(maskAssetId ? { maskAssetId } : {}),
+      ...(annotationAssetId ? { annotationAssetId } : {}),
+      ...(value.modelConfigIds ? { modelConfigIds: value.modelConfigIds } : {}),
+      boxes: value.boxes ?? [],
+      parameters: value.parameters,
+    };
+    const task = client
+      ? await deliverTool<ToolTask>(projectId, owner!.id, body)
+      : await request<ToolTask>(toolTaskPath(projectId), json("POST", body));
     if (signal.aborted) {
       // Acceptance may race a click on Cancel. Once the identity is known,
       // cancel the accepted task too; aborting a browser request is not enough.
@@ -298,10 +327,11 @@ export const acknowledgeToolPlacement = (
   projectId: string,
   taskId: string,
   state: "placed" | "unplaced",
+  policy: "if_current" | "explicit" = "if_current",
 ) =>
   request<ToolTask>(
     `${toolTaskPath(projectId)}/${taskId}/placement`,
-    json("POST", { state }),
+    json("POST", { state, policy }),
   );
 
 export function cancelToolTask(projectId: string, taskId: string) {

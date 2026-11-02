@@ -196,3 +196,31 @@ test("boundary rejects remote assets, duplicate ids, invalid geometry and malfor
   ])
     assert.throws(() => parseLayerDocumentValue(bad));
 });
+
+test("project layer sources accept current-origin blobs but reject foreign and opaque origins", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: { origin: "http://localhost:5173" },
+  });
+  try {
+    const document = createLayerDocument(
+      "blob:http://localhost:5173/source",
+      800,
+      600,
+    );
+    assert.deepEqual(parseLayerDocumentValue(document), document);
+    for (const src of [
+      "blob:https://outside.example/source",
+      "blob:http://localhost:5174/source",
+      "blob:null/source",
+    ]) {
+      assert.throws(() =>
+        parseLayerDocumentValue(createLayerDocument(src, 800, 600)),
+      );
+    }
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "location", descriptor);
+    else Reflect.deleteProperty(globalThis, "location");
+  }
+});

@@ -22,6 +22,11 @@ class VideoCapabilities(ExistingVideoCapabilities):
     model_config = {**Contract.model_config, 'frozen': False}
 
 
+class ImageOutput(Contract):
+    aspectRatio: str = Field(pattern=r'^(?:auto|[1-9]\d?:[1-9]\d?)$')
+    size: str = Field(pattern=r'^(?:2K|[1-9]\d{2,3}x[1-9]\d{2,3})$')
+
+
 class InputRules(Contract):
     profile: str = Field(min_length=1, max_length=100)
     allowedKinds: tuple[Literal['text', 'image', 'video', 'audio'], ...]
@@ -32,6 +37,7 @@ class InputRules(Contract):
     videoBytes: Count
     requestBytes: Count
     videoModes: tuple[VideoMode, ...]
+    imageOutputs: tuple[ImageOutput, ...] = ()
     outputResolutions: tuple[str, ...] = ()
     referenceImageResolutions: tuple[str, ...] | None = None
     videoCapabilities: VideoCapabilities | None = None

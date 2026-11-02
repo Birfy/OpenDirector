@@ -21,7 +21,8 @@ import {
   backendModel,
   backendResolutions,
   backendDurations,
-  serviceVideoSettings,
+  serviceGenerationSettings,
+  backendAspectRatios,
   backendReferenceIssue,
   backendReferences,
   modelLabel,
@@ -85,9 +86,11 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
     ...sameMode,
     mode,
     model: sameMode?.model && !legacyModel ? sameMode.model : defaults.model,
-    aspectRatio: ratios.some((ratio) => ratio === previous?.aspectRatio)
-      ? previous!.aspectRatio
-      : defaults.aspectRatio,
+    aspectRatio:
+      previous?.aspectRatio === "自动" ||
+      ratios.some((ratio) => ratio === previous?.aspectRatio)
+        ? previous!.aspectRatio
+        : defaults.aspectRatio,
     resolution:
       mode === "audio"
         ? "自动"
@@ -97,6 +100,9 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
     prompt: generationPrompt(node),
     count: previous?.count ?? 1,
     audioEnabled: sameMode?.audioEnabled ?? true,
+    voiceName: sameMode?.modelConfigId
+      ? sameMode.voiceName
+      : (sameMode?.voiceName ?? defaults.voiceName),
   };
 }
 
@@ -213,7 +219,7 @@ export function NodeComposer({
       });
       return;
     }
-    const selected = serviceVideoSettings(
+    const selected = serviceGenerationSettings(
       { ...settings, model: modelLabel(service), modelConfigId: service.id },
       service,
       incomingNodes,
@@ -225,10 +231,9 @@ export function NodeComposer({
     const next = changeGenerationSettings(settings, patch);
     const target = backendModel(next, backendModels);
     onUpdate({
-      settings:
-        target && next.mode === "video"
-          ? serviceVideoSettings(next, target, incomingNodes)
-          : next,
+      settings: target
+        ? serviceGenerationSettings(next, target, incomingNodes)
+        : next,
     });
   };
   const togglePanel = (next: Panel, anchor: HTMLElement) => {
@@ -490,7 +495,7 @@ export function NodeComposer({
                 <option value="none">自由创作</option>
                 <option
                   value="product-views"
-                  disabled={settings.model !== "Seedream 5.0 Pro"}
+                  disabled={backend || settings.model !== "Seedream 5.0 Pro"}
                 >
                   产品三视图
                 </option>
@@ -709,15 +714,19 @@ export function NodeComposer({
             <div className="cw-parameter-section">
               <span className="cw-field-label">比例</span>
               <div className="cw-ratio-options">
-                {ratios.map((ratio) => {
+                {(backend ? ["自动", ...ratios] : ratios).map((ratio) => {
                   const [w, h] = ratio.split(":").map(Number);
                   return (
                     <button
                       type="button"
                       key={ratio}
                       disabled={
-                        settings.imagePreset === "product-views" &&
-                        ratio !== "16:9"
+                        (backend &&
+                          !backendAspectRatios(settings, config).includes(
+                            ratio,
+                          )) ||
+                        (settings.imagePreset === "product-views" &&
+                          ratio !== "16:9")
                       }
                       className={
                         settings.aspectRatio === ratio ? "cw-is-active" : ""
@@ -728,8 +737,8 @@ export function NodeComposer({
                       <span
                         className="cw-ratio-box"
                         style={{
-                          width: `${Math.min(23, (21 * w!) / h!)}px`,
-                          height: `${Math.min(23, (21 * h!) / w!)}px`,
+                          width: `${ratio === "自动" ? 21 : Math.min(23, (21 * w!) / h!)}px`,
+                          height: `${ratio === "自动" ? 21 : Math.min(23, (21 * h!) / w!)}px`,
                         }}
                       />
                       <span>{ratio}</span>
@@ -739,7 +748,7 @@ export function NodeComposer({
               </div>
             </div>
           )}
-          {mode !== "audio" && (!backend || mode === "video") && (
+          {mode !== "audio" && (
             <div className="cw-parameter-section">
               <span className="cw-field-label">分辨率</span>
               <div className="cw-segment-options">
@@ -809,21 +818,22 @@ export function NodeComposer({
               )}
             </div>
           </div>
-          {mode === "video" && !backend && (
-            <label className="cw-audio-toggle">
-              <span>
-                <CanvasIcon name="volume" size={16} />
-                请求包含音频（服务能力待确认）
-              </span>
-              <input
-                type="checkbox"
-                checked={settings.audioEnabled}
-                onChange={(event) =>
-                  updateSettings({ audioEnabled: event.target.checked })
-                }
-              />
-            </label>
-          )}
+          {mode === "video" &&
+            (!backend || config?.protocol === "volcengine") && (
+              <label className="cw-audio-toggle">
+                <span>
+                  <CanvasIcon name="volume" size={16} />
+                  {backend ? "生成音频" : "请求包含音频（服务能力待确认）"}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.audioEnabled}
+                  onChange={(event) =>
+                    updateSettings({ audioEnabled: event.target.checked })
+                  }
+                />
+              </label>
+            )}
         </ComposerPopover>
       )}
 

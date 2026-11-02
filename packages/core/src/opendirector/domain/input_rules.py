@@ -69,4 +69,7 @@ def _adapter_rules(config):
 
 def input_rules(config):
     rules = _adapter_rules(config)
+    if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':
+        from .image_output import image_outputs
+        rules['imageOutputs'] = image_outputs(config, rules['profile'])
     return capability_fields(config, rules) if config['kind'] == 'video' else rules

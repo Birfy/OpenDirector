@@ -17,12 +17,15 @@ class TextParameters(Contract):
 
 
 class ImageParameters(Contract):
-    size: Literal['2K'] = '2K'
+    size: str = Field(default='auto', pattern=r'^(?:auto|2K|[1-9]\d{2,3}x[1-9]\d{2,3})$')
+    aspectRatio: str | None = Field(default=None, pattern=r'^[1-9]\d?:[1-9]\d?$')
+    preset: Literal['none', 'product-views'] = 'none'
     responseFormat: Literal['url'] = 'url'
     outputFormat: Literal['png'] = 'png'
 
 
 class VideoParameters(Contract):
+    generateAudio: bool = True
     videoMode: VideoMode = 'first_frame'
     durationSeconds: Annotated[float, Field(strict=True, ge=1, le=60)] | None = None
     aspectRatio: str | None = Field(default=None, pattern=r'^[1-9]\d?:[1-9]\d?$')
@@ -30,6 +33,8 @@ class VideoParameters(Contract):
 
 
 class AudioParameters(Contract):
+    creationType: Literal['audio', 'music'] = 'audio'
+    mode: Literal['tts', 'unified'] = 'tts'
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
 
 
@@ -168,13 +173,13 @@ class VideoExecution(Contract):
     guidanceScale: NonNegative | None = None
     seed: int | None = Field(default=None, strict=True)
     watermark: bool | None = None
-    generateAudio: bool = True
+    generateAudio: bool | None = None
 
 
 class ImageExecution(Contract):
     kind: Literal['image']
     size: str
-    responseFormat: Literal['url', 'b64_json'] = 'url'
+    responseFormat: Literal['url', 'b64_json'] | None = None
     outputFormat: Literal['png'] = 'png'
     watermark: bool | None = None
 
@@ -253,6 +258,19 @@ class ResultVersion(ProjectEntity):
     inputFingerprint: Digest
 
 
+def execution_spec(spec, references, rules):
+    """Resolve effective video mode from transmitted inputs, preserving intent.
+
+    Use the same resolution when freezing a job and comparing current inputs
+    for automatic adoption. Reference layout without media is text-to-video.
+    """
+    if (spec.kind == 'video' and spec.parameters.videoMode == 'reference'
+            and 'first_frame' in rules.videoModes
+            and not any(ref.transmission != 'context_only' and ref.asset.kind != 'text' for ref in references)):
+        return spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': 'first_frame'})})
+    return spec
+
+
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
@@ -281,8 +299,13 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
             raise ValueError(f'Too many {kind} references')
-    if spec.kind == 'audio' and spec.parameters.voice and model.protocol != 'openai':
-        raise ValueError('Voice selection is supported by the OpenAI speech adapter')
+    if spec.kind == 'image':
+        from opendirector.domain.image_output import resolve_image_output
+        if spec.parameters.preset != 'none':
+            raise ValueError('当前服务不支持产品三视图预设，请使用自由创作。')
+        resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
+    if spec.kind == 'audio' and (spec.parameters.creationType != 'audio' or spec.parameters.mode != 'tts'):
+        raise ValueError('当前语音服务仅支持文本朗读。')
     if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):
         raise ValueError('Speech generation requires actual text, not reference labels')
     if spec.kind != 'video':
@@ -290,6 +313,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError('Frame and continuation roles require video generation')
         return
     params = spec.parameters
+    if not params.generateAudio and model.protocol != 'volcengine':
+        raise ValueError('当前视频适配器不支持关闭生成音频。')
     if params.videoMode == 'first_frame' and len({ref.referenceId for ref in references if ref.asset.kind == 'image' and ref.subjectRole is None}) > 2:
         raise ValueError('首尾帧模式最多连接 2 个图片节点，请先断开多余连线。')
     if params.videoMode not in rules.videoModes:

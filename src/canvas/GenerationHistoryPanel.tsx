@@ -53,6 +53,7 @@ export function GenerationHistoryPanel({
   const rows = jobs.filter(
     (job) =>
       filter === "all" ||
+      job.outputKind === filter ||
       job.request?.kind === filter ||
       job.outputs?.some((item) => item.kind === filter),
   );
@@ -150,6 +151,7 @@ export function GenerationHistoryPanel({
             · {labels[job.status]}
           </small>
           {job.message && <small>{job.message}</small>}
+          {job.preview?.state === "pending" && <small>正在读取结果预览…</small>}
           <div className="cw-history-thumbnails">
             {job.outputs?.map((output, i) =>
               output.kind === "image" ? (

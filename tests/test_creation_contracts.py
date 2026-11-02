@@ -50,7 +50,8 @@ def asset(number, kind):
         fingerprint='sha256:' + f'{number:064x}', path=f'assets/{uid(number)}',
         metadata=dict(mimeType={'text': 'text/plain', 'image': 'image/png', 'video': 'video/mp4',
                                 'audio': 'audio/wav', 'file': 'application/pdf'}[kind], size=100,
-                      **({'durationSeconds': 4} if kind in {'video', 'audio'} else {})),
+                      **({'durationSeconds': 4} if kind in {'video', 'audio'} else {}),
+                      **({'width': 128, 'height': 128} if kind == 'image' else {})),
         provenance=dict(source='upload')))
 
 
@@ -423,3 +424,24 @@ def test_generated_schemas_are_current_and_distinguish_defaults():
     assert 'width' not in catalog['input']['$defs']['ImageCanvasItem']['required']
     assert 'width' in catalog['output']['$defs']['ImageCanvasItem']['required']
     assert catalog['input']['$defs']['CanvasShow']['properties']['item']['discriminator']['propertyName'] == 'kind'
+
+
+@pytest.mark.parametrize('kind,transmission,expected', [
+    ('text', 'content', 'first_frame'),
+    ('image', 'context_only', 'first_frame'),
+    ('image', 'content', 'reference'),
+    ('video', 'content', 'reference'),
+    ('audio', 'content', 'reference'),
+])
+def test_effective_video_mode_uses_transmitted_media_and_keeps_editable_intent(kind, transmission, expected):
+    from opendirector.domain.creation.generation import ResolvedReference, execution_spec
+    spec = video_spec(videoMode='reference')
+    ref = ResolvedReference(**{**resolved(kind), 'transmission': transmission})
+    rules = model('video').inputRules
+    effective = execution_spec(spec, (ref,), rules)
+    assert effective.parameters.videoMode == expected
+    assert spec.parameters.videoMode == 'reference'
+    # The same resolution is used for the frozen request and adoption comparison.
+    assert execution_spec(effective, (ref,), rules) == effective
+    continuation = video_spec(videoMode='continuation')
+    assert execution_spec(continuation, (), rules) is continuation

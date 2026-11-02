@@ -11,6 +11,7 @@ from opendirector.application.creation_canvas import (
     CreationCanvas, asset_ref, current_asset, prompt_projection, resolved_inputs,
 )
 from opendirector.domain.creation.generation import validate_generation
+from opendirector.domain.creation.commands import EditorWrite
 from opendirector.domain.creation.models import ModelConfigPublic
 from opendirector.domain.creation.validation import ContractError
 from opendirector.domain.input_rules import input_rules
@@ -106,11 +107,24 @@ def apply_node_version(history, before, command):
     job = evidence.get('job')
     if job is None:
         if item.binding.role == 'generation':
-            if item.kind != 'text':
+            if item.kind != 'text' and not (item.kind == 'image' and asset.provenance.source == 'edited'):
                 raise ContractError('role_restricted', '生成节点不能采用手工素材版本。', item.id)
             target['binding']['materialOverride'] = asset_ref(asset).model_dump(mode='json')
         else:
             target['binding'] = dict(role='material', objectRef=asset_ref(asset).model_dump(mode='json'))
+        if item.kind == 'image':
+            target['editors'] = [ref for ref in target['editors'] if ref['kind'] not in {'layers', 'image_crop'}]
+            provenance = asset.provenance
+            if provenance.source == 'edited':
+                document = next((doc for record in reversed(projects.history(command.projectId))
+                    for doc in record.snapshot.editorDocuments
+                    if doc.id == provenance.editorDocumentId and doc.revision == provenance.editorRevision), None)
+                if document is None or document.kind not in {'layers', 'image_crop'}:
+                    raise ContractError('reference_invalid', '编辑版本的文档无法恢复。', asset.id)
+                current = CreationCanvas._get(data, 'editor_document', document.id)
+                # Restoring a shared document must respect every owner's lock.
+                CreationCanvas(projects)._mutate(data, 'editor.save', EditorWrite(document=document.model_copy(update={'revision': current['revision']})))
+                target['editors'].append(dict(objectType='editor_document', id=str(document.id), kind=document.kind))
         return history._revisions(before, data)
 
     frozen, result = job.inputSnapshot, evidence['result']
@@ -121,6 +135,8 @@ def apply_node_version(history, before, command):
     spec.update(frozen.spec.model_dump(mode='json', exclude={'revision', 'currentResultId'}))
     spec.update(currentResultId=str(result.id), modelConfigId=str(frozen.spec.modelConfigId) if model else None)
     target['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec['id']))
+    if item.kind == 'image':
+        target['editors'] = [ref for ref in target['editors'] if ref['kind'] not in {'layers', 'image_crop'}]
     old_refs = {str(ref.id): ref for ref in before.references}
     groups = {}
     for resolved in frozen.references:

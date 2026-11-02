@@ -21,7 +21,7 @@ class GenerationSpecRef(Contract):
 class EditorRef(Contract):
     objectType: Literal['editor_document'] = 'editor_document'
     id: UUID
-    kind: Literal['timeline', 'subject', 'stack', 'tool', 'director', 'layers', 'media_edit']
+    kind: Literal['timeline', 'subject', 'stack', 'tool', 'director', 'layers', 'image_crop', 'media_edit']
 
 
 class EmptyBinding(Contract):
@@ -79,18 +79,19 @@ class MediaCanvasItem(CanvasItemBase):
 
     @model_validator(mode='after')
     def media_role(self):
-        if self.binding.role == 'generation' and self.binding.materialOverride is not None and (self.kind != 'text' or self.binding.materialOverride.kind != 'text'):
-            raise ValueError('Only text generation nodes can retain a handwritten output')
+        if self.binding.role == 'generation' and self.binding.materialOverride is not None and (self.kind not in {'text', 'image'} or self.binding.materialOverride.kind != self.kind):
+            raise ValueError('Only text and image generation nodes can retain a matching explicit output')
         if self.binding.role == 'material' and self.binding.objectRef.kind != self.kind:
             raise ValueError('Material asset kind differs from canvas item kind')
         if self.binding.role == 'empty' and self.binding.manualText is not None and self.kind != 'text':
             raise ValueError('Only an empty text node can hold a manual text draft')
         if self.kind == 'file' and (self.binding.role == 'generation' or self.binding.role == 'empty' and self.binding.draftSpec):
             raise ValueError('File nodes cannot configure model generation')
-        allowed_editors = {'image': {'layers', 'media_edit'}, 'video': {'media_edit'}, 'audio': {'media_edit'}}.get(self.kind, set())
+        allowed_editors = {'image': {'layers', 'image_crop', 'media_edit'}, 'video': {'media_edit'}, 'audio': {'media_edit'}}.get(self.kind, set())
         if any(editor.kind not in allowed_editors for editor in self.editors):
             raise ValueError('Editor kind is incompatible with the media node')
         unique([editor.id for editor in self.editors], 'node editor references')
+        unique([editor.kind for editor in self.editors], 'node editor kinds')
         return self
 
 

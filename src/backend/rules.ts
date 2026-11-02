@@ -31,6 +31,7 @@ export interface InputRules {
   maxVideos: number;
   maxAudios: number;
   videoModes: BackendVideoMode[];
+  imageOutputs?: { aspectRatio: string; size: string }[];
   outputResolutions?: string[];
   referenceImageResolutions?: string[];
   videoCapabilities?: VideoCapabilities | null;
@@ -193,9 +194,12 @@ export function backendReferences(
 export function backendVideoMode(
   settings: GenerationSettings,
   references: readonly BackendReference[],
+  config?: ModelConfig,
 ): BackendVideoMode {
   if (settings.videoMode === "continuation") return "continuation";
   if (settings.videoMode === "first-last") return "first_frame";
+  if (config && !config.inputRules.videoModes.includes("first_frame"))
+    return "reference";
   // Without media inputs a reference request is plain text-to-video.
   return references.some((item) => item.node.data.kind !== "text")
     ? "reference"
@@ -205,10 +209,24 @@ export function backendVideoMode(
 /** The backend publishes adapter capabilities; unknown services retain automatic sizing. */
 export function backendResolutions(
   settings: Pick<GenerationSettings, "mode" | "videoMode"> &
-    Partial<Pick<GenerationSettings, "durationSeconds">>,
+    Partial<Pick<GenerationSettings, "durationSeconds" | "aspectRatio">>,
   config: ModelConfig | undefined,
   incoming: readonly CanvasNode[] = [],
 ): string[] {
+  if (settings.mode === "image")
+    return [
+      "自动",
+      ...new Set(
+        (config?.inputRules.imageOutputs ?? [])
+          .filter(
+            (item) =>
+              !settings.aspectRatio ||
+              settings.aspectRatio === "自动" ||
+              item.aspectRatio === settings.aspectRatio,
+          )
+          .map((item) => item.size),
+      ),
+    ];
   if (settings.mode !== "video" || settings.videoMode === "continuation")
     return ["自动"];
   const rules = config?.inputRules;
@@ -247,6 +265,75 @@ export function backendDurations(config: ModelConfig | undefined): number[] {
       ) ?? [],
     ),
   ].sort((a, b) => a - b);
+}
+
+export function backendAspectRatios(
+  settings: Pick<GenerationSettings, "mode" | "videoMode">,
+  config?: ModelConfig,
+): string[] {
+  if (settings.mode === "image")
+    return [
+      "自动",
+      ...new Set(
+        (config?.inputRules.imageOutputs ?? []).flatMap((item) =>
+          item.aspectRatio === "auto" ? [] : [item.aspectRatio],
+        ),
+      ),
+    ];
+  if (
+    settings.mode === "video" &&
+    settings.videoMode !== "continuation" &&
+    (config?.protocol === "volcengine" ||
+      config?.inputRules.videoCapabilities?.outputs.some(
+        (item) => item.width && item.height,
+      ))
+  )
+    return [
+      "自动",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "1:1",
+      "3:4",
+      "2:3",
+      "9:16",
+      "5:4",
+      "4:5",
+      "2:1",
+    ];
+  return ["自动"];
+}
+
+export function serviceGenerationSettings(
+  settings: GenerationSettings,
+  config: ModelConfig,
+  incoming: readonly CanvasNode[] = [],
+  modelChanged = false,
+): GenerationSettings {
+  let next =
+    settings.mode === "video"
+      ? serviceVideoSettings(settings, config, incoming, modelChanged)
+      : { ...settings };
+  if (next.mode !== "audio") {
+    const ratios = backendAspectRatios(next, config);
+    if (!ratios.includes(next.aspectRatio)) next.aspectRatio = "自动";
+    const resolutions = backendResolutions(next, config, incoming);
+    if (
+      (modelChanged && next.mode === "image") ||
+      !resolutions.includes(next.resolution)
+    )
+      next.resolution = "自动";
+  }
+  if (modelChanged) {
+    next.imagePreset = "none";
+    next.audioCreationType = "audio";
+    next.audioMode = "tts";
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(next.voiceName ?? ""))
+      next.voiceName = undefined;
+    if (config.protocol !== "volcengine") next.audioEnabled = true;
+  }
+  return next;
 }
 
 /** Normalize a deliberate model/time change before persisting it to the canvas. */
@@ -298,6 +385,33 @@ export function backendBlocker(
       ? "请输入要合成的文字。"
       : "请输入生成要求。";
   const rules = config.inputRules;
+  if (settings.mode === "image") {
+    if (settings.imagePreset && settings.imagePreset !== "none")
+      return "当前服务不支持产品三视图预设，请使用自由创作。";
+    if (
+      !backendAspectRatios(settings, config).includes(settings.aspectRatio) ||
+      !backendResolutions(settings, config).includes(settings.resolution)
+    )
+      return "当前图片适配器不支持所选比例或尺寸，请重新选择。";
+  }
+  if (
+    settings.mode === "audio" &&
+    ((settings.audioCreationType && settings.audioCreationType !== "audio") ||
+      (settings.audioMode && settings.audioMode !== "tts"))
+  )
+    return "当前语音服务仅支持文本朗读。";
+  if (
+    settings.mode === "audio" &&
+    settings.voiceName &&
+    !/^[A-Za-z0-9_.-]{1,64}$/.test(settings.voiceName)
+  )
+    return "请输入服务支持的音色标识（字母、数字、点、下划线或连字符）。";
+  if (
+    settings.mode === "video" &&
+    settings.audioEnabled === false &&
+    config.protocol !== "volcengine"
+  )
+    return "当前视频适配器不支持关闭生成音频。";
   const references = backendReferences(settings, incoming, config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
@@ -310,7 +424,9 @@ export function backendBlocker(
       )
     )
       return "当前模型或参考模式不支持所选分辨率，请重新选择。";
-    if (!rules.videoModes.includes(backendVideoMode(settings, references)))
+    if (
+      !rules.videoModes.includes(backendVideoMode(settings, references, config))
+    )
       return "当前模型不支持所选视频模式。";
     if (settings.videoMode === "first-last") {
       if (settings.lastFrameNodeId) return "本地服务只支持首帧，请移除尾帧。";

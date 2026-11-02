@@ -33,11 +33,15 @@ class CreationToolAssets:
             return stream.read()
 
     def import_output(self, task, asset_id, name, data):
+        used = {*task['sourceAssetIds'], task.get('maskAssetId'), task.get('annotationAssetId')}
         sources = tuple(AssetRef(assetId=asset.id, revision=asset.revision, fingerprint=asset.fingerprint, kind=asset.kind)
-                        for asset in self.assets.list(task['projectId']) if str(asset.id) in task['sourceAssetIds'])
-        return self.import_file(task['projectId'], asset_id, name, data, None, sources=sources)
+                        for asset in self.assets.list(task['projectId']) if str(asset.id) in used)
+        draft = task.get('draftSnapshot')
+        provenance = AssetProvenance(source='edited' if draft else 'manual', sources=sources, toolTaskId=UUID(task['id']),
+            editorDocumentId=UUID(draft['id']) if draft else None, editorRevision=draft['revision'] if draft else None)
+        return self.import_file(task['projectId'], asset_id, name, data, None, provenance=provenance)
 
-    def import_file(self, project_id, asset_id, name, data, session, *, source='generated', sources=()):
+    def import_file(self, project_id, asset_id, name, data, session, *, source='generated', sources=(), provenance=None):
         project_id, asset_id = UUID(str(project_id)), UUID(str(asset_id))
         handle = uuid5(asset_id, 'tool-output')
         registered_id = upload_asset_id(project_id, handle)
@@ -52,7 +56,7 @@ class CreationToolAssets:
             writer.abort()
         command = parse_command(dict(commandId=uuid5(asset_id, 'register-tool-output'), projectId=project_id,
             type='asset.import', payload=dict(uploadHandle=handle, name=name, expectedKind=info.kind)))
-        receipt = self.assets.execute(command, source='background', provenance=AssetProvenance(source='manual', sources=sources))
+        receipt = self.assets.execute(command, source='background', provenance=provenance or AssetProvenance(source='manual', sources=sources))
         if receipt.status != 'applied':
             raise ProjectError('工具结果登记失败，已有文件已保留。', 409)
         return self.record(self.assets.get(project_id, registered_id))

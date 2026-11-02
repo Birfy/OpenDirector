@@ -308,6 +308,7 @@ function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
   ].find(
     (node) =>
       node.data.src?.startsWith("blob:") ||
+      node.data.imageCrop?.src.startsWith("blob:") ||
       nodeResources(node.data).some((resource) =>
         resource.src?.startsWith("blob:"),
       ) ||
