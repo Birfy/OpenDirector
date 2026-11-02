@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import { previewImageSelection } from "../src/backend/imageSelections.ts";
-import { fingerprint } from "../src/backend/generation.ts";
 import { creationClient } from "../src/backend/creationClient.ts";
-import type { ProjectSnapshot } from "../src/contracts/generated.ts";
+import { fingerprint } from "../src/backend/generation.ts";
+import { previewImageSelection } from "../src/backend/imageSelections.ts";
 import {
   openBackendProject,
   releaseBackendProject,
 } from "../src/backend/projects.ts";
+import type { ProjectSnapshot } from "../src/contracts/generated.ts";
 
 async function fixture(t: TestContext, unified: boolean) {
   const original = globalThis.fetch;
@@ -15,7 +15,7 @@ async function fixture(t: TestContext, unified: boolean) {
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      location: { search: unified ? "?creation=unified" : "" },
+      location: { search: unified ? "" : "" },
       setInterval: () => 1,
       addEventListener() {},
     },
@@ -97,7 +97,8 @@ async function fixture(t: TestContext, unified: boolean) {
   };
 }
 
-for (const unified of [false, true]) {
+{
+  const unified = true;
   const mode = unified ? "unified" : "workspace";
   for (const cached of [false, true]) {
     test(`${mode}: selection preview reuses its owned source (${cached ? "cached" : "uncached"})`, async (t) => {

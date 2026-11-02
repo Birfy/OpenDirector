@@ -1,11 +1,10 @@
-import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
-import { compactMedia, expandMedia } from "./mediaStorage.ts";
 import {
   copyGenerationSettings,
   isGenerationSettings,
   nodeResources,
   parseNodeData,
 } from "./dataBoundary.ts";
+import { compactMedia, expandMedia } from "./mediaStorage.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
@@ -13,6 +12,7 @@ import type {
   CanvasNodeKind,
   Point,
 } from "./model.ts";
+import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
 
 export interface CanvasStorageError {
   code:
@@ -27,24 +27,6 @@ export interface CanvasStorageError {
 export type Result<T> =
   | { ok: true; value: T }
   | { ok: false; error: CanvasStorageError };
-export interface DocumentSummary {
-  id: string;
-  title: string;
-  updatedAt: number;
-  nodeCount: number;
-  trashedAt?: number;
-}
-export interface StorageOptions {
-  indexedDB?: IDBFactory;
-  databaseName?: string;
-}
-interface StoredDocument {
-  trashedAt?: number;
-  id: string;
-  document: CanvasDocument;
-  updatedAt: number;
-}
-
 const NODE_KINDS: CanvasNodeKind[] = [
   "image",
   "video",
@@ -58,8 +40,6 @@ const NODE_KINDS: CanvasNodeKind[] = [
   "tool",
   "external",
 ];
-const DB_NAME = "opendirector-canvas";
-const STORE_NAME = "documents";
 const failure = <T>(
   code: CanvasStorageError["code"],
   message: string,
@@ -339,260 +319,6 @@ export function serializeDocument(document: CanvasDocument): Result<string> {
       "storage",
       `画布无法序列化，请减少项目内媒体或拆分项目：${errorMessage(error)}`,
     );
-  }
-}
-
-/** IndexedDB owns the document and embedded data URLs; errors are reported for the UI to display. */
-export async function saveDocument(
-  document: CanvasDocument,
-  options: StorageOptions = {},
-): Promise<Result<DocumentSummary>> {
-  const parsed = persistentDocument(document);
-  if (!parsed.ok) return parsed;
-  const updatedAt = Date.now();
-  const stored: StoredDocument = {
-    id: parsed.value.id,
-    document: parsed.value,
-    updatedAt,
-  };
-  const written = await updateStoredDocument(
-    stored.id,
-    (existing) => ({
-      ok: true,
-      value: {
-        ...stored,
-        ...(object(existing) && finite(existing.trashedAt)
-          ? { trashedAt: existing.trashedAt }
-          : {}),
-      },
-    }),
-    options,
-  );
-  return written.ok
-    ? {
-        ok: true,
-        value: {
-          id: stored.id,
-          title: stored.document.title,
-          updatedAt,
-          nodeCount: stored.document.nodes.length,
-        },
-      }
-    : written;
-}
-
-/** An absent document is a normal first-use state, represented by successful null. */
-export async function loadDocument(
-  id: string,
-  options: StorageOptions = {},
-): Promise<Result<CanvasDocument | null>> {
-  const read = await requestStore<unknown>(
-    "readonly",
-    (store) => store.get(id),
-    options,
-  );
-  if (!read.ok) return read;
-  if (read.value === undefined) return { ok: true, value: null };
-  if (!object(read.value))
-    return failure("invalid-document", "本地画布记录无效。");
-  if (finite(read.value.trashedAt)) return { ok: true, value: null };
-  const parsed = parseDocument(read.value.document);
-  if (parsed.ok && parsed.value.id !== id)
-    return failure("invalid-document", "本地画布 ID 与存储键不一致。");
-  return parsed;
-}
-
-export async function listDocuments(
-  options: StorageOptions & { trashed?: boolean } = {},
-): Promise<Result<DocumentSummary[]>> {
-  const read = await requestStore<unknown[]>(
-    "readonly",
-    (store) => store.getAll(),
-    options,
-  );
-  if (!read.ok) return read;
-  const summaries: DocumentSummary[] = [];
-  for (const item of read.value) {
-    if (
-      !object(item) ||
-      !nonempty(item.id) ||
-      !finite(item.updatedAt) ||
-      !object(item.document) ||
-      typeof item.document.title !== "string" ||
-      !Array.isArray(item.document.nodes)
-    )
-      return failure("invalid-document", "本地画布列表含有无效记录。");
-    const trashedAt = finite(item.trashedAt) ? item.trashedAt : undefined;
-    if (Boolean(trashedAt !== undefined) !== Boolean(options.trashed)) continue;
-    summaries.push({
-      ...(trashedAt !== undefined ? { trashedAt } : {}),
-      id: item.id,
-      title: item.document.title,
-      updatedAt: item.updatedAt,
-      nodeCount: item.document.nodes.length,
-    });
-  }
-  return {
-    ok: true,
-    value: summaries.sort((a, b) => b.updatedAt - a.updatedAt),
-  };
-}
-
-/** Preserve existing record metadata in the same transaction as autosave. */
-async function updateStoredDocument(
-  id: string,
-  transform: (existing: unknown) => Result<StoredDocument>,
-  options: StorageOptions,
-): Promise<Result<void>> {
-  const opened = await openDatabase(options);
-  if (!opened.ok) return opened;
-  const db = opened.value;
-  try {
-    return await new Promise<Result<void>>((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const read = store.get(id);
-      let problem: CanvasStorageError | undefined;
-      read.onsuccess = () => {
-        try {
-          const next = transform(read.result);
-          if (!next.ok) {
-            problem = next.error;
-            tx.abort();
-            return;
-          }
-          store.put(next.value);
-        } catch (error) {
-          problem = { code: "storage", message: errorMessage(error) };
-          tx.abort();
-        }
-      };
-      tx.oncomplete = () => resolve({ ok: true, value: undefined });
-      tx.onabort = tx.onerror = () =>
-        resolve({
-          ok: false,
-          error: problem ?? {
-            code: "storage",
-            message: `项目保存失败：${errorMessage(tx.error ?? read.error)}`,
-          },
-        });
-    });
-  } catch (error) {
-    return failure("storage", errorMessage(error));
-  } finally {
-    db.close();
-  }
-}
-
-export async function deleteDocument(
-  id: string,
-  options: StorageOptions = {},
-): Promise<Result<void>> {
-  const deleted = await requestStore(
-    "readwrite",
-    (store) => store.delete(id),
-    options,
-  );
-  return deleted.ok ? { ok: true, value: undefined } : deleted;
-}
-
-function openDatabase(options: StorageOptions): Promise<Result<IDBDatabase>> {
-  const factory = options.indexedDB ?? globalThis.indexedDB;
-  if (!factory)
-    return Promise.resolve(
-      failure(
-        "unavailable",
-        "当前环境不支持 IndexedDB，无法在浏览器中保存画布。",
-      ),
-    );
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (result: Result<IDBDatabase>) => {
-      if (settled) {
-        if (result.ok) result.value.close();
-        return;
-      }
-      settled = true;
-      resolve(result);
-    };
-    let request: IDBOpenDBRequest;
-    try {
-      request = factory.open(options.databaseName ?? DB_NAME, 1);
-    } catch (error) {
-      finish(failure("storage", `无法打开本地画布库：${errorMessage(error)}`));
-      return;
-    }
-    request.onupgradeneeded = () => {
-      if (settled) {
-        request.transaction?.abort();
-        return;
-      }
-      if (!request.result.objectStoreNames.contains(STORE_NAME))
-        request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
-    };
-    request.onsuccess = () => {
-      request.result.onversionchange = () => request.result.close();
-      finish({ ok: true, value: request.result });
-    };
-    request.onerror = () =>
-      finish(
-        failure(
-          "storage",
-          `无法打开本地画布库：${errorMessage(request.error)}`,
-        ),
-      );
-    request.onblocked = () =>
-      finish(
-        failure(
-          "blocked",
-          "另一个页面正在使用旧版画布库。请关闭该页面后重试保存。",
-        ),
-      );
-  });
-}
-
-async function requestStore<T>(
-  mode: IDBTransactionMode,
-  operation: (store: IDBObjectStore) => IDBRequest<T>,
-  options: StorageOptions,
-): Promise<Result<T>> {
-  const opened = await openDatabase(options);
-  if (!opened.ok) return opened;
-  const database = opened.value;
-  try {
-    return await new Promise<Result<T>>((resolve) => {
-      let transaction: IDBTransaction;
-      let request: IDBRequest<T>;
-      try {
-        transaction = database.transaction(STORE_NAME, mode);
-        request = operation(transaction.objectStore(STORE_NAME));
-      } catch (error) {
-        resolve(failure("storage", `无法读写本地画布：${errorMessage(error)}`));
-        return;
-      }
-      let value: T;
-      request.onsuccess = () => {
-        value = request.result;
-      };
-      // A successful request is not yet a successful write: wait for transaction completion.
-      transaction.oncomplete = () => resolve({ ok: true, value });
-      transaction.onabort = () =>
-        resolve(
-          failure(
-            "storage",
-            `本地画布操作未完成：${errorMessage(transaction.error ?? request.error)}`,
-          ),
-        );
-      transaction.onerror = () =>
-        resolve(
-          failure(
-            "storage",
-            `本地画布读写失败：${errorMessage(transaction.error ?? request.error)}`,
-          ),
-        );
-    });
-  } finally {
-    database.close();
   }
 }
 

@@ -1,16 +1,15 @@
-import { headers, request, assetBlob } from "./api.ts";
-import { creationClient, creationEnabled } from "./creationClient.ts";
-import { fingerprint } from "./generation.ts";
-import { loadReferenceCatalog } from "./referenceCatalog.ts";
-import {
-  classifyImportFile,
-  readEditorResource,
-} from "../canvas/editorMedia.ts";
-import { assertUpload, assertReferenceSize } from "../canvas/uploadPolicy.ts";
 import {
   fingerprintMatches,
   type ReferenceAsset,
 } from "../canvas/chatReferenceContent.ts";
+import {
+  classifyImportFile,
+  readEditorResource,
+} from "../canvas/editorMedia.ts";
+import { assertReferenceSize, assertUpload } from "../canvas/uploadPolicy.ts";
+import { creationClient } from "./creationClient.ts";
+import { fingerprint } from "./generation.ts";
+import { loadReferenceCatalog } from "./referenceCatalog.ts";
 
 export type ChooseReferenceSource = (
   matches: ReferenceAsset[],
@@ -47,14 +46,12 @@ export async function uploadReferenceFile(
         asset.available &&
         fingerprintMatches(asset, digest),
     );
-    const blob = creationEnabled()
-      ? await creationClient(projectId).blob(selected.id)
-      : await assetBlob(projectId, selected.id, signal);
+    const blob = await creationClient(projectId).blob(selected.id);
     if (!latest || !fingerprintMatches(latest, await fingerprint(blob)))
       throw new Error("所选来源已变化，请重新选择。");
     return latest;
   }
-  if (creationEnabled()) {
+  {
     const client = creationClient(projectId);
     const ref = await client.importBlob(
       file,
@@ -75,28 +72,4 @@ export async function uploadReferenceFile(
       available: true,
     };
   }
-  const id = crypto.randomUUID();
-  const upload = (reuse?: string) =>
-    request<{ asset: ReferenceAsset | null; matches: ReferenceAsset[] }>(
-      `/data/${projectId}/assets/${id}`,
-      {
-        method: "PUT",
-        signal,
-        headers: {
-          ...headers,
-          "Content-Type": "application/octet-stream",
-          "X-Asset-Name": encodeURIComponent(
-            file.name.replace(/\.markdown$/i, ".md"),
-          ),
-          ...(reuse ? { "X-Reuse-Asset-Id": reuse } : {}),
-        },
-        body: file,
-      },
-    );
-  let result = await upload();
-  if (result.matches.length)
-    result = await upload((await choose(result.matches, signal)).id);
-  signal.throwIfAborted();
-  if (!result.asset) throw new Error("未找到可用的素材来源。");
-  return result.asset;
 }

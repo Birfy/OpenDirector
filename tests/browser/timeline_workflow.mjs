@@ -312,7 +312,7 @@ try {
   page.setDefaultTimeout(20000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  let url = base + `/ai-tool/ai-canvas/${pid}?creation=unified`;
+  let url = base + `/ai-tool/ai-canvas/${pid}`;
   const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
   const state = () => call(`/api/creation/projects/${pid}`);
   const doc = (s) => s.editorDocuments.find((d) => d.id === editorId);
@@ -325,7 +325,7 @@ try {
       .click();
     await page.getByRole("button", { name: "合成 MP4", exact: true }).waitFor();
   }
-  await page.goto(url);
+  await page.goto(full ? base + "/" : url);
   await saved();
   if (full) {
     await page.getByRole("button", { name: "切换项目", exact: true }).click();
@@ -344,7 +344,7 @@ try {
     const response = await created;
     assert.equal((await response.json()).status, "applied");
     pid = response.request().postDataJSON().projectId;
-    url = base + `/ai-tool/ai-canvas/${pid}?creation=unified`;
+    url = base + `/ai-tool/ai-canvas/${pid}`;
     await page
       .getByRole("dialog", { name: "新建画布项目", exact: true })
       .waitFor({ state: "hidden" });

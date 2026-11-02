@@ -1,39 +1,37 @@
-import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
-import { refreshReferenceSources } from "../backend/referenceSources.ts";
-import { useReferenceUploads } from "./useReferenceUploads.tsx";
 import { useEffect, useRef, useState } from "react";
-import { CanvasIcon } from "./CanvasIcon";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import type { AssistantLayout } from "./useAssistantLayout";
-import type { BackendModels } from "../backend/models";
 import type { ChatAsset, Thinking } from "../backend/chat";
-import type { CanvasNode } from "./model";
+import { creationClient } from "../backend/creationClient.ts";
+import { fingerprint } from "../backend/generation.ts";
+import type { BackendModels } from "../backend/models";
+import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
+import "./assistant-panel.css";
 import { ChoicePicker, ModelPicker } from "./AssistantPickers";
-import { attachment, useAssistantChat } from "./useAssistantChat";
+import { CanvasIcon } from "./CanvasIcon";
+import {
+  currentReferences,
+  fingerprintMatches,
+  referenceContent,
+  type ReferenceAsset,
+} from "./chatReferenceContent.ts";
 import {
   ChatReferenceEditor,
   type ChatReferenceEditorHandle,
 } from "./ChatReferenceEditor";
-import { type MentionOption } from "./referenceMentions";
-import { referenceCandidates, assetOptionId } from "./referenceCandidates.ts";
 import { nodeReferenceAsset } from "./generationReferenceContent.ts";
-import { useProjectMentionAssets } from "./useProjectMentionAssets";
-import { creationEnabled, creationClient } from "../backend/creationClient.ts";
-import { fingerprint } from "../backend/generation.ts";
-import { assetBlob } from "../backend/api.ts";
-import "./assistant-panel.css";
-import {
-  referenceContent,
-  currentReferences,
-  fingerprintMatches,
-  type ReferenceAsset,
-} from "./chatReferenceContent.ts";
-import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
+import type { CanvasNode } from "./model";
 import {
   pendingCanvasReferences,
   pendingReferenceInsertion,
   samePendingReferences,
 } from "./pendingCanvasReferences.ts";
+import { assetOptionId, referenceCandidates } from "./referenceCandidates.ts";
+import { type MentionOption } from "./referenceMentions";
+import { useAssistantChat } from "./useAssistantChat";
+import type { AssistantLayout } from "./useAssistantLayout";
+import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
+import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { useReferenceUploads } from "./useReferenceUploads.tsx";
 
 const THINKING = [
   { id: "auto", label: "自动", description: "使用模型服务的默认思考程度" },
@@ -112,40 +110,6 @@ export function AssistantPanel({
     (chat.sending && !chat.started);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
-  const sourceKey = open
-    ? nodes
-        .map(
-          (node) =>
-            `${node.id}:${node.data.title}:${nodeReferenceAsset(node).fingerprint}`,
-        )
-        .join("|")
-    : "";
-  useEffect(() => {
-    if (
-      open &&
-      value.draftContent?.some(
-        (part) => part.type === "reference" && part.nodeId,
-      )
-    ) {
-      const abort = new AbortController();
-      void refreshReferenceSources(
-        documentId,
-        nodes,
-        value.draftContent!,
-        abort.signal,
-      )
-        .then(() => {
-          if (!abort.signal.aborted) projectReferences.load();
-        })
-        .catch((error) => {
-          if (!abort.signal.aborted)
-            chat.setError(
-              error instanceof Error ? error.message : "参考来源刷新失败。",
-            );
-        });
-      return () => abort.abort();
-    }
-  }, [documentId, open, sourceKey]);
   useEffect(() => {
     if (!open || chat.sending || !value.draftContent) return;
     const content = currentReferences(
@@ -180,16 +144,7 @@ export function AssistantPanel({
         .map(async (asset) => {
           let url = "";
           try {
-            if (creationEnabled())
-              url = await creationClient(documentId).mediaUrl(asset.id);
-            else {
-              url = URL.createObjectURL(await assetBlob(documentId, asset.id));
-              if (active) owned.push(url);
-              else {
-                URL.revokeObjectURL(url);
-                url = "";
-              }
-            }
+            url = await creationClient(documentId).mediaUrl(asset.id);
           } catch {
             /* The attachment remains available for removal/retry. */
           }
@@ -464,6 +419,9 @@ export function AssistantPanel({
             </button>
           </div>
         )}
+        <p className="cw-assistant-error" role="status">
+          助手对话尚未接入。请使用画布节点生成和编辑内容；此处输入仅为临时草稿。
+        </p>
         <form
           className="cw-assistant-composer"
           aria-label="聊天输入框"
@@ -554,9 +512,7 @@ export function AssistantPanel({
                   !fingerprintMatches(asset, part.fingerprint)
                 )
                   throw new Error("固定参考素材缺失或内容已改变。");
-                const blob = creationEnabled()
-                  ? await creationClient(documentId).blob(asset.id)
-                  : await assetBlob(documentId, asset.id, signal);
+                const blob = await creationClient(documentId).blob(asset.id);
                 if (!fingerprintMatches(asset, await fingerprint(blob)))
                   throw new Error("固定参考文件已改变。");
                 return [{ ...asset, binding: "asset" }];
@@ -592,9 +548,7 @@ export function AssistantPanel({
                       : asset.id === part.assetId),
                 );
                 if (asset) {
-                  const bytes = creationEnabled()
-                    ? await creationClient(documentId).blob(asset.id)
-                    : await assetBlob(documentId, asset.id, signal);
+                  const bytes = await creationClient(documentId).blob(asset.id);
                   if (!fingerprintMatches(asset, await fingerprint(bytes)))
                     throw new Error("参考文件已改变。");
                   return [asset];
@@ -685,13 +639,8 @@ export function AssistantPanel({
                 type="submit"
                 className="cw-assistant-send"
                 aria-label="发送消息"
-                title="发送消息（Enter），Shift+Enter 换行"
-                disabled={
-                  !chat.loaded ||
-                  !chat.agent ||
-                  chat.adding ||
-                  (!value.draft.trim() && !value.assets.length)
-                }
+                title="助手对话尚未接入"
+                disabled
               >
                 <CanvasIcon name="arrow" size={19} />
               </button>
@@ -701,12 +650,8 @@ export function AssistantPanel({
         <p className="cw-assistant-footnote">
           {chat.adding ? (
             "正在添加参考素材…"
-          ) : chat.agent ? (
-            `Agent · ${chat.agent.modelId}`
           ) : (
-            <button type="button" onClick={onOpenSettings}>
-              请先在设置中配置并选择 Agent 模型
-            </button>
+            "当前输入仅为临时草稿，刷新页面后不会保留。"
           )}
         </p>
       </div>

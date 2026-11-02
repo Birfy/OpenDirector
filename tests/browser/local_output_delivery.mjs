@@ -36,7 +36,7 @@ try {
       payload: { name: "Local output gate " + pid.slice(0, 8) },
     },
   });
-  await page.goto(base + `/ai-tool/ai-canvas/${pid}?creation=unified`);
+  await page.goto(base + `/ai-tool/ai-canvas/${pid}`);
   const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
   const state = async () =>
     await (

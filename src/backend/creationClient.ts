@@ -1,5 +1,3 @@
-import { ApiError, headers, json, request, responseError } from "./api.ts";
-import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
 import type {
   Asset,
   AssetRef,
@@ -14,12 +12,10 @@ import type {
   ProjectSnapshot,
   ViewState,
 } from "../contracts/generated.ts";
+import { ApiError, headers, json, request, responseError } from "./api.ts";
+import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
 
 export type CreationOperation = BatchPayloadInput["operations"][number];
-export const creationEnabled = () =>
-  typeof window !== "undefined" &&
-  new URLSearchParams(window.location?.search ?? "").get("creation") ===
-    "unified";
 export const objectVersion = (
   objectType: ObjectVersion["objectType"],
   object: { id: string; revision: number },

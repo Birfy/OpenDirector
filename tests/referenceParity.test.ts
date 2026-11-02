@@ -1,34 +1,28 @@
-import { generationEditIdentity } from "../src/canvas/generationReferenceContent.ts";
-import { referenceContentCommand } from "../src/canvas/generationReferenceEdit.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDocument, createNode } from "../src/canvas/model.ts";
-import {
-  readEditorResource,
-  classifyImportFile,
-} from "../src/canvas/editorMedia.ts";
-import { uploadIssue } from "../src/canvas/uploadPolicy.ts";
+import { fingerprint } from "../src/backend/generation.ts";
+import { uploadReferenceFile } from "../src/backend/referenceUploads.ts";
 import {
   referenceBudgetIssue,
   type ModelConfig,
 } from "../src/backend/rules.ts";
-import { refreshReferenceSources } from "../src/backend/referenceSources.ts";
-import {
-  prepareReferences,
-  serviceNodeId,
-  submissionContent,
-  fingerprint,
-} from "../src/backend/generation.ts";
 import {
   currentReferences,
   referencePart,
 } from "../src/canvas/chatReferenceContent.ts";
 import {
+  classifyImportFile,
+  readEditorResource,
+} from "../src/canvas/editorMedia.ts";
+import { generationEditIdentity } from "../src/canvas/generationReferenceContent.ts";
+import { referenceContentCommand } from "../src/canvas/generationReferenceEdit.ts";
+import { createDocument, createNode } from "../src/canvas/model.ts";
+import {
   assetOptionId,
   referenceCandidates,
 } from "../src/canvas/referenceCandidates.ts";
-import { uploadReferenceFile } from "../src/backend/referenceUploads.ts";
-import { serializeDocument, parseDocument } from "../src/canvas/storage.ts";
+import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
+import { uploadIssue } from "../src/canvas/uploadPolicy.ts";
 
 test("direct replacement preserves type; global, subject and timeline uploads use their own rules", () => {
   for (const target of ["image", "video", "audio", "text"] as const)
@@ -130,163 +124,6 @@ test("one budget validates bytes and expanded subjects, including pinned virtual
   assert.match(referenceBudgetIssue([subject], config)!, /大小限制/);
 });
 
-test("default preparation keeps independent equal-byte sources stable across retries and versions", async () => {
-  const oldFetch = globalThis.fetch;
-  const nodes: any[] = [],
-    assets: any[] = [];
-  let writes = 0;
-  globalThis.fetch = async (url, init) => {
-    const path = String(url);
-    if (path.endsWith("/canvas"))
-      return Response.json({
-        canvas: { nodes },
-        assets,
-        referenceSources: nodes.filter((node) => node.assetId),
-        availableAssetIds: nodes.flatMap((node) =>
-          node.assetId ? [node.assetId] : [],
-        ),
-      });
-    if (path.endsWith("/assets")) return Response.json(assets);
-    if (path.endsWith("/canvas/nodes")) {
-      const value = JSON.parse(String(init!.body));
-      const node = { ...value, role: "empty", revision: 1, assetId: null };
-      nodes.push(node);
-      return Response.json(node);
-    }
-    if (path.endsWith("/source")) {
-      const value = JSON.parse(String(init!.body));
-      const node = nodes.find((node) => path.includes(node.id));
-      node.revision++;
-      node.role = "material";
-      node.assetId = value.assetId;
-      return Response.json({
-        node,
-        asset: assets.find((asset) => asset.id === value.assetId),
-      });
-    }
-    if (path.endsWith("/text")) {
-      writes++;
-      const value = JSON.parse(String(init!.body));
-      const node = nodes.find((node) => path.includes(node.id));
-      assert.equal(value.expectedRevision, node.revision);
-      node.revision++;
-      node.role = "material";
-      node.assetId = value.id;
-      const asset = {
-        id: value.id,
-        kind: "text",
-        name: value.name,
-        fingerprint: await fingerprint(new Blob([value.text])),
-        type: "text/markdown",
-        size: new Blob([value.text]).size,
-      };
-      assets.push(asset);
-      return Response.json(asset);
-    }
-    throw new Error(path);
-  };
-  try {
-    const inputs = [
-      {
-        kind: "text" as const,
-        nodeId: "a",
-        title: "same name",
-        text: "same bytes",
-      },
-      {
-        kind: "text" as const,
-        nodeId: "b",
-        title: "same name",
-        text: "same bytes",
-      },
-    ];
-    const first = await prepareReferences(
-      "project",
-      inputs,
-      new AbortController().signal,
-    );
-    assert.equal(nodes.length, 2);
-    assert.equal(writes, 2);
-    assert.notEqual(first[0]!.asset.nodeId, first[1]!.asset.nodeId);
-    const again = await prepareReferences(
-      "project",
-      inputs,
-      new AbortController().signal,
-    );
-    assert.equal(writes, 2);
-    assert.deepEqual(
-      again.map((value) => value.asset.id),
-      first.map((value) => value.asset.id),
-    );
-    const newer = await prepareReferences(
-      "project",
-      [{ ...inputs[0]!, text: "v2" }],
-      new AbortController().signal,
-    );
-    assert.equal(newer[0]!.asset.nodeId, first[0]!.asset.nodeId);
-    assert.notEqual(newer[0]!.asset.id, first[0]!.asset.id);
-    assert.equal(nodes.length, 2);
-    assert.equal(
-      await serviceNodeId("a", "source:body"),
-      first[0]!.asset.nodeId,
-    );
-    const part = {
-      type: "reference" as const,
-      assetId: "node:a",
-      nodeId: "a",
-      name: "same name",
-    };
-    const content = submissionContent(
-      [
-        { type: "text", text: "before " },
-        part,
-        { type: "text", text: " after " },
-        part,
-      ],
-      newer,
-    )!;
-    assert.equal(content.length, 4);
-    assert.equal(
-      content[1]!.type === "reference" && content[1]!.assetId,
-      newer[0]!.asset.id,
-    );
-    assert.deepEqual(content[1], content[3]);
-    const source = createNode("text", undefined, {
-      title: "same name",
-      text: "v3 from workspace",
-    });
-    source.id = "a";
-    await refreshReferenceSources(
-      "project",
-      [source],
-      content,
-      new AbortController().signal,
-    );
-    assert.equal(nodes.length, 2);
-    const live = nodes.find((node) => node.logicalNodeId === "a");
-    assert.notEqual(live.assetId, newer[0]!.asset.id);
-    const count = assets.length;
-    const reused = await prepareReferences(
-      "project",
-      [
-        {
-          kind: "text",
-          nodeId: "copy",
-          title: "same name",
-          text: "v3 from workspace",
-          assetId: live.assetId,
-        },
-      ],
-      new AbortController().signal,
-    );
-    assert.equal(assets.length, count);
-    assert.equal(reused[0]!.asset.id, live.assetId);
-    assert.notEqual(reused[0]!.asset.nodeId, live.id);
-  } finally {
-    globalThis.fetch = oldFetch;
-  }
-});
-
 test("upload source reuse requires an explicit choice for equal content and cancels without writes", async () => {
   const oldFetch = globalThis.fetch;
   const file = new File(["source"], "source.md", { type: "text/markdown" });
@@ -307,16 +144,12 @@ test("upload source reuse requires an explicit choice for equal content and canc
       throw new Error("must not upload again");
     }
     const path = String(url);
-    if (path.endsWith("/assets")) return Response.json([asset]);
-    if (path.endsWith("/canvas"))
-      return Response.json({
-        availableAssetIds: [asset.id],
-        referenceSources: [
-          { id: "a", title: "A", assetId: asset.id },
-          { id: "b", title: "B", assetId: asset.id },
-        ],
-      });
-    if (path.endsWith("/assets/asset")) return new Response(file);
+    if (path.endsWith("/reference-catalog"))
+      return Response.json([
+        { ...asset, available: true, nodeId: "a", nodeTitle: "A" },
+        { ...asset, available: true, nodeId: "b", nodeTitle: "B" },
+      ]);
+    if (path.endsWith("/assets/asset/content")) return new Response(file);
     throw new Error(path);
   };
   try {

@@ -35,7 +35,8 @@ const video = execFileSync("ffmpeg", [
 const png =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGNsYGhgIAUwkaR6VMOohiGlAQBCPQEgiSD+iQAAAABJRU5ErkJggg==";
 try {
-  for (const unified of [false, true]) {
+  {
+    const unified = true;
     const page = await browser.newPage({
       viewport: { width: 1600, height: 1000 },
     });
@@ -64,7 +65,7 @@ try {
         body: "<html><body></body></html>",
       }),
     );
-    await page.goto(base + (unified ? "/?creation=unified" : "/"));
+    await page.goto(base + "/");
     const fixture = await page.evaluate(
       async ({ video, png, unified }) => {
         const { request, json } = await import("/src/backend/api.ts");
@@ -149,11 +150,11 @@ try {
           ...createDocument(
             "Canvas reference " + crypto.randomUUID().slice(0, 8),
           ),
-          nodes: [source, ...images, target, ...(unified ? [hidden] : [])],
-          hiddenNodes: unified ? [] : [hidden],
+          nodes: [source, ...images, target, ...[hidden]],
+          hiddenNodes: [],
           edges: [],
         });
-        if (unified) {
+        {
           const client = creationClient(saved.id);
           const item = client.snapshot.canvasItems.find(
             (item) => item.id === hidden.id,
@@ -161,21 +162,6 @@ try {
           await client.command("canvas.hide", { itemId: item.id }, [
             objectVersion("canvas_item", item),
           ]);
-        } else {
-          // A server-side mirror has different identity but identical bytes/title.
-          // It must not replace the actual workspace source in @ choices.
-          await prepareReferences(
-            saved.id,
-            [
-              {
-                kind: "video",
-                nodeId: hidden.id,
-                title: hidden.data.title,
-                src,
-              },
-            ],
-            new AbortController().signal,
-          );
         }
         await uploadReferenceFile(
           saved.id,
@@ -199,7 +185,7 @@ try {
       { video, png, unified },
     );
     await page.unroute(bootstrap);
-    const url = `${base}/ai-tool/ai-canvas/${fixture.id}${unified ? "?creation=unified" : ""}`;
+    const url = `${base}/ai-tool/ai-canvas/${fixture.id}${""}`;
     await page.goto(url);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const target = page.locator(
@@ -299,16 +285,7 @@ try {
     const persisted = await page.evaluate(
       async ({ fixture, unified }) => {
         const { request } = await import("/src/backend/api.ts");
-        if (!unified) {
-          const { document } = await request(
-            `/projects/${fixture.id}/workspace`,
-          );
-          return {
-            sources: document.edges
-              .filter((edge) => edge.target === fixture.target)
-              .map((edge) => edge.source),
-            hidden: document.hiddenNodes.map((node) => node.id),
-          };
+        {
         }
         const snapshot = await request(`/creation/projects/${fixture.id}`);
         return {
@@ -348,7 +325,7 @@ try {
     });
     if (process.env.REFERENCE_SCREENSHOT_DIR)
       await page.screenshot({
-        path: `${process.env.REFERENCE_SCREENSHOT_DIR}/reference-delete-${unified ? "unified" : "workspace"}.png`,
+        path: `${process.env.REFERENCE_SCREENSHOT_DIR}/reference-delete-${"unified"}.png`,
       });
     await removeVideo.click();
     assert.equal(await editor.locator("[data-reference]").count(), 1);
@@ -391,7 +368,7 @@ try {
     const remaining = await page.evaluate(
       async ({ fixture, unified }) => {
         const { request } = await import("/src/backend/api.ts");
-        if (unified) {
+        {
           const snapshot = await request(`/creation/projects/${fixture.id}`);
           return {
             references: snapshot.references.filter((ref) => ref.active).length,
@@ -400,27 +377,18 @@ try {
             ),
           };
         }
-        const { document } = await request(`/projects/${fixture.id}/workspace`);
-        return {
-          references: document.edges.filter(
-            (edge) => edge.target === fixture.target,
-          ).length,
-          sourceExists: document.nodes.some(
-            (node) => node.id === fixture.source,
-          ),
-        };
       },
       { fixture, unified },
     );
     assert.deepEqual(remaining, { references: 0, sourceExists: true });
     if (process.env.REFERENCE_SCREENSHOT_DIR)
       await page.screenshot({
-        path: `${process.env.REFERENCE_SCREENSHOT_DIR}/reference-${unified ? "unified" : "workspace"}.png`,
+        path: `${process.env.REFERENCE_SCREENSHOT_DIR}/reference-${"unified"}.png`,
       });
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify({
-        mode: unified ? "unified" : "workspace",
+        mode: "unified",
         visibleSourceWires: true,
         authoritativeRelations: persisted.sources,
         hiddenRetained: true,

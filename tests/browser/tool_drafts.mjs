@@ -60,7 +60,7 @@ async function open(id) {
   await prompt().waitFor();
 }
 try {
-  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await saved();
   await page
     .getByRole("toolbar", { name: "画布创作工具" })

@@ -1,4 +1,4 @@
-"""New-format project endpoints; existing workspace routes are not switched."""
+"""Authoritative project endpoints for the canvas creation workflow."""
 from uuid import UUID
 import asyncio
 import json

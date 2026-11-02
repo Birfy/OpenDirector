@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { recoverGeneration } from "../src/backend/generation.ts";
 import {
   generationTaskActions,
   parseGenerationJob,
   reconcileGenerationJobs,
   type GenerationJob,
 } from "../src/canvas/generationHistory.ts";
-import { recoverGeneration } from "../src/backend/generation.ts";
 
 const job: GenerationJob = {
   id: "history",
@@ -148,17 +148,39 @@ test("continue querying calls only the existing task's recovery endpoint", async
   const calls: { url: string; options?: RequestInit }[] = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), options });
-    return Response.json({ id: "original-task", status: "queued" });
+    const snapshot = {
+      project: { id: "project" },
+      eventCursor: 1,
+      jobs: [
+        {
+          id: "original-task",
+          revision: 2,
+          inputFingerprint: "frozen",
+          status: "queued",
+          inputSnapshot: { spec: { id: "spec", kind: "image" } },
+        },
+      ],
+    };
+    if (String(url).endsWith("/commands"))
+      return Response.json({
+        status: "accepted",
+        issues: [],
+        jobIds: ["original-task"],
+      });
+    return Response.json({ snapshot, edges: [] });
   };
   try {
     await recoverGeneration("project", "original-task");
-    assert.equal(calls.length, 1);
-    assert.equal(
-      calls[0]!.url,
-      "/api/projects/project/tasks/original-task/recover",
-    );
-    assert.equal(calls[0]!.options?.method, "POST");
-    assert.equal(calls[0]!.options?.body, undefined);
+    const commands = calls.filter((call) => call.url.endsWith("/commands"));
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0]!.url, "/api/creation/projects/project/commands");
+    const body = JSON.parse(String(commands[0]!.options?.body));
+    assert.equal(body.type, "job.recover");
+    assert.deepEqual(body.payload, { jobId: "original-task" });
+    assert.deepEqual(body.expectedVersions, [
+      { objectType: "job", id: "original-task", revision: 2 },
+    ]);
+    assert.ok(calls.every((call) => call.url.startsWith("/api/creation/")));
   } finally {
     globalThis.fetch = fetch;
   }

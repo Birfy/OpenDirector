@@ -22,8 +22,9 @@ try {
     })
   ).json();
   assert.equal(health.isolated, true);
-  for (const unified of [false, true]) {
-    const mode = unified ? "?creation=unified" : "";
+  {
+    const unified = true;
+    const mode = "";
     const bootstrap = (url) =>
       url.origin === new URL(base).origin && url.pathname === "/";
     await page.route(bootstrap, (route) =>
@@ -47,10 +48,9 @@ try {
         nodes: [node],
         viewport: { x: 0, y: 0, zoom: 0.8 },
       });
-      if (location.search.includes("unified"))
-        (await import("/src/backend/creationClient.ts"))
-          .creationClient(saved.id)
-          .close();
+      (await import("/src/backend/creationClient.ts"))
+        .creationClient(saved.id)
+        .close();
       await releaseBackendProject();
       return { id: saved.id, node: node.id };
     });
@@ -118,9 +118,7 @@ try {
     await openPortMenu();
     await page.mouse.click(1100, 750);
     await menu.waitFor({ state: "detached" });
-    console.log(
-      JSON.stringify({ mode: unified ? "unified" : "workspace", passed: true }),
-    );
+    console.log(JSON.stringify({ mode: "unified", passed: true }));
   }
   assert.deepEqual(errors, []);
 } finally {

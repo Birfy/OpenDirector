@@ -45,7 +45,7 @@ try {
   await page.route("**/api/model-configs", (route) =>
     route.fulfill({ json: [] }),
   );
-  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   const toasts = page.locator(".cw-toast");
   const run = page.getByRole("button", { name: "提交生成", exact: true });

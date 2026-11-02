@@ -22,8 +22,9 @@ try {
     })
   ).json();
   assert.equal(health.isolated, true);
-  for (const unified of [false, true]) {
-    const mode = unified ? "?creation=unified" : "";
+  {
+    const unified = true;
+    const mode = "";
     const bootstrap = (url) =>
       url.origin === new URL(base).origin && url.pathname === "/";
     await page.route(bootstrap, (route) =>
@@ -97,10 +98,9 @@ try {
         edges: [],
         viewport: { x: 0, y: 0, zoom: 0.8 },
       });
-      if (location.search.includes("unified"))
-        (await import("/src/backend/creationClient.ts"))
-          .creationClient(saved.id)
-          .close();
+      (await import("/src/backend/creationClient.ts"))
+        .creationClient(saved.id)
+        .close();
       await releaseBackendProject();
       return { id: saved.id, source: source.id, target: target.id };
     });
@@ -149,16 +149,9 @@ try {
       assert.ok(response.ok(), await response.text());
       return response.json();
     };
-    const snapshot = () =>
-      get(
-        unified
-          ? `creation/projects/${fixture.id}`
-          : `projects/${fixture.id}/canvas`,
-      );
+    const snapshot = () => get(`creation/projects/${fixture.id}`);
     const savedEdges = async () =>
-      unified
-        ? (await snapshot()).references.filter((ref) => ref.active)
-        : (await get(`projects/${fixture.id}/workspace`)).document.edges;
+      (await snapshot()).references.filter((ref) => ref.active);
     const until = async (read, predicate, label) => {
       for (let i = 0; i < 150; i++) {
         const value = await read();
@@ -182,28 +175,20 @@ try {
     await page.getByRole("button", { name: "提交生成", exact: true }).click();
     let state = await until(
       snapshot,
-      (value) =>
-        (unified ? value.jobs : value.tasks).some(
-          (task) => task.status === "succeeded",
-        ),
+      (value) => value.jobs.some((task) => task.status === "succeeded"),
       "first generation",
     );
-    const firstTask = (unified ? state.jobs : state.tasks).find(
-      (task) => task.status === "succeeded",
+    const firstTask = state.jobs.find((task) => task.status === "succeeded");
+    const sourceAssetId = state.canvasItems.find(
+      (item) => item.id === fixture.source,
+    ).binding.objectRef.assetId;
+    assert.equal(
+      firstTask.inputSnapshot.references[0].asset.assetId,
+      sourceAssetId,
     );
-    const sourceAssetId = unified
-      ? state.canvasItems.find((item) => item.id === fixture.source).binding
-          .objectRef.assetId
-      : state.assets.find((asset) => asset.kind === "image").id;
-    if (unified)
-      assert.equal(
-        firstTask.inputSnapshot.references[0].asset.assetId,
-        sourceAssetId,
-      );
-    else assert.ok(firstTask.inputSnapshot.references[sourceAssetId]);
     // Wait until the completed result is actually projected before editing it.
     await target.locator("video").waitFor();
-    if (unified) {
+    {
       const revision = state.canvasItems.find(
         (item) => item.id === fixture.target,
       ).revision;
@@ -257,15 +242,11 @@ try {
     state = await until(
       snapshot,
       (value) =>
-        (unified ? value.jobs : value.tasks).filter(
-          (task) => task.status === "succeeded",
-        ).length === 2,
+        value.jobs.filter((task) => task.status === "succeeded").length === 2,
       "generation after reconnection",
     );
-    const secondTask = (unified ? state.jobs : state.tasks).find(
-      (task) => task.id !== firstTask.id,
-    );
-    if (unified) {
+    const secondTask = state.jobs.find((task) => task.id !== firstTask.id);
+    {
       assert.equal(
         secondTask.inputSnapshot.references[0].asset.assetId,
         sourceAssetId,
@@ -278,10 +259,10 @@ try {
         state.jobs.find((job) => job.id === firstTask.id).inputSnapshot,
         firstTask.inputSnapshot,
       );
-    } else assert.ok(secondTask.inputSnapshot.references[sourceAssetId]);
+    }
     console.log(
       JSON.stringify({
-        mode: unified ? "unified" : "workspace",
+        mode: "unified",
         passed: true,
         sourceAssetId,
       }),

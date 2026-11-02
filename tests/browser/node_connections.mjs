@@ -96,9 +96,8 @@ try {
     ).isolated,
     true,
   );
-  for (const unified of [false, true])
     for (const [kind, targetKind, accepted = true] of cases) {
-      const mode = unified ? "?creation=unified" : "";
+      const mode = "";
       const bootstrap = (url) =>
         url.origin === new URL(base).origin && url.pathname === "/";
       await page.route(bootstrap, (r) =>
@@ -172,10 +171,9 @@ try {
             edges: [],
             viewport: { x: 0, y: 0, zoom: 0.8 },
           });
-          if (location.search.includes("unified"))
-            (await import("/src/backend/creationClient.ts"))
-              .creationClient(saved.id)
-              .close();
+          (await import("/src/backend/creationClient.ts"))
+            .creationClient(saved.id)
+            .close();
           await (
             await import("/src/backend/projects.ts")
           ).releaseBackendProject();
@@ -286,16 +284,12 @@ try {
       if (!accepted) await page.locator(".cw-toast").waitFor();
       await page.waitForTimeout(900);
       const response = await page.request.get(
-        base +
-          "/api/" +
-          (unified
-            ? "creation/projects/" + f.id
-            : "projects/" + f.id + "/workspace"),
+        base + "/api/" + ("creation/projects/" + f.id),
         { headers: { "X-OpenDirector-Request": "1" } },
       );
       assert.equal(response.status(), 200);
       const saved = await response.json();
-      if (unified) {
+      {
         const doc = saved.editorDocuments.find(
           (d) =>
             d.id ===
@@ -307,7 +301,7 @@ try {
           assert.equal(saved.references.length, 0);
           assert.equal(saved.jobs.length, 0);
         } else assert.equal(saved.references.length, count);
-      } else assert.equal(saved.document.edges.length, count);
+      }
       if (accepted && ["subject", "timeline"].includes(targetKind)) {
         await page.getByRole("button", { name: "撤销", exact: true }).click();
         await page.waitForFunction(
@@ -323,7 +317,7 @@ try {
       await page.getByText("已保存到本机", { exact: true }).waitFor();
       assert.equal(await page.locator(".react-flow__edge").count(), count);
       rows.push({
-        mode: unified ? "unified" : "workspace",
+        mode: "unified",
         kind,
         targetKind,
         accepted,

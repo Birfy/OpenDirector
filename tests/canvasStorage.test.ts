@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDocument, createNode } from "../src/canvas/model.ts";
-import {
-  loadDocument,
-  parseDocument,
-  saveDocument,
-  serializeDocument,
-} from "../src/canvas/storage.ts";
+import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
 
 test("serialization round trips embedded assets, groups, edges and node generation settings", () => {
   const document = createDocument("示例画布");
@@ -106,14 +101,5 @@ test("temporary blob media is rejected explicitly instead of pretending it will 
   const serialized = serializeDocument(document);
   assert.equal(serialized.ok, false);
   if (!serialized.ok) assert.equal(serialized.error.code, "transient-media");
-  const saved = await saveDocument(document);
-  assert.equal(saved.ok, false);
-  if (!saved.ok) assert.equal(saved.error.code, "transient-media");
   assert.equal(document.nodes[0]!.data.src, "blob:local-session");
-});
-
-test("a missing IndexedDB environment reports storage unavailability to the caller", async () => {
-  const loaded = await loadDocument("not-present");
-  assert.equal(loaded.ok, false);
-  if (!loaded.ok) assert.equal(loaded.error.code, "unavailable");
 });

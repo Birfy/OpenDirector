@@ -1,29 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { errorMessage } from "../backend/api";
 import {
   conversation,
   stopChat,
-  streamChat,
   type ChatAsset,
   type ChatEvent,
   type Conversation,
 } from "../backend/chat";
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
-import { errorMessage, request } from "../backend/api";
-import { prepareReferences, fingerprint } from "../backend/generation";
-import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
+import { creationClient } from "../backend/creationClient.ts";
+import { fingerprint } from "../backend/generation";
 import type { BackendModels } from "../backend/models";
+import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { isGenerationModel } from "../backend/rules";
-import type { CanvasNode } from "./model";
-import { assistantReferences } from "./assistantReferences";
-import { creationEnabled, creationClient } from "../backend/creationClient.ts";
-import { pendingCanvasReferences } from "./pendingCanvasReferences.ts";
 import {
   contentText,
   referenceContent,
   referenceIds,
-  type ReferenceContent,
   type ReferenceAsset,
+  type ReferenceContent,
 } from "./chatReferenceContent.ts";
+import type { CanvasNode } from "./model";
+import { pendingCanvasReferences } from "./pendingCanvasReferences.ts";
 
 export interface ProjectChatAsset extends ReferenceAsset {
   kind: string;
@@ -264,7 +262,7 @@ export function useAssistantChat(
             invalid.map((item) => `${item.title}：${item.error}`).join(" ") +
               " 整批未插入。",
           );
-        if (creationEnabled()) {
+        {
           const client = creationClient(projectId);
           await client.refresh();
           const catalog = await loadReferenceCatalog(projectId, signal);
@@ -286,144 +284,14 @@ export function useAssistantChat(
           }
           return selected;
         }
-        const references = assistantReferences(nodes);
-        if (references.length > 64)
-          throw new Error("每次最多添加 64 份参考素材，整批未插入。");
-        if (!references.length)
-          throw new Error("所选节点没有可用素材，请先添加文本或上传素材。");
-        return (await prepareReferences(projectId, references, signal)).map(
-          (value) => value.asset,
-        );
       },
       signal,
       commit,
     );
 
   const send = async () => {
-    if (creationEnabled()) {
-      setError("该工程的助手对话尚未接入，请使用节点生成面板。");
-      return;
-    }
-    const draft = current.current;
-    if (
-      !loaded ||
-      !agent ||
-      submitting.current ||
-      uploading.current ||
-      (!draft.draft.trim() && !draft.assets.length)
-    )
-      return;
-    const id = retryId.current ?? crypto.randomUUID();
-    retryId.current = id;
-    turnId.current = id;
-    submitting.current = true;
-    const abort = new AbortController();
-    controller.current = abort;
-    setSending(true);
-    setStarted(false);
-    setThinkingNow(false);
-    setTools([]);
-    setError("");
-    let accepted = false;
-    try {
-      rememberChat(projectId, draft);
-      await flushChatDraft(projectId);
-      abort.signal.throwIfAborted();
-      for await (const event of streamChat(
-        projectId,
-        {
-          id,
-          modelId: agent.id,
-          text: draft.draft.trim(),
-          content: draft.draftContent,
-          assets: draft.assets.map((asset) => asset.id),
-          thinking: draft.thinking,
-          modelSelections: draft.modelSelections,
-        },
-        abort.signal,
-      )) {
-        if (!alive.current) return;
-        if (event.type === "start") {
-          accepted = true;
-          retryId.current = null;
-          setStarted(true);
-          setValue((previous) => ({
-            ...previous,
-            messages: event.conversation.messages,
-            draft: "",
-            draftContent: [],
-            assets: [],
-          }));
-        } else if (event.type === "end") {
-          if (event.conversation)
-            setValue((previous) => ({
-              ...previous,
-              messages: event.conversation!.messages,
-            }));
-          if (event.error) setError(event.error);
-        } else if (event.type === "delta") {
-          setThinkingNow(false);
-          setValue((previous) => ({
-            ...previous,
-            messages: previous.messages.map((message) =>
-              message.id === id
-                ? { ...message, text: message.text + event.text }
-                : message,
-            ),
-          }));
-        } else if (event.type === "thinking") setThinkingNow(true);
-        else if (event.type === "tool")
-          setTools((previous) => {
-            const index = previous
-              .map(
-                (tool) => tool.name === event.name && tool.status === "running",
-              )
-              .lastIndexOf(true);
-            return event.status === "running" || index < 0
-              ? [...previous, event]
-              : previous.map((tool, i) => (i === index ? event : tool));
-          });
-      }
-    } catch (reason) {
-      if (alive.current && !abort.signal.aborted) {
-        // A failed response may have been accepted. Reuse the turn ID until resolved.
-        if (!accepted) {
-          try {
-            const saved = await conversation(projectId);
-            if (
-              alive.current &&
-              saved.messages.some((message) => message.id === id)
-            ) {
-              retryId.current = null;
-              setValue({ ...saved, draft: "", draftContent: [], assets: [] });
-            }
-          } catch {
-            /* Keep the original draft and retry identifier. */
-          }
-        }
-        if (alive.current) {
-          setError(errorMessage(reason));
-          setValue((previous) => ({
-            ...previous,
-            messages: previous.messages.map((message) =>
-              message.id === id && message.status === "streaming"
-                ? { ...message, status: "interrupted" }
-                : message,
-            ),
-          }));
-        }
-      }
-    } finally {
-      submitting.current = false;
-      turnId.current = null;
-      if (controller.current === abort) controller.current = null;
-      if (alive.current) {
-        setSending(false);
-        setStarted(false);
-        setStopping(false);
-      }
-      onEnd.current();
-    }
+    setError("该工程的助手对话尚未接入，请使用节点生成面板。");
+    return;
   };
   const stop = async () => {
     if (!turnId.current || stopping) return;

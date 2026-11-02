@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import type { Conversation } from "../src/backend/chat.ts";
 import {
   currentChat,
   flushChatDraft,
@@ -10,7 +11,6 @@ import {
   releaseBackendProject,
   requireActiveBackendProject,
 } from "../src/backend/projects.ts";
-import type { Conversation } from "../src/backend/chat.ts";
 
 const listeners = new Map<string, () => void>();
 let heartbeat: () => void;
@@ -22,13 +22,13 @@ const draft = (text: string): Conversation => ({
   modelSelections: {},
 });
 
-function fixture(t: TestContext, unified = false) {
+function fixture(t: TestContext, unified = true) {
   const beforeFetch = globalThis.fetch;
   const beforeWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      location: { search: unified ? "?creation=unified" : "" },
+      location: { search: unified ? "" : "" },
       setInterval: (callback: () => void) => {
         heartbeat = callback;
         return 1;
@@ -101,47 +101,20 @@ function fixture(t: TestContext, unified = false) {
   };
 }
 
-test("explicit close drains pending draft writes and atomically saves the newest draft", async (t) => {
+test("unconnected assistant drafts never write legacy project data", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID();
   await openBackendProject(id, "A");
-  rememberChat(id, draft("older"));
-  let release!: () => void, entered!: () => void;
-  const started = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  const blocked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  f.intercept(async (path) => {
-    if (path.endsWith("/draft")) {
-      entered();
-      await blocked;
-    }
-    return undefined;
-  });
-  const saving = flushChatDraft(id);
-  await started;
-  const closing = releaseBackendProject();
-  rememberChat(id, draft("newest"));
-  await Promise.resolve();
-  assert.equal(
-    f.calls.some((call) => call.path.endsWith("/close")),
-    false,
-  );
-  release();
-  await saving;
-  await closing;
-  assert.equal(f.saved()?.draft, "newest");
+  rememberChat(id, draft("temporary"));
+  await flushChatDraft(id);
+  await releaseBackendProject();
+  assert.equal(currentChat(id)?.draft, "temporary");
+  assert.equal(f.saved(), undefined);
   assert.equal(f.lease(), null);
-  assert.equal(f.calls.at(-1)!.path.endsWith("/close"), true);
-  assert.equal(
-    f.calls.some((call) => call.method === "DELETE"),
-    false,
-  );
+  assert.ok(f.calls.every((call) => call.path.startsWith("/api/creation/")));
 });
 
-test("page exit uses the same atomic close with keepalive and tolerates a repeated exit", async (t) => {
+test("page exit releases the unified session with keepalive and tolerates a repeated exit", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID();
   await openBackendProject(id, "A");
@@ -151,22 +124,22 @@ test("page exit uses the same atomic close with keepalive and tolerates a repeat
   rememberChat(id, draft("late stale draft"));
   listeners.get("pagehide")!();
   await new Promise<void>((resolve) => setImmediate(resolve));
-  const close = f.calls.filter((call) => call.path.endsWith("/close"));
+  const close = f.calls.filter((call) => call.method === "DELETE");
   assert.equal(close.length, 2);
-  assert.ok(close.every((call) => call.method === "POST" && call.keepalive));
-  assert.equal(f.saved()?.draft, "exit draft");
+  assert.ok(close.every((call) => call.method === "DELETE" && call.keepalive));
+  assert.equal(f.saved(), undefined);
   assert.equal(currentChat(id)?.draft, "late stale draft");
   assert.equal(f.calls.filter((call) => call.path.endsWith("/open")).length, 1);
 });
 
-test("real save errors prevent release or switching and preserve the active draft", async (t) => {
+test("release errors prevent release or switching and preserve the active draft", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID(),
     next = crypto.randomUUID();
   await openBackendProject(id, "A");
   rememberChat(id, draft("keep this"));
-  f.intercept(async (path) =>
-    path.endsWith("/close")
+  f.intercept(async (path, options) =>
+    path.includes("/sessions/") && options.method === "DELETE"
       ? Response.json(
           { detail: "部分素材尚未保存，项目对话未覆盖，请重试。" },
           { status: 409 },
@@ -187,7 +160,7 @@ test("real save errors prevent release or switching and preserve the active draf
   );
 });
 
-test("a failed target open reacquires the old project after closing its draft", async (t) => {
+test("a failed target open reacquires the old project without writing chat drafts", async (t) => {
   const f = fixture(t),
     id = crypto.randomUUID(),
     next = crypto.randomUUID();
@@ -200,7 +173,7 @@ test("a failed target open reacquires the old project after closing its draft", 
   );
   await assert.rejects(openBackendProject(next, "B"), /目标项目不可用/);
   assert.equal(f.lease(), id);
-  assert.equal(f.saved()?.draft, "saved before switch");
+  assert.equal(f.saved(), undefined);
   assert.equal(
     await requireActiveBackendProject(id, new AbortController().signal),
     id,
@@ -232,7 +205,7 @@ test("pending heartbeat completes before close and cannot reacquire the released
   const closing = releaseBackendProject();
   await Promise.resolve();
   assert.equal(
-    f.calls.some((call) => call.path.endsWith("/close")),
+    f.calls.some((call) => call.method === "DELETE"),
     false,
   );
   release();
@@ -240,7 +213,7 @@ test("pending heartbeat completes before close and cannot reacquire the released
   heartbeat();
   await Promise.resolve();
   assert.equal(f.lease(), null);
-  assert.equal(f.calls.at(-1)!.path.endsWith("/close"), true);
+  assert.equal(f.calls.at(-1)!.method, "DELETE");
 });
 
 test("expired close neither reopens the project nor claims to save the stale draft", async (t) => {

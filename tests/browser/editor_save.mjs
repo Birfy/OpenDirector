@@ -32,7 +32,7 @@ try {
       payload: { name: "Editor save " + pid.slice(0, 8) },
     },
   });
-  await page.goto(base + `/ai-tool/ai-canvas/${pid}?creation=unified`);
+  await page.goto(base + `/ai-tool/ai-canvas/${pid}`);
   const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
   const state = async () =>
     (
@@ -90,7 +90,10 @@ try {
       },
       { pid, id: item.id, value },
     );
-    await page.waitForTimeout(250);
+    await page.waitForFunction(({id, value}) => {
+      const node = document.querySelector(`.react-flow__node[data-id="${id}"] .cw-node`);
+      return node && node.classList.contains("cw-node-locked") === value;
+    }, {id: item.id, value});
   }
   // A real server lock arrives after the editor's version basis was captured.
   await open();
@@ -179,6 +182,10 @@ try {
   console.log(
     "PASS delayed acknowledgement and unknown response keep the draft; retry replays exactly once",
   );
+} catch (error) {
+  console.error(await page.locator("body").innerText());
+  console.error({errors});
+  throw error;
 } finally {
   await browser.close();
 }

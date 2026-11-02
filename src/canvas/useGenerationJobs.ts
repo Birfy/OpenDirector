@@ -5,20 +5,15 @@ import {
   useState,
   type SetStateAction,
 } from "react";
+import { creationClient } from "../backend/creationClient.ts";
 import {
-  loadGenerationJobs,
-  mergeGenerationJobs,
-  saveGenerationJob,
-  type GenerationJob,
-} from "./generationHistory";
-import { creationClient, creationEnabled } from "../backend/creationClient.ts";
-import {
-  creationJobs,
-  creationJobPreview,
   applyCreationPreview,
+  creationJobPreview,
+  creationJobs,
 } from "../backend/creationJobs.ts";
-import { toolHistoryJobs } from "../backend/tools.ts";
 import { abortable } from "../backend/resilientRead.ts";
+import { toolHistoryJobs } from "../backend/tools.ts";
+import { type GenerationJob } from "./generationHistory";
 
 /** Each callback retains its project owner, including a service result arriving after switching. */
 export function useGenerationJobs(
@@ -27,8 +22,6 @@ export function useGenerationJobs(
   connected = true,
 ) {
   const cache = useRef(new Map<string, GenerationJob[]>());
-  const loaded = useRef(new Set<string>());
-  const loading = useRef(new Map<string, Promise<void>>());
   const [revision, setRevision] = useState(0);
   const cacheCursors = useRef(new Map<string, number>());
   const reads = useRef(new Map<string, number>());
@@ -38,36 +31,10 @@ export function useGenerationJobs(
   const readJobs = useCallback(
     async (signal?: AbortSignal) => {
       signal?.throwIfAborted();
-      if (creationEnabled()) loaded.current.add(documentId);
-      if (!loaded.current.has(documentId)) {
-        let pending = loading.current.get(documentId);
-        if (!pending) {
-          pending = loadGenerationJobs(documentId)
-            .then((saved) => {
-              cache.current.set(
-                documentId,
-                mergeGenerationJobs(saved, cache.current.get(documentId) ?? []),
-              );
-              loaded.current.add(documentId);
-              setRevision((n) => n + 1);
-            })
-            .catch((reason) => {
-              // Tool history is service-owned, including when browser storage is
-              // unavailable. Losing the old cache must not block those queries.
-              loaded.current.add(documentId);
-              error.current(`浏览器历史读取失败：${String(reason)}`);
-            })
-            .finally(() => loading.current.delete(documentId));
-          loading.current.set(documentId, pending);
-        }
-        await pending;
-      }
       if (!connected) return cache.current.get(documentId) ?? [];
       const token = (reads.current.get(documentId) ?? 0) + 1;
       reads.current.set(documentId, token);
-      const snapshot = creationEnabled()
-        ? creationClient(documentId).snapshot
-        : undefined;
+      const snapshot = creationClient(documentId).snapshot;
       const publish = (next: GenerationJob[]) => {
         cache.current.set(documentId, next);
         setRevision((n) => n + 1);
@@ -139,13 +106,11 @@ export function useGenerationJobs(
     let active = true;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = creationEnabled()
-      ? creationClient(documentId).listen(() => {
-          void readJobs(controller.signal).catch(
-            (reason) => active && error.current(String(reason)),
-          );
-        })
-      : undefined;
+    const unsubscribe = creationClient(documentId).listen(() => {
+      void readJobs(controller.signal).catch(
+        (reason) => active && error.current(String(reason)),
+      );
+    });
     const poll = async () => {
       try {
         await readJobs(controller.signal);
@@ -171,11 +136,6 @@ export function useGenerationJobs(
       );
       cache.current.set(documentId, next);
       setRevision((n) => n + 1);
-      for (const job of next)
-        if (!creationEnabled() && !job.tool && !old.includes(job))
-          void saveGenerationJob(documentId, job).catch((reason) =>
-            error.current(`历史保存失败：${String(reason)}`),
-          );
     },
     [documentId],
   );

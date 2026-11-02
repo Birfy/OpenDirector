@@ -1,12 +1,12 @@
-import { headers, json, request, responseError } from "./api.ts";
-import { creationClient, creationEnabled } from "./creationClient.ts";
-import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import {
+  itemBlob,
   withMediaSuffix,
   type LibraryItem,
-  itemBlob,
 } from "../canvas/library/libraryClient.ts";
+import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import type { SubjectMediaSlot } from "../canvas/subjectMedia.ts";
+import { headers, json, request, responseError } from "./api.ts";
+import { creationClient } from "./creationClient.ts";
 
 export interface CanvasSource {
   nodeId: string;
@@ -54,27 +54,11 @@ export async function copyOwnedSourceMedia(
   if (digest !== facts.sha) throw new Error("来源素材已变化，请重新选择。");
   const name = withMediaSuffix(facts.name, facts.metadata.mimeType);
   let assetId: string, src: string;
-  if (creationEnabled()) {
+  {
     const client = creationClient(projectId);
     const ref = await client.importBlob(blob, name, facts.kind);
     assetId = ref.assetId;
     src = await client.mediaUrl(assetId);
-  } else {
-    assetId = crypto.randomUUID();
-    await request(`/data/${projectId}/assets/${assetId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": facts.metadata.mimeType,
-        "X-Asset-Name": encodeURIComponent(name),
-      },
-      body: blob,
-    });
-    src = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error("无法保存素材副本。"));
-      reader.readAsDataURL(new Blob([blob], { type: facts.metadata.mimeType }));
-    });
   }
   return {
     id: assetId,

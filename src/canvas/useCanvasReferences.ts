@@ -5,8 +5,6 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { CanvasNode, Point } from "./model";
-import { absolutePosition } from "./geometry";
 import { canStartReference } from "./connectionPolicy";
 import {
   floatingReferencePort,
@@ -14,6 +12,8 @@ import {
   referencePreviewPath,
   type PortSide,
 } from "./connectionPorts";
+import { absolutePosition } from "./geometry";
+import type { CanvasNode, Point } from "./model";
 export { portPoint, type PortSide } from "./connectionPorts";
 
 const hoverBlocked =

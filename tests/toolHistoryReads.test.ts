@@ -68,7 +68,7 @@ function browser(t: TestContext, unified: boolean) {
     }
   }
   const values = {
-    window: { location: { search: unified ? "?creation=unified" : "" } },
+    window: { location: { search: unified ? "" : "" } },
     Image: ImageFixture,
     HTMLImageElement: ImageFixture,
     HTMLMediaElement: class {},
@@ -92,7 +92,8 @@ function browser(t: TestContext, unified: boolean) {
   });
 }
 
-for (const unified of [false, true]) {
+{
+  const unified = true;
   const mode = unified ? "unified" : "workspace";
   const prefix = unified ? "/api/creation/projects/" : "/api/projects/";
   const assetPath = unified ? "/assets/asset/content" : "/data/";

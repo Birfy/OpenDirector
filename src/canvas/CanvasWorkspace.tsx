@@ -1,19 +1,19 @@
-import { currentAsset } from "../backend/creationClient";
-import { MediaPublication } from "../backend/mediaPublication";
-import { timelinePublication } from "../backend/timelinePublication";
-import { CreationEditorSession } from "../backend/creationEditorSession";
-import { deliverTool, pendingToolDelivery } from "../backend/toolDeliveries";
-import { previewImageSelection } from "../backend/imageSelections";
-import { imageAnnotationPayload } from "./imageActionPayload";
-import { useProjectMentionAssets } from "./useProjectMentionAssets";
-import { useCanvasWheelBoundary } from "./useCanvasWheelBoundary";
-import { referenceContentCommand } from "./generationReferenceEdit.ts";
 import {
-  generationContent,
-  incomingReferenceNodes,
-} from "./generationReferenceContent.ts";
-import type { GenerationReferenceControls } from "./GenerationReferenceEditor";
-import { lockedNodeIds } from "./hierarchy";
+  Background,
+  BackgroundVariant,
+  MiniMap,
+  ReactFlowProvider,
+  SelectionMode,
+  useKeyPress,
+  useReactFlow,
+  ViewportPortal,
+  type Connection,
+  type Edge,
+  type Node,
+  type NodeChange,
+  type OnConnectEnd,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import {
   lazy,
   Suspense,
@@ -22,219 +22,29 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
   type CSSProperties,
+  type ReactNode,
 } from "react";
-import {
-  ReactFlowProvider,
-  Background,
-  BackgroundVariant,
-  MiniMap,
-  SelectionMode,
-  useReactFlow,
-  useKeyPress,
-  type Node,
-  type Edge,
-  type NodeChange,
-  type Connection,
-  type OnConnectEnd,
-  ViewportPortal,
-} from "@xyflow/react";
-import {
-  CanvasReferenceEdge,
-  CanvasConnectionLine,
-  CanvasConnectionPreview,
-  CanvasInteractionOverlay,
-} from "./CanvasConnections";
-import { alignNodes, type Alignment } from "./snapping";
-import {
-  CanvasFlowSurface,
-  type CanvasFlowSurfaceHandle,
-} from "./CanvasFlowSurface";
-import { CanvasContextMenu } from "./CanvasContextMenu";
-import {
-  useCanvasReferences,
-  portPoint,
-  type PortSide,
-} from "./useCanvasReferences";
-import { referencePortMetrics, REFERENCE_PORT_SIZE } from "./connectionPorts";
-import { subjectDescriptionLayout } from "./subjectLayout.ts";
-import { measureSubjectNodeHeight } from "./subjectLayoutMeasurement.ts";
-import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
-import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
-import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
-import { CANVAS_CREATION_TOOLS } from "./creationTools";
-import { CanvasNodeView } from "./CanvasNodeView";
-import { CanvasActionsContext } from "./CanvasActionsContext";
-import { CanvasPointerGesture } from "./pointerGesture";
-import {
-  generationActivities,
-  jobActivities,
-  generationPhase,
-  GENERATION_LABELS,
-  type ActiveGeneration,
-  type GenerationPhase,
-} from "./generationActivity";
-import { TextNodeComposer } from "./TextNodeComposer";
-import {
-  agentNodeSettings,
-  agentGenerationBlocker,
-  applyTextGenerationResult,
-} from "./textGeneration";
-import { assistantReferences } from "./assistantReferences";
-import { NodeComposer, getNodeGenerationSettings } from "./NodeComposer";
-import { NodeInfoButton } from "./NodeInfoButton";
-import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
-import { useSelectionPresentation } from "./useSelectionPresentation";
-import { CanvasIcon } from "./CanvasIcon";
-import {
-  CanvasNotifications,
-  useCanvasNotifications,
-} from "./CanvasNotifications";
-import { CanvasToolRail } from "./CanvasToolRail";
-import { TooltipButton, TooltipProvider } from "./TooltipButton";
-import { ImageEditor } from "./ImageEditor";
-import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
-import {
-  itemBlob,
-  itemToResource,
-  withMediaSuffix,
-  type LibraryItem,
-} from "./library/libraryClient";
-import "./library/library.css";
-import {
-  connectedCreationKinds,
-  referenceIssue,
-  REFERENCE_ISSUE_TEXT,
-  canStartReference,
-  referenceMaterial,
-} from "./connectionPolicy";
-import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
-import { persistCurrentDocument } from "./projectManagement";
 import openDirectorLogoAnimation from "../assets/open_director_logo_anim.gif";
-import { ProjectSelector } from "./ProjectSelector";
-import { ProjectNameDialog } from "./ProjectNameDialog";
-import {
-  initializeWorkspace,
-  saveWorkspaceDocument,
-  openWorkspaceProject,
-  createWorkspaceProject,
-  renameWorkspaceProject,
-  importWorkspaceDocument,
-  listWorkspaceProjects,
-  workspaceProjection,
-} from "../backend/workspace";
-import {
-  creationClient,
-  creationEnabled,
-  objectVersion,
-  itemSpec,
-  visibleItems,
-} from "../backend/creationClient.ts";
-import { CanvasSearchPanel } from "./CanvasSearchPanel";
-import { CreationAssetList } from "./CreationAssetList.tsx";
-import { portableDocument } from "./portableDocument.ts";
-import { resourceNodeData } from "./projectAssets";
-import { TimelineEditor } from "./TimelineEditor";
-import { StackEditor } from "./StackEditor";
-import { ToolEditor } from "./ToolEditor";
-import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
-import { VideoActionEditor } from "./VideoActionEditor";
-import { NodeTaskPanel } from "./NodeTaskPanel";
-import {
-  createVideoExtensionDraft,
-  gridSplitImage,
-} from "./nodeActionWorkflow";
-import { captureVideoEndpoint, extractVideoAudio } from "./videoActionRuntime";
-import { EditorModal } from "./EditorModal";
-import { LocalImageTools } from "./LocalImageTools";
-import { LocalMediaEditor } from "./LocalMediaEditor";
-const DirectorStage = lazy(() =>
-  import("./DirectorStage").then((module) => ({
-    default: module.DirectorStage,
-  })),
-);
-import { readEditorResource, classifyImportFile } from "./editorMedia";
-import { assertUpload } from "./uploadPolicy.ts";
-import {
-  SubjectImportDialog,
-  type SubjectImportChoice,
-  type SubjectImportTab,
-} from "./library/SubjectImportDialog";
+import { request as apiRequest, errorMessage } from "../backend/api.ts";
 import {
   copyCanvasSource,
   copySubjectAsset,
   type CanvasSource,
 } from "../backend/canvasSources";
-import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
+import { currentAsset } from "../backend/creationClient";
 import {
-  copyLibrarySubjects,
-  backUpLibrarySubject,
-} from "../backend/subjectLibrary.ts";
-import {
-  librarySubjectCommand,
-  subjectImportSelection,
-  subjectTargetIdentity,
-  mergeLibrarySubjectImport,
-} from "./subjectLibraryImport.ts";
-import { sameNodeData } from "./dataBoundary.ts";
-import { readImportBatch } from "./importBatch";
-import { useGenerationJobs } from "./useGenerationJobs";
-import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
-import {
-  reconcileGenerationJobs,
-  toolProvenanceEdges,
-  mergeGenerationJobs,
-  applyRecoveredGenerationResults,
-  type GenerationJob as Job,
-} from "./generationHistory";
-import {
-  appendLinkedMediaResults,
-  captureEditorSource,
-  appendPendingResult,
-  placeToolResults,
-  toolResultsPlaced,
-  removePendingResult,
-  validateNodeActionSource,
-  appendServiceResults,
-  applyGenerationResults,
-  type GenerationResultMode,
-  type LinkedMediaResult,
-  type ResultSource,
-  type ServiceResult,
-} from "./linkedResults";
-import { AssistantPanel } from "./AssistantPanel";
-import { expectedDuration, recordDuration } from "./generationDurations";
-import { useAssistantLayout } from "./useAssistantLayout";
-import { SettingsDialog } from "./SettingsDialog";
-import { useTheme } from "./theme";
-import { fingerprintMatches } from "./chatReferenceContent.ts";
-import {
-  errorMessage,
-  assetBlob,
-  headers,
-  request as apiRequest,
-} from "../backend/api.ts";
-import {
-  cancelGeneration,
-  recoverGeneration,
-  submitGeneration,
-  waitForResult,
-  waitForTextResult,
-  type BackendResult,
-  type BackendTask,
-  type GenerationRequest,
-} from "../backend/generation.ts";
-import { fingerprint } from "../backend/generation.ts";
+  creationClient,
+  itemSpec,
+  objectVersion,
+  visibleItems,
+} from "../backend/creationClient.ts";
+import { CreationEditorSession } from "../backend/creationEditorSession";
+import { fingerprint, type GenerationRequest } from "../backend/generation.ts";
+import { previewImageSelection } from "../backend/imageSelections";
+import { MediaPublication } from "../backend/mediaPublication";
 import { useBackendModels } from "../backend/models.ts";
-import { backendProjectId, openBackendProject } from "../backend/projects.ts";
-import {
-  cancelToolTask,
-  acknowledgeToolPlacement,
-  submitToolTask,
-  useToolCatalog,
-  ToolSubmissionError,
-} from "../backend/tools.ts";
+import { openBackendProject } from "../backend/projects.ts";
 import {
   backendBlocker,
   backendModel,
@@ -242,68 +52,221 @@ import {
   backendVideoMode,
   serviceVoice,
 } from "../backend/rules.ts";
-import { isHandled, markHandled, unsyncedResults } from "../backend/sync.ts";
+import {
+  backUpLibrarySubject,
+  copyLibrarySubjects,
+} from "../backend/subjectLibrary.ts";
+import { timelinePublication } from "../backend/timelinePublication";
+import { deliverTool, pendingToolDelivery } from "../backend/toolDeliveries";
+import {
+  acknowledgeToolPlacement,
+  cancelToolTask,
+  submitToolTask,
+  ToolSubmissionError,
+  useToolCatalog,
+} from "../backend/tools.ts";
+import {
+  createWorkspaceProject,
+  importWorkspaceDocument,
+  initializeWorkspace,
+  listWorkspaceProjects,
+  openWorkspaceProject,
+  renameWorkspaceProject,
+  saveWorkspaceDocument,
+  workspaceProjection,
+} from "../backend/workspace";
+import {
+  downloadFile,
+  downloadFilename,
+  exampleDocument,
+  studyImage,
+} from "./assets";
+import { AssistantPanel } from "./AssistantPanel";
+import { assistantReferences } from "./assistantReferences";
+import { CanvasActionsContext } from "./CanvasActionsContext";
+import {
+  CanvasConnectionLine,
+  CanvasConnectionPreview,
+  CanvasInteractionOverlay,
+  CanvasReferenceEdge,
+} from "./CanvasConnections";
+import { CanvasContextMenu } from "./CanvasContextMenu";
+import { CanvasCreationMenu, CreationMenuContent } from "./CanvasCreationMenu";
+import {
+  CanvasFlowSurface,
+  type CanvasFlowSurfaceHandle,
+} from "./CanvasFlowSurface";
+import { CanvasIcon } from "./CanvasIcon";
+import { CanvasPlaybackProvider } from "./CanvasMediaPreview";
+import { CanvasNodeView } from "./CanvasNodeView";
+import {
+  CanvasNotifications,
+  useCanvasNotifications,
+} from "./CanvasNotifications";
+import { CanvasToolRail } from "./CanvasToolRail";
+import { fingerprintMatches } from "./chatReferenceContent.ts";
+import {
+  canStartReference,
+  connectedCreationKinds,
+  REFERENCE_ISSUE_TEXT,
+  referenceIssue,
+  referenceMaterial,
+} from "./connectionPolicy";
+import { REFERENCE_PORT_SIZE, referencePortMetrics } from "./connectionPorts";
+import "./control-theme.css";
+import { CreationAssetList } from "./CreationAssetList.tsx";
+import { CANVAS_CREATION_TOOLS } from "./creationTools";
+import { sameNodeData } from "./dataBoundary.ts";
+import { classifyImportFile, readEditorResource } from "./editorMedia";
+import { EditorModal } from "./EditorModal";
+import {
+  generationActivities,
+  jobActivities,
+  type ActiveGeneration,
+} from "./generationActivity";
+import { expectedDuration, recordDuration } from "./generationDurations";
+import {
+  toolProvenanceEdges,
+  type GenerationJob as Job,
+} from "./generationHistory";
+import { GenerationHistoryPanel } from "./GenerationHistoryPanel";
+import {
+  generationContent,
+  incomingReferenceNodes,
+} from "./generationReferenceContent.ts";
+import { referenceContentCommand } from "./generationReferenceEdit.ts";
+import type { GenerationReferenceControls } from "./GenerationReferenceEditor";
+import { absolutePosition, arrangeNodes } from "./geometry";
+import { lockedNodeIds } from "./hierarchy";
+import {
+  beginTransaction,
+  commitTransaction,
+  createHistory,
+  executeCommand,
+  recordChange,
+  type CanvasHistory,
+} from "./history";
+import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
+import { imageAnnotationPayload } from "./imageActionPayload";
+import { ImageEditor } from "./ImageEditor";
+import { readImportBatch } from "./importBatch";
+import { AssetLibraryDialog } from "./library/AssetLibraryDialog";
+import "./library/library.css";
+import {
+  itemBlob,
+  itemToResource,
+  withMediaSuffix,
+  type LibraryItem,
+} from "./library/libraryClient";
+import {
+  SubjectImportDialog,
+  type SubjectImportChoice,
+  type SubjectImportTab,
+} from "./library/SubjectImportDialog";
+import {
+  appendPendingResult,
+  captureEditorSource,
+  removePendingResult,
+  validateNodeActionSource,
+  type GenerationResultMode,
+  type LinkedMediaResult,
+  type ResultSource,
+} from "./linkedResults";
+import { LocalImageTools } from "./LocalImageTools";
+import { LocalMediaEditor } from "./LocalMediaEditor";
+import {
+  applyCommand,
+  canAddReference,
+  createDocument,
+  createNode,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  type CanvasCommand,
+  type CanvasDocument,
+  type CanvasNode,
+  type CanvasNodeData,
+  type CanvasNodeKind,
+  type CanvasResource,
+  type Point,
+} from "./model";
+import {
+  createVideoExtensionDraft,
+  gridSplitImage,
+} from "./nodeActionWorkflow";
+import { getNodeGenerationSettings, NodeComposer } from "./NodeComposer";
+import { NodeInfoButton } from "./NodeInfoButton";
+import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
+import { NodeTaskPanel } from "./NodeTaskPanel";
+import {
+  copySelection,
+  cutSelection,
+  groupSelection,
+  orderNodesForCanvas,
+  pasteFragment,
+  resourceFromNode,
+  stackSelection,
+  ungroupSelection,
+  unstackSelection,
+  updateStack,
+  type CanvasFragment,
+} from "./operations";
+import { CanvasPointerGesture } from "./pointerGesture";
+import { portableDocument } from "./portableDocument.ts";
+import { resourceNodeData } from "./projectAssets";
+import { persistCurrentDocument } from "./projectManagement";
+import { ProjectNameDialog } from "./ProjectNameDialog";
+import { ProjectSelector } from "./ProjectSelector";
+import { referencePresentation, referenceSnapshot } from "./referenceEvidence";
+import "./settings.css";
+import { SettingsDialog } from "./SettingsDialog";
+import { alignNodes, type Alignment } from "./snapping";
+import { StackEditor } from "./StackEditor";
+import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
+import { serializeDocument } from "./storage";
+import { subjectDescriptionLayout } from "./subjectLayout.ts";
+import { measureSubjectNodeHeight } from "./subjectLayoutMeasurement.ts";
+import {
+  librarySubjectCommand,
+  mergeLibrarySubjectImport,
+  subjectImportSelection,
+  subjectTargetIdentity,
+} from "./subjectLibraryImport.ts";
+import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
+import { agentGenerationBlocker, agentNodeSettings } from "./textGeneration";
+import { TextNodeComposer } from "./TextNodeComposer";
+import { useTheme } from "./theme";
+import "./themes.css";
+import { TimelineEditor } from "./TimelineEditor";
 import {
   CANVAS_TOOLS,
   createCanvasToolTask,
   initialToolParameters,
   type CanvasToolId,
   type CanvasToolTask,
-  type ToolSource,
   type ToolParameters,
+  type ToolSource,
 } from "./toolCatalog";
+import { ToolEditor } from "./ToolEditor";
+import { TooltipButton, TooltipProvider } from "./TooltipButton";
+import { assertUpload } from "./uploadPolicy.ts";
+import { useAssistantLayout } from "./useAssistantLayout";
 import {
-  createDocument,
-  createNode,
-  applyCommand,
-  canAddReference,
-  MAX_ZOOM,
-  MIN_ZOOM,
-  type CanvasDocument,
-  type CanvasNode,
-  type CanvasNodeData,
-  type CanvasResource,
-  type CanvasNodeKind,
-  type CanvasCommand,
-  type Point,
-} from "./model";
-import {
-  createHistory,
-  executeCommand,
-  recordChange,
-  beginTransaction,
-  commitTransaction,
-  undo,
-  redo,
-  type CanvasHistory,
-} from "./history";
-import { absolutePosition, arrangeNodes } from "./geometry";
-import { serializeDocument } from "./storage";
-import {
-  copySelection,
-  cutSelection,
-  orderNodesForCanvas,
-  pasteFragment,
-  groupSelection,
-  ungroupSelection,
-  stackSelection,
-  unstackSelection,
-  updateStack,
-  resourceFromNode,
-  type CanvasFragment,
-} from "./operations";
-import {
-  downloadFile,
-  downloadFilename,
-  exampleDocument,
-  fileDataUrl,
-  studyImage,
-} from "./assets";
-import "@xyflow/react/dist/style.css";
+  portPoint,
+  useCanvasReferences,
+  type PortSide,
+} from "./useCanvasReferences";
+import { useCanvasWheelBoundary } from "./useCanvasWheelBoundary";
+import { useGenerationJobs } from "./useGenerationJobs";
+import { useProjectMentionAssets } from "./useProjectMentionAssets";
+import { useSelectionPresentation } from "./useSelectionPresentation";
+import { VideoActionEditor } from "./VideoActionEditor";
+import { captureVideoEndpoint, extractVideoAudio } from "./videoActionRuntime";
 import "./workspace.css";
-import "./settings.css";
-import "./themes.css";
-import "./control-theme.css";
+const DirectorStage = lazy(() =>
+  import("./DirectorStage").then((module) => ({
+    default: module.DirectorStage,
+  })),
+);
 
 type FlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 type Panel = "assets" | "search" | "history" | null;
@@ -587,7 +550,6 @@ function Workspace() {
         [
           ...activeGenerations.filter(
             (run) =>
-              !creationEnabled() ||
               !jobs.some(
                 (job) =>
                   !job.tool &&
@@ -595,12 +557,10 @@ function Workspace() {
                   job.status === "running",
               ),
           ),
-          ...(creationEnabled()
-            ? jobActivities(
-                jobs.filter((job) => !job.tool),
-                doc.id,
-              )
-            : []),
+          ...jobActivities(
+            jobs.filter((job) => !job.tool),
+            doc.id,
+          ),
           ...jobActivities(
             jobs.filter((job) => job.tool),
             doc.id,
@@ -618,8 +578,6 @@ function Workspace() {
     const timer = window.setTimeout(() => setArrivingNodes(new Set()), 1200);
     return () => window.clearTimeout(timer);
   }, [arrivingNodes]);
-  const syncing = useRef(new Set<string>());
-  const following = useRef(new Set<string>());
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantSelectionRequest, setAssistantSelectionRequest] = useState(0);
   const clipboard = useRef<CanvasFragment | null>(null);
@@ -678,43 +636,39 @@ function Workspace() {
     nodes: [...doc.nodes, ...(doc.hiddenNodes ?? [])],
     visibleNodes: doc.nodes,
     assets: referenceAssets.assets,
-    pinned: creationEnabled()
-      ? (() => {
-          const snapshot = creationClient(doc.id).snapshot;
-          const item = snapshot?.canvasItems.find(
-            (item) => item.id === target.id,
+    pinned: (() => {
+      const snapshot = creationClient(doc.id).snapshot;
+      const item = snapshot?.canvasItems.find((item) => item.id === target.id);
+      const spec = item && itemSpec(snapshot, item);
+      return (
+        snapshot?.references.flatMap((ref) => {
+          if (
+            !ref.active ||
+            ref.binding !== "pinned" ||
+            ref.targetSpecId !== spec?.id
+          )
+            return [];
+          const source = ref.source;
+          const asset = snapshot.assets.find(
+            (asset) => asset.id === source.assetId,
           );
-          const spec = item && itemSpec(snapshot, item);
-          return (
-            snapshot?.references.flatMap((ref) => {
-              if (
-                !ref.active ||
-                ref.binding !== "pinned" ||
-                ref.targetSpecId !== spec?.id
-              )
-                return [];
-              const source = ref.source;
-              const asset = snapshot.assets.find(
-                (asset) => asset.id === source.assetId,
-              );
-              return asset
-                ? [
-                    {
-                      id: asset.id,
-                      name: asset.name,
-                      referenceId: ref.id,
-                      binding: "asset" as const,
-                      kind: asset.kind,
-                      type: asset.metadata.mimeType,
-                      size: asset.metadata.size,
-                      fingerprint: asset.fingerprint,
-                    },
-                  ]
-                : [];
-            }) ?? []
-          );
-        })()
-      : [],
+          return asset
+            ? [
+                {
+                  id: asset.id,
+                  name: asset.name,
+                  referenceId: ref.id,
+                  binding: "asset" as const,
+                  kind: asset.kind,
+                  type: asset.metadata.mimeType,
+                  size: asset.metadata.size,
+                  fingerprint: asset.fingerprint,
+                },
+              ]
+            : [];
+        }) ?? []
+      );
+    })(),
     loading: referenceAssets.loading,
     error: referenceAssets.error,
     load: referenceAssets.load,
@@ -748,13 +702,11 @@ function Workspace() {
         : null;
     },
     prepareAsset: async (asset, signal) => {
-      const bytes = creationEnabled()
-        ? await creationClient(doc.id).blob(asset.id)
-        : await assetBlob(doc.id, asset.id, signal);
+      const bytes = await creationClient(doc.id).blob(asset.id);
       signal.throwIfAborted();
       if (!fingerprintMatches(asset, await fingerprint(bytes)))
         throw new Error("参考素材文件已改变，请重新核对版本。");
-      if (creationEnabled()) {
+      {
         const client = creationClient(doc.id);
         const record = client.snapshot.assets.find(
           (item) => item.id === asset.id,
@@ -765,8 +717,6 @@ function Workspace() {
           ? { text: await client.textContent(record.id) }
           : { src: await client.mediaUrl(record.id, { signal }) };
       }
-      const src = `/api/data/${doc.id}/assets/${asset.id}`;
-      return asset.kind === "text" ? { text: await bytes.text() } : { src };
     },
     onChange: (content, sources) => {
       const current = historyRef.current.present;
@@ -889,7 +839,7 @@ function Workspace() {
   };
 
   const insertLibraryItems = async (items: LibraryItem[]) => {
-    const client = creationEnabled() ? creationClient(doc.id) : null;
+    const client = creationClient(doc.id);
     let placed = 0;
     const issues: string[] = [];
     for (const item of items) {
@@ -902,38 +852,12 @@ function Workspace() {
           item.name,
           item.metadata?.mimeType || blob.type,
         );
-        if (client) {
-          // The library blob must become a canvas-owned asset before a node
-          // can reference it, so the copy survives independently of the library.
-          const ref = await client.importBlob(blob, name, resource.kind);
-          resource.assetId = ref.assetId;
-          resource.src = await client.mediaUrl(ref.assetId);
-        } else {
-          // Legacy projects address assets by id under /api/data, so the bytes
-          // must be uploaded there too — a blob: URL would not survive reload.
-          const assetId = crypto.randomUUID();
-          const stored = await apiRequest<{ asset: { id: string } | null }>(
-            `/data/${doc.id}/assets/${assetId}`,
-            {
-              method: "PUT",
-              headers: {
-                ...headers,
-                "Content-Type": "application/octet-stream",
-                "X-Asset-Name": encodeURIComponent(name),
-              },
-              body: blob,
-            },
-          );
-          const storedId = stored.asset?.id ?? assetId;
-          resource.assetId = storedId;
-          // Legacy canvases persist media inline as a data: URL (see
-          // fileDataUrl); a blob: URL would not survive a reload.
-          resource.src = await fileDataUrl(
-            new File([blob], name, {
-              type: item.metadata?.mimeType || blob.type,
-            }),
-          );
-        }
+        // The library blob must become a canvas-owned asset before a node
+        // can reference it, so the copy survives independently of the library.
+        const ref = await client.importBlob(blob, name, resource.kind);
+        resource.assetId = ref.assetId;
+        resource.src = await client.mediaUrl(ref.assetId);
+
         await importCanvasResource(resource);
         placed += 1;
       } catch (reason) {
@@ -950,9 +874,7 @@ function Workspace() {
         await saveWorkspaceDocument(snapshot);
         saveError.current = "";
         if (historyRef.current.present === snapshot) {
-          const warning = creationEnabled()
-            ? workspaceProjection(snapshot.id).viewError
-            : "";
+          const warning = workspaceProjection(snapshot.id).viewError;
           setSaveStatus(
             warning
               ? `工程已保存；界面状态保存失败：${warning}`
@@ -1176,10 +1098,6 @@ function Workspace() {
   };
 
   const replayHistory = (forward = false) => {
-    if (!creationEnabled()) {
-      setHistory(forward ? redo : undo);
-      return;
-    }
     void (async () => {
       if (!(await persist(historyRef.current.present))) return;
       await creationClient(doc.id).undo(forward);
@@ -1341,7 +1259,7 @@ function Workspace() {
     return () => clearTimeout(timeout);
   }, [doc, ready, switching, projectRenaming, persist]);
   useEffect(() => {
-    if (!ready || !creationEnabled()) return;
+    if (!ready) return;
     const client = creationClient(doc.id),
       projection = workspaceProjection(doc.id);
     let active = true,
@@ -1395,7 +1313,7 @@ function Workspace() {
     };
   }, [doc.id, ready, notify]);
   useEffect(() => {
-    if (!ready || !creationEnabled()) return;
+    if (!ready) return;
     let active = true,
       sequence = 0;
     const refresh = () => {
@@ -2093,9 +2011,7 @@ function Workspace() {
   const exportDocument = async () => {
     try {
       const current = historyRef.current.present;
-      const result = serializeDocument(
-        creationEnabled() ? await portableDocument(current) : current,
-      );
+      const result = serializeDocument(await portableDocument(current));
       if (!result.ok) {
         notify(result.error.message);
         return;
@@ -2204,7 +2120,7 @@ function Workspace() {
               resource,
               expected.subjectSlot,
             );
-            if (creationEnabled()) {
+            {
               const ref = await creationClient(importDocumentId).importBlob(
                 file,
                 file.name,
@@ -2324,25 +2240,6 @@ function Workspace() {
       }),
     [doc.nodes],
   );
-  const selectedSources: ToolSource[] = useMemo(
-    () =>
-      selected
-        .flatMap((id) => {
-          const node = doc.nodes.find((item) => item.id === id);
-          return node ? [node] : [];
-        })
-        .map((node) => ({
-          nodeId: node.id,
-          kind: node.type,
-          title: node.data.title,
-          src: node.data.src,
-          mimeType: node.data.mimeType,
-          width: node.data.media?.width,
-          height: node.data.media?.height,
-          durationSeconds: node.data.media?.durationSeconds,
-        })),
-    [doc.nodes, selected],
-  );
   const openEditor = async (node: CanvasNode, mode: EditorMode = "default") => {
     if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
@@ -2356,7 +2253,6 @@ function Workspace() {
     const projectId = historyRef.current.present.id;
     editorSession.current = null;
     if (
-      creationEnabled() &&
       ["image", "timeline", "stack", "tool", "external"].includes(node.type)
     ) {
       if (
@@ -2390,27 +2286,7 @@ function Workspace() {
     editorSession.current = null;
     editorOrigin.current = null;
   };
-  const applyEditorData = (data: Partial<CanvasNodeData>) => {
-    const origin = editorOrigin.current;
-    const current = historyRef.current.present;
-    const target = current.nodes.find((node) => node.id === origin?.nodeId);
-    if (
-      !origin ||
-      current.id !== origin.documentId ||
-      !target ||
-      target.type !== origin.kind ||
-      target.data.src !== origin.src ||
-      lockedNodeIds(current.nodes).has(target.id)
-    ) {
-      notify("编辑来源已改变、删除或锁定，本次修改未应用。");
-      return false;
-    }
-    command({ type: "update-node", id: target.id, patch: { data } });
-    notify("修改已应用到画布，可以撤销。");
-    return true;
-  };
   const commitEditorData = async (data: Partial<CanvasNodeData>) => {
-    if (!creationEnabled()) return applyEditorData(data);
     const session = editorSession.current;
     if (!session || editorSaving.current)
       throw new Error("编辑会话不可用，请重新打开。");
@@ -2457,76 +2333,59 @@ function Workspace() {
     outputs: readonly LinkedMediaResult[],
     sourceTask?: CanvasToolTask,
   ) => {
-    if (creationEnabled()) {
-      if (editorSaving.current) throw Error("编辑结果正在保存。");
-      editorSaving.current = true;
-      try {
-        await saveQueue.current;
-        const current = historyRef.current.present;
-        if (current.id !== source.documentId)
-          throw Error("项目已切换，结果未提交。");
-        if (!(await persist(current)))
-          throw Error("工程保存失败，结果已保留，请重试。");
-        const client = creationClient(current.id);
-        let publication = mediaPublications.current.get(source);
-        if (!publication) {
-          const item = client.snapshot.canvasItems.find(
-            (i) => i.id === source.nodeId,
-          );
-          const expected = source.src && client.assetForSource(source.src);
-          if (
-            !item ||
-            (source.src &&
-              (!expected ||
-                currentAsset(client.snapshot, item)?.id !== expected.id))
-          )
-            throw Error("来源素材已变化，结果未发布，请重新打开编辑器。");
-          publication = new MediaPublication(
-            client,
-            client.snapshot,
-            source.nodeId,
-          );
-          mediaPublications.current.set(source, publication);
-        }
-        const task = sourceTask;
-        const ids = await publication.publish(outputs, task);
-        const projection = workspaceProjection(current.id);
-        const snapshot = client.snapshot;
-        const next = await projection.read(snapshot);
-        if (historyRef.current.present.id === current.id) {
-          const merged = {
-            ...next,
-            viewport: historyRef.current.present.viewport,
-            settings: historyRef.current.present.settings,
-          };
-          projection.baseline = merged;
-          projection.basis = snapshot;
-          setHistory((h) => ({ ...h, present: merged }));
-          if (ids.length) setSelected(ids);
-        }
-        notify(`已保存 ${ids.length || outputs.length} 个编辑结果到工程。`);
-        return true;
-      } finally {
-        editorSaving.current = false;
-        const client = creationClient(source.documentId);
-        if (client.snapshot) client.install(client.snapshot);
+    if (editorSaving.current) throw Error("编辑结果正在保存。");
+    editorSaving.current = true;
+    try {
+      await saveQueue.current;
+      const current = historyRef.current.present;
+      if (current.id !== source.documentId)
+        throw Error("项目已切换，结果未提交。");
+      if (!(await persist(current)))
+        throw Error("工程保存失败，结果已保留，请重试。");
+      const client = creationClient(current.id);
+      let publication = mediaPublications.current.get(source);
+      if (!publication) {
+        const item = client.snapshot.canvasItems.find(
+          (i) => i.id === source.nodeId,
+        );
+        const expected = source.src && client.assetForSource(source.src);
+        if (
+          !item ||
+          (source.src &&
+            (!expected ||
+              currentAsset(client.snapshot, item)?.id !== expected.id))
+        )
+          throw Error("来源素材已变化，结果未发布，请重新打开编辑器。");
+        publication = new MediaPublication(
+          client,
+          client.snapshot,
+          source.nodeId,
+        );
+        mediaPublications.current.set(source, publication);
       }
+      const task = sourceTask;
+      const ids = await publication.publish(outputs, task);
+      const projection = workspaceProjection(current.id);
+      const snapshot = client.snapshot;
+      const next = await projection.read(snapshot);
+      if (historyRef.current.present.id === current.id) {
+        const merged = {
+          ...next,
+          viewport: historyRef.current.present.viewport,
+          settings: historyRef.current.present.settings,
+        };
+        projection.baseline = merged;
+        projection.basis = snapshot;
+        setHistory((h) => ({ ...h, present: merged }));
+        if (ids.length) setSelected(ids);
+      }
+      notify(`已保存 ${ids.length || outputs.length} 个编辑结果到工程。`);
+      return true;
+    } finally {
+      editorSaving.current = false;
+      const client = creationClient(source.documentId);
+      if (client.snapshot) client.install(client.snapshot);
     }
-    const result = appendLinkedMediaResults(
-      historyRef.current.present,
-      source,
-      outputs,
-      sourceTask,
-    );
-    if (result.error) {
-      notify(result.error);
-      return false;
-    }
-    if (!result.ids.length) return false;
-    change(() => result.document);
-    setSelected(result.ids);
-    notify(`已加入 ${result.ids.length} 个真实素材，并连接来源节点。`);
-    return true;
   };
   const editorOutputs = (
     outputs: readonly LinkedMediaResult[],
@@ -2699,390 +2558,94 @@ function Workspace() {
     );
   const revealResults = (ids: readonly string[]) =>
     setArrivingNodes((current) => new Set([...current, ...ids]));
-  const mediaOutput = async (
-    result: BackendResult,
-    signal?: AbortSignal,
-  ): Promise<LinkedMediaResult> => {
-    const resource = await readEditorResource(result.file, signal);
-    return {
-      kind: result.kind,
-      assetId: result.assetId,
-      byteSize: result.file.size,
-      src: resource.src!,
-      mimeType: resource.mimeType || result.file.type,
-      title: resource.title,
-      media: {
-        ...result.media,
-        ...(resource.width ? { width: resource.width } : {}),
-        ...(resource.height ? { height: resource.height } : {}),
-        ...(resource.durationSeconds
-          ? { durationSeconds: resource.durationSeconds }
-          : {}),
-      },
-    };
-  };
   /** Pull finished results this page did not place, e.g. the assistant's. */
-  const syncServiceResults = async (announce = false) => {
+  const syncServiceResults = async () => {
     setJobs(await readJobs());
-    if (creationEnabled()) {
+    {
       const snapshot = await creationClient(doc.id).refresh();
       return snapshot.jobs.filter(
         (job) => job.status === "queued" || job.status === "running",
       ).length;
     }
-    const documentId = doc.id;
-    if (
-      !mounted.current ||
-      !backendCatalog.connected ||
-      historyRef.current.present.id !== documentId
-    )
-      return 0;
-    if (syncing.current.has(documentId)) return 1;
-    syncing.current.add(documentId);
-    const projectId = backendProjectId(documentId);
-    try {
-      // Read persisted ownership before polling: a completed task may predate this mount.
-      const allJobs = await readJobs();
-      if (historyRef.current.present.id !== documentId) return 0;
-      const awaitingTaskIdentity = () =>
-        [...serviceRuns.current.values()].some(
-          (run) => run.documentId === documentId && !run.taskId,
-        );
-      // Acceptance can finish on the service before its response reaches this page.
-      // Wait for that response to associate the task with its original node.
-      if (awaitingTaskIdentity()) return 1;
-      const running = new Set(
-        [...serviceRuns.current.values()].flatMap((run) =>
-          run.documentId === documentId && run.taskId ? [run.taskId] : [],
-        ),
-      );
-      const { results, active, tasks } = await unsyncedResults(
-        projectId,
-        running,
-        undefined,
-        new Set(allJobs.flatMap((job) => (job.taskId ? [job.taskId] : []))),
-      );
-      const received: { taskId: string; output: ServiceResult }[] = [];
-      const isClaimed = (taskId: string) =>
-        isHandled(projectId, taskId) ||
-        [...serviceRuns.current.values()].some(
-          (run) => run.documentId === documentId && run.taskId === taskId,
-        );
-      for (const item of results) {
-        if (isClaimed(item.taskId)) continue;
-        received.push({
-          taskId: item.taskId,
-          output:
-            item.kind === "text"
-              ? {
-                  kind: "text",
-                  title: item.title,
-                  text: item.text,
-                  assetId: item.assetId,
-                }
-              : await mediaOutput(item.result),
-        });
-      }
-      const currentJobs = await readJobs();
-      if (!mounted.current || historyRef.current.present.id !== documentId)
-        return active;
-      if (awaitingTaskIdentity()) return Math.max(active, 1);
-      // A live task can finish during media decoding; it alone owns that completion.
-      const pending = received.filter((item) => !isClaimed(item.taskId));
-      setJobs((current) =>
-        reconcileGenerationJobs(
-          mergeGenerationJobs(currentJobs, current),
-          tasks,
-        ),
-      );
-      if (pending.length) {
-        const next = applyRecoveredGenerationResults(
-          historyRef.current.present,
-          pending,
-          currentJobs,
-        );
-        change(() => next.document);
-        revealResults(next.ids);
-        setJobs((current) => {
-          const updated = mergeGenerationJobs(currentJobs, current);
-          pending.forEach((item, index) => {
-            const existing = updated.findIndex(
-              (job) => job.taskId === item.taskId,
-            );
-            const patch: Job = {
-              id: existing >= 0 ? updated[existing]!.id : crypto.randomUUID(),
-              nodeId:
-                existing >= 0
-                  ? updated[existing]!.nodeId
-                  : next.placements[index]!.ids[0]!,
-              title: item.output.title,
-              taskId: item.taskId,
-              status: "succeeded",
-              time: jobTime(),
-              outputs: [item.output],
-              message: next.placements[index]!.error ?? "已更新到画布",
-            };
-            if (existing >= 0)
-              updated[existing] = { ...updated[existing]!, ...patch };
-            else updated.unshift(patch);
-          });
-          return updated;
-        });
-        for (const item of pending) markHandled(projectId, item.taskId);
-        const unplaced = next.placements.filter((item) => item.error).length;
-        notify(
-          unplaced
-            ? `${pending.length - unplaced} 个结果已更新到画布，${unplaced} 个结果因来源变化保留在生成历史。`
-            : `已从本地服务同步 ${pending.length} 个结果到画布。`,
-        );
-      } else if (announce)
-        notify(
-          active ? `还有 ${active} 个任务正在生成。` : "没有需要同步的新结果。",
-        );
-      return active;
-    } catch (error) {
-      if (announce) notify(errorMessage(error));
-      return 0;
-    } finally {
-      syncing.current.delete(documentId);
-    }
-  };
-  /** The assistant's generations finish after its reply; keep syncing until they do. */
-  const followServiceTasks = async () => {
-    if (creationEnabled()) return; // The recoverable project subscription owns updates.
-    const documentId = doc.id;
-    if (
-      !mounted.current ||
-      historyRef.current.present.id !== documentId ||
-      following.current.has(documentId)
-    )
-      return;
-    following.current.add(documentId);
-    try {
-      for (;;) {
-        if (
-          !mounted.current ||
-          historyRef.current.present.id !== documentId ||
-          !(await syncServiceResults())
-        )
-          return;
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-    } finally {
-      following.current.delete(documentId);
-    }
   };
   const runServiceTask = async (
     request: GenerationRequest,
     origin: ResultSource,
-    title: string,
+    _title: string,
     resultMode: GenerationResultMode = "replace",
   ) => {
-    if (creationEnabled()) {
-      const id = crypto.randomUUID();
-      const run: ServiceRun = {
-        controller: new AbortController(),
-        unified: true,
-        documentId: origin.documentId,
-        nodeId: origin.nodeId,
-        phase: "preparing",
-        startedAt: Date.now(),
-        expectedMs: expectedDuration(
-          `generate:${request.kind}:${request.config.id}`,
-          request.kind,
-        ),
-      };
-      serviceRuns.current.set(id, run);
-      refreshRunning();
-      try {
-        const current = historyRef.current.present;
-        const configured = {
-          ...current,
-          nodes: current.nodes.map((node) =>
-            node.id !== origin.nodeId
-              ? node
-              : {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    prompt: request.prompt,
-                    ...(request.kind === "text"
-                      ? {
-                          agentSettings: {
-                            modelConfigId: request.config.id,
-                            thinking: request.thinking ?? "auto",
-                            maxTokens: request.maxTokens ?? 8192,
-                          },
-                        }
-                      : {
-                          settings: {
-                            ...getNodeGenerationSettings(node),
-                            modelConfigId: request.config.id,
-                            prompt: request.prompt,
-                          },
-                        }),
-                  },
-                },
-          ),
-        };
-        change(() => configured);
-        if (!(await persist(configured))) return;
-        run.controller.signal.throwIfAborted();
-        run.phase = "submitting";
-        refreshRunning();
-        const receipt = await creationClient(origin.documentId).submit(
-          origin.nodeId,
-          resultMode === "additional" ? "candidate_only" : "if_current",
-          request.batchId,
-          run.controller.signal,
-        );
-        if (run.controller.signal.aborted) {
-          // Once sent, await the original receipt before cancelling its jobs.
-          // Never abort delivery and mint a replacement command.
-          for (const jobId of receipt.jobIds)
-            await creationClient(origin.documentId).control(jobId, "cancel");
-        } else if (receipt.status === "accepted")
-          notify("生成任务已提交，结果将保存到当前工程。");
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError"))
-          notify(errorMessage(error));
-      } finally {
-        serviceRuns.current.delete(id);
-        refreshRunning();
-      }
-      return;
-    }
     const id = crypto.randomUUID();
-    const durationKey = `generate:${request.kind}:${request.config.id}`;
     const run: ServiceRun = {
       controller: new AbortController(),
+      unified: true,
       documentId: origin.documentId,
       nodeId: origin.nodeId,
       phase: "preparing",
       startedAt: Date.now(),
-      expectedMs: expectedDuration(durationKey, request.kind),
+      expectedMs: expectedDuration(
+        `generate:${request.kind}:${request.config.id}`,
+        request.kind,
+      ),
     };
-    const { signal } = run.controller;
     serviceRuns.current.set(id, run);
     refreshRunning();
-    setJobs((current) => [
-      {
-        id,
-        nodeId: origin.nodeId,
-        resultSource: origin,
-        resultMode,
-        title,
-        status: "running",
-        time: jobTime(),
-        message: GENERATION_LABELS[run.phase],
-        request:
-          request.kind === "text"
-            ? undefined
-            : {
-                kind: request.kind,
-                title: request.title,
-                prompt: request.prompt,
-                settings: getNodeGenerationSettings(
-                  historyRef.current.present.nodes.find(
-                    (node) => node.id === origin.nodeId,
-                  )!,
-                ),
-              },
-      },
-      ...current,
-    ]);
-    const setPhase = (phase: GenerationPhase) => {
-      if (signal.aborted) return;
-      run.phase = phase;
-      refreshRunning();
-      updateJob(id, { message: GENERATION_LABELS[phase] });
-    };
     try {
-      const submitted = await submitGeneration(request, signal);
-      Object.assign(run, submitted);
-      updateJob(id, { taskId: submitted.taskId });
-      if (signal.aborted) {
-        await cancelGeneration(submitted.projectId, submitted.taskId).catch(
-          () => {},
-        );
-        throw signal.reason;
-      }
-      setPhase("submitting");
-      const progress = (task: BackendTask) => {
-        const phase = generationPhase(task);
-        if (phase) setPhase(phase);
-        else if (task.status === "succeeded") setPhase("finishing");
-        setJobs((current) => reconcileGenerationJobs(current, [task]));
+      const current = historyRef.current.present;
+      const configured = {
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id !== origin.nodeId
+            ? node
+            : {
+                ...node,
+                data: {
+                  ...node.data,
+                  prompt: request.prompt,
+                  ...(request.kind === "text"
+                    ? {
+                        agentSettings: {
+                          modelConfigId: request.config.id,
+                          thinking: request.thinking ?? "auto",
+                          maxTokens: request.maxTokens ?? 8192,
+                        },
+                      }
+                    : {
+                        settings: {
+                          ...getNodeGenerationSettings(node),
+                          modelConfigId: request.config.id,
+                          prompt: request.prompt,
+                        },
+                      }),
+                },
+              },
+        ),
       };
-      const output: ServiceResult =
-        request.kind === "text"
-          ? await waitForTextResult(
-              submitted.projectId,
-              submitted.taskId,
-              signal,
-              progress,
-            )
-          : await mediaOutput(
-              await waitForResult(
-                submitted.projectId,
-                submitted.taskId,
-                signal,
-                progress,
-              ),
-              signal,
-            );
-      setPhase("finishing");
-      recordDuration(durationKey, Date.now() - run.startedAt!);
-      updateJob(id, {
-        status: "succeeded",
-        outputs: [output],
-        message: "结果已保存到历史",
-      });
-      const appended =
-        output.kind === "text"
-          ? applyTextGenerationResult(
-              historyRef.current.present,
-              origin,
-              output,
-            )
-          : applyGenerationResults(
-              historyRef.current.present,
-              origin,
-              [output],
-              resultMode,
-            );
-      if (appended.error || !appended.ids.length) {
-        const sameDocument =
-          historyRef.current.present.id === origin.documentId;
-        const message = `${appended.error ?? "结果未写入画布。"}${sameDocument ? "可在生成历史中恢复结果。" : "回到原画布后可同步本地服务结果。"}`;
-        updateJob(id, { status: "succeeded", message });
-        if (sameDocument) markHandled(submitted.projectId, submitted.taskId);
-        notify(message);
-        return;
-      }
-      change(() => appended.document);
-      revealResults(appended.ids);
-      markHandled(submitted.projectId, submitted.taskId);
-      updateJob(id, { status: "succeeded", message: "已加入画布" });
-      notify(
-        resultMode === "replace"
-          ? "生成完成，结果已更新到当前节点。"
-          : "批量生成完成，额外结果已加入画布。",
+      change(() => configured);
+      if (!(await persist(configured))) return;
+      run.controller.signal.throwIfAborted();
+      run.phase = "submitting";
+      refreshRunning();
+      const receipt = await creationClient(origin.documentId).submit(
+        origin.nodeId,
+        resultMode === "additional" ? "candidate_only" : "if_current",
+        request.batchId,
+        run.controller.signal,
       );
+      if (run.controller.signal.aborted) {
+        // Once sent, await the original receipt before cancelling its jobs.
+        // Never abort delivery and mint a replacement command.
+        for (const jobId of receipt.jobIds)
+          await creationClient(origin.documentId).control(jobId, "cancel");
+      } else if (receipt.status === "accepted")
+        notify("生成任务已提交，结果将保存到当前工程。");
     } catch (error) {
-      if (signal.aborted)
-        updateJob(id, { status: "cancelled", message: "已取消" });
-      else {
-        const message = errorMessage(error);
-        updateJob(id, { status: "failed", message });
-        notify(message);
-      }
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        notify(errorMessage(error));
     } finally {
       serviceRuns.current.delete(id);
       refreshRunning();
-      if (historyRef.current.present.id === origin.documentId)
-        void followServiceTasks();
     }
+    return;
   };
   /** Submit once; the service ledger owns progress/history in both modes. */
   const runToolTask = async (origin: ResultSource, task: CanvasToolTask) => {
@@ -3095,7 +2658,7 @@ function Workspace() {
       )
     )
       return;
-    if (creationEnabled()) {
+    {
       const pending = pendingToolDelivery(present.id, origin.nodeId);
       if (pending) {
         try {
@@ -3324,42 +2887,12 @@ function Workspace() {
         job.toolTask &&
         !placingTools.current.has(placementKey)
       ) {
-        if (creationEnabled()) {
-          if (job.toolTask.placement === "pending") {
-            placingTools.current.add(placementKey);
-            void acknowledgeToolPlacement(doc.id, job.taskId!, "unplaced")
-              .then(async () => {
-                await creationClient(doc.id).refresh();
-                setJobs(await readJobs());
-              })
-              .catch((error) => notify(errorMessage(error)))
-              .finally(() => placingTools.current.delete(placementKey));
-          }
-          continue;
-        }
-        const next = removePendingResult(
-          historyRef.current.present,
-          job.targetNodeId,
-          job.targetTitle,
-          job.targetKind,
-        );
-        if (next !== historyRef.current.present) {
+        if (job.toolTask.placement === "pending") {
           placingTools.current.add(placementKey);
-          toolPlacementQueue.current = toolPlacementQueue.current
-            .catch(() => {})
+          void acknowledgeToolPlacement(doc.id, job.taskId!, "unplaced")
             .then(async () => {
-              if (!mounted.current || historyRef.current.present.id !== doc.id)
-                return;
-              const cleaned = removePendingResult(
-                historyRef.current.present,
-                job.targetNodeId!,
-                job.targetTitle,
-                job.targetKind,
-              );
-              if (cleaned !== historyRef.current.present) {
-                change(() => cleaned);
-                await persist(cleaned);
-              }
+              await creationClient(doc.id).refresh();
+              setJobs(await readJobs());
             })
             .catch((error) => notify(errorMessage(error)))
             .finally(() => placingTools.current.delete(placementKey));
@@ -3383,7 +2916,7 @@ function Workspace() {
         const origin = job.resultSource!;
         const current = () => historyRef.current.present;
         if (!mounted.current || current().id !== origin.documentId) return;
-        if (creationEnabled()) {
+        {
           // The service validates frozen sources/locks and publishes the owned
           // outputs atomically. React Flow only observes the resulting snapshot.
           if (!(await persist(current()))) return;
@@ -3396,110 +2929,6 @@ function Workspace() {
           setJobs(await readJobs());
           return;
         }
-        // Stable output IDs and the server acknowledgement cover a lost reply,
-        // a reload after saving, and outputs intentionally hidden in C04.
-        const outputs = job.outputs!.flatMap((output) =>
-          output.kind === "text" ? [] : [output],
-        );
-        const ids = job.toolTask!.outputIds;
-        const hiddenPlaced = new Set<string>();
-        if (creationEnabled()) {
-          const client = creationClient(origin.documentId);
-          const visible = new Set(current().nodes.map((node) => node.id));
-          ids.forEach((id, index) => {
-            if (visible.has(id)) return;
-            const item = client.snapshot.canvasItems.find(
-              (item) => item.id === id,
-            );
-            const asset =
-              outputs[index] && client.assetForSource(outputs[index]!.src);
-            if (
-              item?.binding.role === "material" &&
-              item.binding.objectRef.assetId === asset?.id
-            )
-              hiddenPlaced.add(id);
-          });
-        }
-        if (toolResultsPlaced(current(), outputs, ids, hiddenPlaced)) {
-          if (await persist(current()))
-            await acknowledgeToolPlacement(
-              origin.documentId,
-              job.taskId!,
-              "placed",
-            );
-          return;
-        }
-        const unplaced = async () => {
-          const next = job.targetNodeId
-            ? removePendingResult(
-                current(),
-                job.targetNodeId,
-                job.targetTitle,
-                job.targetKind,
-              )
-            : current();
-          if (next !== current()) change(() => next);
-          if (await persist(next))
-            await acknowledgeToolPlacement(
-              origin.documentId,
-              job.taskId!,
-              "unplaced",
-            );
-        };
-        const source = current().nodes.find(
-          (node) => node.id === origin.nodeId,
-        );
-        let sourceMatches = false;
-        if (
-          source?.data.src &&
-          source.type === origin.kind &&
-          job.toolTask!.sourceFingerprint
-        ) {
-          const capturedSrc = source.data.src;
-          const actual = await fingerprint(
-            await (await fetch(capturedSrc)).blob(),
-          );
-          sourceMatches =
-            actual === job.toolTask!.sourceFingerprint &&
-            current().id === origin.documentId &&
-            current().nodes.find((node) => node.id === origin.nodeId)?.data
-              .src === capturedSrc;
-        }
-        if (!mounted.current || current().id !== origin.documentId) return;
-        if (!sourceMatches) {
-          await unplaced();
-          return;
-        }
-        const result = placeToolResults(
-          current(),
-          { ...origin, src: source!.data.src },
-          outputs,
-          job.tool,
-          ids,
-          job.targetNodeId
-            ? {
-                id: job.targetNodeId,
-                title: job.targetTitle,
-                kind: job.targetKind,
-              }
-            : undefined,
-          hiddenPlaced,
-        );
-        if (result.error) {
-          await unplaced();
-          return;
-        }
-        if (result.ids.length) {
-          change(() => result.document);
-          setSelected(result.ids);
-          revealResults(result.ids);
-        }
-        if (await persist(result.document))
-          await acknowledgeToolPlacement(
-            origin.documentId,
-            job.taskId!,
-            "placed",
-          );
       };
       toolPlacementQueue.current = toolPlacementQueue.current
         .catch(() => {})
@@ -3622,7 +3051,7 @@ function Workspace() {
         run.documentId === doc.id
       )
         run.controller.abort();
-    if (creationEnabled()) {
+    {
       for (const run of serviceRuns.current.values())
         if (run.unified && run.documentId === doc.id && run.nodeId === nodeId)
           run.controller.abort();
@@ -3637,23 +3066,7 @@ function Workspace() {
             .catch((error) => notify(errorMessage(error)));
       return;
     }
-    for (const run of serviceRuns.current.values()) {
-      if (run.nodeId !== nodeId || run.documentId !== doc.id) continue;
-      run.controller.abort();
-      if (run.projectId && run.taskId)
-        void (
-          run.tool
-            ? cancelToolTask(run.projectId, run.taskId)
-            : cancelGeneration(run.projectId, run.taskId)
-        ).catch((error) => notify(errorMessage(error)));
-    }
-    refreshRunning();
   };
-  useEffect(() => {
-    // Results that finished while this canvas was closed join it on opening.
-    if (ready && backendCatalog.connected) void followServiceTasks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.id, ready, backendCatalog.connected]);
   const prepareGeneration = (nodeId: string) => {
     const current = historyRef.current.present;
     const node = current.nodes.find((node) => node.id === nodeId);
@@ -3758,31 +3171,11 @@ function Workspace() {
         });
       }
       if (controller.signal.aborted) return;
-      if (creationEnabled()) {
+      {
         const applied = await addLinkedOutputs(origin, outputs, binding.task);
         if (applied && actionSessionRef.current?.token === binding.actionToken)
           setActionSession(null);
         return;
-      }
-      const placed = appendLinkedMediaResults(
-        historyRef.current.present,
-        origin,
-        outputs,
-      );
-      if (placed.error) notify(placed.error);
-      else if (placed.ids.length) {
-        change(() => placed.document);
-        revealResults(placed.ids);
-        // A late file decode may finish after another tool or node was selected.
-        // Keep its frozen output provenance without closing the newer workflow.
-        if (
-          actionSessionRef.current?.token === binding.actionToken &&
-          selectedRef.current.length === 1 &&
-          selectedRef.current[0] === binding.nodeId
-        ) {
-          setActionSession(null);
-          setSelected(placed.ids);
-        }
       }
     } catch (error) {
       if (!controller.signal.aborted)
@@ -4723,7 +4116,7 @@ function Workspace() {
             <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
             {saveStatus}
           </span>
-          {creationEnabled() && saveStatus.startsWith("保存失败") && (
+          {saveStatus.startsWith("保存失败") && (
             <div className="cw-save-conflict-actions">
               <button onClick={() => void exportDocument()}>
                 导出未保存副本
@@ -4753,15 +4146,13 @@ function Workspace() {
         <div className="cw-top-actions">
           <IconButton
             name="search"
-            label={creationEnabled() ? "资产列表" : "搜索节点"}
+            label={"资产列表"}
             tooltipSide="bottom"
             active={panel === "search"}
             onClick={() => {
-              if (creationEnabled())
-                void persist(historyRef.current.present).then((saved) => {
-                  if (saved) togglePanel("search");
-                });
-              else togglePanel("search");
+              void persist(historyRef.current.present).then((saved) => {
+                if (saved) togglePanel("search");
+              });
             }}
           />
           <IconButton
@@ -4891,11 +4282,7 @@ function Workspace() {
             label="撤销"
             shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
             tooltipDelay={0}
-            disabled={
-              creationEnabled()
-                ? !businessHistory.undo
-                : !history.past.length && !history.transaction
-            }
+            disabled={!businessHistory.undo}
             onClick={() => replayHistory()}
           />
           <IconButton
@@ -4905,9 +4292,7 @@ function Workspace() {
               navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
             }
             tooltipDelay={0}
-            disabled={
-              creationEnabled() ? !businessHistory.redo : !history.future.length
-            }
+            disabled={!businessHistory.redo}
             onClick={() => replayHistory(true)}
           />
         </div>
@@ -5483,16 +4868,8 @@ function Workspace() {
           y={menu.y}
           mode={menu.mode ?? "context"}
           canPaste={Boolean(clipboard.current?.nodes.length)}
-          canUndo={
-            creationEnabled()
-              ? businessHistory.undo
-              : Boolean(history.past.length || history.transaction)
-          }
-          canRedo={
-            creationEnabled()
-              ? businessHistory.redo
-              : Boolean(history.future.length)
-          }
+          canUndo={businessHistory.undo}
+          canRedo={businessHistory.redo}
           onCreate={(kind) => addNode(kind, menu.world)}
           onAssets={() => {
             referenceTarget.current = null;
@@ -5665,7 +5042,7 @@ function Workspace() {
           ),
         )}
 
-      {panel === "search" && creationEnabled() && (
+      {panel === "search" && (
         <CreationAssetList
           key={`assets:${doc.id}`}
           projectId={doc.id}
@@ -5695,7 +5072,7 @@ function Workspace() {
           }}
         />
       )}
-      {panel && !(panel === "search" && creationEnabled()) && (
+      {panel && !(panel === "search") && (
         <aside
           className={`cw-side-panel ${panel === "assets" ? "from-left" : ""}`}
           aria-label={
@@ -5725,15 +5102,12 @@ function Workspace() {
               }}
             />
           </div>
-          {panel === "search" && (
-            <CanvasSearchPanel nodes={doc.nodes} onSelect={selectAndFocus} />
-          )}
           {panel === "assets" && (
             <>
               <p className="cw-panel-note">
                 {referenceTarget.current
                   ? "选择素材作为参考，或上传本地文件。"
-                  : "素材保存在当前浏览器，可拖入图片、视频、音频。"}
+                  : "素材保存在当前工程，可拖入图片、视频、音频。"}
               </p>
               <button
                 className="cw-wide-button"
@@ -5832,64 +5206,54 @@ function Workspace() {
             <GenerationHistoryPanel
               key={doc.id}
               jobs={jobs}
-              authoritative={creationEnabled()}
-              onRestoreConfiguration={
-                creationEnabled()
-                  ? async (entry, referencePolicy) => {
-                      try {
-                        if (!(await persist(historyRef.current.present)))
-                          return;
-                        const client = creationClient(doc.id),
-                          job = client.snapshot.jobs.find(
-                            (job) => job.id === entry.taskId,
-                          );
-                        if (!job) throw new Error("原任务不存在。");
-                        const spec = client.snapshot.generationSpecs.find(
-                          (spec) => spec.id === job.inputSnapshot.spec.id,
-                        )!;
-                        const history = await apiRequest<{
-                          jobs: {
-                            job: { id: string };
-                            configurationCommandId: string | null;
-                          }[];
-                        }>(
-                          `/creation/projects/${doc.id}/specs/${spec.id}/versions`,
-                        );
-                        const commandId = history.jobs.find(
-                          (item) => item.job.id === job.id,
-                        )?.configurationCommandId;
-                        if (!commandId)
-                          throw new Error("未找到原任务的配置历史。");
-                        await client.command(
-                          "generationSpec.restore",
-                          { specId: spec.id, commandId, referencePolicy },
-                          [
-                            {
-                              objectType: "generation_spec",
-                              id: spec.id,
-                              revision: spec.revision,
-                            },
-                            ...client.snapshot.references
-                              .filter((ref) => ref.targetSpecId === spec.id)
-                              .map((ref) => ({
-                                objectType: "reference" as const,
-                                id: ref.id,
-                                revision: ref.revision,
-                              })),
-                          ],
-                        );
-                        notify(
-                          "生成配置已恢复，当前结果保留；未开始新的生成任务。",
-                        );
-                      } catch (error) {
-                        notify(errorMessage(error));
-                      }
-                    }
-                  : undefined
-              }
+              authoritative={true}
+              onRestoreConfiguration={async (entry, referencePolicy) => {
+                try {
+                  if (!(await persist(historyRef.current.present))) return;
+                  const client = creationClient(doc.id),
+                    job = client.snapshot.jobs.find(
+                      (job) => job.id === entry.taskId,
+                    );
+                  if (!job) throw new Error("原任务不存在。");
+                  const spec = client.snapshot.generationSpecs.find(
+                    (spec) => spec.id === job.inputSnapshot.spec.id,
+                  )!;
+                  const history = await apiRequest<{
+                    jobs: {
+                      job: { id: string };
+                      configurationCommandId: string | null;
+                    }[];
+                  }>(`/creation/projects/${doc.id}/specs/${spec.id}/versions`);
+                  const commandId = history.jobs.find(
+                    (item) => item.job.id === job.id,
+                  )?.configurationCommandId;
+                  if (!commandId) throw new Error("未找到原任务的配置历史。");
+                  await client.command(
+                    "generationSpec.restore",
+                    { specId: spec.id, commandId, referencePolicy },
+                    [
+                      {
+                        objectType: "generation_spec",
+                        id: spec.id,
+                        revision: spec.revision,
+                      },
+                      ...client.snapshot.references
+                        .filter((ref) => ref.targetSpecId === spec.id)
+                        .map((ref) => ({
+                          objectType: "reference" as const,
+                          id: ref.id,
+                          revision: ref.revision,
+                        })),
+                    ],
+                  );
+                  notify("生成配置已恢复，当前结果保留；未开始新的生成任务。");
+                } catch (error) {
+                  notify(errorMessage(error));
+                }
+              }}
               onSync={
                 backendCatalog.connected
-                  ? () => void syncServiceResults(true)
+                  ? () => void syncServiceResults()
                   : undefined
               }
               onTaskAction={
@@ -5903,33 +5267,13 @@ function Workspace() {
                           setJobs(await readJobs());
                           return;
                         }
-                        if (creationEnabled()) {
+                        {
                           await creationClient(doc.id).control(
                             job.taskId,
                             action,
                           );
                           return;
                         }
-                        const projectId = await openBackendProject(
-                          doc.id,
-                          doc.title,
-                        );
-                        let message = "已请求取消云端任务。";
-                        if (action === "recover") {
-                          const receipt = await recoverGeneration(
-                            projectId,
-                            job.taskId,
-                          );
-                          message = ["queued", "running", "succeeded"].includes(
-                            receipt.status,
-                          )
-                            ? "已恢复查询原任务。"
-                            : receipt.error ||
-                              "原任务仍需核对，请查看生成历史。";
-                        } else await cancelGeneration(projectId, job.taskId);
-                        await syncServiceResults();
-                        void followServiceTasks();
-                        notify(message);
                       } catch (error) {
                         notify(errorMessage(error));
                       }
@@ -5937,72 +5281,64 @@ function Workspace() {
                   : undefined
               }
               onLocate={(id) => {
-                if (creationEnabled()) {
-                  void (async () => {
-                    if (!(await persist(historyRef.current.present))) return;
-                    const client = creationClient(doc.id);
-                    await client.refresh();
-                    const item = client.snapshot.canvasItems.find(
-                      (item) => item.id === id,
-                    );
-                    if (!item) {
-                      notify("该配置尚未显示，可从资产列表显示其当前结果。");
-                      return;
-                    }
-                    if (!visibleItems(client.snapshot).has(id)) {
-                      const versions = [objectVersion("canvas_item", item)];
-                      let parentId = item.parentId;
-                      while (parentId) {
-                        const parent = client.snapshot.canvasItems.find(
-                          (item) => item.id === parentId,
-                        )!;
-                        versions.push(objectVersion("canvas_item", parent));
-                        parentId = parent.parentId;
-                      }
-                      await client.command("canvas.show", { item }, versions);
-                    }
-                    const projection = workspaceProjection(doc.id),
-                      snapshot = client.snapshot,
-                      next = await projection.read(snapshot);
-                    const current = historyRef.current.present;
-                    if (
-                      current.id !== doc.id ||
-                      client.snapshot.eventCursor !== snapshot.eventCursor ||
-                      JSON.stringify([current.nodes, current.edges]) !==
-                        JSON.stringify([
-                          projection.baseline.nodes,
-                          projection.baseline.edges,
-                        ])
-                    )
-                      return;
-                    projection.baseline = next;
-                    projection.basis = snapshot;
-                    setHistory((history) => ({ ...history, present: next }));
-                    setSelected([id]);
-                    requestAnimationFrame(
-                      () =>
-                        void flow.fitView({
-                          nodes: [{ id }],
-                          padding: 0.7,
-                          maxZoom: 1,
-                          duration: 200,
-                        }),
-                    );
-                  })().catch((error) => notify(errorMessage(error)));
-                  return;
-                }
-                const node = doc.nodes.find((n) => n.id === id);
-                if (node) selectAndFocus(node);
-                else
-                  notify(
-                    "来源节点已删除，可以从历史重新放置结果或恢复请求节点。",
+                void (async () => {
+                  if (!(await persist(historyRef.current.present))) return;
+                  const client = creationClient(doc.id);
+                  await client.refresh();
+                  const item = client.snapshot.canvasItems.find(
+                    (item) => item.id === id,
                   );
+                  if (!item) {
+                    notify("该配置尚未显示，可从资产列表显示其当前结果。");
+                    return;
+                  }
+                  if (!visibleItems(client.snapshot).has(id)) {
+                    const versions = [objectVersion("canvas_item", item)];
+                    let parentId = item.parentId;
+                    while (parentId) {
+                      const parent = client.snapshot.canvasItems.find(
+                        (item) => item.id === parentId,
+                      )!;
+                      versions.push(objectVersion("canvas_item", parent));
+                      parentId = parent.parentId;
+                    }
+                    await client.command("canvas.show", { item }, versions);
+                  }
+                  const projection = workspaceProjection(doc.id),
+                    snapshot = client.snapshot,
+                    next = await projection.read(snapshot);
+                  const current = historyRef.current.present;
+                  if (
+                    current.id !== doc.id ||
+                    client.snapshot.eventCursor !== snapshot.eventCursor ||
+                    JSON.stringify([current.nodes, current.edges]) !==
+                      JSON.stringify([
+                        projection.baseline.nodes,
+                        projection.baseline.edges,
+                      ])
+                  )
+                    return;
+                  projection.baseline = next;
+                  projection.basis = snapshot;
+                  setHistory((history) => ({ ...history, present: next }));
+                  setSelected([id]);
+                  requestAnimationFrame(
+                    () =>
+                      void flow.fitView({
+                        nodes: [{ id }],
+                        padding: 0.7,
+                        maxZoom: 1,
+                        duration: 200,
+                      }),
+                  );
+                })().catch((error) => notify(errorMessage(error)));
+                return;
               }}
               onRestore={(entries, requests = false) => {
                 void (async () => {
                   const toolEntries = entries.filter((entry) => entry.tool);
                   if (toolEntries.length && !requests) {
-                    if (creationEnabled()) {
+                    {
                       if (!(await persist(historyRef.current.present))) return;
                       const adoptedIds: string[] = [];
                       for (const entry of toolEntries)
@@ -6023,32 +5359,11 @@ function Workspace() {
                       setSelected(adoptedIds);
                       revealResults(adoptedIds);
                       setJobs(await readJobs());
-                    } else {
-                      const outputs = toolEntries.flatMap(
-                        (job) => job.outputs ?? [],
-                      );
-                      if (!outputs.length) return;
-                      const next = appendServiceResults(
-                        historyRef.current.present,
-                        outputs,
-                      );
-                      change(() => next.document);
-                      if (!(await persist(next.document))) return;
-                      for (const entry of toolEntries)
-                        if (entry.taskId)
-                          await acknowledgeToolPlacement(
-                            doc.id,
-                            entry.taskId,
-                            "placed",
-                          );
-                      setSelected(next.ids);
-                      revealResults(next.ids);
-                      setJobs(await readJobs());
                     }
                     entries = entries.filter((entry) => !entry.tool);
                     if (!entries.length) return;
                   }
-                  if (creationEnabled()) {
+                  {
                     void (async () => {
                       if (requests) {
                         notify("请使用“恢复生成配置”，该操作不改变当前结果。");
@@ -6100,50 +5415,6 @@ function Workspace() {
                     })().catch((error) => notify(errorMessage(error)));
                     return;
                   }
-                  if (requests) {
-                    const origin = center();
-                    const nodes = entries.flatMap((job, index) =>
-                      job.request
-                        ? [
-                            createNode(
-                              job.request.kind,
-                              { x: origin.x + index * 360, y: origin.y },
-                              {
-                                title: job.request.title,
-                                prompt: job.request.prompt,
-                                settings: {
-                                  ...job.request.settings,
-                                  firstFrameNodeId: undefined,
-                                  lastFrameNodeId: undefined,
-                                },
-                              },
-                            ),
-                          ]
-                        : [],
-                    );
-                    if (nodes.length) {
-                      command({ type: "add-nodes", nodes });
-                      setSelected(nodes.map((node) => node.id));
-                      notify("请求节点已恢复；请重新选择需要的参考素材。");
-                    }
-                  } else {
-                    const outputs = entries.flatMap((job) => job.outputs ?? []);
-                    if (!outputs.length) return;
-                    const next = appendServiceResults(
-                      historyRef.current.present,
-                      outputs,
-                    );
-                    change(() => next.document);
-                    // A re-placed service result must not be synced again.
-                    for (const job of entries)
-                      if (job.taskId && job.outputs?.length)
-                        markHandled(backendProjectId(doc.id), job.taskId);
-                    setSelected(next.ids);
-                    revealResults(next.ids);
-                    notify(
-                      `已从历史重新放置 ${next.ids.length} 个结果，可撤销。`,
-                    );
-                  }
                 })().catch((error) => notify(errorMessage(error)));
               }}
             />
@@ -6171,7 +5442,7 @@ function Workspace() {
                 ?.focus(),
             );
           }}
-          onTurnEnd={() => void followServiceTasks()}
+          onTurnEnd={() => void syncServiceResults()}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
             setSettingsCategory("models");
@@ -6248,8 +5519,6 @@ function Workspace() {
           resources={resources}
           onApply={(timeline) => commitEditorData({ timeline })}
           onPrepareRender={async (timeline) => {
-            if (!creationEnabled())
-              return async (result) => editorOutputs([result]);
             if ((await commitEditorData({ timeline })) === false)
               throw new Error("时间线未保存，未开始合成。");
             const client = creationClient(doc.id);
@@ -6274,30 +5543,7 @@ function Workspace() {
           node={editing}
           nodes={doc.nodes}
           onApply={(stack) => {
-            if (creationEnabled()) return commitEditorData({ stack });
-            const origin = editorOrigin.current,
-              current = historyRef.current.present;
-            const target = current.nodes.find(
-              (node) => node.id === origin?.nodeId,
-            );
-            if (
-              !origin ||
-              current.id !== origin.documentId ||
-              !target ||
-              target.type !== origin.kind ||
-              lockedNodeIds(current.nodes).has(target.id)
-            ) {
-              notify("编辑来源已改变，堆叠未应用。");
-              return false;
-            }
-            try {
-              const next = updateStack(current, target.id, stack);
-              change(() => next);
-              return true;
-            } catch (error) {
-              notify(error instanceof Error ? error.message : "堆叠更新失败。");
-              return false;
-            }
+            return commitEditorData({ stack });
           }}
           onClose={closeEditor}
           onSelectNode={(id) => {
@@ -6326,24 +5572,16 @@ function Workspace() {
           }
         >
           <DirectorStage
-            onPrepareRender={
-              creationEnabled()
-                ? async (localStage) => {
-                    await commitEditorData({ localStage });
-                    const origin = editorOrigin.current!;
-                    const client = creationClient(doc.id);
-                    mediaPublications.current.set(
-                      origin,
-                      new MediaPublication(
-                        client,
-                        client.snapshot,
-                        origin.nodeId,
-                      ),
-                    );
-                    return async (result) => addLinkedOutputs(origin, [result]);
-                  }
-                : undefined
-            }
+            onPrepareRender={async (localStage) => {
+              await commitEditorData({ localStage });
+              const origin = editorOrigin.current!;
+              const client = creationClient(doc.id);
+              mediaPublications.current.set(
+                origin,
+                new MediaPublication(client, client.snapshot, origin.nodeId),
+              );
+              return async (result) => addLinkedOutputs(origin, [result]);
+            }}
             onRender={(result) => editorOutputs([result])}
             node={editing}
             onApply={(localStage, screenshot) =>
@@ -6370,7 +5608,7 @@ function Workspace() {
             node={editing}
             initialTab={editorMode === "layers" ? "layers" : "crop"}
             initialLayers={editing.data.layers}
-            embedSourcesOnApply={!creationEnabled()}
+            embedSourcesOnApply={false}
             onClose={closeEditor}
             onApply={(src, layers, crop) =>
               commitEditorData({
@@ -6378,7 +5616,7 @@ function Workspace() {
                 mimeType: "image/png",
                 assetState: "ready",
                 layers,
-                imageCrop: creationEnabled() ? crop : undefined,
+                imageCrop: crop,
                 media: crop
                   ? { width: crop.width, height: crop.height }
                   : layers
@@ -6502,9 +5740,8 @@ function Workspace() {
             </dl>
             <p className="cw-panel-note">
               项目与画布保存在本地 projects 目录，导出 JSON
-              可备份或交换。图像裁剪与调色在本机实际执行；AI
-              生成和助手通过本地服务调用“设置 →
-              模型接入”中的模型，云分享和云端资产尚未接入。
+              可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置 →
+              模型接入”中的模型。助手对话、云分享和云端资产尚未接入。
             </p>
           </section>
         </div>
@@ -6566,6 +5803,7 @@ function Workspace() {
             <div role="alert">
               <p>{initializationError}</p>
               <button onClick={() => window.location.reload()}>重新连接</button>
+              <a href="/">返回画布首页</a>
             </div>
           ) : switching ? (
             "正在切换画布…"

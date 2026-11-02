@@ -31,7 +31,7 @@ try {
   await page.route(bootstrap, (r) =>
     r.fulfill({ contentType: "text/html", body: "<html><body></body></html>" }),
   );
-  await page.goto(base + "/?creation=unified");
+  await page.goto(base + "/");
   const f = await page.evaluate(async () => {
     const { createDocument, createNode } = await import("/src/canvas/model.ts");
     const { stackSelection } = await import("/src/canvas/operations.ts");
@@ -75,7 +75,7 @@ try {
     };
   });
   await page.unroute(bootstrap);
-  const url = base + `/ai-tool/ai-canvas/${f.id}?creation=unified`;
+  const url = base + `/ai-tool/ai-canvas/${f.id}`;
   const state = async () =>
     await (
       await page.request.get(base + `/api/creation/projects/${f.id}`, {

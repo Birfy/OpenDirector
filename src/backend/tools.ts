@@ -1,23 +1,4 @@
-import { deliverTool } from "./toolDeliveries.ts";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, assetBlob, errorMessage, json, request } from "./api.ts";
-import {
-  abortable,
-  readDelay,
-  resilientRead,
-  transientReadFailure,
-  type ReadOptions,
-} from "./resilientRead.ts";
-import {
-  EXTENSIONS,
-  fileName,
-  fingerprint,
-  type BackendAsset,
-} from "./generation.ts";
-import { openBackendProject } from "./projects.ts";
-import { creationClient, creationEnabled } from "./creationClient.ts";
-import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
-import { readEditorResource } from "../canvas/editorMedia.ts";
 import type { GenerationJob } from "../canvas/generationHistory.ts";
 import type { LinkedMediaResult } from "../canvas/linkedResults.ts";
 import type {
@@ -26,6 +7,23 @@ import type {
   ToolField,
   ToolParameters,
 } from "../canvas/toolCatalog.ts";
+import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
+import { ApiError, errorMessage, json, request } from "./api.ts";
+import { creationClient } from "./creationClient.ts";
+import {
+  EXTENSIONS,
+  fileName,
+  fingerprint,
+  type BackendAsset,
+} from "./generation.ts";
+import { openBackendProject } from "./projects.ts";
+import {
+  readDelay,
+  resilientRead,
+  transientReadFailure,
+  type ReadOptions,
+} from "./resilientRead.ts";
+import { deliverTool } from "./toolDeliveries.ts";
 
 /** Canvas AI tools run by the local API. The service maps each tool to model
  * capabilities, so the canvas never names a model or protocol here. */
@@ -151,13 +149,14 @@ export function useToolCatalog(connected: boolean, revision: unknown) {
 /** Sources and masks become project assets once; identical files are reused. */
 export async function uploadAsset(
   projectId: string,
-  known: BackendAsset[],
   blob: Blob,
   title: string,
   signal: AbortSignal,
 ) {
+  signal.throwIfAborted();
   const print = await fingerprint(blob);
-  if (creationEnabled()) {
+  signal.throwIfAborted();
+  {
     const client = creationClient(projectId);
     const existing = client.snapshot.assets.find(
       (asset) => asset.fingerprint === print,
@@ -177,28 +176,6 @@ export async function uploadAsset(
       ).assetId
     );
   }
-  const existing = known.find(
-    (asset) =>
-      asset.fingerprint === print || asset.fingerprintAliases?.includes(print),
-  );
-  if (existing) return existing.id;
-  const type = blob.type.split(";")[0] ?? "";
-  const asset = await request<BackendAsset>(
-    `/projects/${projectId}/assets/${crypto.randomUUID()}`,
-    {
-      method: "PUT",
-      signal,
-      headers: {
-        "X-Asset-Name": encodeURIComponent(
-          fileName(title, EXTENSIONS[type] ?? type.split("/")[1] ?? "bin"),
-        ),
-        "Content-Type": "application/octet-stream",
-      },
-      body: blob,
-    },
-  );
-  known.push(asset);
-  return asset.id;
 }
 
 export class ToolSubmissionError extends Error {
@@ -216,12 +193,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       value.documentId,
       value.documentTitle,
     );
-    const known = creationEnabled()
-      ? []
-      : await request<BackendAsset[]>(`/projects/${projectId}/assets`, {
-          signal,
-        });
-    const client = creationEnabled() ? creationClient(projectId) : undefined;
+    const client = creationClient(projectId);
     const owner = client?.snapshot.canvasItems.find(
       (item) => item.id === value.canvas?.nodeId,
     );
@@ -247,21 +219,12 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       editor?.kind === "media_edit"
         ? editor.data.sources.map((ref) => ref.assetId)
         : [];
-    if (!client)
-      for (const source of value.sources) {
-        signal.throwIfAborted();
-        const blob = await (await fetch(source.src, { signal })).blob();
-        sourceAssetIds.push(
-          await uploadAsset(projectId, known, blob, source.title, signal),
-        );
-      }
     const maskAssetId =
       editor?.kind === "media_edit"
         ? editor.data.selection?.mask?.assetId
         : value.maskDataUrl
           ? await uploadAsset(
               projectId,
-              known,
               await (await fetch(value.maskDataUrl, { signal })).blob(),
               "选区",
               signal,
@@ -270,7 +233,6 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
     const annotationAssetId = value.annotatedDataUrl
       ? await uploadAsset(
           projectId,
-          known,
           await (await fetch(value.annotatedDataUrl, { signal })).blob(),
           "改图标注",
           signal,
@@ -290,9 +252,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       boxes: value.boxes ?? [],
       parameters: value.parameters,
     };
-    const task = client
-      ? await deliverTool<ToolTask>(projectId, owner!.id, body)
-      : await request<ToolTask>(toolTaskPath(projectId), json("POST", body));
+    const task = await deliverTool<ToolTask>(projectId, owner!.id, body);
     if (signal.aborted) {
       // Acceptance may race a click on Cancel. Once the identity is known,
       // cancel the accepted task too; aborting a browser request is not enough.
@@ -315,7 +275,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
 }
 
 export const toolTaskPath = (projectId: string) =>
-  `${creationEnabled() ? "/creation" : ""}/projects/${projectId}/tool-tasks`;
+  `/creation/projects/${projectId}/tool-tasks`;
 
 export const getToolTask = (
   projectId: string,
@@ -395,72 +355,32 @@ export async function waitForToolTask(
 }
 
 function toolBlob(projectId: string, assetId: string, options: ReadOptions) {
-  return creationEnabled()
-    ? creationClient(projectId).blob(assetId, options)
-    : resilientRead((signal) => assetBlob(projectId, assetId, signal), options);
+  return creationClient(projectId).blob(assetId, options);
 }
 
-const outputCache = new Map<string, Promise<LinkedMediaResult>>();
 async function toolOutput(
   projectId: string,
   output: ToolTaskOutput,
   options: ToolReadOptions,
 ) {
   options.signal?.throwIfAborted();
-  if (creationEnabled())
-    return {
-      kind: output.kind,
-      title: output.title,
-      src: await creationClient(projectId).mediaUrl(
-        output.id,
-        downloadOptions(options),
-      ),
-      mimeType: output.type,
-      media: {
-        width: output.width ?? undefined,
-        height: output.height ?? undefined,
-        durationSeconds: output.durationMs
-          ? output.durationMs / 1000
-          : undefined,
-      },
-    };
-  const key = `${creationEnabled()}:${projectId}:${output.id}`;
-  let pending = outputCache.get(key);
-  if (!pending) {
-    pending = (async () => {
-      // Share a bounded download, not a consumer's cancellation lifetime.
-      const blob = await toolBlob(projectId, output.id, {
-        ...downloadOptions(options),
-        signal: undefined,
-      });
-      const resource = await readEditorResource(
-        new File([blob], output.name, { type: output.type }),
-      );
-      return {
-        kind: output.kind,
-        title: output.title,
-        src: resource.src!,
-        mimeType: output.type,
-        media: {
-          width: output.width ?? undefined,
-          height: output.height ?? undefined,
-          durationSeconds: output.durationMs
-            ? output.durationMs / 1000
-            : undefined,
-        },
-      };
-    })().catch((error) => {
-      outputCache.delete(key);
-      throw error;
-    });
-    outputCache.set(key, pending);
-    if (outputCache.size > 128)
-      outputCache.delete(outputCache.keys().next().value!);
-  }
-  return abortable(pending, options.signal);
+  return {
+    kind: output.kind,
+    title: output.title,
+    src: await creationClient(projectId).mediaUrl(
+      output.id,
+      downloadOptions(options),
+    ),
+    mimeType: output.type,
+    media: {
+      width: output.width ?? undefined,
+      height: output.height ?? undefined,
+      durationSeconds: output.durationMs ? output.durationMs / 1000 : undefined,
+    },
+  };
 }
 
-/** Tool execution lives on the service in both workspace modes. Browser job
+/** Tool execution lives on the service. Browser job
  * records are used only to recover ownership of tasks from older clients. */
 export async function toolHistoryJobs(
   projectId: string,

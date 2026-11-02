@@ -1,38 +1,36 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { creationClient } from "../src/backend/creationClient.ts";
+import { CreationProjection } from "../src/backend/creationProjection.ts";
+import { releaseBackendProject } from "../src/backend/projects.ts";
+import {
+  createWorkspaceProject,
+  initializeWorkspace,
+  saveWorkspaceDocument,
+  type WorkspaceProject,
+} from "../src/backend/workspace.ts";
 import {
   createDocument,
   createNode,
   type CanvasDocument,
 } from "../src/canvas/model.ts";
-import { rememberChat } from "../src/backend/chatDrafts.ts";
-import { releaseBackendProject } from "../src/backend/projects.ts";
-import {
-  createWorkspaceProject,
-  importWorkspaceDocument,
-  initializeWorkspace,
-  openWorkspaceProject,
-  saveWorkspaceDocument,
-  type WorkspaceProject,
-} from "../src/backend/workspace.ts";
 
-/** API boundary with the server's one-project-per-session lease and CAS writes. */
+/** Entry/session orchestration; projection round-trips are exercised separately. */
 function fixture(t: TestContext) {
-  const fetchBefore = globalThis.fetch;
-  const windowBefore = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const storageBefore = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "localStorage",
+  const oldFetch = globalThis.fetch;
+  const descriptors = ["window", "localStorage"].map(
+    (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
   );
+  const oldOpen = CreationProjection.prototype.open,
+    oldSave = CreationProjection.prototype.save;
   const projects = new Map<string, WorkspaceProject>();
-  const documents = new Map<
-    string,
-    { revision: number; document: CanvasDocument | null }
-  >();
-  const calls: string[] = [];
+  const documents = new Map<string, CanvasDocument>();
   const storage = new Map<string, string>();
   const location = { pathname: "/", search: "" };
-  let lease: string | null = null;
+  const calls: { path: string; method: string; body?: any }[] = [];
+  let occupied = false,
+    offline = false,
+    lease: string | null = null;
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: { location, setInterval: () => 1, addEventListener() {} },
@@ -40,160 +38,154 @@ function fixture(t: TestContext) {
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value),
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => storage.set(k, v),
     },
   });
-  const conflict = () =>
-    Response.json(
-      { detail: "项目已关闭或会话已过期，请重新打开项目后保存。" },
-      { status: 409 },
-    );
-  globalThis.fetch = async (input, options) => {
-    const path = String(input),
+  CreationProjection.prototype.open = async function () {
+    const doc = documents.get(this.client.id)!;
+    this.baseline = structuredClone(doc);
+    return structuredClone(doc);
+  };
+  CreationProjection.prototype.save = async function (doc) {
+    assert.equal(lease, doc.id);
+    documents.set(doc.id, structuredClone(doc));
+    return false;
+  };
+  globalThis.fetch = async (url, options) => {
+    const path = String(url),
       method = options?.method ?? "GET";
-    calls.push(`${method} ${path}`);
-    if (path === "/api/projects" && method === "GET")
-      return Response.json({ projects: [...projects.values()], warnings: [] });
-    if (path === "/api/projects" && method === "POST") {
-      const value = JSON.parse(options!.body as string) as {
-        id: string;
-        name: string;
-      };
-      if ([...projects.values()].some((project) => project.name === value.name))
-        return Response.json({ detail: "已有同名项目" }, { status: 409 });
-      const project = { ...value, path: `/projects/${value.name}` };
-      projects.set(value.id, project);
-      documents.set(value.id, { revision: 0, document: null });
-      lease = value.id;
-      return Response.json(project);
-    }
-    const projectMatch = path.match(
-      /^\/api\/projects\/([^/]+)\/(open|workspace)$/,
-    );
-    if (projectMatch) {
-      const [, id, action] = projectMatch;
-      if (action === "open") {
-        lease = id!;
-        return Response.json(projects.get(id!));
-      }
-      const current = documents.get(id!)!;
-      if (method === "GET") return Response.json(current);
-      if (lease !== id) return conflict();
-      const value = JSON.parse(options!.body as string);
-      if (value.revision !== current.revision) return conflict();
-      const saved = {
-        revision: current.revision + 1,
-        document: value.document,
-      };
-      documents.set(id!, saved);
-      return Response.json(saved);
-    }
-    const draft = path.match(/^\/api\/data\/([^/]+)\/draft$/);
-    if (draft)
-      return lease === draft[1] ? Response.json({ ok: true }) : conflict();
-    if (path.startsWith("/api/sessions/") && method === "DELETE") {
+    const body = options?.body ? JSON.parse(String(options.body)) : undefined;
+    calls.push({ path, method, body });
+    assert.ok(path.startsWith("/api/creation/"), `Legacy request: ${path}`);
+    if (path === "/api/creation/projects")
+      return Response.json({
+        projects: [...projects.values()],
+        warnings: occupied ? ["旧格式工程已保留"] : [],
+      });
+    if (path.includes("/sessions/")) {
       lease = null;
       return Response.json({ ok: true });
     }
-    if (path.endsWith("/close") && method === "POST") {
-      const value = JSON.parse(options!.body as string);
-      const draftSaved = lease === value.projectId;
-      if (draftSaved) lease = null;
-      return Response.json({ ok: true, draftSaved });
+    const id = path.split("/")[4]!;
+    if (path.endsWith("/commands")) {
+      if (offline) throw new TypeError("offline");
+      if (
+        (occupied && body.payload.name === "未命名画布") ||
+        [...projects.values()].some((p) => p.name === body.payload.name)
+      )
+        return Response.json({ detail: "已有同名项目" }, { status: 409 });
+      projects.set(id, {
+        id,
+        name: body.payload.name,
+        path: `/projects/${body.payload.name}`,
+      });
+      documents.set(id, { ...createDocument(body.payload.name), id });
+      return Response.json({ status: "applied", issues: [], jobIds: [] });
     }
-    throw new Error(`Unexpected request ${method} ${path}`);
+    if (path.includes("/receipts/"))
+      return Response.json({ detail: "无回执" }, { status: 404 });
+    if (path.endsWith("/canvas"))
+      return Response.json({
+        snapshot: { project: { id }, eventCursor: 1 },
+        edges: [],
+      });
+    if (path.endsWith("/open")) {
+      lease = id;
+      return Response.json({ ok: true });
+    }
+    return Response.json(
+      {
+        detail: "不支持该工程格式；旧文件不会自动转换。",
+        code: "unsupported_format",
+      },
+      { status: 409 },
+    );
   };
   t.after(async () => {
     try {
       await releaseBackendProject();
     } finally {
-      globalThis.fetch = fetchBefore;
-      for (const [key, descriptor] of [
-        ["window", windowBefore],
-        ["localStorage", storageBefore],
-      ] as const) {
+      for (const id of projects.keys()) creationClient(id).close();
+      globalThis.fetch = oldFetch;
+      CreationProjection.prototype.open = oldOpen;
+      CreationProjection.prototype.save = oldSave;
+      for (const [key, descriptor] of descriptors) {
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);
         else Reflect.deleteProperty(globalThis, key);
       }
     }
   });
-  return { projects, documents, calls, location };
+  return {
+    projects,
+    documents,
+    storage,
+    location,
+    calls,
+    occupy: () => {
+      occupied = true;
+    },
+    offline: () => {
+      offline = true;
+    },
+  };
 }
 
-test("a later workspace mount rereads saved content while concurrent initialization shares work", async (t) => {
-  const state = fixture(t);
+test("plain entry shares concurrent initialization, then rereads the saved project", async (t) => {
+  const f = fixture(t);
   const first = initializeWorkspace();
   assert.equal(initializeWorkspace(), first);
   const initial = await first;
   const updated = {
     ...initial,
-    nodes: [createNode("image", { x: 20, y: 40 }, { title: "已上传图片" })],
+    nodes: [createNode("image", { x: 20, y: 40 }, { title: "保存节点" })],
   };
   await saveWorkspaceDocument(updated);
-  state.location.pathname = `/ai-tool/ai-canvas/${initial.id}`;
-  const reopened = await initializeWorkspace();
-  assert.deepEqual(reopened.nodes, updated.nodes);
-  assert.equal(state.projects.size, 1);
-  assert.deepEqual(
-    state.documents.get(initial.id)!.document!.nodes,
-    updated.nodes,
-  );
-});
-
-test("importing an example atomically saves and closes the old project before creation", async (t) => {
-  const state = fixture(t);
-  const original = await initializeWorkspace();
-  rememberChat(original.id, {
-    messages: [],
-    draft: "未发送的草稿",
-    assets: [],
-    thinking: "auto",
-    modelSelections: {},
-  });
-  state.calls.length = 0;
-  const example = {
-    ...createDocument("示例画布"),
-    nodes: [createNode("text", undefined, { text: "示例内容" })],
-  };
-  const imported = await importWorkspaceDocument(example);
-  assert.notEqual(imported.id, original.id);
+  assert.deepEqual((await initializeWorkspace()).nodes, updated.nodes);
+  assert.equal(f.projects.size, 1);
   assert.equal(
-    state.documents.get(imported.id)!.document!.nodes[0]!.data.text,
-    "示例内容",
+    f.storage.get("opendirector.lastUnifiedFilesystemProject"),
+    initial.id,
   );
-  const isClose = (call: string) =>
-    call.startsWith("POST /api/sessions/") && call.endsWith("/close");
-  const flushed = state.calls.findIndex(isClose);
-  const created = state.calls.indexOf("POST /api/projects");
-  assert.ok(flushed >= 0 && flushed < created, state.calls.join("\n"));
-  assert.equal(state.calls.filter(isClose).length, 1);
-  const restored = await openWorkspaceProject(state.projects.get(original.id)!);
-  await saveWorkspaceDocument(restored);
-  assert.equal(restored.id, original.id);
 });
 
-test("failed project creation keeps the existing project writable", async (t) => {
-  const state = fixture(t);
+test("explicit unsupported project links reject instead of creating or opening another project", async (t) => {
+  const f = fixture(t);
+  await initializeWorkspace();
+  f.calls.length = 0;
+  f.location.pathname = `/ai-tool/ai-canvas/${crypto.randomUUID()}`;
+  await assert.rejects(initializeWorkspace(), /不支持该工程格式/);
+  assert.ok(f.calls.every((call) => call.method === "GET"));
+  assert.equal(f.projects.size, 1);
+});
+
+test("plain entry ignores the legacy last-project hint and preserves occupied directories", async (t) => {
+  const f = fixture(t);
+  f.storage.set("opendirector.lastFilesystemProject", crypto.randomUUID());
+  f.occupy();
+  const doc = await initializeWorkspace();
+  assert.equal(doc.title, "未命名画布 (2)");
+  assert.equal(f.projects.size, 1);
+});
+
+test("failed project creation leaves the existing project writable", async (t) => {
+  const f = fixture(t);
   const original = await initializeWorkspace();
-  rememberChat(original.id, {
-    messages: [],
-    draft: "保留草稿",
-    assets: [],
-    thinking: "auto",
-    modelSelections: {},
-  });
   await assert.rejects(
     createWorkspaceProject(original.title, crypto.randomUUID()),
     /已有同名项目/,
   );
-  const edited = {
-    ...original,
-    nodes: [createNode("text", undefined, { text: "继续编辑" })],
-  };
-  await saveWorkspaceDocument(edited);
+  await saveWorkspaceDocument({ ...original, title: "仍可保存" });
+  assert.equal(f.documents.get(original.id)?.title, "仍可保存");
+});
+
+test("unknown creation outcome is not retried with another project identity", async (t) => {
+  const f = fixture(t);
+  f.offline();
+  await assert.rejects(initializeWorkspace(), /无法连接/);
   assert.equal(
-    state.documents.get(original.id)!.document!.nodes[0]!.data.text,
-    "继续编辑",
+    f.calls.filter((call) => call.path.endsWith("/commands")).length,
+    1,
   );
+  assert.equal(f.projects.size, 0);
 });

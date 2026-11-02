@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDocument, createNode } from "../src/canvas/model.ts";
 import { generationDefaults } from "../src/canvas/generationCatalog.ts";
-import { createHistory, recordChange, undo } from "../src/canvas/history.ts";
-import { serializeDocument, parseDocument } from "../src/canvas/storage.ts";
-import {
-  applyGenerationResults,
-  appendLinkedMediaResults,
-  type LinkedMediaResult,
-} from "../src/canvas/linkedResults.ts";
 import {
   applyRecoveredGenerationResults,
   mergeGenerationJobs,
   parseGenerationJob,
   type GenerationJob,
 } from "../src/canvas/generationHistory.ts";
-import { unsyncedResults } from "../src/backend/sync.ts";
+import { createHistory, recordChange, undo } from "../src/canvas/history.ts";
+import {
+  appendLinkedMediaResults,
+  applyGenerationResults,
+  type LinkedMediaResult,
+} from "../src/canvas/linkedResults.ts";
+import { createDocument, createNode } from "../src/canvas/model.ts";
+import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
 
 function fixture(kind: "image" | "video" | "audio" = "video") {
   const group = createNode("group", { x: 500, y: 100 });
@@ -282,63 +281,4 @@ test("history hydration preserves placement ownership and newer in-memory update
   assert.deepEqual(deferred.ids, []);
   assert.equal(deferred.placements[0]!.output, output);
   assert.match(deferred.placements[0]!.error!, /锁定/);
-});
-
-test("first service sync recovers an owned completed task without importing unrelated old history", async () => {
-  const fetchBefore = globalThis.fetch;
-  const storageBefore = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "localStorage",
-  );
-  const values = new Map<string, string>();
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-    },
-  });
-  globalThis.fetch = async (input) => {
-    const path = String(input);
-    if (path.endsWith("/canvas"))
-      return Response.json({
-        assets: ["owned", "old"].map((id) => ({
-          id,
-          kind: "video",
-          name: `${id}.mp4`,
-          type: "video/mp4",
-          fingerprint: id,
-        })),
-        tasks: ["owned", "old"].map((id) => ({
-          id,
-          nodeId: `server-${id}`,
-          kind: "video",
-          status: "succeeded",
-          assetId: id,
-          error: null,
-        })),
-      });
-    assert.ok(
-      path.endsWith("/assets/owned"),
-      "only the owned result should download",
-    );
-    return new Response(new Blob(["media"], { type: "video/mp4" }));
-  };
-  try {
-    const synced = await unsyncedResults(
-      "restore-project",
-      new Set(),
-      undefined,
-      new Set(["owned"]),
-    );
-    assert.deepEqual(
-      synced.results.map((item) => item.taskId),
-      ["owned"],
-    );
-  } finally {
-    globalThis.fetch = fetchBefore;
-    if (storageBefore)
-      Object.defineProperty(globalThis, "localStorage", storageBefore);
-    else Reflect.deleteProperty(globalThis, "localStorage");
-  }
 });

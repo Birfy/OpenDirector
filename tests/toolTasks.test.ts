@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { creationClient } from "../src/backend/creationClient.ts";
 import { submitToolTask, waitForToolTask } from "../src/backend/tools.ts";
+import type { ProjectSnapshot } from "../src/contracts/generated.ts";
 
-test("tool submission forwards the selected model after uploading its source", async () => {
+test("tool submission forwards the selected model with its saved source and editor versions", async () => {
   const fetch = globalThis.fetch;
   const windowDescriptor = Object.getOwnPropertyDescriptor(
     globalThis,
@@ -12,6 +14,24 @@ test("tool submission forwards the selected model after uploading its source", a
   const modelId = crypto.randomUUID();
   const sourceId = crypto.randomUUID();
   const sourceNodeId = crypto.randomUUID();
+  const editorId = crypto.randomUUID();
+  creationClient(projectId).snapshot = {
+    canvasItems: [
+      {
+        id: sourceNodeId,
+        revision: 3,
+        editors: [{ kind: "media_edit", id: editorId }],
+      },
+    ],
+    editorDocuments: [
+      {
+        id: editorId,
+        revision: 4,
+        kind: "media_edit",
+        data: { sources: [{ assetId: sourceId }] },
+      },
+    ],
+  } as unknown as ProjectSnapshot;
   let submitted: Record<string, unknown> | undefined;
   Object.defineProperty(globalThis, "window", {
     configurable: true,
@@ -51,6 +71,12 @@ test("tool submission forwards the selected model after uploading its source", a
     );
     assert.deepEqual(submitted?.modelConfigIds, { "image.edit": modelId });
     assert.deepEqual(submitted?.sourceAssetIds, [sourceId]);
+    assert.deepEqual(submitted?.draft, {
+      itemId: sourceNodeId,
+      itemRevision: 3,
+      editorId,
+      editorRevision: 4,
+    });
   } finally {
     globalThis.fetch = fetch;
     if (windowDescriptor)
@@ -109,7 +135,11 @@ test("a status read stalled in transit is abandoned and retried instead of hangi
     assert.equal(reads, 2);
     assert.equal(files.length, 1);
     assert.equal(files[0]!.file.name, "扩图.png");
-    assert.ok(seen.some((path) => path.endsWith("/data/project/assets/asset")));
+    assert.ok(
+      seen.some((path) =>
+        path.endsWith("/creation/projects/project/assets/asset/content"),
+      ),
+    );
   } finally {
     globalThis.fetch = fetch;
   }

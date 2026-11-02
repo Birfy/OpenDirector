@@ -1,11 +1,4 @@
-import { applyTextGenerationResult } from "./textGeneration.ts";
 import { isGenerationSettings } from "./dataBoundary.ts";
-import type {
-  CanvasDocument,
-  CanvasEdge,
-  GenerationSettings,
-} from "./model.ts";
-import type { CanvasToolTask } from "./toolCatalog.ts";
 import {
   appendServiceResults,
   applyGenerationResults,
@@ -13,6 +6,13 @@ import {
   type ResultSource,
   type ServiceResult,
 } from "./linkedResults.ts";
+import type {
+  CanvasDocument,
+  CanvasEdge,
+  GenerationSettings,
+} from "./model.ts";
+import { applyTextGenerationResult } from "./textGeneration.ts";
+import type { CanvasToolTask } from "./toolCatalog.ts";
 
 export interface GenerationJob {
   id: string;
@@ -71,11 +71,6 @@ export interface GenerationJob {
     outputIds: string[];
     unavailable?: boolean;
   };
-}
-interface StoredJob {
-  id: string;
-  documentId: string;
-  job: GenerationJob;
 }
 
 /** Tool provenance is a projection of the service ledger, not a generation
@@ -194,100 +189,6 @@ export function parseGenerationJob(value: unknown): GenerationJob {
   )
     throw new Error("历史结果缺少可保存的素材。");
   return structuredClone(raw);
-}
-
-async function historyStore<T>(
-  mode: IDBTransactionMode,
-  operation: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-  if (!globalThis.indexedDB) throw new Error("当前环境无法保存生成历史。");
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    let blocked = false;
-    const request = indexedDB.open("opendirector-generation-history", 2);
-    request.onupgradeneeded = () => {
-      if (blocked) {
-        request.transaction?.abort();
-        return;
-      }
-      const store = request.result.objectStoreNames.contains("jobs")
-        ? request.transaction!.objectStore("jobs")
-        : request.result.createObjectStore("jobs", { keyPath: "id" });
-      if (!store.indexNames.contains("documentId"))
-        store.createIndex("documentId", "documentId");
-    };
-    request.onsuccess = () => {
-      if (blocked) {
-        request.result.close();
-        return;
-      }
-      request.result.onversionchange = () => request.result.close();
-      resolve(request.result);
-    };
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => {
-      blocked = true;
-      reject(new Error("生成历史数据库被旧页面占用。"));
-    };
-  });
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const tx = db.transaction("jobs", mode);
-      const request = operation(tx.objectStore("jobs"));
-      let result: T;
-      request.onsuccess = () => {
-        result = request.result;
-      };
-      tx.oncomplete = () => resolve(result);
-      tx.onabort = tx.onerror = () =>
-        reject(tx.error ?? request.error ?? new Error("生成历史保存失败。"));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-export async function loadGenerationJobs(
-  documentId: string,
-): Promise<GenerationJob[]> {
-  const records = await historyStore<StoredJob[]>("readonly", (store) =>
-    store.index("documentId").getAll(documentId),
-  );
-  const jobs: GenerationJob[] = [];
-  for (const entry of records) {
-    if (entry.documentId !== documentId) continue;
-    try {
-      const job = parseGenerationJob(entry.job);
-      jobs.push(
-        job.status === "running"
-          ? {
-              ...job,
-              status: "interrupted" as const,
-              message: "上次会话未完成，可同步本地服务结果。",
-            }
-          : job,
-      );
-    } catch {
-      // A single damaged record must not take down the whole history view.
-    }
-  }
-  return jobs.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-}
-
-let writes: Promise<unknown> = Promise.resolve();
-export function saveGenerationJob(
-  documentId: string,
-  job: GenerationJob,
-): Promise<unknown> {
-  const record = {
-    id: `${documentId}:${job.id}`,
-    documentId,
-    job: parseGenerationJob(job),
-  };
-  const operation = writes
-    .catch(() => {})
-    .then(() => historyStore("readwrite", (store) => store.put(record)));
-  writes = operation;
-  return operation;
 }
 
 /** A persisted interrupted run is reconciled without creating jobs for unrelated server tasks. */

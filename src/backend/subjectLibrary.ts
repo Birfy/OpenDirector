@@ -1,7 +1,7 @@
-import { request, json, headers, responseError } from "./api.ts";
-import { creationClient, creationEnabled } from "./creationClient.ts";
-import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import type { LibraryItem } from "../canvas/library/libraryClient.ts";
+import type { CanvasResource, SubjectData } from "../canvas/model.ts";
+import { headers, json, request, responseError } from "./api.ts";
+import { creationClient } from "./creationClient.ts";
 
 export type SubjectLibraryItem = LibraryItem & {
   available: boolean;
@@ -58,7 +58,7 @@ export async function copyLibrarySubjects(
     }
     downloaded.push({ item: source.item, media });
   }
-  const client = creationEnabled() ? creationClient(projectId) : null;
+  const client = creationClient(projectId);
   const copies = new Map<string, CanvasResource>();
   const results: { item: LibraryItem; subject: SubjectData }[] = [];
   for (const source of downloaded) {
@@ -68,27 +68,10 @@ export async function copyLibrarySubjects(
       if (!resource) {
         let src: string;
         let assetId: string;
-        if (client) {
-          const ref = await client.importBlob(blob, facts.name, facts.kind);
-          assetId = ref.assetId;
-          src = await client.mediaUrl(assetId);
-        } else {
-          assetId = crypto.randomUUID();
-          await request(`/data/${projectId}/assets/${assetId}`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": blob.type,
-              "X-Asset-Name": encodeURIComponent(facts.name),
-            },
-            body: blob,
-          });
-          src = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(new Error("无法保存主体素材副本。"));
-            reader.readAsDataURL(blob);
-          });
-        }
+        const ref = await client.importBlob(blob, facts.name, facts.kind);
+        assetId = ref.assetId;
+        src = await client.mediaUrl(assetId);
+
         resource = {
           id: assetId,
           assetId,

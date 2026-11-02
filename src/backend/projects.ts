@@ -1,6 +1,5 @@
 import { ApiError, errorMessage, json, request, sessionId } from "./api.ts";
-import { closeChatSession } from "./chatDrafts.ts";
-import { creationClient, creationEnabled } from "./creationClient.ts";
+import { creationClient } from "./creationClient.ts";
 
 /** Canvas documents use the stable identity of an existing filesystem project. */
 
@@ -23,29 +22,21 @@ function keepAlive() {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
       void serializeSessionChange(() =>
-        request(
-          `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
-          json("PUT", { projectId }),
-        ),
+        request(`/creation/sessions/${sessionId}`, json("PUT", { projectId })),
       ).catch(() => {});
     }
   }, 15000);
   window.addEventListener("pagehide", () => {
     if (!active) return;
-    void closeProjectSession(active, true).catch(() => {});
+    void closeProjectSession(true).catch(() => {});
   });
 }
 
-function closeProjectSession(projectId: string | null, keepalive = false) {
-  if (projectId && !creationEnabled())
-    return closeChatSession(projectId, keepalive);
-  return request(
-    `${creationEnabled() ? "/creation" : ""}/sessions/${sessionId}`,
-    {
-      method: "DELETE",
-      keepalive,
-    },
-  );
+function closeProjectSession(keepalive = false) {
+  return request(`/creation/sessions/${sessionId}`, {
+    method: "DELETE",
+    keepalive,
+  });
 }
 
 function serializeSessionChange<T>(operation: () => Promise<T>): Promise<T> {
@@ -81,7 +72,7 @@ function activateBackendProject<T>(
     const previous = active;
     const switching = previous && previous !== id;
     if (switching) {
-      await closeProjectSession(previous);
+      await closeProjectSession();
       active = null;
     }
     let value: T;
@@ -90,10 +81,9 @@ function activateBackendProject<T>(
     } catch (failure) {
       if (switching) {
         try {
-          await request(
-            `${creationEnabled() ? "/creation" : ""}/projects/${previous}/open`,
-            { method: "POST" },
-          );
+          await request(`/creation/projects/${previous}/open`, {
+            method: "POST",
+          });
           active = previous;
         } catch (restoreFailure) {
           throw new Error(
@@ -104,29 +94,17 @@ function activateBackendProject<T>(
       throw failure;
     }
     active = id;
-    if (previous && previous !== id && creationEnabled())
-      creationClient(previous).close();
+    if (previous && previous !== id) creationClient(previous).close();
     keepAlive();
     return value;
   });
-}
-
-/** Creation acquires the new lease too, so drafts must flush before its request. */
-export function createBackendProject<T>(
-  documentId: string,
-  create: () => Promise<T>,
-) {
-  return activateBackendProject(documentId, create);
 }
 
 /** Opening again renews a lease that lapsed while the page was suspended. */
 export function openBackendProject(documentId: string, _title: string) {
   const id = backendProjectId(documentId);
   return activateBackendProject(id, async () => {
-    await request(
-      `${creationEnabled() ? "/creation" : ""}/projects/${id}/open`,
-      { method: "POST" },
-    );
+    await request(`/creation/projects/${id}/open`, { method: "POST" });
     return id;
   });
 }
@@ -134,7 +112,7 @@ export function openBackendProject(documentId: string, _title: string) {
 /** Pause lease renewal while the current project directory is renamed. */
 export function releaseBackendProject() {
   return serializeSessionChange(async () => {
-    await closeProjectSession(active);
+    await closeProjectSession();
     active = null;
   });
 }

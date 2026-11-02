@@ -4,7 +4,6 @@ import {
   generationActivities,
   generationPhase,
 } from "../src/canvas/generationActivity.ts";
-import { waitForResult } from "../src/backend/generation.ts";
 
 test("queued and terminal task statuses take precedence over stale backend phases", () => {
   assert.equal(generationPhase({ status: "queued", phase: "poll" }), "queued");
@@ -45,37 +44,4 @@ test("batch activity stays running until its last task finishes and is scoped to
     phase: "finishing",
   });
   assert.equal(generationActivities(runs, "other").size, 0);
-});
-
-test("the result-download phase is announced before media is fetched, without reporting completion early", async (t) => {
-  const events: string[] = [];
-  t.mock.method(globalThis, "fetch", async (url: string) => {
-    if (url.includes("/api/data/")) {
-      events.push("download");
-      return new Response(new Blob(["image"], { type: "image/png" }));
-    }
-    return Response.json({
-      tasks: [
-        {
-          id: "task",
-          nodeId: "node",
-          status: "succeeded",
-          phase: "save",
-          assetId: "asset",
-        },
-      ],
-      assets: [
-        { id: "asset", kind: "image", name: "result.png", type: "image/png" },
-      ],
-    });
-  });
-  const result = await waitForResult(
-    "project",
-    "task",
-    new AbortController().signal,
-    (task) => events.push(task.status),
-  );
-  events.push("result-ready");
-  assert.equal(result.kind, "image");
-  assert.deepEqual(events, ["succeeded", "download", "result-ready"]);
 });

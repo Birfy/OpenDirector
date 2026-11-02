@@ -126,7 +126,7 @@ try {
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`, {
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`, {
     waitUntil: "domcontentloaded",
   });
   await page.getByText("已保存到本机", { exact: true }).waitFor();

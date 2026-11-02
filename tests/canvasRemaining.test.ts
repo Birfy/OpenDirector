@@ -1,26 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDocument, createNode } from "../src/canvas/model.ts";
-import { persistCurrentDocument } from "../src/canvas/projectManagement.ts";
-import { visibleSelectionIds } from "../src/canvas/stackProjection.ts";
-import {
-  stackSelection,
-  cutSelection,
-  pasteFragment,
-} from "../src/canvas/operations.ts";
-import { readImportBatch } from "../src/canvas/importBatch.ts";
 import { assistantReferences } from "../src/canvas/assistantReferences.ts";
+import {
+  changeGenerationSettings,
+  generationBlocker,
+  generationDefaults,
+} from "../src/canvas/generationCatalog.ts";
 import {
   parseGenerationJob,
   reconcileGenerationJobs,
 } from "../src/canvas/generationHistory.ts";
+import { readImportBatch } from "../src/canvas/importBatch.ts";
+import { createDocument, createNode } from "../src/canvas/model.ts";
 import {
-  generationDefaults,
-  changeGenerationSettings,
-  generationBlocker,
-} from "../src/canvas/generationCatalog.ts";
-import { unsyncedResults } from "../src/backend/sync.ts";
-import { uploadReferences } from "../src/backend/generation.ts";
+  cutSelection,
+  pasteFragment,
+  stackSelection,
+} from "../src/canvas/operations.ts";
+import { persistCurrentDocument } from "../src/canvas/projectManagement.ts";
+import { visibleSelectionIds } from "../src/canvas/stackProjection.ts";
 
 test("mixed batch imports preserve success order and original replacement index", async () => {
   const files = ["first.png", "broken.png", "last.png"].map(
@@ -153,65 +151,6 @@ test("product views resolves its complete observed preset and rejects stale sett
   );
 });
 
-test("reference upload rejects unreadable media before creating any asset", async () => {
-  const original = globalThis.fetch;
-  const requests: string[] = [];
-  globalThis.fetch = async (input) => {
-    const url = String(input);
-    requests.push(url);
-    return url.startsWith("/api")
-      ? Response.json([])
-      : new Response("missing", { status: 404 });
-  };
-  try {
-    await assert.rejects(
-      uploadReferences(
-        "project",
-        [
-          {
-            kind: "image",
-            title: "missing",
-            src: "https://invalid.test/media.png",
-          },
-        ],
-        new AbortController().signal,
-      ),
-      /404/,
-    );
-    assert.equal(requests.length, 2);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("text reference cancellation propagates through asset and node creation", async () => {
-  const original = globalThis.fetch;
-  const controller = new AbortController();
-  const observed: RequestInit[] = [];
-  globalThis.fetch = async (input, options) => {
-    observed.push(options!);
-    return Response.json(
-      String(input).endsWith("current_only=true") ? [] : { id: "asset" },
-    );
-  };
-  try {
-    assert.deepEqual(
-      await uploadReferences(
-        "project",
-        [{ kind: "text", title: "note", text: "reference" }],
-        controller.signal,
-      ),
-      ["asset"],
-    );
-    assert.equal(observed.length, 3);
-    assert.ok(
-      observed.every((options) => options.signal === controller.signal),
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
 test("cutting a stack moves its full member set once and leaves locked stacks untouched", () => {
   const a = createNode("image"),
     b = createNode("image");
@@ -285,63 +224,4 @@ test("history sync resolves interrupted failures without inventing outputs", () 
   assert.equal(next[0]!.status, "failed");
   assert.equal(next[0]!.message, "provider unavailable");
   assert.equal(next[0]!.outputs, undefined);
-});
-
-test("the first assistant document in a newly created service project is not skipped", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalStorage = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "localStorage",
-  );
-  const records = new Map<string, string>();
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (key: string) => records.get(key) ?? null,
-      setItem: (key: string, value: string) => records.set(key, value),
-    },
-  });
-  let exists = false;
-  globalThis.fetch = async (input) => {
-    const url = String(input);
-    if (url.endsWith("/canvas"))
-      return exists
-        ? Response.json({
-            tasks: [],
-            assets: [
-              {
-                id: "new-document",
-                kind: "text",
-                name: "assistant.md",
-                agentRunId: "turn",
-                generationTaskId: null,
-              },
-            ],
-          })
-        : Response.json({ detail: "absent" }, { status: 404 });
-    return new Response("first result", {
-      headers: { "Content-Type": "text/plain" },
-    });
-  };
-  try {
-    assert.equal(
-      (await unsyncedResults("new-project", new Set())).results.length,
-      0,
-    );
-    exists = true;
-    const synced = await unsyncedResults("new-project", new Set());
-    assert.equal(synced.results.length, 1);
-    assert.deepEqual(synced.results[0], {
-      taskId: "new-document",
-      assetId: "new-document",
-      kind: "text",
-      title: "assistant",
-      text: "first result",
-    });
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalStorage)
-      Object.defineProperty(globalThis, "localStorage", originalStorage);
-    else Reflect.deleteProperty(globalThis, "localStorage");
-  }
 });

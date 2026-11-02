@@ -1,7 +1,6 @@
 import { json, request } from "./api.ts";
 import type { BackendAsset } from "./generation.ts";
 import { requireActiveBackendProject } from "./projects.ts";
-import { creationEnabled } from "./creationClient.ts";
 import { uploadAsset, type ToolSourceInput } from "./tools.ts";
 
 export interface ImageSelectionBox {
@@ -46,16 +45,10 @@ export async function previewImageSelection(
   signal.throwIfAborted();
   let sourceAssetId = value.sourceAssetId;
   if (!sourceAssetId) {
-    const known = creationEnabled()
-      ? []
-      : await request<BackendAsset[]>(`/projects/${projectId}/assets`, {
-          signal,
-        });
     const response = await fetch(value.source.src, { signal });
     if (!response.ok) throw new Error("无法读取来源图片，请重新导入。");
     sourceAssetId = await uploadAsset(
       projectId,
-      known,
       await response.blob(),
       value.source.title,
       signal,
@@ -63,7 +56,7 @@ export async function previewImageSelection(
   }
   signal.throwIfAborted();
   return request<ImageSelectionPreview>(
-    `${creationEnabled() ? "/creation" : ""}/projects/${projectId}/image-selections`,
+    `/creation/projects/${projectId}/image-selections`,
     {
       ...json("POST", {
         sourceAssetId,

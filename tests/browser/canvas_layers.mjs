@@ -65,7 +65,7 @@ try {
   });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}?creation=unified`);
+  await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   if (generated) {
     await page
@@ -109,6 +109,9 @@ try {
     .getByLabel("图层文字内容", { exact: true })
     .fill("Editable after reopen");
   await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  // A committed snapshot may be visible before the UI receives its acknowledgement.
+  // Do not reload until the editor has cleared its pending delivery and closed.
+  await page.getByRole("button", { name: "应用到画布", exact: true }).waitFor({state: "hidden"});
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) => doc.kind === "layers" && doc.data.layers.length === 2,
@@ -131,6 +134,9 @@ try {
   );
   await page.getByLabel("图层文字内容", { exact: true }).fill("Edited again");
   await page.getByRole("button", { name: "应用到画布", exact: true }).click();
+  // A committed snapshot may be visible before the UI receives its acknowledgement.
+  // Do not reload until the editor has cleared its pending delivery and closed.
+  await page.getByRole("button", { name: "应用到画布", exact: true }).waitFor({state: "hidden"});
   snapshot = await until((value) =>
     value.editorDocuments.some(
       (doc) =>

@@ -107,15 +107,11 @@ def test_invalid_input_or_corrupt_file_preserves_existing_bytes(workspace, probl
     assert path.read_bytes() == before
 
 
-def test_workspace_api_requires_scope_version_and_lease(workspace):
-    store, _, project_id, session = workspace
+def test_retired_workspace_api_cannot_read_or_write_old_documents(workspace):
+    store, documents, project_id, session = workspace
+    before = documents.read(project_id)
     with TestClient(create_app(store), headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': session}) as client:
         path = f'/api/projects/{project_id}/workspace'
-        assert client.get(path).json()['document'] is None
-        value = dict(revision=0, document=document(project_id))
-        saved = client.put(path, json=value)
-        assert saved.status_code == 200 and saved.json()['revision'] == 1
-        assert client.get(path).json() == saved.json()
-        assert client.put(path, json={**value, 'revision': -1}).status_code == 422
-        assert client.put(path, json=value, headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
-        assert client.put(path, json=value, headers={'Origin': 'https://untrusted.example'}).status_code == 403
+        assert client.get(path).status_code == 404
+        assert client.put(path, json=dict(revision=0, document=document(project_id))).status_code == 404
+    assert documents.read(project_id) == before

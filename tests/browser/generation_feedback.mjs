@@ -72,7 +72,7 @@ async function setup(kind = "image") {
   page.setDefaultTimeout(15000);
   page.on("pageerror", (e) => errors.push(e.message));
   const state = () => call(`/api/creation/projects/${id}`);
-  await page.goto(`${base}/ai-tool/ai-canvas/${id}?creation=unified`);
+  await page.goto(`${base}/ai-tool/ai-canvas/${id}`);
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   await page
     .getByRole("toolbar", { name: "画布创作工具" })

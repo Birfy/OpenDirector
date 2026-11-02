@@ -11,7 +11,6 @@ import {
 } from "../src/canvas/generationCatalog.ts";
 import { createDocument, createNode } from "../src/canvas/model.ts";
 import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
-import { submitGeneration } from "../src/backend/generation.ts";
 
 const config: ModelConfig = {
   id: crypto.randomUUID(),
@@ -112,85 +111,4 @@ test("image reference restrictions narrow Seedance choices", () => {
     "1080P",
     "4K",
   ]);
-});
-
-test("submitting a video carries the selected resolution to the local API", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: { setInterval: () => 1, addEventListener: () => {} },
-  });
-  const submissions: Record<string, any>[] = [];
-  globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith("/generate")) {
-      submissions.push(JSON.parse(options!.body as string));
-      return Response.json({ id: "original-task" });
-    }
-    if (String(url).endsWith("/canvas/nodes"))
-      return Response.json({ id: "node", revision: 1 });
-    return Response.json({ ok: true });
-  };
-  try {
-    await submitGeneration(
-      {
-        documentId: crypto.randomUUID(),
-        documentTitle: "分辨率测试",
-        config,
-        kind: "video",
-        prompt: "山间日出",
-        title: "视频",
-        videoMode: "reference",
-        durationSeconds: 7,
-        aspectRatio: "16:9",
-        resolution: "768P",
-        references: [],
-      },
-      new AbortController().signal,
-    );
-    assert.equal(submissions.length, 1);
-    assert.equal(submissions[0]!.inputs.resolution, "768P");
-    assert.equal(submissions[0]!.inputs.aspectRatio, "16:9");
-    assert.equal(submissions[0]!.inputs.durationSeconds, 7);
-    await submitGeneration(
-      {
-        documentId: crypto.randomUUID(),
-        documentTitle: "自动分辨率",
-        config,
-        kind: "video",
-        prompt: "山间日出",
-        title: "视频",
-        videoMode: "reference",
-        resolution: "自动",
-        references: [],
-      },
-      new AbortController().signal,
-    );
-    assert.equal(submissions.length, 2);
-    assert.equal(submissions[1]!.inputs.resolution, undefined);
-    await submitGeneration(
-      {
-        documentId: crypto.randomUUID(),
-        documentTitle: "显式自动分辨率",
-        config: {
-          ...config,
-          inputRules: { ...config.inputRules, videoCapabilities: null },
-        },
-        kind: "video",
-        prompt: "山间日出",
-        title: "视频",
-        videoMode: "reference",
-        resolution: "自动",
-        references: [],
-      },
-      new AbortController().signal,
-    );
-    assert.equal(submissions.length, 3);
-    assert.equal(submissions[2]!.inputs.resolution, "auto");
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalWindow)
-      Object.defineProperty(globalThis, "window", originalWindow);
-    else Reflect.deleteProperty(globalThis, "window");
-  }
 });

@@ -21,8 +21,9 @@ try {
     headers: { "X-OpenDirector-Request": "1" },
   });
   assert.equal((await health.json()).isolated, true);
-  for (const unified of [false, true]) {
-    const mode = unified ? "?creation=unified" : "";
+  {
+    const unified = true;
+    const mode = "";
     const bootstrap = (url) =>
       url.origin === new URL(base).origin && url.pathname === "/";
     await page.route(bootstrap, (route) =>
@@ -77,10 +78,9 @@ try {
         nodes: [blank, filled, locked],
         viewport: { x: 0, y: 0, zoom: 0.8 },
       });
-      if (location.search.includes("unified"))
-        (await import("/src/backend/creationClient.ts"))
-          .creationClient(saved.id)
-          .close();
+      (await import("/src/backend/creationClient.ts"))
+        .creationClient(saved.id)
+        .close();
       await (await import("/src/backend/projects.ts")).releaseBackendProject();
       return {
         id: saved.id,
@@ -256,11 +256,7 @@ try {
     assert.equal(await page.getByRole("dialog").count(), 0);
     const read = async () => {
       const response = await page.request.get(
-        base +
-          "/api/" +
-          (unified
-            ? "creation/projects/" + f.id
-            : "projects/" + f.id + "/workspace"),
+        base + "/api/" + ("creation/projects/" + f.id),
         { headers: { "X-OpenDirector-Request": "1" } },
       );
       assert.equal(response.status(), 200);
@@ -269,16 +265,12 @@ try {
     let saved;
     for (let attempt = 0; attempt < 100; attempt++) {
       saved = await read();
-      const current = unified
-        ? saved.canvasItems.find((n) => n.id === f.blank)
-        : saved.document.nodes.find((n) => n.id === f.blank);
-      const data = unified
-        ? saved.editorDocuments.find(
-            (d) => d.id === current.binding.objectRef.id,
-          ).data
-        : current.data.subject;
+      const current = saved.canvasItems.find((n) => n.id === f.blank);
+      const data = saved.editorDocuments.find(
+        (d) => d.id === current.binding.objectRef.id,
+      ).data;
       if (
-        (unified ? current.title : current.data.title) === "新的主体名称" &&
+        current.title === "新的主体名称" &&
         data.description === "仅供用户查看的说明"
       )
         break;
@@ -381,7 +373,7 @@ try {
       assert.equal((await dimensions(id)).overflow, "hidden");
     }
     rows.push({
-      mode: unified ? "unified" : "workspace",
+      mode: "unified",
       checks: [
         "heading rename",
         "description auto height and shrink",

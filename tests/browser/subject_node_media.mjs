@@ -42,7 +42,8 @@ try {
     headers: { "X-OpenDirector-Request": "1" },
   });
   assert.equal((await health.json()).isolated, true);
-  for (const unified of [false, true]) {
+  {
+    const unified = true;
     const bootstrap = (url) =>
       url.origin === new URL(base).origin && url.pathname === "/";
     await page.route(bootstrap, (route) =>
@@ -51,7 +52,7 @@ try {
         body: "<html><body></body></html>",
       }),
     );
-    await page.goto(base + (unified ? "/?creation=unified" : "/"));
+    await page.goto(base + "/");
     const fixture = await page.evaluate(async (video) => {
       const { createDocument, createNode } =
         await import("/src/canvas/model.ts");
@@ -142,10 +143,9 @@ try {
         nodes: [...nodes, film, locked],
         viewport: { x: 10, y: 10, zoom: 0.9 },
       });
-      if (location.search.includes("unified"))
-        (await import("/src/backend/creationClient.ts"))
-          .creationClient(savedDocument.id)
-          .close();
+      (await import("/src/backend/creationClient.ts"))
+        .creationClient(savedDocument.id)
+        .close();
       await (await import("/src/backend/projects.ts")).releaseBackendProject();
       return {
         id: savedDocument.id,
@@ -158,9 +158,7 @@ try {
       };
     }, video.toString("base64"));
     await page.unroute(bootstrap);
-    await page.goto(
-      `${base}/ai-tool/ai-canvas/${fixture.id}${unified ? "?creation=unified" : ""}`,
-    );
+    await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${""}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
     for (const [count, id] of fixture.images.entries()) {
@@ -223,7 +221,7 @@ try {
         .selectOption(theme);
       await page.getByRole("button", { name: "关闭设置", exact: true }).click();
       await page.screenshot({
-        path: `/tmp/opendirector-subject-media-${unified ? "unified" : "workspace"}-${theme}.png`,
+        path: `/tmp/opendirector-subject-media-${"unified"}-${theme}.png`,
       });
     }
     const target = node(fixture.images[0]);
@@ -302,23 +300,19 @@ try {
     let storedCount = 0;
     for (let attempt = 0; attempt < 100; attempt++) {
       const response = await page.request.get(
-        base +
-          `/api/${unified ? "creation/projects/" + fixture.id : "projects/" + fixture.id + "/workspace"}`,
+        base + `/api/${"creation/projects/" + fixture.id}`,
         { headers: { "X-OpenDirector-Request": "1" } },
       );
       assert.equal(response.status(), 200);
       const saved = await response.json();
-      if (unified) {
+      {
         const item = saved.canvasItems.find(
           (item) => item.id === fixture.images[0],
         );
         storedCount = saved.editorDocuments.find(
           (doc) => doc.id === item.binding.objectRef.id,
         ).data.auxiliaries.length;
-      } else
-        storedCount = saved.document.nodes.find(
-          (node) => node.id === fixture.images[0],
-        ).data.subject.auxiliaries.length;
+      }
       if (storedCount === 3) break;
       await page.waitForTimeout(100);
     }
@@ -357,7 +351,7 @@ try {
       .waitFor();
     console.log(
       JSON.stringify({
-        mode: unified ? "unified" : "workspace",
+        mode: "unified",
         auxiliaryStates: [0, 1, 2, 3],
         emptySlotFillsRail: true,
         primaryPreserved: true,

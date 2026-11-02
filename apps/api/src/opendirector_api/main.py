@@ -26,7 +26,6 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector_api.creation import creation_routes
 from opendirector_api.library import library_routes
-from opendirector_api.workspace import workspace_routes
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.infrastructure.model_configs import connection_fields, model_fields
 from opendirector.domain.input_rules import input_rules
@@ -83,7 +82,6 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     app = FastAPI(title="OpenDirector Local API", version="0.1.0", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
     app.include_router(library_routes(creation_projects))
-    app.include_router(workspace_routes(store))
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):

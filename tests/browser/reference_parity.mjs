@@ -34,76 +34,94 @@ try {
   await page.goto(base);
   const submission = await page.evaluate(async (png) => {
     const { request } = await import("/src/backend/api.ts");
-    const { createDocument } = await import("/src/canvas/model.ts");
+    const { createDocument, createNode } = await import("/src/canvas/model.ts");
     const { importWorkspaceDocument } =
       await import("/src/backend/workspace.ts");
+    const { creationClient } = await import("/src/backend/creationClient.ts");
     const { releaseBackendProject } = await import("/src/backend/projects.ts");
-    const {
-      submitGeneration,
-      projectSnapshot,
-      serviceNodeId,
-      prepareReferences,
-    } = await import("/src/backend/generation.ts");
     const { uploadReferenceFile } =
       await import("/src/backend/referenceUploads.ts");
-    const models = await request("/model-configs");
-    const config = (models.models ?? models).find(
-      (model) => model.kind === "image",
+    const { generationContentPatch } =
+      await import("/src/canvas/generationReferenceContent.ts");
+    const config = (await request("/model-configs")).find(
+      (m) => m.kind === "image",
+    );
+    const sources = [0, 1].map((i) =>
+      createNode(
+        "image",
+        { x: i * 400, y: 100 },
+        {
+          title: "same name",
+          src: png,
+          mimeType: "image/png",
+          mediaRole: "asset",
+          assetState: "ready",
+        },
+      ),
+    );
+    const target = createNode(
+      "image",
+      { x: 800, y: 100 },
+      {
+        title: "Target",
+        prompt: "Draw",
+        settings: {
+          mode: "image",
+          model: config.modelId,
+          modelConfigId: config.id,
+          aspectRatio: "1:1",
+          resolution: "1024",
+          count: 1,
+          prompt: "",
+        },
+      },
+    );
+    const part = (node) => ({
+      type: "reference",
+      assetId: "node:" + node.id,
+      nodeId: node.id,
+      name: node.data.title,
+    });
+    Object.assign(
+      target.data,
+      generationContentPatch(
+        [
+          { type: "text", text: "Before " },
+          part(sources[1]),
+          { type: "text", text: " between " },
+          part(sources[0]),
+          { type: "text", text: " repeat " },
+          part(sources[1]),
+        ],
+      ),
     );
     const saved = await importWorkspaceDocument({
-      ...createDocument(),
-      title: "Parity submission " + crypto.randomUUID().slice(0, 8),
-      nodes: [],
-      edges: [],
+      ...createDocument("Parity " + crypto.randomUUID().slice(0, 8)),
+      nodes: [...sources, target],
+      edges: sources.map((n) => ({
+        id: crypto.randomUUID(),
+        source: n.id,
+        target: target.id,
+      })),
     });
-    const target = crypto.randomUUID(),
-      a = crypto.randomUUID(),
-      b = crypto.randomUUID();
-    const part = (id) => ({
-      type: "reference",
-      assetId: "node:" + id,
-      nodeId: id,
-      name: "same name",
-    });
-    const input = {
-      documentId: saved.id,
-      documentTitle: saved.title,
-      nodeId: target,
-      config,
-      kind: "image",
-      title: "Target",
-      videoMode: "first_frame",
-      prompt: "Draw",
-      promptContent: [
-        { type: "text", text: "Before " },
-        part(b),
-        { type: "text", text: " between " },
-        part(a),
-        { type: "text", text: " repeat " },
-        part(b),
-      ],
-      references: [
-        { kind: "image", title: "same name", nodeId: a, src: png },
-        { kind: "image", title: "same name", nodeId: b, src: png },
-      ],
-    };
-    const readTask = async (id) => {
-      for (let index = 0; index < 100; index++) {
-        const snapshot = await projectSnapshot(saved.id);
-        const task = snapshot.tasks.find((task) => task.id === id);
-        if (task && ["succeeded", "failed"].includes(task.status))
-          return { snapshot, task };
-        await new Promise((resolve) => setTimeout(resolve, 100));
+    const client = creationClient(saved.id);
+    const run = async () => {
+      const receipt = await client.submit(target.id, "candidate_only");
+      for (let i = 0; i < 150; i++) {
+        await client.refresh();
+        const job = client.snapshot.jobs.find(
+          (j) => j.id === receipt.jobIds[0],
+        );
+        if (job && ["succeeded", "failed"].includes(job.status)) return job;
+        await new Promise((r) => setTimeout(r, 100));
       }
-      throw new Error("Fixture task did not finish");
+      throw Error("Fixture did not complete");
     };
-    const first = await submitGeneration(input, new AbortController().signal);
-    const completed = await readTask(first.taskId);
-    const second = await submitGeneration(input, new AbortController().signal);
-    const repeated = await readTask(second.taskId);
-    const body = repeated.task.promptContent;
-    const sources = repeated.snapshot.canvas.nodes.filter(
-      (node) => node.role === "material",
+    const first = await run(),
+      second = await run();
+    const refs = client.snapshot.references.filter((r) => r.active);
+    const expectedOrder = [sources[1], sources[0], sources[1]].map(
+      (n) => refs.find((r) => r.source.id === n.id)?.id,
     );
     const file = new File([await (await fetch(png)).blob()], "same.png", {
       type: "image/png",
@@ -116,9 +134,10 @@ try {
       new AbortController().signal,
       async (matches) => {
         choiceCount = matches.length;
-        return matches.find((asset) => asset.nodeId === sources[1].id);
+        return matches.find((a) => a.nodeId === sources[1].id);
       },
     );
+    const before = client.snapshot.assets.length;
     try {
       await uploadReferenceFile(
         saved.id,
@@ -128,71 +147,39 @@ try {
           throw new DOMException("cancel", "AbortError");
         },
       );
-    } catch (error) {
-      cancelled = error.name === "AbortError";
+    } catch (e) {
+      cancelled = e.name === "AbortError";
     }
-    const countBeforeReuse = repeated.snapshot.assets.length;
-    const generatedAsset = repeated.snapshot.assets.find(
-      (asset) => asset.id === repeated.task.assetId,
-    );
-    const reused = await prepareReferences(
-      saved.id,
-      [
-        {
-          kind: "image",
-          nodeId: target,
-          title: "Generated continuation",
-          assetId: generatedAsset.id,
-          src: `/api/data/${saved.id}/assets/${generatedAsset.id}`,
-        },
-      ],
-      new AbortController().signal,
-    );
-    const afterReuse = await projectSnapshot(saved.id);
-    const reusedCanonical =
-      reused[0].asset.id === generatedAsset.id &&
-      afterReuse.assets.length === countBeforeReuse;
-    await releaseBackendProject();
-    return {
-      reusedCanonical,
-      firstStatus: completed.task.status,
-      secondStatus: repeated.task.status,
-      target: repeated.task.logicalNodeId,
-      expectedTarget: target,
-      sameExecution: completed.task.nodeId === repeated.task.nodeId,
-      ids: repeated.task.referenceIds,
-      firstIds: completed.task.referenceIds,
-      body,
-      sourceCount: sources.length,
+    await client.refresh();
+    const output = {
+      firstStatus: first.status,
+      secondStatus: second.status,
+      firstInputs: first.inputSnapshot.references,
+      secondInputs: second.inputSnapshot.references,
+      order: second.inputSnapshot.spec.promptContent
+        .filter((p) => p.type === "reference")
+        .map((p) => p.referenceId),
+      expectedOrder,
       choiceCount,
       chosen: chosen.nodeId,
       expectedChoice: sources[1].id,
       cancelled,
-      expectedOrder: [
-        await serviceNodeId(b, "source:body"),
-        await serviceNodeId(a, "source:body"),
-        await serviceNodeId(b, "source:body"),
-      ],
+      unchanged: before === client.snapshot.assets.length,
     };
+    client.close();
+    await releaseBackendProject();
+    return output;
   }, png);
-  assert.equal(submission.reusedCanonical, true);
   assert.equal(submission.firstStatus, "succeeded");
   assert.equal(submission.secondStatus, "succeeded");
-  assert.equal(submission.target, submission.expectedTarget);
-  assert.equal(submission.sameExecution, true);
-  assert.equal(submission.sourceCount, 2);
-  assert.deepEqual(submission.ids, submission.firstIds);
-  assert.deepEqual(
-    submission.body
-      .filter((part) => part.type === "reference")
-      .map((part) => part.nodeId),
-    submission.expectedOrder,
-  );
+  assert.deepEqual(submission.firstInputs, submission.secondInputs);
+  assert.deepEqual(submission.order, submission.expectedOrder);
   assert.equal(submission.choiceCount, 2);
   assert.equal(submission.chosen, submission.expectedChoice);
   assert.equal(submission.cancelled, true);
+  assert.equal(submission.unchanged, true);
   console.log(
-    "PASS workspace: stable execution ownership, independent equal-byte sources, inline order/repeats, explicit upload source choice and cancellation.",
+    "PASS default entry: frozen reference identities, inline order/repeats, equal-content source choice and cancellation",
   );
 
   const mp4 = execFileSync("ffmpeg", [
@@ -216,8 +203,9 @@ try {
     "mp4",
     "pipe:1",
   ]);
-  for (const unified of [false, true]) {
-    await page.goto(base + (unified ? "/?creation=unified" : "/"));
+  {
+    const unified = true;
+    await page.goto(base + "/");
     const fixture = await page.evaluate(async () => {
       const { createDocument, createNode } =
         await import("/src/canvas/model.ts");
@@ -240,9 +228,7 @@ try {
       return { id: saved.id, node: node.id };
     });
     await page.unroute(bootstrap);
-    await page.goto(
-      `${base}/ai-tool/ai-canvas/${fixture.id}${unified ? "?creation=unified" : ""}`,
-    );
+    await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${""}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const card = page.locator(`.react-flow__node[data-id="${fixture.node}"]`);
     await card.hover();
@@ -345,7 +331,7 @@ try {
     assert.equal(await page.locator(".react-flow__edge").count(), 0);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     console.log(
-      `PASS ${unified ? "unified" : "workspace"}: actual MP4 rejected by empty image node; UTF-8 Markdown reference linked; pinned paste loads inventory without opening @ and creates no following edge.`,
+      `PASS ${"unified"}: actual MP4 rejected by empty image node; UTF-8 Markdown reference linked; pinned paste loads inventory without opening @ and creates no following edge.`,
     );
     await page.evaluate(async () => {
       await (await import("/src/backend/projects.ts")).releaseBackendProject();

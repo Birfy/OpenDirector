@@ -42,11 +42,7 @@ try {
     headers: { "X-OpenDirector-Request": "1" },
   });
   assert.equal((await health.json()).isolated, true);
-  for (const unified of [false, true].filter(
-    (value) =>
-      !process.env.SUBJECT_TEST_MODE ||
-      (process.env.SUBJECT_TEST_MODE === "unified") === value,
-  )) {
+  {
     const libraryHeaders = {
       "X-OpenDirector-Request": "1",
       "Content-Type": "application/json",
@@ -73,7 +69,7 @@ try {
         body: "<html><body></body></html>",
       }),
     );
-    await page.goto(base + (unified ? "/?creation=unified" : "/"));
+    await page.goto(base + "/");
     const fixture = await page.evaluate(async (video) => {
       const { createDocument, createNode, applyCommand } =
         await import("/src/canvas/model.ts");
@@ -216,10 +212,9 @@ try {
         },
       });
       const savedDocument = await importWorkspaceDocument(original);
-      if (location.search.includes("unified"))
-        (await import("/src/backend/creationClient.ts"))
-          .creationClient(savedDocument.id)
-          .close();
+      (await import("/src/backend/creationClient.ts"))
+        .creationClient(savedDocument.id)
+        .close();
       await (await import("/src/backend/projects.ts")).releaseBackendProject();
       return {
         id: savedDocument.id,
@@ -239,9 +234,7 @@ try {
       };
     }, video.toString("base64"));
     await page.unroute(bootstrap);
-    await page.goto(
-      `${base}/ai-tool/ai-canvas/${fixture.id}${unified ? "?creation=unified" : ""}`,
-    );
+    await page.goto(`${base}/ai-tool/ai-canvas/${fixture.id}${""}`);
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`);
     const library = page.getByRole("dialog", { name: "资产库", exact: true });
@@ -278,14 +271,13 @@ try {
     };
     const read = async () => {
       const response = await page.request.get(
-        base +
-          `/api/${unified ? "creation/projects/" + fixture.id : "projects/" + fixture.id + "/workspace"}`,
+        base + `/api/${"creation/projects/" + fixture.id}`,
         { headers: libraryHeaders },
       );
       assert.equal(response.status(), 200);
       const saved = await response.json();
-      if (!unified)
-        return { nodes: saved.document.nodes, edges: saved.document.edges };
+      {
+      }
       return {
         nodes: saved.canvasItems
           .filter((item) => item.visible)
@@ -605,7 +597,7 @@ try {
     );
     console.log(
       JSON.stringify({
-        mode: unified ? "unified" : "workspace",
+        mode: "unified",
         independentSelector: true,
         entryTabs: true,
         singleSelection: true,

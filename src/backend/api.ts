@@ -59,20 +59,6 @@ export function json(method: string, value: unknown): RequestInit {
   };
 }
 
-/** Raw bytes of a project asset; reads need no session lease. */
-export async function assetBlob(
-  projectId: string,
-  assetId: string,
-  signal?: AbortSignal,
-) {
-  const response = await fetch(`/api/data/${projectId}/assets/${assetId}`, {
-    headers,
-    signal,
-  });
-  if (!response.ok) throw await responseError(response);
-  return response.blob();
-}
-
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "操作未完成，请重试。";
 }

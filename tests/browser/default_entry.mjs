@@ -1,0 +1,166 @@
+/** Ordinary URL, project lifecycle, unsupported-format isolation, and no legacy UI writes. */
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+const { chromium } = await import(
+  process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
+);
+const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
+const headers = {
+  "X-OpenDirector-Request": "1",
+  "X-OpenDirector-Session": crypto.randomUUID(),
+};
+async function api(path, body) {
+  const r = await fetch(base + "/api" + path, {
+    headers: { ...headers, "Content-Type": "application/json" },
+    ...(body ? { method: "POST", body: JSON.stringify(body) } : {}),
+  });
+  assert.ok(r.ok, await r.clone().text());
+  return r.json();
+}
+const health = await api("/creation-test-health");
+assert.equal(health.isolated, true);
+const initiallyEmpty = (await api("/creation/projects")).projects.length === 0;
+// Seed a real old-format directory only in the isolated fixture, then check byte-for-byte preservation.
+const old = await api("/projects", {
+  id: crypto.randomUUID(),
+  name: initiallyEmpty ? "未命名画布" : "Old format " + crypto.randomUUID().slice(0, 8),
+});
+async function files(path) {
+  const result = {};
+  for (const ent of await readdir(path, { withFileTypes: true })) {
+    const p = join(path, ent.name);
+    if (ent.isDirectory()) Object.assign(result, await files(p));
+    else if (ent.isFile()) result[p] = (await readFile(p)).toString("base64");
+  }
+  return result;
+}
+const before = await files(old.path);
+const credentials = await readFile(
+  join(health.root, ".opendirector", "models.json"),
+);
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.CHROMIUM_PATH
+    ? { executablePath: process.env.CHROMIUM_PATH }
+    : {}),
+  args: ["--no-sandbox"],
+});
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+page.setDefaultTimeout(20000);
+const errors = [],
+  legacy = [];
+const sessions = new Set();
+page.on("pageerror", (e) => errors.push(e.message));
+page.on("request", (r) => {
+  const session = r.headers()["x-opendirector-session"];
+  if (session) sessions.add(session);
+  if (/^\/api\/(projects|data|sessions)(\/|$)/.test(new URL(r.url()).pathname))
+    legacy.push(r.method() + " " + r.url());
+});
+const saved = () => page.getByText("已保存到本机", { exact: true }).waitFor();
+try {
+  await page.addInitScript(
+    (id) => localStorage.setItem("opendirector.lastFilesystemProject", id),
+    old.id,
+  );
+  await page.goto(base + "/");
+  await saved();
+  assert.equal(new URL(page.url()).search, "");
+  if (initiallyEmpty) {
+    const first = (await api("/creation/projects")).projects;
+    assert.equal(first.length, 1);
+    assert.equal(first[0].name, "未命名画布 (2)");
+  }
+  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByText(/使用旧格式/).waitFor();
+  assert.equal(
+    await page.getByRole("menuitem", { name: old.name, exact: true }).count(),
+    0,
+  );
+  await page
+    .getByRole("menuitem", { name: "新建画布项目", exact: true })
+    .click();
+  const name = "Default entry " + crypto.randomUUID().slice(0, 8);
+  await page.getByRole("textbox", { name: "项目名称", exact: true }).fill(name);
+  const created = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/commands") &&
+      r.request().postDataJSON()?.type === "project.create",
+  );
+  await page.getByRole("button", { name: "创建项目", exact: true }).click();
+  const response = await created;
+  assert.equal((await response.json()).status, "applied");
+  const id = response.request().postDataJSON().projectId;
+  await page
+    .getByRole("dialog", { name: "新建画布项目", exact: true })
+    .waitFor({ state: "hidden" });
+  await saved();
+  await page.getByRole("button", { name: name, exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "项目名称", exact: true })
+    .fill(name + " renamed");
+  await page
+    .getByRole("textbox", { name: "项目名称", exact: true })
+    .press("Enter");
+  await saved();
+  await page
+    .getByRole("button", { name: name + " renamed", exact: true })
+    .waitFor();
+  assert.equal(
+    (await api(`/creation/projects/${id}`)).project.name,
+    name + " renamed",
+  );
+  await page.reload();
+  await saved();
+  await page
+    .getByRole("button", { name: name + " renamed", exact: true })
+    .waitFor();
+  const inventory = (await api("/creation/projects")).projects;
+  await page.goto(base + `/ai-tool/ai-canvas/${old.id}`);
+  await page
+    .getByRole("alert")
+    .getByText(/不支持该工程格式/)
+    .waitFor();
+  assert.deepEqual((await api("/creation/projects")).projects, inventory);
+  await page.getByRole("link", { name: "返回画布首页" }).click();
+  await saved();
+  await page
+    .getByRole("button", { name: name + " renamed", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "与 AI 对话", exact: true }).click();
+  await page.getByText(/助手对话尚未接入。请使用画布节点/).waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "发送消息", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.deepEqual(legacy, []);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(await files(old.path), before);
+  assert.deepEqual(
+    await readFile(join(health.root, ".opendirector", "models.json")),
+    credentials,
+  );
+  console.log(
+    JSON.stringify({
+      passed: true,
+      projectId: id,
+      oldProjectId: old.id,
+      plainEntry: true,
+      initiallyEmpty,
+      legacyRequests: legacy.length,
+      oldFilesAndCredentialsUnchanged: true,
+    }),
+  );
+} catch (error) {
+  console.error(await page.locator("body").innerText());
+  console.error({errors, legacy});
+  throw error;
+} finally {
+  for (const session of sessions) {
+    await fetch(base + `/api/creation/sessions/${session}`, {method: "DELETE", headers}).catch(() => {});
+  }
+  await browser.close();
+}
