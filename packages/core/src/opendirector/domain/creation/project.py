@@ -163,6 +163,8 @@ class ProjectSnapshot(Contract):
                 job = jobs.get(provenance.jobId)
                 if job is None or job.asset is None or job.asset.assetId != asset.id or job.inputFingerprint != provenance.inputFingerprint:
                     raise ValueError('Generated asset provenance does not match its job')
+            if provenance.sourceItemId and provenance.sourceItemId not in items:
+                raise ValueError('Edited asset refers to a missing logical source')
             if provenance.editorDocumentId:
                 doc = documents.get(provenance.editorDocumentId)
                 if doc is None or provenance.editorRevision > doc.revision:

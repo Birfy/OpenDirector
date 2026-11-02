@@ -93,6 +93,40 @@ class CanvasApplyEdit(Contract):
     editorId: UUID
 
 
+class TimelinePublishRender(Contract):
+    itemId: UUID
+    editorId: UUID
+    asset: AssetRef
+    outputId: UUID
+    title: str = Field(default='合成视频', max_length=255)
+    position: Point = Field(default_factory=Point)
+
+
+class MediaPublicationOutput(Contract):
+    itemId: UUID
+    asset: AssetRef
+    title: str = Field(min_length=1, max_length=255)
+    position: Point = Field(default_factory=Point)
+    width: float = Field(default=352, gt=0, le=10000)
+    height: float = Field(default=198, gt=0, le=10000)
+
+
+class CanvasPublishMedia(Contract):
+    itemId: UUID
+    source: AssetRef | None = None
+    sourceEditorId: UUID | None = None
+    document: EditorDocument
+    outputs: tuple[MediaPublicationOutput, ...] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode='after')
+    def distinct_outputs(self):
+        unique([output.itemId for output in self.outputs], 'output item IDs')
+        unique([output.asset.assetId for output in self.outputs], 'output asset IDs')
+        if self.document.kind not in {'media_edit', 'director'}:
+            raise ValueError('Local publication requires a media edit or director snapshot')
+        return self
+
+
 class CanvasConfigure(Contract):
     itemId: UUID
     specId: UUID
@@ -193,7 +227,11 @@ class CommandBase(Contract):
         required = []
         if self.type in {'project.rename', 'project.trash', 'project.restore'}:
             required = [('project', self.projectId)]
-        elif self.type == 'canvas.applyEdit':
+        elif self.type == 'canvas.publishMedia':
+            required = [('canvas_item', payload.itemId), *[('asset', o.asset.assetId) for o in payload.outputs]]
+            if payload.sourceEditorId:
+                required.append(('editor_document', payload.sourceEditorId))
+        elif self.type in {'canvas.applyEdit', 'timeline.publishRender'}:
             required = [('canvas_item', payload.itemId), ('asset', payload.asset.assetId), ('editor_document', payload.editorId)]
         elif self.type in {'canvas.update', 'canvas.hide', 'canvas.materialize', 'canvas.applyEdit', 'canvas.configure', 'canvas.attachEditor', 'canvas.detachEditor', 'canvas.applyVersion'}:
             required = [('canvas_item', payload.itemId)]
@@ -248,6 +286,8 @@ _COMMANDS = (
     ('CanvasHideCommand', 'canvas.hide', CanvasHide),
     ('CanvasMaterializeCommand', 'canvas.materialize', CanvasMaterialize),
     ('CanvasApplyEditCommand', 'canvas.applyEdit', CanvasApplyEdit),
+    ('CanvasPublishMediaCommand', 'canvas.publishMedia', CanvasPublishMedia),
+    ('TimelinePublishRenderCommand', 'timeline.publishRender', TimelinePublishRender),
     ('NodeVersionApplyCommand', 'canvas.applyVersion', NodeVersionApply),
     ('CanvasConfigureCommand', 'canvas.configure', CanvasConfigure),
     ('CanvasEditorAttachCommand', 'canvas.attachEditor', CanvasEditorAttach),

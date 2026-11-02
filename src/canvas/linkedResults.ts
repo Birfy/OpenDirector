@@ -578,7 +578,7 @@ export function appendServiceResults(
   };
 }
 
-function placeResults(
+export function placeResults(
   document: CanvasDocument,
   outputs: readonly ServiceResult[],
   start: { x: number; y: number },

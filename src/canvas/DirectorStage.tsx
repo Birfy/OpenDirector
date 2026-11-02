@@ -1,3 +1,4 @@
+import { useEditorCommit, type EditorApplyResult } from "./useEditorCommit";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -44,9 +45,15 @@ import type { LinkedMediaResult } from "./linkedResults";
 
 export interface DirectorStageProps {
   node: CanvasNode;
-  onApply: (stage: LocalStageDocument, screenshot?: string) => void;
+  onApply: (
+    stage: LocalStageDocument,
+    screenshot?: string,
+  ) => EditorApplyResult;
   onClose: () => void;
-  onRender: (result: LinkedMediaResult) => boolean;
+  onRender: (result: LinkedMediaResult) => boolean | Promise<boolean>;
+  onPrepareRender?: (
+    stage: LocalStageDocument,
+  ) => Promise<(result: LinkedMediaResult) => Promise<boolean>>;
 }
 interface StageRuntime {
   renderer: THREE.WebGLRenderer;
@@ -251,6 +258,7 @@ export function DirectorStage({
   onApply,
   onClose,
   onRender,
+  onPrepareRender,
 }: DirectorStageProps) {
   const [historyState, setHistoryState] = useState(() =>
     createStageHistory(
@@ -259,6 +267,7 @@ export function DirectorStage({
         : createLocalStage(),
     ),
   );
+  const commit = useEditorCommit(onClose);
   const stage = historyState.present;
   const history = useRef(historyState);
   const [selected, setSelected] = useState<string | null>(
@@ -270,6 +279,9 @@ export function DirectorStage({
     [ready, setReady] = useState(false);
   const [inserted, setInserted] = useState(false);
   const [renderProgress, setRenderProgress] = useState<number | null>(null);
+  const renderPublisher = useRef<
+    ((result: LinkedMediaResult) => boolean | Promise<boolean>) | null
+  >(null);
   const [rendered, setRendered] = useState<Blob | null>(null);
   const exporting = useRef<AbortController | null>(null);
   const mount = useRef<HTMLDivElement>(null),
@@ -765,6 +777,10 @@ export function DirectorStage({
     });
     let renderer: THREE.WebGLRenderer | undefined;
     try {
+      renderPublisher.current = onPrepareRender
+        ? await onPrepareRender(snapshot)
+        : onRender;
+      controller.signal.throwIfAborted();
       renderer = new THREE.WebGLRenderer({ antialias: true });
       const size = stageOutputSize(snapshot.aspectRatio);
       renderer.setSize(size.width, size.height);
@@ -838,7 +854,7 @@ export function DirectorStage({
       );
       if (active.current && !controller.signal.aborted) {
         setInserted(
-          onRender({
+          await (renderPublisher.current ?? onRender)({
             kind: "video",
             src,
             mimeType: "video/mp4",
@@ -863,20 +879,17 @@ export function DirectorStage({
       title={`导演预演 · ${node.data.title}`}
       subtitle="本地 3D 舞台 · 镜头与主体关键帧"
       className="cw-stage-dialog"
-      onClose={onClose}
-      onApply={() => {
-        try {
+      onClose={commit.close}
+      onApply={() =>
+        commit.apply(() =>
           onApply(
             parseLocalStageValue(stageRef.current),
             runtime.current ? screenshot() : undefined,
-          );
-          onClose();
-        } catch (reason) {
-          setError(reason instanceof Error ? reason.message : "保存舞台失败。");
-        }
-      }}
-      disabled={node.locked || renderProgress !== null}
-      error={error}
+          ),
+        )
+      }
+      disabled={node.locked || renderProgress !== null || commit.saving}
+      error={commit.error || error}
       actions={
         <>
           <button

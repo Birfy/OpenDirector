@@ -46,6 +46,7 @@ export interface AssetProvenanceInput extends ContractInput {
   readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered";
   readonly jobId?: string | null;
   readonly toolTaskId?: string | null;
+  readonly sourceItemId?: string | null;
   readonly editorDocumentId?: string | null;
   readonly editorRevision?: number | null;
   readonly sources?: ReadonlyArray<AssetRefInput>;
@@ -248,6 +249,19 @@ export interface CanvasPresentationUpdateInput extends ContractInput {
   readonly parentId?: string | null;
 }
 
+export interface CanvasPublishMediaInput extends ContractInput {
+  readonly itemId: string;
+  readonly source?: AssetRefInput | null;
+  readonly sourceEditorId?: string | null;
+  readonly document: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
+  readonly outputs: ReadonlyArray<MediaPublicationOutputInput>;
+}
+
+export interface CanvasPublishMediaCommandInput extends CommandBaseInput {
+  readonly type: "canvas.publishMedia";
+  readonly payload: CanvasPublishMediaInput;
+}
+
 export interface CanvasShowInput extends ContractInput {
   readonly item: TextCanvasItemInput | ImageCanvasItemInput | VideoCanvasItemInput | AudioCanvasItemInput | FileCanvasItemInput | SubjectCanvasItemInput | TimelineCanvasItemInput | StackCanvasItemInput | ToolCanvasItemInput | DirectorCanvasItemInput | GroupCanvasItemInput;
 }
@@ -316,7 +330,7 @@ export interface CreationContractsInput extends ContractInput {
   readonly generationSpec: TextGenerationSpecInput | ImageGenerationSpecInput | VideoGenerationSpecInput | AudioGenerationSpecInput;
   readonly reference: PinnedReferenceInput | FollowingReferenceInput;
   readonly editorDocument: TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
-  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+  readonly command: ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
   readonly receipt: CommandReceiptInput;
   readonly query: QueryInput;
   readonly event: ProjectEventInput;
@@ -698,6 +712,15 @@ export interface MediaMetadataInput extends ContractInput {
   readonly hasAudio?: boolean | null;
   readonly sampleRate?: number | null;
   readonly channels?: number | null;
+}
+
+export interface MediaPublicationOutputInput extends ContractInput {
+  readonly itemId: string;
+  readonly asset: AssetRefInput;
+  readonly title: string;
+  readonly position?: PointInput;
+  readonly width?: number;
+  readonly height?: number;
 }
 
 export interface ModelConfigPublicInput extends ModelConnectionInput {
@@ -1163,6 +1186,20 @@ export interface TimelineDocumentInput extends EditorDocumentBaseInput {
   readonly data: TimelineDataInput;
 }
 
+export interface TimelinePublishRenderInput extends ContractInput {
+  readonly itemId: string;
+  readonly editorId: string;
+  readonly asset: AssetRefInput;
+  readonly outputId: string;
+  readonly title?: string;
+  readonly position?: PointInput;
+}
+
+export interface TimelinePublishRenderCommandInput extends CommandBaseInput {
+  readonly type: "timeline.publishRender";
+  readonly payload: TimelinePublishRenderInput;
+}
+
 export interface TimelineResourceInput extends ContractInput {
   readonly asset: AssetRefInput;
   readonly title: string;
@@ -1303,7 +1340,7 @@ export type ReferenceInput = PinnedReferenceInput | FollowingReferenceInput;
 
 export type EditorDocumentInput = TimelineDocumentInput | SubjectDocumentInput | LayerDocumentInput | ImageCropDocumentInput | StackDocumentInput | ToolDocumentInput | DirectorDocumentInput | MediaEditDocumentInput;
 
-export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
+export type CommandInput = ProjectCreateCommandInput | ProjectRenameCommandInput | ProjectTrashCommandInput | ProjectRestoreCommandInput | AssetImportCommandInput | AssetWriteTextCommandInput | AssetMetadataCommandInput | AssetDeleteCommandInput | CanvasShowCommandInput | CanvasMoveCommandInput | CanvasUpdateCommandInput | CanvasHideCommandInput | CanvasMaterializeCommandInput | CanvasApplyEditCommandInput | CanvasPublishMediaCommandInput | TimelinePublishRenderCommandInput | NodeVersionApplyCommandInput | CanvasConfigureCommandInput | CanvasEditorAttachCommandInput | CanvasEditorDetachCommandInput | SpecCreateCommandInput | SpecUpdateCommandInput | SpecRestoreCommandInput | SpecPromptCommandInput | ReferenceAddCommandInput | ReferenceUpdateCommandInput | ReferenceRestoreCommandInput | ReferenceRemoveCommandInput | GenerationSubmitCommandInput | JobCancelCommandInput | JobRecoverCommandInput | JobCheckpointCommandInput | ResultSelectCommandInput | EditorCreateCommandInput | EditorSaveCommandInput | HistoryUndoCommandInput | HistoryRedoCommandInput | BatchCommandInput;
 
 export type ExecutionParametersInput = TextExecutionInput | ImageExecutionInput | VideoExecutionInput | AudioExecutionInput;
 
@@ -1361,6 +1398,7 @@ export interface AssetProvenance extends Contract {
   readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered";
   readonly jobId: string | null;
   readonly toolTaskId: string | null;
+  readonly sourceItemId: string | null;
   readonly editorDocumentId: string | null;
   readonly editorRevision: number | null;
   readonly sources: ReadonlyArray<AssetRef>;
@@ -1563,6 +1601,19 @@ export interface CanvasPresentationUpdate extends Contract {
   readonly parentId: string | null;
 }
 
+export interface CanvasPublishMedia extends Contract {
+  readonly itemId: string;
+  readonly source: AssetRef | null;
+  readonly sourceEditorId: string | null;
+  readonly document: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
+  readonly outputs: ReadonlyArray<MediaPublicationOutput>;
+}
+
+export interface CanvasPublishMediaCommand extends CommandBase {
+  readonly type: "canvas.publishMedia";
+  readonly payload: CanvasPublishMedia;
+}
+
 export interface CanvasShow extends Contract {
   readonly item: TextCanvasItem | ImageCanvasItem | VideoCanvasItem | AudioCanvasItem | FileCanvasItem | SubjectCanvasItem | TimelineCanvasItem | StackCanvasItem | ToolCanvasItem | DirectorCanvasItem | GroupCanvasItem;
 }
@@ -1631,7 +1682,7 @@ export interface CreationContracts extends Contract {
   readonly generationSpec: TextGenerationSpec | ImageGenerationSpec | VideoGenerationSpec | AudioGenerationSpec;
   readonly reference: PinnedReference | FollowingReference;
   readonly editorDocument: TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
-  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+  readonly command: ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
   readonly receipt: CommandReceipt;
   readonly query: Query;
   readonly event: ProjectEvent;
@@ -2013,6 +2064,15 @@ export interface MediaMetadata extends Contract {
   readonly hasAudio: boolean | null;
   readonly sampleRate: number | null;
   readonly channels: number | null;
+}
+
+export interface MediaPublicationOutput extends Contract {
+  readonly itemId: string;
+  readonly asset: AssetRef;
+  readonly title: string;
+  readonly position: Point;
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface ModelConfigPublic extends ModelConnection {
@@ -2477,6 +2537,20 @@ export interface TimelineDocument extends EditorDocumentBase {
   readonly data: TimelineData;
 }
 
+export interface TimelinePublishRender extends Contract {
+  readonly itemId: string;
+  readonly editorId: string;
+  readonly asset: AssetRef;
+  readonly outputId: string;
+  readonly title: string;
+  readonly position: Point;
+}
+
+export interface TimelinePublishRenderCommand extends CommandBase {
+  readonly type: "timeline.publishRender";
+  readonly payload: TimelinePublishRender;
+}
+
 export interface TimelineResource extends Contract {
   readonly asset: AssetRef;
   readonly title: string;
@@ -2617,7 +2691,7 @@ export type Reference = PinnedReference | FollowingReference;
 
 export type EditorDocument = TimelineDocument | SubjectDocument | LayerDocument | ImageCropDocument | StackDocument | ToolDocument | DirectorDocument | MediaEditDocument;
 
-export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
+export type Command = ProjectCreateCommand | ProjectRenameCommand | ProjectTrashCommand | ProjectRestoreCommand | AssetImportCommand | AssetWriteTextCommand | AssetMetadataCommand | AssetDeleteCommand | CanvasShowCommand | CanvasMoveCommand | CanvasUpdateCommand | CanvasHideCommand | CanvasMaterializeCommand | CanvasApplyEditCommand | CanvasPublishMediaCommand | TimelinePublishRenderCommand | NodeVersionApplyCommand | CanvasConfigureCommand | CanvasEditorAttachCommand | CanvasEditorDetachCommand | SpecCreateCommand | SpecUpdateCommand | SpecRestoreCommand | SpecPromptCommand | ReferenceAddCommand | ReferenceUpdateCommand | ReferenceRestoreCommand | ReferenceRemoveCommand | GenerationSubmitCommand | JobCancelCommand | JobRecoverCommand | JobCheckpointCommand | ResultSelectCommand | EditorCreateCommand | EditorSaveCommand | HistoryUndoCommand | HistoryRedoCommand | BatchCommand;
 
 export type ExecutionParameters = TextExecution | ImageExecution | VideoExecution | AudioExecution;
 

@@ -238,3 +238,46 @@ def test_accepted_model_selection_is_fixed_and_reconfiguration_cannot_redirect_c
             if changed: assert '模型配置已变化' in final['error']
         finally: await service.close()
     asyncio.run(run())
+
+@pytest.mark.parametrize('edit',['none','move','prompt','lock','upload','hide'])
+def test_terminal_cleanup_uses_task_ownership_and_preserves_user_edits(prepared,edit):
+    store,pid,session,service,value,source,mask,seen=prepared
+    task,_,_=service._prepare(str(pid),value,session)
+    snapshot=store.snapshot(pid)
+    target=snapshot.canvasItems[1]
+    versions=[ver('canvas_item',target)]
+    if edit=='move':assert send(store,pid,'canvas.move',session=session,versions=versions,items=[dict(itemId=target.id,position=dict(x=123,y=45))]).status=='applied'
+    elif edit=='prompt':
+        spec=snapshot.generationSpecs[0]
+        assert send(store,pid,'generationSpec.setPrompt',session=session,versions=[ver('generation_spec',spec)],specId=spec.id,prompt='Keep me').status=='applied'
+    elif edit=='lock':assert send(store,pid,'canvas.update',session=session,versions=versions,itemId=target.id,locked=True).status=='applied'
+    elif edit=='upload':assert send(store,pid,'canvas.materialize',session=session,versions=versions,itemId=target.id,asset=asset_ref(source)).status=='applied'
+    elif edit=='hide':assert send(store,pid,'canvas.hide',session=session,versions=versions,itemId=target.id).status=='applied'
+    task.update(status='cancelled')
+    service._write(service._directory(str(pid)),task)
+    settled=service._settle_terminal(str(pid),task['id'],session)
+    assert settled['placement']=='unplaced'
+    after=store.snapshot(pid)
+    actual=next(i for i in after.canvasItems if i.id==target.id)
+    assert actual.visible==(edit in {'prompt','lock','upload'})
+    assert service._settle_terminal(str(pid),task['id'],session)==settled
+    assert store.snapshot(pid)==after
+
+@pytest.mark.parametrize('status',['failed','cancelled','interrupted'])
+def test_terminal_cleanup_recovers_project_commit_before_ledger_ack(prepared,monkeypatch,status):
+    store,pid,session,service,value,*_=prepared
+    task,directory,_=service._prepare(str(pid),value,session)
+    task.update(status=status)
+    service._write(directory,task)
+    original=service._write
+    def fail(*args):raise OSError('lost ledger ack')
+    monkeypatch.setattr(service,'_write',fail)
+    with pytest.raises(OSError,match='lost ledger ack'):
+        service._settle_terminal(str(pid),task['id'],session)
+    committed=store.snapshot(pid)
+    assert not committed.canvasItems[1].visible
+    monkeypatch.setattr(service,'_write',original)
+    recovered=service.get(str(pid),task['id'],session)
+    assert recovered['placement']=='unplaced'
+    assert recovered['status']==status
+    assert store.snapshot(pid)==committed

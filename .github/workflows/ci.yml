@@ -75,6 +75,12 @@ jobs:
           node tests/browser/reference_reconnect.mjs
           node tests/browser/context_menu_dismissal.mjs
           node tests/browser/mp4_export.mjs
+          node tests/browser/editor_save.mjs
+          node tests/browser/canvas_crop.mjs
+          node tests/browser/canvas_layers.mjs --generated
+          node tests/browser/structured_editors.mjs --publish
+          node tests/browser/local_output_delivery.mjs
+          PYTHON=python node tests/browser/timeline_workflow.mjs --full-creation
       - name: Print isolated service logs on failure
         if: failure()
         run: |

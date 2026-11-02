@@ -51,7 +51,7 @@ export interface ImageActionEditorProps {
   onApply: (
     outputs: readonly LinkedMediaResult[],
     task: CanvasToolTask,
-  ) => boolean;
+  ) => boolean | Promise<boolean>;
   onClose: () => void;
   /** A real adapter must validate/map UI presets to its own model and capability enums. */
   onGenerate?: (task: CanvasToolTask) => void;
@@ -455,6 +455,7 @@ export function ImageActionEditor({
     }
   };
   const close = () => {
+    if (publishing) return;
     if (ready) withTask(() => onClose());
     else onClose();
   };
@@ -600,8 +601,10 @@ export function ImageActionEditor({
       event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  const applyLocal = () => {
-    if (!source || !size || (maskMode && !hasMask)) return;
+  const [publishing, setPublishing] = useState(false);
+  const applyLocal = async () => {
+    if (publishing || !source || !size || (maskMode && !hasMask)) return;
+    setPublishing(true);
     try {
       const overlay = makeCanvas(size);
       paintLayer(overlay, history.current);
@@ -619,7 +622,7 @@ export function ImageActionEditor({
             ? "透明擦除"
             : "本地标记";
       if (
-        onApply(
+        await onApply(
           [
             {
               kind: "image",
@@ -639,6 +642,8 @@ export function ImageActionEditor({
       } else setError("结果未能添加到画布，请重试。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法导出本地图片。");
+    } finally {
+      setPublishing(false);
     }
   };
   const exportMask = () => {
@@ -1021,7 +1026,10 @@ export function ImageActionEditor({
                   <TooltipButton
                     label="自动选择主体"
                     disabled={
-                      !onPreviewSelection || !ready || selection.pending
+                      publishing ||
+                      !onPreviewSelection ||
+                      !ready ||
+                      selection.pending
                     }
                     onClick={() => void selection.recognize()}
                   >
@@ -1550,7 +1558,7 @@ export function ImageActionEditor({
                     type="button"
                     className="cw-selection-menu-item"
                     role="menuitem"
-                    disabled={!ready}
+                    disabled={publishing || !ready}
                     onClick={() => {
                       setMenuAnchor(null);
                       applyLocal();
@@ -1564,7 +1572,7 @@ export function ImageActionEditor({
                     type="button"
                     className="cw-selection-menu-item"
                     role="menuitem"
-                    disabled={!hasMask}
+                    disabled={publishing || !hasMask}
                     onClick={() => {
                       setMenuAnchor(null);
                       applyLocal();
@@ -1603,7 +1611,7 @@ export function ImageActionEditor({
                   type="button"
                   className="cw-selection-menu-item"
                   role="menuitem"
-                  disabled={!ready}
+                  disabled={publishing || !ready}
                   onClick={() => {
                     setMenuAnchor(null);
                     withTask(() => setNotice("设置已保存。"));
@@ -1616,7 +1624,7 @@ export function ImageActionEditor({
                     type="button"
                     className="cw-selection-menu-item"
                     role="menuitem"
-                    disabled={!ready}
+                    disabled={publishing || !ready}
                     onClick={() => {
                       setMenuAnchor(null);
                       withTask(onImportResults);
@@ -1631,6 +1639,7 @@ export function ImageActionEditor({
               type="button"
               className="iae-generate"
               disabled={
+                publishing ||
                 !ready ||
                 selection.pending ||
                 (tool === "cutout"

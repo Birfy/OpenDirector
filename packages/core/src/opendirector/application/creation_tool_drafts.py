@@ -84,6 +84,32 @@ def freeze_inputs(service, project_id, value):
                 targetIntent=target_intent(snapshot, target) if target else None)
 
 
+def release_placeholder(service, task, session=None):
+    """Release only the accepted task's unchanged target; never infer UI defaults."""
+    snapshot = service.projects.snapshot(task['projectId'])
+    saved = task.get('targetSnapshot')
+    target = next((item for item in snapshot.canvasItems if saved and str(item.id) == saved['id']), None)
+    if not target or not target.visible or target.binding.role != 'empty':
+        return 'unplaced'
+    # Layout is presentation. Creative changes, parent/lock changes and attached
+    # configuration edits remain protected even when the task has failed.
+    presentation = {'revision', 'position', 'width', 'height', 'zIndex'}
+    current = target.model_dump(mode='json')
+    if ({k:v for k,v in current.items() if k not in presentation} != {k:v for k,v in saved.items() if k not in presentation}
+            or target_intent(snapshot, target) != task.get('targetIntent')):
+        return 'unplaced'
+    try:
+        editable(snapshot, target.id)
+    except ProjectError:
+        return 'unplaced'
+    command = parse_command(dict(commandId=uuid5(UUID(task['id']), f'unplaced:{target.revision}'), projectId=snapshot.project.id,
+        type='canvas.hide', expectedVersions=[dict(objectType='canvas_item', id=target.id, revision=target.revision)], payload=dict(itemId=target.id)))
+    receipt = service.projects.execute(command, session=session, source='background')
+    if receipt.status == 'rejected':
+        raise ProjectError('工具占位清理未确认：' + '；'.join(issue.message for issue in receipt.issues), 409)
+    return 'unplaced'
+
+
 def publish_outputs(service, task, session, policy):
     """Stable output identities + an atomic project command recover a lost ack."""
     from opendirector.application.tool_tasks import output_item_id
@@ -99,17 +125,7 @@ def publish_outputs(service, task, session, policy):
             for index, output in enumerate(task['outputs'])):
         return 'placed'
     def unplaced():
-        saved = task.get('targetSnapshot')
-        target = next((item for item in snapshot.canvasItems if saved and str(item.id) == saved['id']), None)
-        if target and target.revision == saved['revision'] and target.binding.role == 'empty' and target.visible and target_intent(snapshot, target) == task.get('targetIntent'):
-            try:
-                editable(snapshot, target.id)
-            except ProjectError:
-                return 'unplaced'
-            command = parse_command(dict(commandId=uuid5(UUID(task['id']), f'unplaced:{target.revision}'), projectId=snapshot.project.id,
-                type='canvas.hide', expectedVersions=[dict(objectType='canvas_item', id=target.id, revision=target.revision)], payload=dict(itemId=target.id)))
-            service.projects.execute(command, session=session)
-        return 'unplaced'
+        return release_placeholder(service, task, session)
     def expect(kind, obj):
         versions[(kind, str(obj.id))] = dict(objectType=kind, id=obj.id, revision=obj.revision)
     # Completion itself never grants permission to overwrite the source. The

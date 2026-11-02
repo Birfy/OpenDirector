@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { CanvasNode } from "./model";
-import type { ToolSelection } from "./toolCatalog";
+import {
+  createCanvasToolTask,
+  type CanvasToolTask,
+  type ToolSelection,
+} from "./toolCatalog";
 import { EditorModal } from "./EditorModal";
 import { loadLayerImage } from "./layerRenderer";
 import "./local-media-tools.css";
@@ -28,10 +32,14 @@ export function LocalImageTools({
 }: {
   node: CanvasNode;
   mode: "annotation" | "grid" | "mask";
-  onApply: (outputs: LocalImageOutput[]) => void;
+  onApply: (
+    outputs: LocalImageOutput[],
+    task: CanvasToolTask,
+  ) => boolean | void | Promise<boolean | void>;
   onSelection?: (selection: ToolSelection) => void;
   onClose: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
   const [image, setImage] = useState<HTMLImageElement | null>(null),
     [error, setError] = useState("");
   const [shapes, setShapes] = useState<Shape[]>([]),
@@ -227,8 +235,10 @@ export function LocalImageTools({
     setShapes(next);
     setFuture([]);
   };
-  const apply = () => {
+  const apply = async () => {
+    if (busy) return;
     if (!image) return;
+    setBusy(true);
     try {
       if (mode === "mask") {
         const mask = raster(shapes, true),
@@ -304,10 +314,24 @@ export function LocalImageTools({
           height: out.height,
         });
       }
-      onApply(outputs);
+      if (
+        (await onApply(
+          outputs,
+          createCanvasToolTask(
+            mode === "grid" ? "grid-split" : "annotation",
+            [node.id],
+            mode === "grid"
+              ? { rows, columns }
+              : { annotationDocument: JSON.stringify(shapes) },
+          ),
+        )) === false
+      )
+        throw Error("结果未保存，请重试。");
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : "导出失败。");
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -318,7 +342,9 @@ export function LocalImageTools({
           ? "在原图像素上绘制选区，仅保存蒙版；不会自动识别主体或生成图片。"
           : "所有操作在本地完成，结果作为关联节点加入画布，可整体撤销。"
       }
-      onClose={onClose}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
       onApply={apply}
       applyLabel={
         mode === "mask"
@@ -327,7 +353,7 @@ export function LocalImageTools({
             ? `拆分为 ${rows * columns} 张图片`
             : "保存标注图片"
       }
-      disabled={!image}
+      disabled={busy || !image}
       error={error}
     >
       <div className="cw-local-media-controls">

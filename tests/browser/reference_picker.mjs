@@ -145,7 +145,22 @@ try {
       exact: true,
     });
     const opened = async () => {
-      await picker.waitFor({ state: "visible" });
+      try {
+        await picker.waitFor({ state: "visible" });
+      } catch (error) {
+        console.error(
+          "Picker diagnostic",
+          await editor.evaluate((element) => ({
+            text: element.textContent,
+            focused: document.activeElement === element,
+            expanded: element.getAttribute("aria-expanded"),
+            anchor: window.getSelection()?.anchorOffset,
+            focus: window.getSelection()?.focusOffset,
+            html: element.innerHTML,
+          })),
+        );
+        throw error;
+      }
       assert.equal(await editor.getAttribute("aria-expanded"), "true");
       await picker.getByRole("option").first().waitFor();
     };

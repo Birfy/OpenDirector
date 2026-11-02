@@ -42,7 +42,10 @@ export interface LayerBoardProps {
   initialDocument?: LayerDocument;
   /** Standalone documents embed pixels; project-backed callers retain sources. */
   embedSourcesOnApply?: boolean;
-  onApply: (src: string, document: LayerDocument) => void;
+  onApply: (
+    src: string,
+    document: LayerDocument,
+  ) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
   onBack?: () => void;
 }
@@ -664,12 +667,16 @@ export function LayerBoard({
           const result = canvas.toDataURL("image/png");
           if (!result.startsWith("data:image/png;base64,"))
             throw new Error("PNG 导出失败，请缩小画布尺寸后重试。");
-          callbacks.current.onApply(
+          const accepted = await callbacks.current.onApply(
             result,
             embedSourcesOnApply
               ? portableLayerDocument(document, images)
               : document,
           );
+          if (accepted === false)
+            throw new Error(
+              "编辑未应用，图层草稿已保留，请核对来源与锁定状态。",
+            );
           callbacks.current.onClose();
         } else {
           const blob = await new Promise<Blob>((resolve, reject) =>

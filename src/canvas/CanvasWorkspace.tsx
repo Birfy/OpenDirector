@@ -1,3 +1,7 @@
+import { currentAsset } from "../backend/creationClient";
+import { MediaPublication } from "../backend/mediaPublication";
+import { timelinePublication } from "../backend/timelinePublication";
+import { CreationEditorSession } from "../backend/creationEditorSession";
 import { deliverTool, pendingToolDelivery } from "../backend/toolDeliveries";
 import { previewImageSelection } from "../backend/imageSelections";
 import { imageAnnotationPayload } from "./imageActionPayload";
@@ -246,6 +250,7 @@ import {
   type CanvasToolId,
   type CanvasToolTask,
   type ToolSource,
+  type ToolParameters,
 } from "./toolCatalog";
 import {
   createDocument,
@@ -521,6 +526,11 @@ function Workspace() {
   const [editing, setEditing] = useState<CanvasNode | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("default");
   const editorOrigin = useRef<ResultSource | null>(null);
+  const mediaPublications = useRef(
+    new WeakMap<ResultSource, MediaPublication>(),
+  );
+  const editorSession = useRef<CreationEditorSession | null>(null);
+  const editorSaving = useRef(false);
   const [actionSession, setActionSession] = useState<
     (ResultSource & { tool: CanvasToolId; token: string }) | null
   >(null);
@@ -533,6 +543,7 @@ function Workspace() {
   const resultBinding = useRef<
     | (ResultSource & {
         actionToken?: string;
+        task?: CanvasToolTask;
       })
     | null
   >(null);
@@ -938,8 +949,16 @@ function Workspace() {
       .then(async () => {
         await saveWorkspaceDocument(snapshot);
         saveError.current = "";
-        if (historyRef.current.present === snapshot)
-          setSaveStatus("已保存到本机");
+        if (historyRef.current.present === snapshot) {
+          const warning = creationEnabled()
+            ? workspaceProjection(snapshot.id).viewError
+            : "";
+          setSaveStatus(
+            warning
+              ? `工程已保存；界面状态保存失败：${warning}`
+              : "已保存到本机",
+          );
+        }
         return true;
       })
       .catch((error) => {
@@ -1317,7 +1336,7 @@ function Workspace() {
     if (!ready || switching || projectRenaming) return;
     setSaveStatus("保存中…");
     const timeout = setTimeout(() => {
-      if (!switchPending.current) void persist(doc);
+      if (!switchPending.current && !editorSaving.current) void persist(doc);
     }, 450);
     return () => clearTimeout(timeout);
   }, [doc, ready, switching, projectRenaming, persist]);
@@ -1336,7 +1355,7 @@ function Workspace() {
             projection.baseline.nodes,
             projection.baseline.edges,
           ]);
-      if (!clean) return; // Keep unsaved edits and their original CAS basis.
+      if (!clean || editorSaving.current) return; // Keep drafts and their original CAS basis.
       const ticket = ++token,
         snapshot = client.snapshot;
       void projection
@@ -2324,7 +2343,7 @@ function Workspace() {
         })),
     [doc.nodes, selected],
   );
-  const openEditor = (node: CanvasNode, mode: EditorMode = "default") => {
+  const openEditor = async (node: CanvasNode, mode: EditorMode = "default") => {
     if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
       notify("请先解锁节点或所属分组。");
@@ -2334,14 +2353,41 @@ function Workspace() {
       setPreview(node);
       return;
     }
-    editorOrigin.current = captureEditorSource(doc.id, node);
+    const projectId = historyRef.current.present.id;
+    editorSession.current = null;
+    if (
+      creationEnabled() &&
+      ["image", "timeline", "stack", "tool", "external"].includes(node.type)
+    ) {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      ) {
+        notify("当前工程尚未保存，无法打开编辑会话。");
+        return;
+      }
+      const current = historyRef.current.present;
+      if (current.id !== projectId) return;
+      node = current.nodes.find((item) => item.id === node.id)!;
+      if (!node || lockedNodeIds(current.nodes).has(node.id)) return;
+      editorSession.current = new CreationEditorSession(
+        creationClient(projectId),
+        current,
+        node.id,
+      );
+    }
+    editorOrigin.current = captureEditorSource(projectId, node);
     setActionSession(null);
     setEditorMode(mode);
     setEditing(node);
     setMenu(null);
   };
   const closeEditor = () => {
+    if (editorSaving.current) return;
     setEditing(null);
+    editorSession.current = null;
     editorOrigin.current = null;
   };
   const applyEditorData = (data: Partial<CanvasNodeData>) => {
@@ -2363,11 +2409,109 @@ function Workspace() {
     notify("修改已应用到画布，可以撤销。");
     return true;
   };
-  const addLinkedOutputs = (
+  const commitEditorData = async (data: Partial<CanvasNodeData>) => {
+    if (!creationEnabled()) return applyEditorData(data);
+    const session = editorSession.current;
+    if (!session || editorSaving.current)
+      throw new Error("编辑会话不可用，请重新打开。");
+    const projectId = session.projection.client.id;
+    editorSaving.current = true;
+    try {
+      await saveQueue.current;
+      if (historyRef.current.present.id !== projectId)
+        throw new Error("项目已切换，编辑未提交。");
+      if (!(await persist(historyRef.current.present)))
+        throw new Error("工程保存失败，编辑草稿已保留。");
+      await session.apply(data);
+      const client = session.projection.client,
+        projection = workspaceProjection(projectId);
+      const snapshot = client.snapshot;
+      let next: CanvasDocument;
+      try {
+        next = await projection.read(snapshot);
+      } catch {
+        throw new Error("编辑已保存，但画布刷新失败。请重试以刷新画布。");
+      }
+      if (historyRef.current.present.id === projectId) {
+        const current = historyRef.current.present;
+        const merged = {
+          ...next,
+          viewport: current.viewport,
+          settings: current.settings,
+        };
+        projection.baseline = merged;
+        projection.basis = snapshot;
+        setHistory((history) => ({ ...history, present: merged }));
+        const node = merged.nodes.find((item) => item.id === session.itemId);
+        if (node) editorOrigin.current = captureEditorSource(projectId, node);
+      }
+      notify("编辑已保存到工程。");
+      return true;
+    } finally {
+      editorSaving.current = false;
+      session.projection.client.install(session.projection.client.snapshot);
+    }
+  };
+  const addLinkedOutputs = async (
     source: ResultSource,
     outputs: readonly LinkedMediaResult[],
     sourceTask?: CanvasToolTask,
   ) => {
+    if (creationEnabled()) {
+      if (editorSaving.current) throw Error("编辑结果正在保存。");
+      editorSaving.current = true;
+      try {
+        await saveQueue.current;
+        const current = historyRef.current.present;
+        if (current.id !== source.documentId)
+          throw Error("项目已切换，结果未提交。");
+        if (!(await persist(current)))
+          throw Error("工程保存失败，结果已保留，请重试。");
+        const client = creationClient(current.id);
+        let publication = mediaPublications.current.get(source);
+        if (!publication) {
+          const item = client.snapshot.canvasItems.find(
+            (i) => i.id === source.nodeId,
+          );
+          const expected = source.src && client.assetForSource(source.src);
+          if (
+            !item ||
+            (source.src &&
+              (!expected ||
+                currentAsset(client.snapshot, item)?.id !== expected.id))
+          )
+            throw Error("来源素材已变化，结果未发布，请重新打开编辑器。");
+          publication = new MediaPublication(
+            client,
+            client.snapshot,
+            source.nodeId,
+          );
+          mediaPublications.current.set(source, publication);
+        }
+        const task = sourceTask;
+        const ids = await publication.publish(outputs, task);
+        const projection = workspaceProjection(current.id);
+        const snapshot = client.snapshot;
+        const next = await projection.read(snapshot);
+        if (historyRef.current.present.id === current.id) {
+          const merged = {
+            ...next,
+            viewport: historyRef.current.present.viewport,
+            settings: historyRef.current.present.settings,
+          };
+          projection.baseline = merged;
+          projection.basis = snapshot;
+          setHistory((h) => ({ ...h, present: merged }));
+          if (ids.length) setSelected(ids);
+        }
+        notify(`已保存 ${ids.length || outputs.length} 个编辑结果到工程。`);
+        return true;
+      } finally {
+        editorSaving.current = false;
+        const client = creationClient(source.documentId);
+        if (client.snapshot) client.install(client.snapshot);
+      }
+    }
     const result = appendLinkedMediaResults(
       historyRef.current.present,
       source,
@@ -2384,9 +2528,12 @@ function Workspace() {
     notify(`已加入 ${result.ids.length} 个真实素材，并连接来源节点。`);
     return true;
   };
-  const editorOutputs = (outputs: readonly LinkedMediaResult[]) => {
+  const editorOutputs = (
+    outputs: readonly LinkedMediaResult[],
+    task?: CanvasToolTask,
+  ) => {
     return editorOrigin.current
-      ? addLinkedOutputs(editorOrigin.current, outputs)
+      ? addLinkedOutputs(editorOrigin.current, outputs, task)
       : false;
   };
   const stack = () => {
@@ -2410,6 +2557,7 @@ function Workspace() {
     src: node.data.src,
   });
   const closeAction = () => {
+    if (editorSaving.current) return;
     setActionSession(null);
     root.current?.focus({ preventScroll: true });
   };
@@ -2489,6 +2637,7 @@ function Workspace() {
     resultBinding.current = {
       ...session,
       actionToken: session.token,
+      task,
     };
     if (resultInput.current) {
       resultInput.current.accept = "image/*,video/*,audio/*";
@@ -2500,6 +2649,8 @@ function Workspace() {
       source: ResultSource,
       signal: AbortSignal,
     ) => Promise<LinkedMediaResult[]>,
+    tool: CanvasToolId,
+    parameters: ToolParameters = {},
   ) => {
     if (!single) return;
     const source = sourceFor(single);
@@ -2515,7 +2666,12 @@ function Workspace() {
     notify("正在处理素材…");
     try {
       const outputs = await operation(source, controller.signal);
-      if (!controller.signal.aborted) addLinkedOutputs(source, outputs);
+      if (!controller.signal.aborted)
+        await addLinkedOutputs(
+          source,
+          outputs,
+          createCanvasToolTask(tool, [source.nodeId], parameters),
+        );
     } catch (error) {
       if (!controller.signal.aborted)
         notify(error instanceof Error ? error.message : "素材处理失败。");
@@ -3168,6 +3324,19 @@ function Workspace() {
         job.toolTask &&
         !placingTools.current.has(placementKey)
       ) {
+        if (creationEnabled()) {
+          if (job.toolTask.placement === "pending") {
+            placingTools.current.add(placementKey);
+            void acknowledgeToolPlacement(doc.id, job.taskId!, "unplaced")
+              .then(async () => {
+                await creationClient(doc.id).refresh();
+                setJobs(await readJobs());
+              })
+              .catch((error) => notify(errorMessage(error)))
+              .finally(() => placingTools.current.delete(placementKey));
+          }
+          continue;
+        }
         const next = removePendingResult(
           historyRef.current.present,
           job.targetNodeId,
@@ -3589,6 +3758,12 @@ function Workspace() {
         });
       }
       if (controller.signal.aborted) return;
+      if (creationEnabled()) {
+        const applied = await addLinkedOutputs(origin, outputs, binding.task);
+        if (applied && actionSessionRef.current?.token === binding.actionToken)
+          setActionSession(null);
+        return;
+      }
       const placed = appendLinkedMediaResults(
         historyRef.current.present,
         origin,
@@ -4929,32 +5104,42 @@ function Workspace() {
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
             onTool={openNodeAction}
             onCaptureFrame={(position) =>
-              void runQuickAction(async (source, signal) => [
-                await captureVideoEndpoint(
-                  source.src!,
-                  single.data.title,
-                  position,
-                  signal,
-                ),
-              ])
+              void runQuickAction(
+                async (source, signal) => [
+                  await captureVideoEndpoint(
+                    source.src!,
+                    single.data.title,
+                    position,
+                    signal,
+                  ),
+                ],
+                "video-frame-capture",
+                { endpoint: position },
+              )
             }
             onGridSplit={(rows, columns) =>
-              void runQuickAction((source, signal) =>
-                gridSplitImage(source, rows, columns, signal),
+              void runQuickAction(
+                (source, signal) =>
+                  gridSplitImage(source, rows, columns, signal),
+                "grid-split",
+                { rows, columns },
               )
             }
             onEdit={(mode) => {
               if (single.type === "text") setTextEditingId(single.id);
               else if (single.type === "video") {
                 if (mode === "extract-audio")
-                  void runQuickAction(async (source, signal) => [
-                    await extractVideoAudio(
-                      source.src!,
-                      single.data.title,
-                      undefined,
-                      signal,
-                    ),
-                  ]);
+                  void runQuickAction(
+                    async (source, signal) => [
+                      await extractVideoAudio(
+                        source.src!,
+                        single.data.title,
+                        undefined,
+                        signal,
+                      ),
+                    ],
+                    "extract-audio",
+                  );
                 else
                   openNodeAction(
                     mode === "frame" ? "video-frame-capture" : "video-trim",
@@ -5089,7 +5274,9 @@ function Workspace() {
                 onImportResults={(task) =>
                   importActionResults(activeAction, task)
                 }
-                onApply={(outputs) => addLinkedOutputs(activeAction, outputs)}
+                onApply={(outputs, task) =>
+                  addLinkedOutputs(activeAction, outputs, task)
+                }
                 onGenerate={
                   toolCatalog.capabilities[activeAction.tool]?.available
                     ? (task) => void runToolTask(activeAction, task)
@@ -6059,7 +6246,25 @@ function Workspace() {
         <TimelineEditor
           node={editing}
           resources={resources}
-          onApply={(timeline) => applyEditorData({ timeline })}
+          onApply={(timeline) => commitEditorData({ timeline })}
+          onPrepareRender={async (timeline) => {
+            if (!creationEnabled())
+              return async (result) => editorOutputs([result]);
+            if ((await commitEditorData({ timeline })) === false)
+              throw new Error("时间线未保存，未开始合成。");
+            const client = creationClient(doc.id);
+            const publish = timelinePublication(
+              client,
+              editorSession.current!.projection.basis,
+              editing.id,
+            );
+            return async (result) => {
+              await publish(result);
+              client.install(client.snapshot);
+              notify("合成视频已保存到工程。");
+              return true;
+            };
+          }}
           onRender={(result) => editorOutputs([result])}
           onClose={closeEditor}
         />
@@ -6069,6 +6274,7 @@ function Workspace() {
           node={editing}
           nodes={doc.nodes}
           onApply={(stack) => {
+            if (creationEnabled()) return commitEditorData({ stack });
             const origin = editorOrigin.current,
               current = historyRef.current.present;
             const target = current.nodes.find(
@@ -6082,13 +6288,15 @@ function Workspace() {
               lockedNodeIds(current.nodes).has(target.id)
             ) {
               notify("编辑来源已改变，堆叠未应用。");
-              return;
+              return false;
             }
             try {
               const next = updateStack(current, target.id, stack);
               change(() => next);
+              return true;
             } catch (error) {
               notify(error instanceof Error ? error.message : "堆叠更新失败。");
+              return false;
             }
           }}
           onClose={closeEditor}
@@ -6101,7 +6309,7 @@ function Workspace() {
       {editing && editorMode === "default" && editing.type === "tool" && (
         <ToolEditor
           node={editing}
-          onApply={(tool) => applyEditorData({ tool })}
+          onApply={(tool) => commitEditorData({ tool })}
           onClose={closeEditor}
         />
       )}
@@ -6118,10 +6326,28 @@ function Workspace() {
           }
         >
           <DirectorStage
+            onPrepareRender={
+              creationEnabled()
+                ? async (localStage) => {
+                    await commitEditorData({ localStage });
+                    const origin = editorOrigin.current!;
+                    const client = creationClient(doc.id);
+                    mediaPublications.current.set(
+                      origin,
+                      new MediaPublication(
+                        client,
+                        client.snapshot,
+                        origin.nodeId,
+                      ),
+                    );
+                    return async (result) => addLinkedOutputs(origin, [result]);
+                  }
+                : undefined
+            }
             onRender={(result) => editorOutputs([result])}
             node={editing}
             onApply={(localStage, screenshot) =>
-              applyEditorData({
+              commitEditorData({
                 localStage,
                 ...(screenshot
                   ? {
@@ -6146,8 +6372,8 @@ function Workspace() {
             initialLayers={editing.data.layers}
             embedSourcesOnApply={!creationEnabled()}
             onClose={closeEditor}
-            onApply={(src, layers, crop) => {
-              applyEditorData({
+            onApply={(src, layers, crop) =>
+              commitEditorData({
                 src,
                 mimeType: "image/png",
                 assetState: "ready",
@@ -6159,9 +6385,8 @@ function Workspace() {
                     ? { width: layers.width, height: layers.height }
                     : undefined,
                 taskDraft: undefined,
-              });
-              closeEditor();
-            }}
+              })
+            }
           />
         )}
       {editing &&
@@ -6171,7 +6396,7 @@ function Workspace() {
             node={editing}
             mode={editorMode as "annotation" | "grid" | "mask"}
             onClose={closeEditor}
-            onApply={(outputs) =>
+            onApply={(outputs, task) =>
               editorOutputs(
                 outputs.map((output) => ({
                   kind: "image",
@@ -6180,6 +6405,7 @@ function Workspace() {
                   title: output.title,
                   media: { width: output.width, height: output.height },
                 })),
+                task,
               )
             }
             onSelection={(selection) => {
@@ -6223,7 +6449,7 @@ function Workspace() {
           <LocalMediaEditor
             node={editing}
             mode={editorMode as "trim" | "frame" | "extract-audio" | "crop"}
-            onApply={(output) => editorOutputs([output])}
+            onApply={(output, task) => editorOutputs([output], task)}
             onClose={closeEditor}
           />
         )}

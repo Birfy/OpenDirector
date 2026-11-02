@@ -1,3 +1,4 @@
+import { useEditorCommit, type EditorApplyResult } from "./useEditorCommit";
 import { useState } from "react";
 import type { CanvasNode, ToolData } from "./model";
 import { toolError } from "./dataBoundary";
@@ -9,28 +10,27 @@ export function ToolEditor({
   onClose,
 }: {
   node: CanvasNode;
-  onApply: (data: ToolData) => void;
+  onApply: (data: ToolData) => EditorApplyResult;
   onClose: () => void;
 }) {
   const [tool, setTool] = useState<ToolData>(() =>
     structuredClone(node.data.tool ?? { kind: "camera", fields: [] }),
   );
-  const [error, setError] = useState("");
+  const commit = useEditorCommit(onClose);
   return (
     <EditorModal
       title={`工具参数 · ${node.data.title}`}
       subtitle="编辑可被下游创作节点引用的结构化参数；此面板不会启动生成任务"
-      onClose={onClose}
-      disabled={node.locked}
-      error={error}
-      onApply={() => {
-        const invalid = toolError(tool);
-        if (invalid) setError(invalid);
-        else {
-          onApply(structuredClone(tool));
-          onClose();
-        }
-      }}
+      onClose={commit.close}
+      disabled={node.locked || commit.saving}
+      error={commit.error}
+      onApply={() =>
+        commit.apply(() => {
+          const invalid = toolError(tool);
+          if (invalid) throw new Error(invalid);
+          return onApply(structuredClone(tool));
+        })
+      }
     >
       <div className="cw-tool-editor">
         <label className="cw-domain-field">

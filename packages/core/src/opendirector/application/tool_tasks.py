@@ -165,6 +165,8 @@ class ToolTasks:
         with self.store.transaction():
             directory = self._directory(project_id, session)
             task = self.get(project_id, task_id)
+            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and state == 'unplaced':
+                return self._settle_terminal(project_id, task_id, session)
             if task['status'] != 'succeeded':
                 raise ProjectError('工具任务尚未完成。', 409)
             if task.get('placement') == 'placed' and policy != 'explicit':
@@ -174,6 +176,18 @@ class ToolTasks:
                 state = publish_outputs(self, task, session, policy)
             task['placement'] = state
             self._write(directory, task)
+            return task
+
+    def _settle_terminal(self, project_id, task_id, session=None):
+        # Project receipt precedes ledger acknowledgement. A crash between them
+        # is repaired from the same owned target without resubmitting execution.
+        with self.store.transaction():
+            directory = self._directory(project_id, session)
+            task = read_json(child(self._folder(directory), task_id + '.json'))
+            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
+                from .creation_tool_drafts import release_placeholder
+                task['placement'] = release_placeholder(self, task, session)
+                self._write(directory, task)
             return task
 
     def _write(self, directory, task):
@@ -193,6 +207,8 @@ class ToolTasks:
             # The service restarted mid-run; the work cannot resume.
             task.update(status='interrupted', phase=None, error='服务重启，任务已中断，请重新提交。', finishedAt=_now())
             self._write(path.parent.parent, task)
+        if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
+            task = self._settle_terminal(project_id, task_id, session)
         if 'sourceFingerprint' not in task and task.get('sourceAssetIds'):
             records = self.assets._records(path.parent.parent, project_id)
             source = records.get(task['sourceAssetIds'][0], {})
@@ -293,6 +309,9 @@ class ToolTasks:
         pending = asyncio.create_task(asyncio.to_thread(self._write, directory, dict(task)))
         try:
             await asyncio.shield(pending)
+            if self.projects is not None and task['status'] in {'failed', 'cancelled', 'interrupted'}:
+                settled = await asyncio.to_thread(self._settle_terminal, task['projectId'], task['id'])
+                task.update(settled)
         except asyncio.CancelledError:
             await pending
             raise

@@ -55,6 +55,7 @@ export class CreationProjection {
   baseline!: CanvasDocument;
   basis!: ProjectSnapshot;
   private imported = new Map<string, Promise<AssetRef>>();
+  private importHandles = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
   readonly client: CreationClient;
   constructor(client: CreationClient) {
@@ -85,10 +86,11 @@ export class CreationProjection {
     kind: Asset["kind"];
     text?: string;
     identity?: string;
+    fresh?: boolean;
     previous?: AssetRef;
   }) {
     const existing = resource.src && this.client.assetForSource(resource.src);
-    if (existing) return assetReference(existing);
+    if (existing && !resource.fresh) return assetReference(existing);
     const retained =
       resource.id &&
       this.client.snapshot.assets.find(
@@ -113,14 +115,19 @@ export class CreationProjection {
         const name = /\.[\w]+$/.test(resource.title)
           ? resource.title
           : `${resource.title}.${suffix}`;
-        return this.client.importBlob(blob, name, resource.kind);
+        const handle = this.importHandles.get(key) ?? crypto.randomUUID();
+        this.importHandles.set(key, handle);
+        return this.client.importBlob(blob, name, resource.kind, handle);
       })().catch((error) => {
         this.imported.delete(key);
         throw error;
       });
       this.imported.set(key, pending);
     }
-    return pending;
+    const imported = await pending;
+    if (resource.src && !resource.identity)
+      this.client.rememberSource(resource.src, imported.assetId);
+    return imported;
   }
 
   private maskSource(ref: AssetRef) {
@@ -581,6 +588,17 @@ export class CreationProjection {
         });
       }
     }
+    for (const item of snapshot.canvasItems) {
+      const asset = currentAsset(snapshot, item);
+      const sourceId = asset?.provenance.sourceItemId;
+      if (sourceId && snapshot.canvasItems.some((i) => i.id === sourceId))
+        document.edges.push({
+          id: `publication:${item.id}:${asset!.id}`,
+          source: sourceId,
+          target: item.id,
+          intent: "post_edit_result",
+        });
+    }
     document.hiddenNodes = document.nodes.filter(
       (node) => !visible.has(node.id),
     );
@@ -901,7 +919,7 @@ export class CreationProjection {
   /** Compare the edited view to the view it was based on, then send explicit
    * operations with that basis' versions. Server events never silently grant a
    * stale form permission to overwrite newer business fields. */
-  async save(document: CanvasDocument) {
+  async prepare(document: CanvasDocument) {
     if (!this.baseline || document.id !== this.client.id)
       throw new Error("请先打开统一工程。");
     const basis = this.basis;
@@ -1569,23 +1587,33 @@ export class CreationProjection {
         payload: { specId, prompt: node.data.prompt, promptContent: content },
       });
     }
-    await this.client.batch(operations, [...versions.values()]);
-    const view = await this.client.view();
-    await this.client.view({
-      viewport: document.viewport,
-      generationCounts: {
-        ...view.generationCounts,
-        ...Object.fromEntries(
-          document.nodes
-            .filter((node) => node.data.settings)
-            .map((node) => [node.id, node.data.settings!.count ?? 1]),
-        ),
-      },
-    });
+    return { operations, versions: [...versions.values()] };
+  }
+
+  viewError = "";
+  async save(document: CanvasDocument) {
+    const { operations, versions } = await this.prepare(document);
+    await this.client.batch(operations, versions);
+    // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
-    // Preserve ephemeral UI values until the next authoritative projection,
-    // while all persisted business fields have been acknowledged by the server.
     this.baseline = document;
+    this.viewError = "";
+    try {
+      const view = await this.client.view();
+      await this.client.view({
+        viewport: document.viewport,
+        generationCounts: {
+          ...view.generationCounts,
+          ...Object.fromEntries(
+            document.nodes
+              .filter((node) => node.data.settings)
+              .map((node) => [node.id, node.data.settings!.count ?? 1]),
+          ),
+        },
+      });
+    } catch (error) {
+      this.viewError = error instanceof Error ? error.message : String(error);
+    }
     return operations.length > 0;
   }
 }

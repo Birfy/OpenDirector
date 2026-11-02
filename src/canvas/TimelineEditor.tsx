@@ -53,8 +53,11 @@ export interface TimelineEditorProps {
   node: CanvasNode;
   resources?: CanvasResource[];
   /** Returns false when the canvas rejected the edit, so the session stays open. */
-  onApply: (data: TimelineData) => boolean | void;
-  onRender: (result: LinkedMediaResult) => boolean;
+  onApply: (data: TimelineData) => boolean | void | Promise<boolean | void>;
+  onRender: (result: LinkedMediaResult) => boolean | Promise<boolean>;
+  onPrepareRender?: (
+    timeline: TimelineData,
+  ) => Promise<(result: LinkedMediaResult) => Promise<boolean>>;
   onClose: () => void;
 }
 const timeLabel = (time: number) =>
@@ -80,6 +83,7 @@ export function TimelineEditor({
   resources = [],
   onApply,
   onRender,
+  onPrepareRender,
   onClose,
 }: TimelineEditorProps) {
   const [timeline, setTimeline] = useState(() =>
@@ -647,6 +651,30 @@ export function TimelineEditor({
       if (ownsLoad(controller)) setBusy(false);
     }
   };
+  const saveTimeline = async (snapshot: TimelineData) => {
+    if ((await onApply(snapshot)) === false)
+      throw new Error("时间线未应用，草稿已保留，请核对来源与锁定状态。");
+  };
+  const applyTimeline = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await saveTimeline(copyTimeline(timelineRef.current));
+      onClose();
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "保存失败，时间线草稿已保留。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const renderedPublisher = useRef<
+    ((result: LinkedMediaResult) => Promise<boolean>) | null
+  >(null);
   const renderVideo = async () => {
     const controller = beginLoad(),
       snapshot = copyTimeline(timelineRef.current);
@@ -655,6 +683,11 @@ export function TimelineEditor({
     setInserted(false);
     setRenderProgress(0);
     try {
+      const publish = onPrepareRender
+        ? await onPrepareRender(snapshot)
+        : (await saveTimeline(snapshot),
+          async (result: LinkedMediaResult) => onRender(result));
+      controller.signal.throwIfAborted();
       const { renderTimelineMp4 } = await import("./timelineRender");
       const blob = await renderTimelineMp4(
         snapshot,
@@ -663,7 +696,10 @@ export function TimelineEditor({
           if (ownsLoad(controller)) setRenderProgress(value);
         },
       );
-      if (ownsLoad(controller)) setRendered(blob);
+      if (ownsLoad(controller)) {
+        renderedPublisher.current = publish;
+        setRendered(blob);
+      }
     } catch (reason) {
       if (ownsLoad(controller))
         setError(reason instanceof Error ? reason.message : "视频导出失败。");
@@ -685,7 +721,7 @@ export function TimelineEditor({
       );
       if (ownsLoad(controller)) {
         setInserted(
-          onRender({
+          await renderedPublisher.current!({
             kind: "video",
             src,
             mimeType: "video/mp4",
@@ -734,9 +770,10 @@ export function TimelineEditor({
   ) => {
     const value = Number(text);
     if (!text.trim() || !Number.isFinite(value)) return;
-    patchSelected({ [field]: value } as Parameters<
-      typeof updateTimelineClip
-    >[2], field);
+    patchSelected(
+      { [field]: value } as Parameters<typeof updateTimelineClip>[2],
+      field,
+    );
   };
 
   return (
@@ -745,12 +782,7 @@ export function TimelineEditor({
       subtitle="本地视觉轨顺序编排、多音轨播放与源片段入出点编辑"
       className="cw-timeline-dialog"
       onClose={onClose}
-      onApply={() => {
-        // Keep the session when the canvas rejected the edit; closing would drop
-        // the whole timeline behind a transient notice.
-        if (onApply(copyTimeline(timelineRef.current)) === false) return;
-        onClose();
-      }}
+      onApply={() => void applyTimeline()}
       disabled={busy || node.locked}
       error={error}
       actions={

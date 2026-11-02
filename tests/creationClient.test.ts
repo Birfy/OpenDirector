@@ -323,6 +323,7 @@ test("reference replacement and hiding preserve the intended project relationshi
       source: "manual",
       jobId: null,
       toolTaskId: null,
+      sourceItemId: null,
       editorDocumentId: null,
       editorRevision: null,
       sources: [],

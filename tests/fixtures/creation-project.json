@@ -36,7 +36,8 @@
         "inputFingerprint": null,
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     },
     {
@@ -68,7 +69,8 @@
         "inputFingerprint": null,
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     },
     {
@@ -100,7 +102,8 @@
         "inputFingerprint": null,
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     },
     {
@@ -132,7 +135,8 @@
         "inputFingerprint": null,
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     },
     {
@@ -164,7 +168,8 @@
         "inputFingerprint": null,
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     },
     {
@@ -196,7 +201,8 @@
         "inputFingerprint": "e74318d3b8ecd3052b04b10df4a542b9f51c0456d2b05cd7dea1223e96fc0474",
         "agentRunId": null,
         "modelSnapshot": null,
-        "prompt": null
+        "prompt": null,
+        "sourceItemId": null
       }
     }
   ],

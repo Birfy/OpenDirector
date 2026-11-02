@@ -331,12 +331,19 @@ export class CreationClient {
     }
     return pending;
   }
+  rememberSource(src: string, assetId: string) {
+    this.sourceAssets.set(src, assetId);
+  }
   assetForSource(src: string) {
     const id = this.sourceAssets.get(src);
     return this.snapshot.assets.find((asset) => asset.id === id);
   }
-  async importBlob(blob: Blob, name: string, kind: Asset["kind"]) {
-    const handle = crypto.randomUUID();
+  async importBlob(
+    blob: Blob,
+    name: string,
+    kind: Asset["kind"],
+    handle: string = crypto.randomUUID(),
+  ) {
     const response = await fetch(
       `/api${creationPath(this.id)}/uploads/${handle}`,
       {

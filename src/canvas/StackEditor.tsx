@@ -1,3 +1,4 @@
+import { useEditorCommit, type EditorApplyResult } from "./useEditorCommit";
 import { useMemo, useState } from "react";
 import type { CanvasNode, StackData } from "./model";
 import { STACK_MEMBER_KINDS, resourceFromNode } from "./operations";
@@ -8,7 +9,7 @@ import { indexNodes, isNodeLocked } from "./hierarchy";
 export interface StackEditorProps {
   node: CanvasNode;
   nodes: CanvasNode[];
-  onApply: (data: StackData) => void;
+  onApply: (data: StackData) => EditorApplyResult;
   onClose: () => void;
   onSelectNode?: (id: string) => void;
 }
@@ -24,7 +25,7 @@ export function StackEditor({
     nodeIds: [...(node.data.stack?.nodeIds ?? [])],
     activeIndex: node.data.stack?.activeIndex ?? 0,
   }));
-  const [error, setError] = useState("");
+  const commit = useEditorCommit(onClose);
   const byId = useMemo(
     () => new Map(nodes.map((node) => [node.id, node])),
     [nodes],
@@ -63,20 +64,19 @@ export function StackEditor({
     <EditorModal
       title={`资源堆叠 · ${node.data.title}`}
       subtitle="折叠整理画布节点，保留原节点与连线；移出至不足两个成员时自动解散堆叠"
-      onClose={onClose}
-      disabled={node.locked}
-      error={error}
-      onApply={() => {
-        if (stack.nodeIds.some((id) => !byId.has(id) || taken.has(id)))
-          setError("部分成员已失效或属于其他堆叠，请移除后重试。");
-        else {
-          onApply({
+      onClose={commit.close}
+      disabled={node.locked || commit.saving}
+      error={commit.error}
+      onApply={() =>
+        commit.apply(() => {
+          if (stack.nodeIds.some((id) => !byId.has(id) || taken.has(id)))
+            throw new Error("部分成员已失效或属于其他堆叠，请移除后重试。");
+          return onApply({
             nodeIds: [...stack.nodeIds],
             activeIndex: stack.activeIndex,
           });
-          onClose();
-        }
-      }}
+        })
+      }
     >
       <div className="cw-stack-layout">
         <div>
@@ -138,6 +138,7 @@ export function StackEditor({
           </div>
           {current && onSelectNode && (
             <button
+              disabled={commit.saving}
               onClick={() => {
                 onSelectNode(current.id);
                 onClose();
@@ -226,11 +227,10 @@ export function StackEditor({
           </div>
           <button
             className="cw-wide-button"
-            disabled={node.locked}
-            onClick={() => {
-              onApply({ nodeIds: [], activeIndex: 0 });
-              onClose();
-            }}
+            disabled={node.locked || commit.saving}
+            onClick={() =>
+              commit.apply(() => onApply({ nodeIds: [], activeIndex: 0 }))
+            }
           >
             解散堆叠，保留全部节点
           </button>

@@ -347,6 +347,19 @@
             "default": null,
             "title": "Tooltaskid"
           },
+          "sourceItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourceitemid"
+          },
           "editorDocumentId": {
             "anyOf": [
               {
@@ -1952,6 +1965,150 @@
         "title": "CanvasPresentationUpdate",
         "type": "object"
       },
+      "CanvasPublishMedia": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sourceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourceeditorid"
+          },
+          "document": {
+            "discriminator": {
+              "mapping": {
+                "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
+                "layers": "#/$defs/LayerDocument",
+                "media_edit": "#/$defs/MediaEditDocument",
+                "stack": "#/$defs/StackDocument",
+                "subject": "#/$defs/SubjectDocument",
+                "timeline": "#/$defs/TimelineDocument",
+                "tool": "#/$defs/ToolDocument"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TimelineDocument"
+              },
+              {
+                "$ref": "#/$defs/SubjectDocument"
+              },
+              {
+                "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
+              },
+              {
+                "$ref": "#/$defs/StackDocument"
+              },
+              {
+                "$ref": "#/$defs/ToolDocument"
+              },
+              {
+                "$ref": "#/$defs/DirectorDocument"
+              },
+              {
+                "$ref": "#/$defs/MediaEditDocument"
+              }
+            ],
+            "title": "Document"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/$defs/MediaPublicationOutput"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Outputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "itemId",
+          "document",
+          "outputs"
+        ],
+        "title": "CanvasPublishMedia",
+        "type": "object"
+      },
+      "CanvasPublishMediaCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.publishMedia",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasPublishMedia"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "CanvasPublishMediaCommand",
+        "type": "object"
+      },
       "CanvasShow": {
         "additionalProperties": false,
         "properties": {
@@ -2546,6 +2703,7 @@
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
+                "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
                 "canvas.show": "#/$defs/CanvasShowCommand",
                 "canvas.update": "#/$defs/CanvasUpdateCommand",
                 "creation.batch": "#/$defs/BatchCommand",
@@ -2569,7 +2727,8 @@
                 "reference.remove": "#/$defs/ReferenceRemoveCommand",
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
-                "result.select": "#/$defs/ResultSelectCommand"
+                "result.select": "#/$defs/ResultSelectCommand",
+                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
               },
               "propertyName": "type"
             },
@@ -2615,6 +2774,12 @@
               },
               {
                 "$ref": "#/$defs/CanvasApplyEditCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasPublishMediaCommand"
+              },
+              {
+                "$ref": "#/$defs/TimelinePublishRenderCommand"
               },
               {
                 "$ref": "#/$defs/NodeVersionApplyCommand"
@@ -6182,6 +6347,49 @@
           "size"
         ],
         "title": "MediaMetadata",
+        "type": "object"
+      },
+      "MediaPublicationOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/$defs/Point"
+          },
+          "width": {
+            "default": 352,
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Width",
+            "type": "number"
+          },
+          "height": {
+            "default": 198,
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Height",
+            "type": "number"
+          }
+        },
+        "required": [
+          "itemId",
+          "asset",
+          "title"
+        ],
+        "title": "MediaPublicationOutput",
         "type": "object"
       },
       "ModelConfigPublic": {
@@ -9920,6 +10128,98 @@
         "title": "TimelineDocument",
         "type": "object"
       },
+      "TimelinePublishRender": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "outputId": {
+            "format": "uuid",
+            "title": "Outputid",
+            "type": "string"
+          },
+          "title": {
+            "default": "合成视频",
+            "maxLength": 255,
+            "title": "Title",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/$defs/Point"
+          }
+        },
+        "required": [
+          "itemId",
+          "editorId",
+          "asset",
+          "outputId"
+        ],
+        "title": "TimelinePublishRender",
+        "type": "object"
+      },
+      "TimelinePublishRenderCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "timeline.publishRender",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/TimelinePublishRender"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "payload"
+        ],
+        "title": "TimelinePublishRenderCommand",
+        "type": "object"
+      },
       "TimelineResource": {
         "additionalProperties": false,
         "properties": {
@@ -11218,6 +11518,7 @@
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
+            "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
             "canvas.show": "#/$defs/CanvasShowCommand",
             "canvas.update": "#/$defs/CanvasUpdateCommand",
             "creation.batch": "#/$defs/BatchCommand",
@@ -11241,7 +11542,8 @@
             "reference.remove": "#/$defs/ReferenceRemoveCommand",
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
-            "result.select": "#/$defs/ResultSelectCommand"
+            "result.select": "#/$defs/ResultSelectCommand",
+            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
           },
           "propertyName": "type"
         },
@@ -11287,6 +11589,12 @@
           },
           {
             "$ref": "#/$defs/CanvasApplyEditCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasPublishMediaCommand"
+          },
+          {
+            "$ref": "#/$defs/TimelinePublishRenderCommand"
           },
           {
             "$ref": "#/$defs/NodeVersionApplyCommand"
@@ -11812,6 +12120,19 @@
             "default": null,
             "title": "Tooltaskid"
           },
+          "sourceItemId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourceitemid"
+          },
           "editorDocumentId": {
             "anyOf": [
               {
@@ -11901,6 +12222,7 @@
           "source",
           "jobId",
           "toolTaskId",
+          "sourceItemId",
           "editorDocumentId",
           "editorRevision",
           "sources",
@@ -13490,6 +13812,154 @@
         "title": "CanvasPresentationUpdate",
         "type": "object"
       },
+      "CanvasPublishMedia": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AssetRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sourceEditorId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourceeditorid"
+          },
+          "document": {
+            "discriminator": {
+              "mapping": {
+                "director": "#/$defs/DirectorDocument",
+                "image_crop": "#/$defs/ImageCropDocument",
+                "layers": "#/$defs/LayerDocument",
+                "media_edit": "#/$defs/MediaEditDocument",
+                "stack": "#/$defs/StackDocument",
+                "subject": "#/$defs/SubjectDocument",
+                "timeline": "#/$defs/TimelineDocument",
+                "tool": "#/$defs/ToolDocument"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TimelineDocument"
+              },
+              {
+                "$ref": "#/$defs/SubjectDocument"
+              },
+              {
+                "$ref": "#/$defs/LayerDocument"
+              },
+              {
+                "$ref": "#/$defs/ImageCropDocument"
+              },
+              {
+                "$ref": "#/$defs/StackDocument"
+              },
+              {
+                "$ref": "#/$defs/ToolDocument"
+              },
+              {
+                "$ref": "#/$defs/DirectorDocument"
+              },
+              {
+                "$ref": "#/$defs/MediaEditDocument"
+              }
+            ],
+            "title": "Document"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/$defs/MediaPublicationOutput"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Outputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "itemId",
+          "source",
+          "sourceEditorId",
+          "document",
+          "outputs"
+        ],
+        "title": "CanvasPublishMedia",
+        "type": "object"
+      },
+      "CanvasPublishMediaCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "canvas.publishMedia",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/CanvasPublishMedia"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "CanvasPublishMediaCommand",
+        "type": "object"
+      },
       "CanvasShow": {
         "additionalProperties": false,
         "properties": {
@@ -14096,6 +14566,7 @@
                 "canvas.hide": "#/$defs/CanvasHideCommand",
                 "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
                 "canvas.move": "#/$defs/CanvasMoveCommand",
+                "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
                 "canvas.show": "#/$defs/CanvasShowCommand",
                 "canvas.update": "#/$defs/CanvasUpdateCommand",
                 "creation.batch": "#/$defs/BatchCommand",
@@ -14119,7 +14590,8 @@
                 "reference.remove": "#/$defs/ReferenceRemoveCommand",
                 "reference.restore": "#/$defs/ReferenceRestoreCommand",
                 "reference.update": "#/$defs/ReferenceUpdateCommand",
-                "result.select": "#/$defs/ResultSelectCommand"
+                "result.select": "#/$defs/ResultSelectCommand",
+                "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
               },
               "propertyName": "type"
             },
@@ -14165,6 +14637,12 @@
               },
               {
                 "$ref": "#/$defs/CanvasApplyEditCommand"
+              },
+              {
+                "$ref": "#/$defs/CanvasPublishMediaCommand"
+              },
+              {
+                "$ref": "#/$defs/TimelinePublishRenderCommand"
               },
               {
                 "$ref": "#/$defs/NodeVersionApplyCommand"
@@ -17933,6 +18411,52 @@
           "channels"
         ],
         "title": "MediaMetadata",
+        "type": "object"
+      },
+      "MediaPublicationOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/$defs/Point"
+          },
+          "width": {
+            "default": 352,
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Width",
+            "type": "number"
+          },
+          "height": {
+            "default": 198,
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "title": "Height",
+            "type": "number"
+          }
+        },
+        "required": [
+          "itemId",
+          "asset",
+          "title",
+          "position",
+          "width",
+          "height"
+        ],
+        "title": "MediaPublicationOutput",
         "type": "object"
       },
       "ModelConfigPublic": {
@@ -21826,6 +22350,102 @@
         "title": "TimelineDocument",
         "type": "object"
       },
+      "TimelinePublishRender": {
+        "additionalProperties": false,
+        "properties": {
+          "itemId": {
+            "format": "uuid",
+            "title": "Itemid",
+            "type": "string"
+          },
+          "editorId": {
+            "format": "uuid",
+            "title": "Editorid",
+            "type": "string"
+          },
+          "asset": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "outputId": {
+            "format": "uuid",
+            "title": "Outputid",
+            "type": "string"
+          },
+          "title": {
+            "default": "合成视频",
+            "maxLength": 255,
+            "title": "Title",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/$defs/Point"
+          }
+        },
+        "required": [
+          "itemId",
+          "editorId",
+          "asset",
+          "outputId",
+          "title",
+          "position"
+        ],
+        "title": "TimelinePublishRender",
+        "type": "object"
+      },
+      "TimelinePublishRenderCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "commandId": {
+            "format": "uuid",
+            "title": "Commandid",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "type": {
+            "const": "timeline.publishRender",
+            "title": "Type",
+            "type": "string"
+          },
+          "expectedVersions": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/ObjectVersion"
+            },
+            "title": "Expectedversions",
+            "type": "array"
+          },
+          "expectedPreview": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpreview"
+          },
+          "payload": {
+            "$ref": "#/$defs/TimelinePublishRender"
+          }
+        },
+        "required": [
+          "commandId",
+          "projectId",
+          "type",
+          "expectedVersions",
+          "expectedPreview",
+          "payload"
+        ],
+        "title": "TimelinePublishRenderCommand",
+        "type": "object"
+      },
       "TimelineResource": {
         "additionalProperties": false,
         "properties": {
@@ -23197,6 +23817,7 @@
             "canvas.hide": "#/$defs/CanvasHideCommand",
             "canvas.materialize": "#/$defs/CanvasMaterializeCommand",
             "canvas.move": "#/$defs/CanvasMoveCommand",
+            "canvas.publishMedia": "#/$defs/CanvasPublishMediaCommand",
             "canvas.show": "#/$defs/CanvasShowCommand",
             "canvas.update": "#/$defs/CanvasUpdateCommand",
             "creation.batch": "#/$defs/BatchCommand",
@@ -23220,7 +23841,8 @@
             "reference.remove": "#/$defs/ReferenceRemoveCommand",
             "reference.restore": "#/$defs/ReferenceRestoreCommand",
             "reference.update": "#/$defs/ReferenceUpdateCommand",
-            "result.select": "#/$defs/ResultSelectCommand"
+            "result.select": "#/$defs/ResultSelectCommand",
+            "timeline.publishRender": "#/$defs/TimelinePublishRenderCommand"
           },
           "propertyName": "type"
         },
@@ -23266,6 +23888,12 @@
           },
           {
             "$ref": "#/$defs/CanvasApplyEditCommand"
+          },
+          {
+            "$ref": "#/$defs/CanvasPublishMediaCommand"
+          },
+          {
+            "$ref": "#/$defs/TimelinePublishRenderCommand"
           },
           {
             "$ref": "#/$defs/NodeVersionApplyCommand"

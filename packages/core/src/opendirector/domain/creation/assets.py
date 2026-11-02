@@ -56,6 +56,7 @@ class AssetProvenance(Contract):
     source: Literal['upload', 'manual', 'agent_written', 'generated', 'edited', 'rendered']
     jobId: UUID | None = None
     toolTaskId: UUID | None = None
+    sourceItemId: UUID | None = None
     editorDocumentId: UUID | None = None
     editorRevision: Revision | None = None
     sources: tuple[AssetRef, ...] = ()

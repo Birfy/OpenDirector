@@ -15,7 +15,11 @@ import type { ImageCropOptions as EditOptions } from "../contracts/generated.ts"
 
 export interface ImageEditorProps {
   node: CanvasNode;
-  onApply: (src: string, layers?: LayerDocument, crop?: ImageCropState) => void;
+  onApply: (
+    src: string,
+    layers?: LayerDocument,
+    crop?: ImageCropState,
+  ) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
   initialTab?: "crop" | "layers";
   initialLayers?: LayerDocument;
@@ -350,7 +354,7 @@ function CropEditor({
 
   const update = <K extends keyof EditOptions>(key: K, value: EditOptions[K]) =>
     setOptions((current) => ({ ...current, [key]: value }));
-  const apply = () => {
+  const apply = async () => {
     if (!image || applying) return;
     setApplying(true);
     setRenderError("");
@@ -362,12 +366,14 @@ function CropEditor({
         throw new Error(
           "图片尺寸超出当前浏览器的导出能力，请增加裁剪缩放后重试。",
         );
-      onApply(src, undefined, {
+      const accepted = await onApply(src, undefined, {
         src: node.data.imageCrop?.src ?? node.data.src!,
         options,
         width: output.width,
         height: output.height,
       });
+      if (accepted === false)
+        throw new Error("编辑未应用，草稿已保留，请核对来源与锁定状态。");
       onClose();
     } catch (error) {
       setRenderError(`无法应用编辑：${failureMessage(error)}`);

@@ -43,7 +43,10 @@ export interface VideoActionEditorProps {
   mediaContainer: HTMLElement | null;
   onDraftChange: (task: CanvasToolTask) => void;
   onImportResults: (task: CanvasToolTask) => void;
-  onApply: (outputs: readonly LinkedMediaResult[]) => boolean;
+  onApply: (
+    outputs: readonly LinkedMediaResult[],
+    task: CanvasToolTask,
+  ) => boolean | Promise<boolean>;
   onClose: () => void;
   onGenerate?: (task: CanvasToolTask) => void;
   /** Why the connected services cannot run this tool, from the tool catalog. */
@@ -578,14 +581,35 @@ function VideoActionSession({
       setError(reason instanceof Error ? reason.message : "截帧失败。");
     }
   };
+  const exported = useRef<
+    { key: string; output: LinkedMediaResult } | undefined
+  >(undefined);
   const localApply = async () => {
     if (busy || controller.current || !node.data.src || !video.current) return;
     if (tool === "video-frame-capture") {
-      if (
-        framesRef.current.length &&
-        onApply(framesRef.current.map((frame) => frame.output))
-      )
-        onClose();
+      setBusy(true);
+      try {
+        if (
+          framesRef.current.length &&
+          (await onApply(
+            framesRef.current.map((frame) => frame.output),
+            task({
+              capturedFrames: JSON.stringify(
+                framesRef.current.map((frame) => frame.seconds),
+              ),
+            }),
+          ))
+        )
+          onClose();
+      } catch (reason) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "结果未保存，暂存帧已保留。",
+        );
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     const invalid = videoActionInputError(
@@ -610,28 +634,41 @@ function VideoActionSession({
     video.current.pause();
     onDraftChange(task());
     try {
+      const frozenTask = task();
+      const outputKey = JSON.stringify({
+        tool,
+        parameters: frozenTask.parameters,
+        selection: frozenTask.selection,
+      });
       const output =
-        tool === "extract-audio"
-          ? await extractVideoAudio(
-              node.data.src,
-              node.data.title,
-              rangeRef.current,
-              operation.signal,
-            )
-          : await exportVideoRange(
-              video.current,
-              node.data.title,
-              tool === "video-crop"
-                ? { start: 0, end: duration }
-                : rangeRef.current,
-              operation.signal,
-              (seconds) => {
-                if (active.current && !operation.signal.aborted)
-                  setCurrentPosition(seconds);
-              },
-              tool === "video-crop" ? cropRef.current! : undefined,
-            );
-      if (active.current && !operation.signal.aborted && onApply([output]))
+        exported.current?.key === outputKey
+          ? exported.current.output
+          : tool === "extract-audio"
+            ? await extractVideoAudio(
+                node.data.src,
+                node.data.title,
+                rangeRef.current,
+                operation.signal,
+              )
+            : await exportVideoRange(
+                video.current,
+                node.data.title,
+                tool === "video-crop"
+                  ? { start: 0, end: duration }
+                  : rangeRef.current,
+                operation.signal,
+                (seconds) => {
+                  if (active.current && !operation.signal.aborted)
+                    setCurrentPosition(seconds);
+                },
+                tool === "video-crop" ? cropRef.current! : undefined,
+              );
+      exported.current = { key: outputKey, output };
+      if (
+        active.current &&
+        !operation.signal.aborted &&
+        (await onApply([output], frozenTask))
+      )
         onClose();
     } catch (reason) {
       if (active.current && !operation.signal.aborted)

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { createCanvasToolTask, type CanvasToolTask } from "./toolCatalog";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import { EditorModal } from "./EditorModal";
 import { ControlSlider } from "./ControlSlider";
@@ -43,7 +44,10 @@ export function LocalMediaEditor({
 }: {
   node: CanvasNode;
   mode: "trim" | "frame" | "extract-audio" | "crop";
-  onApply: (output: LocalMediaOutput) => void;
+  onApply: (
+    output: LocalMediaOutput,
+    task: CanvasToolTask,
+  ) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
 }) {
   const [duration, setDuration] = useState(
@@ -236,6 +240,9 @@ export function LocalMediaEditor({
     active.current &&
     abort.current === controller &&
     !controller.signal.aborted;
+  const exported = useRef<
+    { key: string; output: LocalMediaOutput } | undefined
+  >(undefined);
   const apply = async () => {
     const element = media.current;
     if (!node.data.src || !element || busy || abort.current) return;
@@ -257,13 +264,44 @@ export function LocalMediaEditor({
     setError("");
     previewing.current = false;
     element.pause();
-    const commit = (output: LocalMediaOutput) => {
+    const outputKey = JSON.stringify({
+      src: node.data.src,
+      mode,
+      start,
+      end,
+      crop,
+      position: mode === "frame" ? position : undefined,
+    });
+    const commit = async (output: LocalMediaOutput) => {
+      exported.current = { key: outputKey, output };
       if (owns(controller)) {
-        onApply(output);
+        if (
+          (await onApply(
+            output,
+            createCanvasToolTask(
+              mode === "frame"
+                ? "video-frame-capture"
+                : mode === "crop"
+                  ? "video-crop"
+                  : mode === "extract-audio"
+                    ? "extract-audio"
+                    : isAudio
+                      ? "audio-trim"
+                      : "video-trim",
+              [node.id],
+              { start, end, frameTime: element.currentTime, ...(crop ?? {}) },
+            ),
+          )) === false
+        )
+          throw Error("结果未保存，请重试。");
         onClose();
       }
     };
     try {
+      if (exported.current?.key === outputKey) {
+        await commit(exported.current.output);
+        return;
+      }
       if (mode === "frame") {
         const video = element as HTMLVideoElement;
         if (video.seeking || !video.videoWidth || video.readyState < 2)
@@ -274,7 +312,7 @@ export function LocalMediaEditor({
         const context = canvas.getContext("2d");
         if (!context) throw new Error("浏览器无法创建取帧画布。");
         context.drawImage(video, 0, 0);
-        commit({
+        await commit({
           src: canvas.toDataURL("image/png"),
           mimeType: "image/png",
           kind: "image",
@@ -303,7 +341,7 @@ export function LocalMediaEditor({
             new Blob([wav], { type: "audio/wav" }),
             controller.signal,
           );
-          commit({
+          await commit({
             src,
             mimeType: "audio/wav",
             kind: "audio",
@@ -341,7 +379,7 @@ export function LocalMediaEditor({
         },
         controller.signal,
       );
-      commit({
+      await commit({
         src,
         mimeType: "video/webm",
         kind: "video",
