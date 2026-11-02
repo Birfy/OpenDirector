@@ -96,6 +96,8 @@ npm.cmd run build
 .\.venv\Scripts\python.exe scripts/opendirector.py serve --port 8001
 ```
 
+默认日志级别为 INFO。排查模型请求参数时，启动命令追加 `--log-level debug`；访问日志与模型调用日志使用相同格式。
+
 ## 接入模型
 
 点击左下角齿轮进入“设置”，打开“模型接入”，按用途添加对话、图片、视频或音频模型。

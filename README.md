@@ -96,6 +96,8 @@ Open the address shown in the terminal in your browser. The default is <http://1
 .\.venv\Scripts\python.exe scripts/opendirector.py serve --port 8001
 ```
 
+The default log level is INFO. To inspect model request parameters, append `--log-level debug` to the startup command. Access logs and model call logs use the same format.
+
 ## Connect models
 
 Click the gear at the bottom left to open **Settings (设置)**, then open **Model connections (模型接入)**. Add models for chat, image, video, or audio generation as needed.
