@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  blankContent,
   contentText,
   referenceContent,
   referenceIds,
@@ -128,4 +129,18 @@ test("over-limit and mismatched-version insertions reject the entire batch", () 
     /整批未插入/,
   );
   assert.deepEqual(referenceIds(body), ["a"]);
+});
+
+test("line breaks and spaces left by deletion keep the editor empty", () => {
+  assert.equal(blankContent([]), true);
+  assert.equal(blankContent([{ type: "text", text: "\n" }]), true);
+  assert.equal(blankContent([{ type: "text", text: " \n\t\u200b" }]), true);
+  assert.equal(blankContent([{ type: "text", text: "第一行\n第二行" }]), false);
+  assert.equal(
+    blankContent([
+      { type: "text", text: "\n" },
+      { type: "reference", assetId: "a", name: "Same.png", fingerprint: null },
+    ]),
+    false,
+  );
 });

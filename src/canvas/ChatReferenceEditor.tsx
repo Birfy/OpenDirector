@@ -12,6 +12,7 @@ import type { ChatAsset } from "../backend/chat.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import {
   assetKind,
+  blankContent,
   contentText,
   normalizeContent,
   currentReferences,
@@ -211,8 +212,11 @@ export function ChatReferenceEditor({
   }
   function paint(content: ReferenceContent, at?: Caret) {
     if (!root.current) return;
+    const blank = blankContent(content);
     const fragment = document.createDocumentFragment();
-    for (const part of content) {
+    // Blank content is drawn as nothing, so a draft holding only line breaks
+    // cannot leave an extra empty line above the prompt.
+    for (const part of blank ? [] : content) {
       if (part.type === "text")
         fragment.append(document.createTextNode(part.text));
       else {
@@ -233,7 +237,7 @@ export function ChatReferenceEditor({
     }
     fragment.append(document.createTextNode("\u200b"));
     root.current.replaceChildren(fragment);
-    root.current.dataset.empty = String(content.length === 0);
+    root.current.dataset.empty = String(blank);
     decorate();
     if (at) {
       select(root.current, at);
@@ -252,7 +256,10 @@ export function ChatReferenceEditor({
     typing = false,
     added: ReferenceAsset[] = [],
   ) {
-    const next = normalizeContent(content);
+    const normalized = normalizeContent(content);
+    // Line breaks and spaces left behind by deletion are editing residue: the
+    // editor is still empty, so it keeps its prompt and publishes no message.
+    const next = blankContent(normalized) ? [] : normalized;
     if (!validContent(next)) {
       setNotice("正文最多 20000 字、64 份不同参考。");
       paint(current.current, saved.current);
@@ -274,10 +281,14 @@ export function ChatReferenceEditor({
       lastEdit.current = typing ? Date.now() : 0;
       current.current = next;
     }
-    saved.current = at;
-    if (redraw) paint(next, at);
-    else if (root.current)
-      root.current.dataset.empty = String(next.length === 0);
+    const blank = next.length === 0;
+    const nextAt = blank ? { start: 0, end: 0 } : at;
+    saved.current = nextAt;
+    // An emptied editor is repainted even while typing: it restores the
+    // zero-width anchor in place of the browser's leftover line break, so the
+    // prompt returns and the caret stays on the only line.
+    if (redraw || blank) paint(next, nextAt);
+    else if (root.current) root.current.dataset.empty = "false";
     setNotice("");
     return true;
   }
@@ -691,6 +702,9 @@ export function ChatReferenceEditor({
         onCompositionStart={() => {
           composing.current = true;
           close();
+          // Uncommitted IME text is already drawn in the editor; the empty
+          // prompt must not stay behind it.
+          if (root.current) root.current.dataset.empty = "false";
         }}
         onCompositionEnd={() => {
           composing.current = false;
@@ -723,6 +737,18 @@ export function ChatReferenceEditor({
           ) {
             event.preventDefault();
             undo(native.inputType === "historyRedo");
+          } else if (
+            !native.isComposing &&
+            !composing.current &&
+            // React can forward textInput events without InputEvent fields.
+            native.inputType?.startsWith("delete") &&
+            root.current &&
+            blankContent(readDOM(root.current))
+          ) {
+            // Nothing to delete: leaving the browser to act would replace the
+            // zero-width anchor with a line break, dropping the prompt and
+            // adding a second empty line. Backspace is not input.
+            event.preventDefault();
           } else if (
             !native.isComposing &&
             (native.inputType === "deleteContentBackward" ||

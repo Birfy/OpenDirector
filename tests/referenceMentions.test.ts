@@ -47,7 +47,7 @@ test("reference uploads add an extension once even when the node title includes 
 test("a bare @ opens references; typing after it closes, and backspacing reopens", () => {
   const text = "参考 @";
   assert.deepEqual(mentionRange(text, text.length), { start: 3, end: 4 });
-  for (const suffix of ["x", "主", " ", "\n", "@"]) {
+  for (const suffix of ["x", "主", " ", "\n"]) {
     const edited = text + suffix;
     assert.equal(mentionRange(edited, edited.length), null);
     const backspaced = edited.slice(0, -suffix.length);
@@ -56,8 +56,18 @@ test("a bare @ opens references; typing after it closes, and backspacing reopens
       end: 4,
     });
   }
-  for (const value of ["name@", "a.b@", "user+tag@", "50%@", "@@"])
-    assert.equal(mentionRange(value, value.length), null);
+  // A second @ moves the mention to the newer one instead of closing it.
+  assert.deepEqual(mentionRange(`${text}@`, text.length + 1), {
+    start: 4,
+    end: 5,
+  });
+  // Typing an @ straight after letters, digits or symbols must open references
+  // too: no separating space is required.
+  for (const value of ["name@", "a.b@", "user+tag@", "50%@", "@@", "asd@"])
+    assert.deepEqual(mentionRange(value, value.length), {
+      start: value.length - 1,
+      end: value.length,
+    });
   assert.equal(mentionRange("@", 0, 1), null);
   assert.deepEqual(mentionRange("@后文", 1), { start: 0, end: 1 });
   assert.deepEqual(mentionRange("中文@", 3), { start: 2, end: 3 });

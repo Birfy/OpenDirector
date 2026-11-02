@@ -75,6 +75,13 @@ export function normalizeContent(parts: ReferenceContent): ReferenceContent {
   }
   return result;
 }
+// Line breaks and spaces left by editing are not content: an editor holding
+// only those still shows its prompt and never publishes a blank message.
+export function blankContent(content: ReferenceContent) {
+  return content.every(
+    (part) => part.type === "text" && !part.text.replace(/[\s\u200b]/g, ""),
+  );
+}
 export function referenceIds(content: ReferenceContent) {
   return [
     ...new Set(

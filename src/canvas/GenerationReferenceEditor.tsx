@@ -34,9 +34,6 @@ export interface GenerationReferenceControls {
   visibleNodes: CanvasNode[];
   assets: ReferenceAsset[];
   pinned?: ReferenceAsset[];
-  loading: boolean;
-  error: string;
-  load: () => void;
   onChange: (content: ReferenceContent, sources: CanvasNode[]) => void;
   prepareAsset: (
     asset: ReferenceAsset,
@@ -458,9 +455,11 @@ export function GenerationReferenceEditor({
         options={options}
         disabled={running || uploading}
         referencesDisabled={running || uploading}
-        loading={controls?.loading ?? false}
-        loadError={controls?.error ?? ""}
-        onOpen={() => controls?.load()}
+        // Candidates already come from the live canvas. Catalog reads only
+        // enrich fixed/pasted references and must not block choosing a source.
+        loading={false}
+        loadError=""
+        onOpen={() => {}}
         onChoose={choose}
         onChange={(content) => {
           const previous = new Set(

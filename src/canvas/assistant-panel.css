@@ -312,6 +312,8 @@
   background: var(--chat-composer);
 }
 .cw-assistant-panel .cw-assistant-composer .cw-chat-reference-editor {
+  /* Containing block for the empty-state hint below. */
+  position: relative;
   display: block;
   width: 100%;
   min-height: 100px;
@@ -328,8 +330,18 @@
   font: inherit;
   line-height: 1.65;
 }
+/* The hint is an overlay rather than in-flow generated content. An empty
+   editor holds only its zero-width space, so an in-flow ::before renders ahead
+   of that text node and leaves the caret at the end of the hint instead of the
+   left edge. Out of flow, the anchor text node is first again. `padding:
+   inherit` keeps the overlay on the editor's content box. */
 .cw-assistant-composer .cw-chat-reference-editor[data-empty="true"]::before {
   content: attr(data-placeholder);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: inherit;
   color: var(--cw-prompt-hint, #6f6f73);
   pointer-events: none;
 }

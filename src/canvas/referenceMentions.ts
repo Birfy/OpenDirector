@@ -25,16 +25,16 @@ export interface MentionRange {
   end: number;
 }
 
-/** Match OpenDirector: a bare @ at the caret, excluding email/handle fragments. */
+/** A bare @ at the caret opens references, whatever character precedes it. */
 export function mentionRange(
   value: string,
   start: number,
   end = start,
 ): MentionRange | null {
   if (start !== end || start < 1 || start > value.length) return null;
-  return /(?:^|[^A-Za-z0-9_.+%@])@$/.test(value.slice(0, start))
-    ? { start: start - 1, end }
-    : null;
+  // The caret is right after the @, so typing the next character closes it
+  // again. Requiring a separator first would make "素材@" and "asd@" fail.
+  return value[start - 1] === "@" ? { start: start - 1, end } : null;
 }
 
 export function insertMention(

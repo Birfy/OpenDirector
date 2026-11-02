@@ -628,7 +628,7 @@ function Workspace() {
     () => incomingNodes(doc, composerNodeId),
     [doc.nodes, doc.hiddenNodes, doc.edges, composerNodeId],
   );
-  const referenceAssets = useProjectMentionAssets(doc.id);
+  const referenceAssets = useProjectMentionAssets(doc.id, ready);
   const generationReferenceControls = (
     target: CanvasNode,
   ): GenerationReferenceControls => ({
@@ -669,9 +669,6 @@ function Workspace() {
         }) ?? []
       );
     })(),
-    loading: referenceAssets.loading,
-    error: referenceAssets.error,
-    load: referenceAssets.load,
     referenceId: (source) =>
       doc.edges.find(
         (edge) =>
@@ -3271,6 +3268,20 @@ function Workspace() {
       settingsOpen ||
       el.closest("button,a,video,audio,[role=dialog]") ||
       (el !== root.current && !el.closest(".react-flow"))
+    )
+      return;
+    // Clicking a panel leaves focus on the workspace root, so the target above
+    // says nothing about where the text selection lives. A selection outside
+    // the flow belongs to the browser: copy, cut, select-all, delete and caret
+    // keys must reach it instead of acting on canvas nodes.
+    const selected = document.getSelection();
+    const anchor = selected?.anchorNode;
+    const anchorElement =
+      anchor instanceof Element ? anchor : (anchor?.parentElement ?? null);
+    if (
+      selected &&
+      !selected.isCollapsed &&
+      !anchorElement?.closest(".react-flow")
     )
       return;
     if (

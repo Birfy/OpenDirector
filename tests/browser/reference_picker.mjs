@@ -126,6 +126,27 @@ try {
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  let browserSession;
+  page.on("request", (request) => {
+    if (request.url().endsWith(`/projects/${projectId}/commands`))
+      browserSession = request.headers()["x-opendirector-session"];
+  });
+  // Hold the expensive metadata read indefinitely. Canvas candidates and their
+  // insertion must work even before it finishes, including the first opening.
+  let releaseCatalog;
+  const catalogGate = new Promise((resolve) => (releaseCatalog = resolve));
+  page.on("close", () => releaseCatalog());
+  let catalogReads = 0;
+  await page.route("**/reference-catalog", async (route) => {
+    catalogReads++;
+    await catalogGate;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Fixture catalog unavailable" }),
+    });
+  });
+  const openingTimes = [];
   await page.goto(`${base}/ai-tool/ai-canvas/${projectId}`, {
     waitUntil: "domcontentloaded",
   });
@@ -135,6 +156,7 @@ try {
     exact: true,
   });
   const checked = [];
+  const persistedReferences = [];
   for (const kind of ["图片", "视频"]) {
     await page
       .getByRole("toolbar", { name: "画布创作工具" })
@@ -145,6 +167,7 @@ try {
       exact: true,
     });
     const opened = async () => {
+      const start = performance.now();
       try {
         await picker.waitFor({ state: "visible" });
       } catch (error) {
@@ -162,7 +185,9 @@ try {
         throw error;
       }
       assert.equal(await editor.getAttribute("aria-expanded"), "true");
-      await picker.getByRole("option").first().waitFor();
+      await picker.getByRole("option").first().waitFor({ timeout: 1500 });
+      assert.equal(await picker.getByRole("status").count(), 0);
+      openingTimes.push(Math.round(performance.now() - start));
     };
     const closed = async () => {
       await picker.waitFor({ state: "hidden" });
@@ -263,8 +288,23 @@ try {
     const reference = await editor
       .locator("[data-reference]")
       .getAttribute("data-reference");
-    assert.equal(JSON.parse(reference).nodeId, sourceIds[0]);
+    const part = JSON.parse(reference);
+    assert.equal(part.nodeId, sourceIds[0]);
     await page.locator(`.react-flow__edge[data-id]`).first().waitFor();
+    // The edge can be optimistic; wait for the server acknowledgement before
+    // checking source identity or continuing with further text edits.
+    const deadline = Date.now() + 5000;
+    let persisted;
+    do {
+      const saved = await call(`/api/creation/projects/${projectId}`);
+      persisted = saved.references.find(
+        (ref) => ref.id === part.referenceId && ref.active,
+      );
+      if (!persisted) await new Promise((resolve) => setTimeout(resolve, 100));
+    } while (!persisted && Date.now() < deadline);
+    assert.ok(persisted, "Choosing a canvas source must persist its reference");
+    assert.equal(persisted.source.id, sourceIds[0]);
+    persistedReferences.push(persisted.id);
     const sizes = await editor.evaluate((element) => {
       const input = getComputedStyle(element);
       const chip = element.querySelector("[data-reference]");
@@ -303,11 +343,87 @@ try {
     await closed();
     checked.push(kind);
   }
+  assert.equal(catalogReads, 1, "Reopening must not restart the prefetch");
+  const failedCatalog = page.waitForResponse("**/reference-catalog");
+  releaseCatalog();
+  await failedCatalog;
+  // Failure of optional metadata must not disable local references either.
+  const editor = page.getByRole("textbox", { name: "生成提示词", exact: true });
+  await editor.press("End");
+  await editor.press("@");
+  await picker.getByRole("option").first().waitFor({ timeout: 1500 });
+  assert.equal(await picker.getByRole("alert").count(), 0);
+  await editor.press("Escape");
+  assert.equal(catalogReads, 1);
   const snapshot = await call(`/api/creation/projects/${projectId}`);
   assert.equal(snapshot.assets.length, 3);
   assert.equal(
     snapshot.assets.filter((asset) => asset.name === "女王.jpg.jpg").length,
     2,
+  );
+  assert.equal(persistedReferences.length, 2);
+  // Changes to the live canvas must appear without refreshing the catalog.
+  assert.ok(browserSession);
+  const mutate = async (type, payload, expectedVersions = []) => {
+    const response = await fetch(
+      `${api}/api/creation/projects/${projectId}/commands`,
+      {
+        method: "POST",
+        headers: { ...headers, "X-OpenDirector-Session": browserSession },
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          projectId,
+          type,
+          payload,
+          expectedVersions,
+        }),
+      },
+    );
+    assert.ok(response.ok, await response.clone().text());
+    const receipt = await response.json();
+    assert.equal(receipt.status, "applied", JSON.stringify(receipt));
+  };
+  const removed = snapshot.canvasItems.find((item) => item.id === sourceIds[0]);
+  await mutate("canvas.hide", { itemId: removed.id }, [
+    { objectType: "canvas_item", id: removed.id, revision: removed.revision },
+  ]);
+  await page.locator(`.react-flow__node[data-id="${removed.id}"]`).waitFor({
+    state: "hidden",
+  });
+  await editor.fill("新素材 @");
+  await picker.getByRole("option").first().waitFor({ timeout: 1500 });
+  assert.equal(await picker.getByRole("option").count(), 1);
+  const addedId = crypto.randomUUID();
+  const asset = snapshot.assets[0];
+  await mutate("canvas.show", {
+    item: {
+      id: addedId,
+      projectId,
+      kind: "image",
+      title: "新加入.png",
+      visible: true,
+      position: { x: 500, y: 500 },
+      width: 160,
+      height: 160,
+      binding: {
+        role: "material",
+        objectRef: {
+          assetId: asset.id,
+          revision: asset.revision,
+          fingerprint: asset.fingerprint,
+          kind: asset.kind,
+        },
+      },
+    },
+  });
+  await picker
+    .getByRole("option", { name: "新加入.png 图片 · 画布素材", exact: true })
+    .waitFor();
+  assert.equal(await picker.getByRole("option").count(), 2);
+  assert.equal(
+    catalogReads,
+    1,
+    "Canvas changes must not require a catalog read",
   );
   assert.deepEqual(errors, []);
   console.log(
@@ -320,6 +436,11 @@ try {
       atomicReferences: true,
       normalizedLabels: true,
       independentAssetsPreserved: true,
+      persistedReferences: persistedReferences.length,
+      catalogReadIndependent: true,
+      catalogReads,
+      liveCanvasChanges: true,
+      openingCheckMs: openingTimes,
       errors,
     }),
   );
