@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../backend/api";
 
+/** Names a project for creation, or renames an existing one. */
 export function ProjectNameDialog({
   initialName,
+  title = "新建画布项目",
+  submitLabel = "创建项目",
+  hint = "项目将保存到本地 projects 目录下的同名文件夹。",
   onClose,
   onSubmit,
 }: {
   initialName: string;
+  title?: string;
+  submitLabel?: string;
+  hint?: string;
   onClose: () => void;
   onSubmit: (name: string) => Promise<void>;
 }) {
@@ -50,7 +57,7 @@ export function ProjectNameDialog({
           }
         }}
       >
-        <h2 id="project-dialog-title">新建画布项目</h2>
+        <h2 id="project-dialog-title">{title}</h2>
         <label htmlFor="canvas-project-name">项目名称</label>
         <input
           ref={input}
@@ -63,7 +70,7 @@ export function ProjectNameDialog({
           onChange={(event) => setName(event.target.value)}
           placeholder="请输入项目名称"
         />
-        <p>项目将保存到本地 projects 目录下的同名文件夹。</p>
+        <p>{hint}</p>
         {error && (
           <p className="cw-project-error" role="alert">
             {error}
@@ -78,7 +85,7 @@ export function ProjectNameDialog({
             disabled={busy || !name.trim()}
             type="submit"
           >
-            {busy ? "正在保存…" : "创建项目"}
+            {busy ? "正在保存…" : submitLabel}
           </button>
         </div>
       </form>

@@ -12,6 +12,7 @@ import {
   useReactFlow,
   useStoreApi,
   type Edge,
+  type EdgeChange,
   type NodeChange,
   type ReactFlowProps,
 } from "@xyflow/react";
@@ -25,6 +26,10 @@ import {
 } from "./snapping.ts";
 import { prepareDragGeometry } from "./dragGeometry.ts";
 import { CanvasInteractionOverlay } from "./CanvasConnections";
+import {
+  edgesInSelectionRect,
+  type EdgeSelectionCache,
+} from "./edgeSelection.ts";
 
 export interface CanvasFlowSurfaceHandle {
   cancel: () => void;
@@ -54,6 +59,46 @@ export function CanvasFlowSurface({
   const cancellingNativeSelection = useRef(false);
   const latest = useRef({ documentNodes, gesture, bypassSnapping, props });
   latest.current = { documentNodes, gesture, bypassSnapping, props };
+  const marquee = useRef<{
+    ids: Set<string>;
+    cache: EdgeSelectionCache;
+  } | null>(null);
+  useEffect(
+    () =>
+      store.subscribe((state, previous) => {
+        const active = marquee.current;
+        if (
+          !active ||
+          !state.userSelectionActive ||
+          !state.userSelectionRect ||
+          (state.userSelectionRect === previous.userSelectionRect &&
+            state.transform === previous.transform) ||
+          !state.domNode
+        )
+          return;
+        const selectable = new Set(
+          latest.current.props.edges
+            .filter((edge) => edge.selectable !== false && !edge.hidden)
+            .map((edge) => edge.id),
+        );
+        const ids = edgesInSelectionRect(
+          state.domNode,
+          state.userSelectionRect,
+          selectable,
+          active.cache,
+        );
+        const changes: EdgeChange[] = [];
+        for (const id of active.ids)
+          if (!ids.has(id))
+            changes.push({ type: "select", id, selected: false });
+        for (const id of ids)
+          if (!active.ids.has(id))
+            changes.push({ type: "select", id, selected: true });
+        active.ids = ids;
+        if (changes.length) latest.current.props.onEdgesChange?.(changes);
+      }),
+    [store],
+  );
   const [preview, setPreview] = useState<Preview>(empty);
   const frame = useRef<number | null>(null);
   const session = useRef<{
@@ -69,6 +114,7 @@ export function CanvasFlowSurface({
   };
   function cancel() {
     if (cancellingNativeSelection.current) return;
+    marquee.current = null;
     stopFrame();
     session.current = null;
     setPreview(empty());
@@ -230,6 +276,21 @@ export function CanvasFlowSurface({
       nodes={projected.nodes}
       edges={projected.edges}
       onNodesChange={changes}
+      onEdgesChange={(changes) => {
+        // ReactFlow's marquee selects edges by their nodes; use curve hits instead.
+        const forwarded = marquee.current
+          ? changes.filter((change) => change.type !== "select")
+          : changes;
+        if (forwarded.length) latest.current.props.onEdgesChange?.(forwarded);
+      }}
+      onSelectionStart={(event) => {
+        marquee.current = { ids: new Set(), cache: new WeakMap() };
+        latest.current.props.onSelectionStart?.(event);
+      }}
+      onSelectionEnd={(event) => {
+        marquee.current = null;
+        latest.current.props.onSelectionEnd?.(event);
+      }}
       onNodeDragStart={(...args) => {
         start();
         latest.current.props.onNodeDragStart?.(...args);

@@ -1,12 +1,16 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
+import { ProjectNameDialog } from "./ProjectNameDialog";
 import {
   listWorkspaceProjects,
+  projectDeleteMode,
   type WorkspaceProject,
 } from "../backend/workspace";
 import { errorMessage } from "../backend/api";
 
 const NAME_PLACEHOLDER = "输入项目名称";
+const ACTION_MENU_HEIGHT = 92;
 
 export function ProjectSelector({
   currentId,
@@ -15,6 +19,8 @@ export function ProjectSelector({
   onSelect,
   onCreate,
   onRename,
+  onRenameProject,
+  onDeleteProject,
 }: {
   currentId: string;
   name: string;
@@ -22,6 +28,8 @@ export function ProjectSelector({
   onSelect: (project: WorkspaceProject) => Promise<boolean>;
   onCreate: () => void;
   onRename: (name: string) => Promise<void>;
+  onRenameProject: (project: WorkspaceProject, name: string) => Promise<void>;
+  onDeleteProject: (project: WorkspaceProject) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<WorkspaceProject[]>([]);
@@ -31,12 +39,23 @@ export function ProjectSelector({
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(name);
   const [renameError, setRenameError] = useState("");
+  const [actions, setActions] = useState<{ id: string; top: number } | null>(
+    null,
+  );
+  const [renameTarget, setRenameTarget] = useState<WorkspaceProject | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceProject | null>(
+    null,
+  );
+  const [recycleBin, setRecycleBin] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
   const nameButton = useRef<HTMLButtonElement>(null);
   const editingRef = useRef(false);
   const renamePending = useRef(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const actionButtons = useRef(new Map<string, HTMLButtonElement>());
   const menuId = useId();
   const renameErrorId = useId();
   useEffect(() => {
@@ -47,10 +66,38 @@ export function ProjectSelector({
   }, [editing]);
   useEffect(() => {
     setOpen(false);
+    setActions(null);
     editingRef.current = false;
     setEditing(false);
     setRenameError("");
   }, [currentId]);
+  const closeActions = useCallback((restoreFocus: boolean) => {
+    setActions((current) => {
+      if (current && restoreFocus)
+        requestAnimationFrame(() =>
+          actionButtons.current.get(current.id)?.focus(),
+        );
+      return null;
+    });
+  }, []);
+  const loadProjects = useCallback(async () => {
+    const result = await listWorkspaceProjects();
+    setProjects(result.projects);
+    setError(result.warnings.join("\n"));
+  }, []);
+  const openActions = (project: WorkspaceProject, button: HTMLButtonElement) => {
+    const dropdown = container.current?.querySelector<HTMLElement>(
+      ".cw-project-dropdown",
+    );
+    const row = button.closest<HTMLElement>(".cw-project-row");
+    if (!dropdown || !row) return;
+    const box = dropdown.getBoundingClientRect();
+    const top = Math.min(
+      Math.max(row.getBoundingClientRect().top - box.top, 0),
+      Math.max(box.height - ACTION_MENU_HEIGHT, 0),
+    );
+    setActions({ id: project.id, top });
+  };
   const finishEditing = (restoreFocus: boolean) => {
     editingRef.current = false;
     setEditing(false);
@@ -89,6 +136,14 @@ export function ProjectSelector({
     let active = true;
     setLoading(true);
     setError("");
+    void projectDeleteMode()
+      .then((mode) => {
+        if (active) setRecycleBin(mode.projectDelete === "recycle_bin");
+      })
+      .catch(() => {
+        // The prompt stays on the permanent wording when the mode is unknown.
+        if (active) setRecycleBin(false);
+      });
     void listWorkspaceProjects()
       .then((result) => {
         if (active) {
@@ -117,6 +172,9 @@ export function ProjectSelector({
       document.removeEventListener("focusin", dismiss);
     };
   }, [open]);
+  useEffect(() => {
+    if (!open) setActions(null);
+  }, [open]);
   return (
     <div
       className="cw-project-selector"
@@ -126,6 +184,10 @@ export function ProjectSelector({
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
+          if (actions) {
+            closeActions(true);
+            return;
+          }
           setOpen(false);
           trigger.current?.focus();
         } else if (
@@ -254,44 +316,73 @@ export function ProjectSelector({
               {error}
             </p>
           )}
-          <div className="cw-project-list" aria-busy={loading || busy}>
+          <div
+            className="cw-project-list"
+            aria-busy={loading || busy}
+            onScroll={() => closeActions(false)}
+          >
             {loading ? (
               <p className="cw-project-placeholder" role="status">
                 正在读取项目…
               </p>
             ) : (
               projects.map((project) => (
-                <button
-                  key={project.id}
-                  role="menuitemradio"
-                  aria-checked={project.id === currentId}
-                  disabled={disabled || busy}
-                  className="cw-project-option"
-                  title={project.name}
-                  onClick={async () => {
-                    if (project.id === currentId) {
-                      setOpen(false);
-                      return;
-                    }
-                    setBusy(true);
-                    setError("");
-                    try {
-                      if (await onSelect(project)) setOpen(false);
-                    } catch (reason) {
-                      setError(errorMessage(reason));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <span className="cw-project-thumbnail" aria-hidden="true">
-                    <CanvasIcon name="group" size={18} />
-                  </span>
-                  <span className="cw-project-option-name">{project.name}</span>
-                  {project.id === currentId && (
-                    <CanvasIcon name="check" size={20} />
-                  )}
-                </button>
+                <div className="cw-project-row" key={project.id}>
+                  <button
+                    role="menuitemradio"
+                    aria-checked={project.id === currentId}
+                    disabled={disabled || busy}
+                    className="cw-project-option"
+                    title={project.name}
+                    onClick={async () => {
+                      if (project.id === currentId) {
+                        setOpen(false);
+                        return;
+                      }
+                      setBusy(true);
+                      setError("");
+                      try {
+                        if (await onSelect(project)) setOpen(false);
+                      } catch (reason) {
+                        setError(errorMessage(reason));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <span className="cw-project-thumbnail" aria-hidden="true">
+                      <CanvasIcon name="group" size={18} />
+                    </span>
+                    <span className="cw-project-option-name">
+                      {project.name}
+                    </span>
+                    {project.id === currentId && (
+                      <span className="cw-project-check">
+                        <CanvasIcon name="check" size={20} />
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="cw-project-more"
+                    ref={(element) => {
+                      if (element) actionButtons.current.set(project.id, element);
+                      else actionButtons.current.delete(project.id);
+                    }}
+                    disabled={disabled || busy}
+                    aria-label={`项目操作：${project.name}`}
+                    title="项目操作"
+                    aria-haspopup="menu"
+                    aria-expanded={actions?.id === project.id}
+                    onClick={(event) => {
+                      if (actions?.id === project.id) closeActions(true);
+                      else openActions(project, event.currentTarget);
+                    }}
+                  >
+                    <CanvasIcon name="more" size={18} />
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -307,7 +398,69 @@ export function ProjectSelector({
             <span>新建画布项目</span>
             <CanvasIcon name="plus" size={20} />
           </button>
+          {actions && (
+            <div
+              className="cw-project-actions"
+              role="menu"
+              aria-label="项目操作"
+              style={{ top: actions.top }}
+            >
+              <button
+                role="menuitem"
+                disabled={disabled || busy}
+                onClick={() => {
+                  const target = projects.find(
+                    (item) => item.id === actions.id,
+                  );
+                  closeActions(false);
+                  if (target) setRenameTarget(target);
+                }}
+              >
+                <CanvasIcon name="pencil" size={18} />
+                <span>重命名</span>
+              </button>
+              <button
+                className="cw-danger"
+                role="menuitem"
+                disabled={disabled || busy}
+                onClick={() => {
+                  const target = projects.find(
+                    (item) => item.id === actions.id,
+                  );
+                  closeActions(false);
+                  if (target) setDeleteTarget(target);
+                }}
+              >
+                <CanvasIcon name="trash" size={18} />
+                <span>删除项目</span>
+              </button>
+            </div>
+          )}
         </div>
+      )}
+      {renameTarget && (
+        <ProjectNameDialog
+          initialName={renameTarget.name}
+          title="重命名项目"
+          submitLabel="保存名称"
+          hint="项目文件夹会随名称一起更新，已打开的其他窗口需要重新进入。"
+          onClose={() => setRenameTarget(null)}
+          onSubmit={async (nextName) => {
+            await onRenameProject(renameTarget, nextName);
+            await loadProjects();
+          }}
+        />
+      )}
+      {deleteTarget && (
+        <ProjectDeleteDialog
+          name={deleteTarget.name}
+          recycleBin={recycleBin}
+          onClose={() => setDeleteTarget(null)}
+          onSubmit={async () => {
+            await onDeleteProject(deleteTarget);
+            await loadProjects();
+          }}
+        />
       )}
     </div>
   );

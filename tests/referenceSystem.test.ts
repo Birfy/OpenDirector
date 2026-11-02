@@ -94,9 +94,50 @@ test("inline insert/repeat/delete uses one relationship and preserves surroundin
       { type: "text", text: "Retained" },
     ]),
   );
-  assert.equal(next.edges.length, 0);
+  // Deleting a mention is a text edit. The connection stays until the reference
+  // strip removes it, so the canvas never loses a source behind the user's back.
+  assert.equal(next.edges.length, 1);
   assert.equal(next.nodes[1]!.data.prompt, "Retained");
   assert.deepEqual(next.nodes[1]!.data.promptMentions, []);
+});
+test("canvas connections stay out of the draft and text edits never drop them", () => {
+  const { source, target, doc } = fixture();
+  assert.deepEqual(
+    generationContent(target, [source]).filter(
+      (part) => part.type === "reference",
+    ),
+    [],
+    "A connected source belongs in the reference strip, not in the draft",
+  );
+  const linked = applyCommand(doc, {
+    type: "add-edge",
+    edge: {
+      id: "connection",
+      source: source.id,
+      target: target.id,
+      intent: "generation_input",
+    },
+  });
+  const typed = applyCommand(
+    linked,
+    referenceContentCommand(linked, target.id, [
+      { type: "text", text: "只改文字" },
+    ]),
+  );
+  assert.equal(typed.edges.length, 1);
+  assert.equal(typed.nodes[1]!.data.prompt, "只改文字");
+  assert.deepEqual(
+    generationContent(typed.nodes[1]!, [source]).filter(
+      (part) => part.type === "reference",
+    ),
+    [],
+  );
+  const unlinked = applyCommand(typed, {
+    type: "remove-edges",
+    ids: ["connection"],
+  });
+  assert.equal(unlinked.edges.length, 0);
+  assert.equal(unlinked.nodes[1]!.data.prompt, "只改文字");
 });
 test("disconnect clears every occurrence while hide preserves references and survives storage", () => {
   const { source, target, doc } = fixture();

@@ -1,8 +1,16 @@
 import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+import {
   BaseEdge,
   getBezierPath,
   Position,
   ViewportPortal,
+  useViewport,
   type EdgeProps,
   type Edge,
   type ConnectionLineComponentProps,
@@ -11,6 +19,8 @@ import { referencePreviewPath, type PortSide } from "./connectionPorts";
 import { edgePath } from "./edgeGeometry";
 import type { Point, Rect } from "./model";
 import type { SnapGuide } from "./snapping";
+import { CanvasActionsContext } from "./CanvasActionsContext";
+import "./edge-selection.css";
 
 export type ReferenceEdge = Edge<{
   emphasized: boolean;
@@ -62,6 +72,42 @@ export function CanvasConnectionPreview({
 }
 
 export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
+  const actions = useContext(CanvasActionsContext);
+  const { zoom } = useViewport();
+  const group = useRef<SVGGElement>(null);
+  const hovering = useRef(false);
+  const pointer = useRef<Point | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [deleteAt, setDeleteAt] = useState<Point | null>(null);
+  const removable = Boolean(
+    props.selected &&
+    props.selectable !== false &&
+    props.deletable !== false &&
+    !props.id.startsWith("tool-") &&
+    actions?.removeReference,
+  );
+  const canRemove = useRef(removable);
+  canRemove.current = removable;
+  const clearTimer = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  const startTimer = () => {
+    if (!canRemove.current || timer.current !== null) return;
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      if (hovering.current && canRemove.current && pointer.current)
+        setDeleteAt(pointer.current);
+    }, 500);
+  };
+  const rememberPointer = (event: MouseEvent<SVGGElement>) => {
+    const matrix = group.current?.getScreenCTM();
+    if (!matrix || deleteAt) return;
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(
+      matrix.inverse(),
+    );
+    pointer.current = { x: point.x, y: point.y };
+  };
   const path =
     props.data?.sourceBounds && props.data.targetBounds
       ? edgePath(
@@ -74,10 +120,29 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
   // Brightening from source to target shows the direction without an arrow.
   const ends = pathEnds(path);
   const fade = `edge-fade-${props.id}`;
+  useEffect(() => {
+    clearTimer();
+    setDeleteAt(null);
+    // Selecting a line under the stationary pointer starts its own dwell period.
+    if (removable && hovering.current) startTimer();
+    return clearTimer;
+  }, [removable, path, zoom]);
   return (
     <g
+      ref={group}
       data-reference-state={props.data?.state ?? "pending"}
-      className={`cw-reference-edge is-${props.data?.state ?? "pending"} ${emphasized ? "is-emphasized" : ""}`}
+      className={`cw-reference-edge is-${props.data?.state ?? "pending"} ${emphasized ? "is-emphasized" : ""} ${props.selected ? "is-selected" : ""}`}
+      onMouseEnter={(event) => {
+        hovering.current = true;
+        rememberPointer(event);
+        startTimer();
+      }}
+      onMouseMove={rememberPointer}
+      onMouseLeave={() => {
+        hovering.current = false;
+        clearTimer();
+        setDeleteAt(null);
+      }}
     >
       <title>{props.data?.description ?? "参考连线"}</title>
       {ends && (
@@ -102,6 +167,31 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
         style={ends ? { stroke: `url(#${fade})` } : undefined}
       />
       {emphasized && <EdgeMotion path={path} />}
+      {removable && deleteAt && (
+        <foreignObject
+          x={deleteAt.x - 9 / zoom}
+          y={deleteAt.y - 9 / zoom}
+          width={18 / zoom}
+          height={18 / zoom}
+          className="cw-edge-delete-container"
+        >
+          <button
+            type="button"
+            className="cw-edge-delete nodrag nopan nokey"
+            aria-label="删除此连线"
+            title="删除此连线"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              actions?.removeReference?.(props.id);
+            }}
+          >
+            <svg viewBox="0 0 14 14" aria-hidden="true">
+              <path d="m2 2 10 10m0-10-10 10" />
+            </svg>
+          </button>
+        </foreignObject>
+      )}
     </g>
   );
 }

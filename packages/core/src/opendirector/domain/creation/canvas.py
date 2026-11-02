@@ -79,8 +79,8 @@ class MediaCanvasItem(CanvasItemBase):
 
     @model_validator(mode='after')
     def media_role(self):
-        if self.binding.role == 'generation' and self.binding.materialOverride is not None and (self.kind not in {'text', 'image'} or self.binding.materialOverride.kind != self.kind):
-            raise ValueError('Only text and image generation nodes can retain a matching explicit output')
+        if self.binding.role == 'generation' and self.binding.materialOverride is not None and self.binding.materialOverride.kind != self.kind:
+            raise ValueError('A generation node can only retain an explicit output of the same kind')
         if self.binding.role == 'material' and self.binding.objectRef.kind != self.kind:
             raise ValueError('Material asset kind differs from canvas item kind')
         if self.binding.role == 'empty' and self.binding.manualText is not None and self.kind != 'text':

@@ -78,7 +78,9 @@ import {
   openWorkspaceProject,
   renameWorkspaceProject,
   saveWorkspaceDocument,
+  trashWorkspaceProject,
   workspaceProjection,
+  type WorkspaceProject,
 } from "../backend/workspace";
 import {
   downloadFile,
@@ -117,7 +119,21 @@ import {
   referenceIssue,
   referenceMaterial,
 } from "./connectionPolicy";
-import { REFERENCE_PORT_SIZE, referencePortMetrics } from "./connectionPorts";
+import {
+  REFERENCE_PORT_ICON_SIZE,
+  REFERENCE_PORT_SIZE,
+  referencePortMetrics,
+} from "./connectionPorts";
+import {
+  batchCreationKinds,
+  multiSelectionGeometry,
+  planReferenceBatch,
+  SELECTION_PADDING,
+  SELECTION_PORT_SIZE,
+  sourceReferencePreviews,
+} from "./selectionReferences";
+import "./multi-selection.css";
+import "./node-reference-ports.css";
 import "./control-theme.css";
 import { CreationAssetList } from "./CreationAssetList.tsx";
 import { CANVAS_CREATION_TOOLS } from "./creationTools";
@@ -220,8 +236,8 @@ import {
   updateStack,
   type CanvasFragment,
 } from "./operations";
+import { buildCanvasArchive, readCanvasArchive } from "./canvasArchive.ts";
 import { CanvasPointerGesture } from "./pointerGesture";
-import { portableDocument } from "./portableDocument.ts";
 import { resourceNodeData } from "./projectAssets";
 import { persistCurrentDocument } from "./projectManagement";
 import { ProjectNameDialog } from "./ProjectNameDialog";
@@ -232,7 +248,6 @@ import { SettingsDialog } from "./SettingsDialog";
 import { alignNodes, type Alignment } from "./snapping";
 import { StackEditor } from "./StackEditor";
 import { projectCanvasStacks, visibleSelectionIds } from "./stackProjection";
-import { serializeDocument } from "./storage";
 import { subjectDescriptionLayout } from "./subjectLayout.ts";
 import { measureSubjectNodeHeight } from "./subjectLayoutMeasurement.ts";
 import {
@@ -289,6 +304,7 @@ type Menu = {
   parentId?: string;
   connected?: {
     id: string;
+    ids?: string[];
     direction: "source" | "target";
     side?: PortSide;
     anchor?: Point;
@@ -470,6 +486,7 @@ function Workspace() {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const selectionAtPointerDown = useRef<string[]>([]);
+  const marqueeClick = useRef(false);
   const pointerGesture = useRef(new CanvasPointerGesture());
   const [interacting, setInteracting] = useState(false);
   const [textEditingId, setTextEditingId] = useState<string | null>(null);
@@ -502,6 +519,7 @@ function Workspace() {
   const dragging = useRef(false);
   const bypassSnapping = useRef(false);
   const connectionStarted = useRef<Point | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开…");
   const { notifications, notify, dismiss } = useCanvasNotifications();
@@ -720,6 +738,17 @@ function Workspace() {
         sources,
       );
       command(edit);
+    },
+    removeReference: (source) => {
+      const ids = historyRef.current.present.edges
+        .filter(
+          (edge) =>
+            edge.intent !== "post_edit_result" &&
+            edge.source === source.id &&
+            edge.target === target.id,
+        )
+        .map((edge) => edge.id);
+      if (ids.length) command({ type: "remove-edges", ids });
     },
   });
   const actionSource = actionSession
@@ -1226,6 +1255,72 @@ function Workspace() {
     }
   };
 
+  const renameProject = async (project: WorkspaceProject, nextName: string) => {
+    if (project.id === historyRef.current.present.id)
+      return renameCurrentProject(nextName);
+    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    await renameWorkspaceProject(project, nextName);
+  };
+
+  const deleteProject = async (project: WorkspaceProject) => {
+    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    if (project.id !== historyRef.current.present.id) {
+      await trashWorkspaceProject(project);
+      return;
+    }
+    // The open project goes away with its lease, so the workspace must move to
+    // another document instead of saving into a deleted folder. The move starts
+    // once the project is gone; loading the next canvas must not hold the
+    // confirmation open, because that can take as long as the project is big.
+    switchPending.current = true;
+    setSwitching(true);
+    importAbort.current?.abort();
+    let next: WorkspaceProject | undefined;
+    let taken: Set<string> = new Set();
+    try {
+      if (
+        !(await persistCurrentDocument(
+          () => historyRef.current.present,
+          persist,
+        ))
+      )
+        throw new Error("当前画布尚未保存，未执行删除。");
+      const { projects } = await listWorkspaceProjects();
+      next = projects.find((item) => item.id !== project.id);
+      taken = new Set(projects.map((item) => item.name.toLocaleLowerCase()));
+      await trashWorkspaceProject(project);
+    } catch (error) {
+      switchPending.current = false;
+      setSwitching(false);
+      throw error;
+    }
+    void (async () => {
+      try {
+        if (next) installDocument(await openWorkspaceProject(next), true);
+        else {
+          let freshName = "未命名画布";
+          for (let suffix = 2; ; suffix++) {
+            if (!taken.has(freshName.toLocaleLowerCase())) break;
+            freshName = `未命名画布 (${suffix})`;
+          }
+          installDocument(
+            await openWorkspaceProject(
+              await createWorkspaceProject(freshName, crypto.randomUUID()),
+            ),
+            true,
+          );
+        }
+      } catch (error) {
+        notify(
+          `项目已删除，但未能打开下一个项目：${errorMessage(error)}。请刷新页面。`,
+        );
+      } finally {
+        switchPending.current = false;
+        setSwitching(false);
+      }
+    })();
+  };
+
   useEffect(() => {
     let alive = true;
     const init = async () => {
@@ -1425,24 +1520,31 @@ function Workspace() {
     extra: Partial<CanvasNodeData> = {},
   ) => {
     const connected = position ? menu?.connected : undefined;
-    const source =
+    const sourceIds =
       connected?.direction === "source"
-        ? historyRef.current.present.nodes.find(
-            (node) => node.id === connected.id,
-          )
-        : undefined;
-    if (source && canStartReference(source) && !referenceMaterial(source)) {
+        ? (connected.ids ?? [connected.id])
+        : [];
+    const current = historyRef.current.present;
+    if (
+      sourceIds.some((id) => {
+        const source = current.nodes.find((node) => node.id === id);
+        return (
+          source && canStartReference(source) && !referenceMaterial(source)
+        );
+      })
+    ) {
       setMenu(null);
       notify(REFERENCE_ISSUE_TEXT.source_empty);
       return;
     }
     if (
       connected &&
-      !connectedCreationKinds(
-        historyRef.current.present,
-        connected.id,
-        connected.direction,
-        [kind],
+      !(
+        sourceIds.length > 1
+          ? batchCreationKinds(current, sourceIds, [kind])
+          : connectedCreationKinds(current, connected.id, connected.direction, [
+              kind,
+            ])
       ).length
     ) {
       setMenu(null);
@@ -1454,6 +1556,9 @@ function Workspace() {
     const node = createNode(kind, where, {
       ...snapshotModel(kind),
       title: `${labels[kind]} ${count}`,
+      ...(sourceIds.length > 1 && kind === "video"
+        ? { settings: { videoMode: "reference" as const } }
+        : {}),
       ...extra,
     });
     if (kind === "timeline") node.width = 720;
@@ -1494,7 +1599,23 @@ function Workspace() {
       }
     }
     const commands: CanvasCommand[] = [{ type: "add-nodes", nodes: [node] }];
-    if (connected)
+    if (sourceIds.length > 1) {
+      const plan = planReferenceBatch(
+        { ...current, nodes: [...current.nodes, node] },
+        sourceIds,
+        node.id,
+      );
+      if (plan.issue) {
+        notify(REFERENCE_ISSUE_TEXT[plan.issue.code]);
+        setMenu(null);
+        return;
+      }
+      commands.push(
+        ...plan.edges.map(
+          (edge): CanvasCommand => ({ type: "add-edge", edge }),
+        ),
+      );
+    } else if (connected)
       commands.push({
         type: "add-edge",
         edge: {
@@ -1702,6 +1823,21 @@ function Workspace() {
     [command, flow],
   );
   const lockedIds = useMemo(() => lockedNodeIds(doc.nodes), [doc.nodes]);
+  const selectionNodes = doc.nodes.filter((node) => selected.includes(node.id));
+  const selectionGeometry = multiSelectionGeometry(
+    selectionNodes,
+    doc.nodes,
+    zoom,
+  );
+  const selectionReferenceReason = selectionNodes.some((node) =>
+    lockedIds.has(node.id),
+  )
+    ? REFERENCE_ISSUE_TEXT.locked
+    : selectionNodes.some((node) => !canStartReference(node))
+      ? "所选节点中有不支持作为参考的类型"
+      : selectionNodes.some((node) => !referenceMaterial(node))
+        ? REFERENCE_ISSUE_TEXT.source_empty
+        : "";
   const references = useCanvasReferences({
     nodes: doc.nodes.filter(
       (n) =>
@@ -1710,6 +1846,10 @@ function Workspace() {
         ),
     ),
     zoom,
+    selectionPort:
+      selectionGeometry && !selectionReferenceReason
+        ? selectionGeometry.port
+        : undefined,
     locked: lockedIds,
     disabled:
       spacePressed ||
@@ -1718,33 +1858,26 @@ function Workspace() {
       Boolean(editing || preview || activeAction || textEditingId) ||
       dragging.current,
     world: (point) => flow.screenToFlowPosition(point),
-    connect: (source, target) => {
+    connect: (sources, target) => {
       const current = historyRef.current.present;
-      const node = current.nodes.find((node) => node.id === source);
-      if (node && canStartReference(node) && !referenceMaterial(node)) {
-        notify(REFERENCE_ISSUE_TEXT.source_empty);
+      const plan = planReferenceBatch(current, sources, target);
+      if (plan.issue) {
+        notify(REFERENCE_ISSUE_TEXT[plan.issue.code]);
         return;
       }
-      const issue = referenceIssue(current, source, target);
-      if (issue) {
-        notify(REFERENCE_ISSUE_TEXT[issue]);
+      if (!plan.edges.length) {
+        notify(REFERENCE_ISSUE_TEXT.duplicate_relation);
         return;
       }
       command({
-        type: "add-edge",
-        edge: {
-          id: crypto.randomUUID(),
-          source,
-          target,
-          sourceHandle: "out",
-          targetHandle: "in",
-        },
+        type: "batch",
+        commands: plan.edges.map((edge) => ({ type: "add-edge", edge })),
       });
       setSelected([target]);
       setSelectedEdges([]);
       setDismissedComposer(null);
     },
-    create: (source, side, client, world, anchor) => {
+    create: (sources, side, client, world, anchor) => {
       const id = document
         .elementFromPoint(client.x, client.y)
         ?.closest(".react-flow__node")
@@ -1756,7 +1889,13 @@ function Workspace() {
         x: client.x + 12,
         y: client.y + 12,
         world,
-        connected: { id: source, direction: "source", side, anchor },
+        connected: {
+          id: sources[0],
+          ids: sources,
+          direction: "source",
+          side,
+          anchor,
+        },
         parentId: parent?.id,
       });
     },
@@ -1946,11 +2085,11 @@ function Workspace() {
             sourceBounds: bounds(edge.source),
             targetBounds: bounds(edge.target),
             emphasized:
-              hoveredNode !== null
+              selectedEdges.includes(edge.id) ||
+              (hoveredNode !== null
                 ? hoveredNode === edge.source || hoveredNode === edge.target
-                : selectedEdges.includes(edge.id) ||
-                  selected.includes(edge.source) ||
-                  selected.includes(edge.target),
+                : selected.includes(edge.source) ||
+                  selected.includes(edge.target)),
           },
         };
       }),
@@ -2041,16 +2180,24 @@ function Workspace() {
   };
   const exportDocument = async () => {
     try {
-      const current = historyRef.current.present;
-      const result = serializeDocument(await portableDocument(current));
-      if (!result.ok) {
-        notify(result.error.message);
-        return;
-      }
-      downloadFile(
-        new Blob([result.value], { type: "application/json" }),
-        `${doc.title}.canvas.json`,
+      const archive = await buildCanvasArchive(historyRef.current.present);
+      downloadFile(archive.blob, archive.filename);
+    } catch (error) {
+      notify(errorMessage(error));
+    }
+  };
+  const importDocument = async (file: File) => {
+    try {
+      const contents = await readCanvasArchive(file);
+      const switched = await switchDocument(
+        () => importWorkspaceDocument(contents.document),
+        true,
+        true,
       );
+      if (switched)
+        notify(
+          `已导入「${contents.document.title}」，恢复 ${contents.assets} 个素材。`,
+        );
     } catch (error) {
       notify(errorMessage(error));
     }
@@ -3480,15 +3627,22 @@ function Workspace() {
 
   const actions = {
     resizeSubjectDescription,
+    removeReference: (id: string) => {
+      if (id.startsWith("tool-")) return;
+      root.current?.focus({ preventScroll: true });
+      command({ type: "remove-edges", ids: [id] });
+      setSelectedEdges((ids) => ids.filter((selected) => selected !== id));
+    },
     referenceTargetState: (id: string): "valid" | "invalid" | null => {
       if (
         !references.connecting ||
         references.targetId !== id ||
-        !references.port
+        !references.sourceIds.length
       )
         return null;
-      const issue = referenceIssue(doc, references.port.nodeId, id);
-      return !issue || issue === "duplicate_relation" ? "valid" : "invalid";
+      return planReferenceBatch(doc, references.sourceIds, id).issue
+        ? "invalid"
+        : "valid";
     },
     pickSubject: (
       id: string,
@@ -3808,6 +3962,18 @@ function Workspace() {
           side: menu.connected.side,
         }
       : undefined;
+  const pendingBatchPreviews =
+    menu?.connected?.ids && menu.connected.ids.length > 1
+      ? sourceReferencePreviews(
+          doc.nodes,
+          menu.connected.ids,
+          menu.world,
+          menu.connected.side,
+        )
+      : [];
+  const referencePreviews = references.previews.length
+    ? references.previews
+    : pendingBatchPreviews;
 
   const workspace = (
     <div
@@ -3825,6 +3991,7 @@ function Workspace() {
           "--assistant-width": `${assistantLayout.width}px`,
           "--assistant-toolbar-offset": `${assistantLayout.toolbarOffset}px`,
           "--assistant-top": assistantLayout.belowHeader ? "78px" : "14px",
+          "--cw-selection-padding": `${SELECTION_PADDING / zoom}px`,
         } as CSSProperties
       }
       tabIndex={-1}
@@ -3844,6 +4011,7 @@ function Workspace() {
           event.preventDefault();
       }}
       onPointerDownCapture={(event) => {
+        marqueeClick.current = false;
         selectionAtPointerDown.current = selectedRef.current;
         bypassSnapping.current = event.metaKey || event.ctrlKey;
         const target = event.target as HTMLElement;
@@ -3867,7 +4035,10 @@ function Workspace() {
       onClickCapture={(event) => {
         if (pointerGesture.current.blocksClick(event.detail)) {
           event.preventDefault();
-          event.stopPropagation();
+          // Let the pane consume the click ending a marquee. Otherwise its
+          // selection flag swallows the next edge/button click instead.
+          if (!marqueeClick.current) event.stopPropagation();
+          marqueeClick.current = false;
         } else if (
           event.detail === 2 &&
           !pointerGesture.current.blocksDoubleClick() &&
@@ -3985,7 +4156,6 @@ function Workspace() {
             onEdgeClick={(_, edge) => {
               if (edge.id.startsWith("tool-")) return;
               setSelected([]);
-              setSelectedEdges([edge.id]);
               setMenu(null);
             }}
             onNodeClick={(event, node) => {
@@ -4044,6 +4214,7 @@ function Workspace() {
             onSelectionDragStart={beginDrag}
             onSelectionDragStop={endDrag}
             onSelectionEnd={() => {
+              marqueeClick.current = true;
               if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
             }}
             onPaneClick={(event) => {
@@ -4115,42 +4286,113 @@ function Workspace() {
               color={theme.theme === "dark" ? "#55565d" : "#c7cbd2"}
               bgColor={theme.theme === "dark" ? "#0d0d0d" : "#f7f8fa"}
             />
-            <CanvasInteractionOverlay guides={[]} pending={pendingConnection} />
+            <CanvasInteractionOverlay
+              guides={[]}
+              pending={
+                pendingBatchPreviews.length ? undefined : pendingConnection
+              }
+            />
             <ViewportPortal>
-              {references.preview && (
+              {selectionGeometry && !interacting && (
+                <div
+                  className="cw-multi-selection-frame"
+                  aria-hidden="true"
+                  style={{
+                    left: selectionGeometry.frame.x,
+                    top: selectionGeometry.frame.y,
+                    width: selectionGeometry.frame.width,
+                    height: selectionGeometry.frame.height,
+                    borderWidth: 1 / zoom,
+                    borderRadius: 10 / zoom,
+                  }}
+                />
+              )}
+              {referencePreviews.length > 0 && (
                 <svg className="cw-interaction-overlay">
-                  <CanvasConnectionPreview
-                    path={references.preview}
-                    invalid={Boolean(
-                      references.targetId &&
-                      actions.referenceTargetState(references.targetId) ===
-                        "invalid",
-                    )}
-                  />
+                  {referencePreviews.map((preview) => (
+                    <g
+                      key={preview.sourceId}
+                      data-reference-preview-source={preview.sourceId}
+                    >
+                      <CanvasConnectionPreview
+                        path={preview.path}
+                        invalid={Boolean(
+                          references.targetId &&
+                          actions.referenceTargetState(references.targetId) ===
+                            "invalid",
+                        )}
+                      />
+                    </g>
+                  ))}
                 </svg>
               )}
-              {references.port && !menu && (
+              {selectionGeometry && !interacting && !spacePressed && !menu && (
                 <button
                   type="button"
-                  className="cw-reference-port"
-                  aria-label="添加下游参考节点"
-                  data-reference-source={references.port.nodeId}
-                  data-side={references.port.side}
+                  className="cw-reference-port cw-selection-reference-port nodrag nopan"
+                  aria-label="批量连接所选节点"
+                  title={
+                    selectionReferenceReason ||
+                    "拖到目标节点以批量引用；点击添加下游节点"
+                  }
+                  disabled={
+                    Boolean(selectionReferenceReason) || references.disabled
+                  }
                   style={{
-                    left: references.port.point.x,
-                    top: references.port.point.y,
-                    transform: `translate(-50%, -50%) scale(${portMetrics.scale})`,
-                    opacity: references.connecting ? 0 : 1,
+                    left:
+                      references.selectionPort?.x ?? selectionGeometry.port.x,
+                    top:
+                      references.selectionPort?.y ?? selectionGeometry.port.y,
+                    transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                    opacity: references.connecting ? 0 : undefined,
                   }}
-                  onPointerDown={references.start}
+                  onPointerDown={(event) =>
+                    references.startSelection(
+                      event,
+                      selectionNodes.map((node) => node.id),
+                      references.selectionPort ?? selectionGeometry.port,
+                    )
+                  }
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                   }}
                 >
-                  <CanvasIcon name="plus" size={REFERENCE_PORT_SIZE * 0.75} />
+                  <CanvasIcon name="plus" size={SELECTION_PORT_SIZE * 0.6} />
                 </button>
               )}
+              {selected.length < 2 &&
+                !menu &&
+                references.ports.map((port) => (
+                  <button
+                    key={`${port.nodeId}:${port.side}`}
+                    type="button"
+                    className="cw-reference-port cw-node-reference-port nodrag nopan"
+                    aria-label={
+                      port.active
+                        ? "添加下游参考节点"
+                        : `从${port.side === "left" ? "左" : "右"}侧添加下游参考节点`
+                    }
+                    data-reference-source={port.nodeId}
+                    data-side={port.side}
+                    data-active={port.active}
+                    style={{
+                      left: port.point.x,
+                      top: port.point.y,
+                      width: REFERENCE_PORT_SIZE,
+                      height: REFERENCE_PORT_SIZE,
+                      transform: `translate(-50%, -50%) scale(${portMetrics.scale})`,
+                      opacity: references.connecting ? 0 : 1,
+                    }}
+                    onPointerDown={(event) => references.start(event, port)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                  >
+                    <CanvasIcon name="plus" size={REFERENCE_PORT_ICON_SIZE} />
+                  </button>
+                ))}
             </ViewportPortal>
           </CanvasFlowSurface>
         </CanvasActionsContext.Provider>
@@ -4207,6 +4449,8 @@ function Workspace() {
               })
             }
             onRename={renameCurrentProject}
+            onRenameProject={renameProject}
+            onDeleteProject={deleteProject}
           />
           <NodeInfoButton nodes={doc.nodes} />
           <span className="cw-save-status" title={saveStatus}>
@@ -4259,9 +4503,26 @@ function Workspace() {
             active={panel === "history"}
             onClick={() => togglePanel("history")}
           />
+          <button
+            className="cw-import-button"
+            onClick={() => importInput.current?.click()}
+          >
+            导入画布
+          </button>
           <button className="cw-export-button" onClick={exportDocument}>
             导出画布
           </button>
+          <input
+            ref={importInput}
+            type="file"
+            accept=".canvas,application/zip"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void importDocument(file);
+            }}
+          />
         </div>
       </header>
       <CanvasToolRail
@@ -5121,15 +5382,23 @@ function Workspace() {
             <CreationMenuContent
               allowedKinds={
                 menu.connected
-                  ? connectedCreationKinds(
-                      doc,
-                      menu.connected.id,
-                      menu.connected.direction,
-                      CANVAS_CREATION_TOOLS.filter((t) => !t.unavailable).map(
-                        (t) => t.kind,
-                      ),
-                      { allowEmptySource: true },
-                    )
+                  ? menu.connected.ids && menu.connected.ids.length > 1
+                    ? batchCreationKinds(
+                        doc,
+                        menu.connected.ids,
+                        CANVAS_CREATION_TOOLS.filter(
+                          (tool) => !tool.unavailable,
+                        ).map((tool) => tool.kind),
+                      )
+                    : connectedCreationKinds(
+                        doc,
+                        menu.connected.id,
+                        menu.connected.direction,
+                        CANVAS_CREATION_TOOLS.filter((t) => !t.unavailable).map(
+                          (t) => t.kind,
+                        ),
+                        { allowEmptySource: true },
+                      )
                   : undefined
               }
               onCreate={(kind) => addNode(kind, menu.world)}
@@ -5837,8 +6106,9 @@ function Workspace() {
               ))}
             </dl>
             <p className="cw-panel-note">
-              项目与画布保存在本地 projects 目录，导出 JSON
-              可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置
+              项目与画布保存在本地 projects 目录，导出的 .canvas 压缩包内含画布
+              JSON
+              与素材文件，可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置
               → 模型接入”中的模型。助手对话、云分享和云端资产尚未接入。
             </p>
           </section>

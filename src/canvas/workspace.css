@@ -446,38 +446,122 @@
   max-height: min(540px, calc(100dvh - 86px));
   display: flex;
   flex-direction: column;
-  padding: 8px;
+  padding: 4px;
   background: #262627;
   border: 1px solid #ffffff06;
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow: 0 12px 36px #0005;
 }
 .cw-project-caption {
-  padding: 8px 5px 10px;
+  padding: 4px 7px 6px;
   color: #8a8b8d;
   font-size: 12px;
 }
 .cw-project-list {
   overflow-y: auto;
-  min-height: 48px;
+  min-height: 40px;
   scrollbar-width: thin;
   scrollbar-color: #ffffff20 transparent;
 }
+.cw-project-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
 .cw-project-option {
   display: flex;
+  flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  min-height: 48px;
-  padding: 8px 7px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 38px 6px 6px;
   text-align: left;
-  border-radius: 10px;
+  border-radius: 9px;
 }
-.cw-project-option:hover {
+.cw-project-option:hover,
+.cw-project-row:has(.cw-project-more:focus-visible) .cw-project-option {
   background: #ffffff09;
 }
 .cw-project-option[aria-checked="true"] {
   background: #ffffff0d;
+}
+.cw-project-more {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #c3c4c6;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.cw-project-row:hover .cw-project-more,
+.cw-project-row:focus-within .cw-project-more,
+.cw-project-more[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cw-project-more:hover {
+  background: #ffffff14;
+  color: #fff;
+}
+.cw-project-more[aria-expanded="true"] {
+  background: #ffffff1c;
+  color: #fff;
+}
+.cw-project-actions {
+  position: absolute;
+  left: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 158px;
+  padding: 6px;
+  background: #2d2d2f;
+  border: 1px solid #ffffff0a;
+  border-radius: 12px;
+  box-shadow: 0 14px 40px #0007;
+}
+.cw-project-actions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #e5e5e7;
+  text-align: left;
+}
+.cw-project-actions button:hover {
+  background: #ffffff12;
+}
+.cw-project-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cw-project-actions button.cw-danger {
+  color: #f0a3a3;
+}
+.cw-project-actions button.cw-danger:hover {
+  background: #7c2b2b33;
+}
+.cw-project-actions svg {
+  flex-shrink: 0;
+}
+.cw-project-check {
+  display: flex;
+  flex-shrink: 0;
+  transition: opacity 120ms ease;
+}
+.cw-project-row:hover .cw-project-check,
+.cw-project-row:focus-within .cw-project-check {
+  opacity: 0;
 }
 .cw-project-thumbnail {
   display: grid;
@@ -508,10 +592,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
-  padding: 10px 5px 4px;
+  min-height: 40px;
+  padding: 8px 7px 2px;
   border-top: 1px solid #ffffff08;
-  margin-top: 6px;
+  margin-top: 4px;
   text-align: left;
 }
 .cw-project-create:hover {
@@ -530,11 +614,11 @@
   overflow-wrap: anywhere;
 }
 .cw-project-dialog {
-  width: min(420px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
   box-sizing: border-box;
-  padding: 24px;
+  padding: 16px;
   border: 1px solid #ffffff18;
-  border-radius: 16px;
+  border-radius: 12px;
   background: #262627;
   color: #ededee;
   box-shadow: 0 20px 70px #0008;
@@ -549,18 +633,18 @@
   background: #0009;
 }
 .cw-project-dialog h2 {
-  margin: 0 0 22px;
-  font-size: 18px;
+  margin: 0 0 12px;
+  font-size: 16px;
   font-weight: 500;
 }
 .cw-project-dialog label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .cw-project-dialog input {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: 8px 10px;
   font: inherit;
   border: 1px solid #ffffff20;
   border-radius: 8px;
@@ -571,9 +655,10 @@
   outline: 1px solid #85bfff;
 }
 .cw-project-dialog p {
+  margin: 0 0 8px;
   color: #9b9b9e;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.55;
 }
 .cw-project-dialog .cw-project-error {
   color: #f3a3a3;
@@ -582,11 +667,11 @@
 .cw-project-dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 24px;
+  gap: 8px;
+  margin-top: 14px;
 }
 .cw-project-dialog button {
-  padding: 9px 16px;
+  padding: 7px 14px;
   font: inherit;
   border: 0;
   border-radius: 8px;
@@ -597,6 +682,13 @@
 .cw-project-dialog .cw-light-button {
   background: #e9e9ed;
   color: #17171a;
+}
+.cw-project-dialog .cw-danger-button {
+  background: #b3403f;
+  color: #fff;
+}
+.cw-project-dialog .cw-danger-button:hover {
+  background: #c94b4a;
 }
 .cw-project-dialog button:disabled {
   opacity: 0.5;
@@ -720,15 +812,17 @@
   background: none;
   font-size: 11px;
 }
-.cw-export-button {
+.cw-export-button,
+.cw-import-button {
   padding: 8px 14px;
   border: 1px solid #ffffff20;
   border-radius: 8px;
+  font-size: 12px;
   background: #242426;
   color: #dededf;
-  font-size: 12px;
 }
-.cw-export-button:hover {
+.cw-export-button:hover,
+.cw-import-button:hover {
   background: #333336;
 }
 .cw-rail-shell {
@@ -1714,7 +1808,8 @@
   .cw-top-actions {
     gap: 1px;
   }
-  .cw-export-button {
+  .cw-export-button,
+  .cw-import-button {
     display: none;
   }
   .cw-brand {

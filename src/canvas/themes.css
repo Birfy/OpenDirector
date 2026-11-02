@@ -50,6 +50,7 @@
     .cw-undo-controls,
     .cw-chat-button,
     .cw-export-button,
+    .cw-import-button,
     .cw-project-dropdown,
     .cw-side-panel,
     .cw-context-menu,
@@ -66,6 +67,11 @@
   color: #30343c;
   border-color: #dfe2e7;
   box-shadow: 0 4px 20px #30374414;
+}
+:root[data-theme="light"]
+  :is(.cw-export-button, .cw-import-button):hover {
+  background: #eef0f4;
+  color: #23262c;
 }
 :root[data-theme="light"]
   :is(.cw-domain-dialog, .cw-domain-header, .cw-domain-footer) {
@@ -96,6 +102,38 @@
   ) {
   background: #edf0f5;
   color: #30343c;
+}
+:root[data-theme="light"] .cw-project-actions {
+  background: #fff;
+  border-color: #dfe2e7;
+  box-shadow: 0 14px 40px #30374426;
+}
+:root[data-theme="light"] .cw-project-actions button {
+  color: #30343c;
+}
+:root[data-theme="light"] .cw-project-actions button:hover {
+  background: #edf0f5;
+}
+:root[data-theme="light"] .cw-project-actions button.cw-danger {
+  color: #b4342f;
+}
+:root[data-theme="light"] .cw-project-actions button.cw-danger:hover {
+  background: #fbeceb;
+}
+:root[data-theme="light"] .cw-project-more {
+  color: #5b636e;
+}
+:root[data-theme="light"] .cw-project-more:hover,
+:root[data-theme="light"] .cw-project-more[aria-expanded="true"] {
+  background: #e4e7ed;
+  color: #14171d;
+}
+:root[data-theme="light"] .cw-project-dialog .cw-danger-button {
+  background: #b4342f;
+  color: #fff;
+}
+:root[data-theme="light"] .cw-project-dialog .cw-danger-button:hover {
+  background: #c8443e;
 }
 :root[data-theme="light"]
   :is(.cw-project-name-editor input, .cw-project-name-measure) {
@@ -282,6 +320,8 @@
    rather than the ::placeholder colour above. */
 :root[data-theme="light"] :is(.cw-composer, .cw-assistant-composer) {
   --cw-prompt-hint: #8b929e;
+  /* Read-only prompt text: still legible on the white sheet, clearly not live. */
+  --cw-prompt-dim: #7b8290;
 }
 /* Inline reference chips inside the generation composer kept the dark
    chat surface, so a quoted asset read as a dark block on the white sheet. */

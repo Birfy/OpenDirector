@@ -1,12 +1,17 @@
 import { type CanvasDocument } from "../canvas/model.ts";
-import { ApiError, request } from "./api.ts";
+import type { CommandReceipt, ProjectSnapshot } from "../contracts/generated.ts";
+import { ApiError, json, request } from "./api.ts";
 import {
   creationClient,
   creationPath,
   objectVersion,
 } from "./creationClient.ts";
 import { CreationProjection } from "./creationProjection.ts";
-import { openBackendProject, releaseBackendProject } from "./projects.ts";
+import {
+  activeBackendProjectId,
+  openBackendProject,
+  releaseBackendProject,
+} from "./projects.ts";
 
 const projections = new Map<string, CreationProjection>();
 export function workspaceProjection(id: string) {
@@ -31,6 +36,10 @@ const lastKey = "opendirector.lastUnifiedFilesystemProject";
 
 export const listWorkspaceProjects = () =>
   request<WorkspaceProjectList>("/creation/projects");
+
+/** Whether removing a project lands in the operating system recycle bin. */
+export const projectDeleteMode = () =>
+  request<{ projectDelete: "recycle_bin" | "permanent" }>("/creation/storage");
 
 export async function readWorkspaceDocument(project: WorkspaceProject) {
   return workspaceProjection(project.id).open();
@@ -151,16 +160,47 @@ export async function renameWorkspaceProject(
   project: WorkspaceProject,
   name: string,
 ) {
-  await releaseBackendProject();
-  const client = creationClient(project.id);
+  // Reading the project is enough to check its version; only the project this
+  // window holds needs its editing lease paused for the rename.
+  const snapshot = await request<ProjectSnapshot>(creationPath(project.id));
+  const current = activeBackendProjectId() === project.id;
+  if (current) await releaseBackendProject();
   try {
-    await client.command("project.rename", { name }, [
-      objectVersion("project", client.snapshot.project),
-    ]);
+    await creationClient(project.id).command(
+      "project.rename",
+      { name },
+      [objectVersion("project", snapshot.project)],
+    );
   } finally {
-    await openBackendProject(project.id, client.snapshot.project.name);
+    if (current) await openBackendProject(project.id, name).catch(() => {});
   }
   return (await listWorkspaceProjects()).projects.find(
     (item) => item.id === project.id,
   )!;
+}
+
+/** Removes a closed project from the list; the directory goes to the operating
+ * system recycle bin when the platform supports it and is deleted otherwise. */
+export async function trashWorkspaceProject(project: WorkspaceProject) {
+  const snapshot = await request<ProjectSnapshot>(creationPath(project.id));
+  const current = activeBackendProjectId() === project.id;
+  if (current) await releaseBackendProject();
+  try {
+    await request<CommandReceipt>(
+      `${creationPath(project.id)}/commands`,
+      json("POST", {
+        commandId: crypto.randomUUID(),
+        projectId: project.id,
+        type: "project.trash",
+        payload: {},
+        expectedVersions: [objectVersion("project", snapshot.project)],
+      }),
+    );
+  } catch (error) {
+    if (current) await openBackendProject(project.id, project.name).catch(() => {});
+    // A lost response must not report a project that is already gone as an error.
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+  }
+  creationClient(project.id).close();
+  projections.delete(project.id);
 }

@@ -1,8 +1,10 @@
 import type { Point, Rect } from "./model.ts";
 
 export type PortSide = "top" | "right" | "bottom" | "left";
-export const REFERENCE_PORT_SIZE = 14;
-export const REFERENCE_PORT_MAX_SIZE = 22;
+export const REFERENCE_PORT_SIZE = 22;
+export const REFERENCE_PORT_MAX_SIZE = 30;
+/** Drawn size of the plus mark inside the port circle. */
+export const REFERENCE_PORT_ICON_SIZE = 15;
 
 /** Apply one scale to the circle, border and icon, including at the screen-size cap. */
 export function referencePortMetrics(zoom: number) {
@@ -13,7 +15,7 @@ export function referencePortMetrics(zoom: number) {
   return {
     scale,
     diameter: REFERENCE_PORT_SIZE * scale,
-    iconSize: REFERENCE_PORT_SIZE * 0.75 * scale,
+    iconSize: REFERENCE_PORT_ICON_SIZE * scale,
     borderWidth: scale,
   };
 }
@@ -53,12 +55,32 @@ export function insideNode(bounds: Rect, pointer: Point) {
   );
 }
 
+/** Leave a screen-space gutter between the enlarged circle and the material. */
+export function restingReferencePort(
+  bounds: Rect,
+  side: PortSide,
+  zoom: number,
+) {
+  const anchor = portPoint(bounds, side);
+  const outset = referencePortMetrics(zoom).diameter / 2 + 6 / zoom;
+  const direction = normal(side);
+  return {
+    side,
+    anchor,
+    point: {
+      x: anchor.x + direction.x * outset,
+      y: anchor.y + direction.y * outset,
+    },
+  };
+}
+
 /** Activate near edge midpoints; follow the outside pointer within a screen-space cap. */
 export function floatingReferencePort(
   bounds: Rect,
   pointer: Point,
   zoom: number,
   previous?: PortSide,
+  outset = 0,
 ) {
   if (insideNode(bounds, pointer)) return null;
   const inset = 16 / zoom;
@@ -70,6 +92,9 @@ export function floatingReferencePort(
   const candidates = sides
     .filter((side) => {
       const midpoint = portPoint(bounds, side);
+      const direction = normal(side);
+      midpoint.x += direction.x * outset;
+      midpoint.y += direction.y * outset;
       const vertical = side === "left" || side === "right";
       const alongEdge = vertical
         ? Math.abs(pointer.y - midpoint.y)
@@ -85,19 +110,38 @@ export function floatingReferencePort(
     .map((side) => {
       const vertical = side === "left" || side === "right";
       const anchor = portPoint(bounds, side);
-      if (vertical) anchor.y = clamp(pointer.y, bounds.y, bounds.height);
-      else anchor.x = clamp(pointer.x, bounds.x, bounds.width);
-      const distance = Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y);
+      if (!outset) {
+        if (vertical) anchor.y = clamp(pointer.y, bounds.y, bounds.height);
+        else anchor.x = clamp(pointer.x, bounds.x, bounds.width);
+      }
+      const direction = normal(side);
+      const origin = {
+        x: anchor.x + direction.x * outset,
+        y: anchor.y + direction.y * outset,
+      };
+      const distance = Math.hypot(pointer.x - origin.x, pointer.y - origin.y);
       const scale = distance
         ? Math.min(1, REFERENCE_PORT_MAX_DISTANCE / zoom / distance)
         : 1;
+      const point = {
+        x: origin.x + (pointer.x - origin.x) * scale,
+        y: origin.y + (pointer.y - origin.y) * scale,
+      };
+      if (outset) {
+        // Follow the pointer while retaining a small gap from the node. Align
+        // the preview's origin with the circle's actual position along the edge.
+        const minimum = outset - 2 / zoom;
+        if (side === "right") point.x = Math.max(point.x, anchor.x + minimum);
+        if (side === "left") point.x = Math.min(point.x, anchor.x - minimum);
+        if (side === "bottom") point.y = Math.max(point.y, anchor.y + minimum);
+        if (side === "top") point.y = Math.min(point.y, anchor.y - minimum);
+        if (vertical) anchor.y = clamp(point.y, bounds.y, bounds.height);
+        else anchor.x = clamp(point.x, bounds.x, bounds.width);
+      }
       return {
         side,
         anchor,
-        point: {
-          x: anchor.x + (pointer.x - anchor.x) * scale,
-          y: anchor.y + (pointer.y - anchor.y) * scale,
-        },
+        point,
         distance,
       };
     });

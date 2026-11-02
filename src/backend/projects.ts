@@ -116,3 +116,8 @@ export function releaseBackendProject() {
     active = null;
   });
 }
+
+/** The project this window currently leases, if any. */
+export function activeBackendProjectId() {
+  return active;
+}

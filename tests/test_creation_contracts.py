@@ -13,7 +13,7 @@ from opendirector.domain.creation import (
     validate_command, validate_generation,
 )
 from opendirector.domain.creation.assets import Asset, AssetRef
-from opendirector.domain.creation.canvas import CanvasItemBase
+from opendirector.domain.creation.canvas import CanvasItemBase, VideoCanvasItem
 from opendirector.domain.creation.commands import CommandReceipt, command_fingerprint
 from opendirector.domain.creation.generation import InputSnapshot, Job, ResultVersion
 from opendirector.domain.creation.models import ModelConfigPublic, ModelConfigWrite, ModelSnapshot
@@ -188,6 +188,17 @@ def test_references_lock_empty_node_and_hidden_sources_still_resolve():
     data['references'][0]['targetSpecId'] = uid(60)
     data['canvasItems'][0]['visible'] = False
     assert ProjectSnapshot.model_validate(data).references[0].source.id == uid(40)
+
+
+def test_generation_nodes_retain_only_a_matching_explicit_output():
+    item = dict(id=uid(40), projectId=PROJECT, kind='video', title='视频 2',
+                binding=dict(role='generation', objectRef=dict(objectType='generation_spec', id=uid(60)),
+                             materialOverride=dict(assetId=uid(63), revision=1,
+                                                   fingerprint='sha256:' + '0' * 64, kind='video')))
+    assert VideoCanvasItem.model_validate(item).binding.materialOverride.kind == 'video'
+    item['binding']['materialOverride']['kind'] = 'image'
+    with pytest.raises(ValidationError, match='same kind'):
+        VideoCanvasItem.model_validate(item)
 
 
 def test_undo_can_restore_empty_display_without_removing_accepted_history():

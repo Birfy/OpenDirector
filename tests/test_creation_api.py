@@ -74,7 +74,7 @@ def test_conflicting_command_id_and_stale_version_have_distinct_outcomes(api):
 def test_api_exposes_only_implemented_commands_and_never_accepts_snapshot_replacement(api):
     client, _ = api
     path, command, _ = create(client)
-    unsupported = dict(type='project.trash', commandId=str(uuid4()), projectId=command['projectId'], payload={},
+    unsupported = dict(type='project.restore', commandId=str(uuid4()), projectId=command['projectId'], payload={},
         expectedVersions=[dict(objectType='project', id=command['projectId'], revision=1)])
     response = client.post(path + '/commands', json=unsupported)
     assert response.status_code == 501 and response.json()['code'] == 'capability_unsupported'
@@ -86,6 +86,14 @@ def test_api_exposes_only_implemented_commands_and_never_accepts_snapshot_replac
     wrong_project = f'/api/creation/projects/{uuid4()}/commands'
     assert client.post(wrong_project, json=command).status_code == 400
     assert len(client.get(path + '/changes').json()['events']) == 1
+
+
+def test_storage_reports_how_a_deleted_project_leaves_the_disk(api):
+    client, _ = api
+    response = client.get('/api/creation/storage')
+    assert response.status_code == 200
+    assert set(response.json()) == {'projectDelete'}
+    assert response.json()['projectDelete'] in {'recycle_bin', 'permanent'}
 
 
 def test_unknown_and_legacy_projects_are_not_reinitialized(api):

@@ -31,24 +31,9 @@ export function referenceContentCommand(
     },
   ];
   let working = applyCommand(document, commands[0]!);
-  const removed = working.edges.filter(
-    (edge) =>
-      edge.intent !== "post_edit_result" &&
-      edge.target === targetId &&
-      (edge.referenceBinding === "pinned"
-        ? !content.some(
-            (part) => part.type === "reference" && part.referenceId === edge.id,
-          )
-        : !desired.has(edge.source)),
-  );
-  if (removed.length) {
-    const remove: CanvasCommand = {
-      type: "remove-edges",
-      ids: removed.map((edge) => edge.id),
-    };
-    commands.push(remove);
-    working = applyCommand(working, remove);
-  }
+  // References in the text add relationships; they never drop one. Removing a
+  // mention is a text edit, while a connection is removed by the reference
+  // strip, which deletes the edge and its mentions together.
   const next = content.map((part) => {
     if (part.type !== "reference" || part.binding === "asset" || !part.nodeId)
       return part;

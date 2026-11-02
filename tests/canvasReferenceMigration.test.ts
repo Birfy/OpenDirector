@@ -431,8 +431,12 @@ test("ports hide near ordinary corners and preview retains the actual grab point
 });
 
 test("reference port circle, icon and border scale together and cap screen size without distortion", async () => {
-  const { referencePortMetrics, REFERENCE_PORT_MAX_SIZE, REFERENCE_PORT_SIZE } =
-    await import("../src/canvas/connectionPorts.ts");
+  const {
+    referencePortMetrics,
+    REFERENCE_PORT_ICON_SIZE,
+    REFERENCE_PORT_MAX_SIZE,
+    REFERENCE_PORT_SIZE,
+  } = await import("../src/canvas/connectionPorts.ts");
   for (const zoom of [0.08, 0.25, 0.5, 1, 2, 4, 8]) {
     const metrics = referencePortMetrics(zoom);
     assert.ok(
@@ -441,7 +445,12 @@ test("reference port circle, icon and border scale together and cap screen size 
           Math.min(REFERENCE_PORT_SIZE * zoom, REFERENCE_PORT_MAX_SIZE),
       ) < 1e-9,
     );
-    assert.ok(Math.abs(metrics.iconSize / metrics.diameter - 0.75) < 1e-9);
+    assert.ok(
+      Math.abs(
+        metrics.iconSize / metrics.diameter -
+          REFERENCE_PORT_ICON_SIZE / REFERENCE_PORT_SIZE,
+      ) < 1e-9,
+    );
     assert.ok(
       Math.abs(
         metrics.borderWidth / metrics.diameter - 1 / REFERENCE_PORT_SIZE,

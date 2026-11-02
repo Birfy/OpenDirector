@@ -214,27 +214,7 @@ export function generationContent(
         )
       : part;
   });
-  const located = new Set(
-    body.flatMap((part) =>
-      part.type === "reference" && part.nodeId ? [part.nodeId] : [],
-    ),
-  );
-  const header: ReferenceContent = [];
-  for (const source of incoming) {
-    if (located.has(source.id)) continue;
-    if (header.length) header.push({ type: "text", text: " " });
-    header.push(
-      referencePart(nodeReferenceAsset(source, referenceId(source.id))),
-    );
-  }
-  return normalizeContent(
-    header.length
-      ? [
-          ...header,
-          ...(body.length
-            ? [{ type: "text" as const, text: "\n" }, ...body]
-            : []),
-        ]
-      : body,
-  );
+  // Canvas connections stay in the reference strip. Only what the prompt itself
+  // mentions belongs in the text, so connecting a source never edits the draft.
+  return normalizeContent(body);
 }

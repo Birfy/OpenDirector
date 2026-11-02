@@ -36,6 +36,8 @@ export interface GenerationReferenceControls {
   assets: ReferenceAsset[];
   pinned?: ReferenceAsset[];
   onChange: (content: ReferenceContent, sources: CanvasNode[]) => void;
+  /** Removes the connection itself; the strip owns relationships, not the text. */
+  removeReference?: (source: CanvasNode) => void;
   prepareAsset: (
     asset: ReferenceAsset,
     signal: AbortSignal,
@@ -339,7 +341,10 @@ export function GenerationReferenceEditor({
   useImperativeHandle(pickerRef, () => ({
     openPicker: () => editor.current?.openPicker(),
     openUpload: () => file.current?.click(),
-    remove: (source) => editor.current?.removeSource(source.id),
+    remove: (source) =>
+      controls?.removeReference
+        ? controls.removeReference(source)
+        : editor.current?.removeSource(source.id),
     insert: (source) => {
       const reason = check(source);
       if (reason) {

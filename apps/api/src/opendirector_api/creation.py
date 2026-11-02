@@ -32,6 +32,12 @@ def creation_routes(projects: CreationProjects, generation=None):
     def list_projects():
         return projects.list_projects()
 
+    @router.get('/storage')
+    def storage():
+        # Deleting a project is only promised to be recoverable when the
+        # platform actually recycles the directory.
+        return {'projectDelete': projects.delete_mode}
+
     @router.get('/projects/{project_id}', response_model=ProjectSnapshot)
     def snapshot(project_id: UUID):
         return projects.snapshot(project_id)

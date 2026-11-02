@@ -21,6 +21,7 @@ from opendirector.domain.creation.project import Project, ProjectSnapshot, ViewS
 from opendirector.domain.creation.validation import ContractError, validate_command
 from opendirector.domain.projects import ProjectError, identifier, project_name
 from opendirector.infrastructure.local_projects import LocalProjects, child, read_json, write_json
+from opendirector.infrastructure import recycle
 from opendirector.infrastructure.rename import rename_path
 from opendirector.infrastructure.creation_files import AssetFileDelete, AssetFileWrite, cleanup_staging, delete_files, install_files
 
@@ -298,15 +299,15 @@ class CreationProjects:
         if lease['path'] != str(path):
             raise ProjectError('工程目录已在应用外改名或移动，请复制未保存内容并重新打开。', 409)
 
-    def _closed(self, db, project_id, snapshot):
+    def _closed(self, db, project_id, snapshot, verb='重命名'):
         if db.execute('SELECT 1 FROM sessions WHERE project_id=? AND expires>?', (str(project_id), time.time())).fetchone():
-            raise ProjectError('请先保存并关闭工程后再重命名。', 409)
+            raise ProjectError(f'请先保存并关闭工程后再{verb}。', 409)
         if any(job.status in {'queued', 'running'} for job in snapshot.jobs):
-            raise ProjectError('工程仍在生成素材，请等待或取消任务后再重命名。', 409)
+            raise ProjectError(f'工程仍在生成素材，请等待或取消任务后再{verb}。', 409)
         path, _ = self._find(db, project_id)
         tools = child(path, 'tool-tasks')
         if tools.exists() and any(read_json(child(tools, item.name)).get('status') in {'queued', 'running'} for item in tools.glob('*.json')):
-            raise ProjectError('工程仍有工具任务，请等待或取消任务后再重命名。', 409)
+            raise ProjectError(f'工程仍有工具任务，请等待或取消任务后再{verb}。', 409)
 
     def list_projects(self):
         with self.local.transaction() as db:
@@ -387,8 +388,10 @@ class CreationProjects:
                         currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
 
     def execute(self, command: Command, *, session=None, source='ui'):
-        if command.type in {'project.trash', 'project.restore'}:
-            raise ProjectError('该项目管理命令尚未开放。', 501, code='capability_unsupported')
+        if command.type == 'project.trash':
+            return self._trash(command, source)
+        if command.type == 'project.restore':
+            raise ProjectError('回收目录中的工程暂不支持在应用内恢复。', 501, code='capability_unsupported')
         if command.type in {'asset.import', 'asset.writeText', 'asset.updateMetadata'}:
             from opendirector.application.creation_assets import CreationAssets
             return CreationAssets(self).execute(command, session=session, source=source)
@@ -447,6 +450,30 @@ class CreationProjects:
             record = self._make_record(command, None, snapshot, changed, source)
             return self._publish(CommitIntent(fromName=None, toName=name, beforeFingerprint=None, record=record))
 
+    @property
+    def delete_mode(self) -> str:
+        """How a removed project leaves the disk, for the confirmation prompt."""
+        return 'recycle_bin' if recycle.recyclable(self.root) else 'permanent'
+
+    def _trash(self, command, source):
+        """Commit the removal, then delete the directory.
+
+        The directory is recycled when the platform supports it and removed
+        permanently otherwise; `delete_mode` tells the client which one the user
+        is agreeing to.
+        """
+        receipt = self.commit(command, lambda snapshot: snapshot, session=None, source=source)
+        with self.local.transaction() as db:
+            self._recover()
+            path, _ = self._find(db, command.projectId)
+            db.execute('DELETE FROM sessions WHERE project_id=?', (str(command.projectId),))
+        try:
+            recycle.remove(path, recoverable=self.delete_mode == 'recycle_bin')
+        except OSError as error:
+            raise ProjectError(str(error), 409, code='storage_unavailable') from error
+        sync_directory(self.root)
+        return receipt
+
     def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui', files=(), deletes=()):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
@@ -459,6 +486,8 @@ class CreationProjects:
             before = records[0].snapshot
             if command.type == 'project.rename':
                 self._closed(db, command.projectId, before)
+            elif command.type == 'project.trash':
+                self._closed(db, command.projectId, before, '删除')
             elif source not in {'background', 'external'}:
                 # Only trusted server entrypoints select these sources. A
                 # completed job must be able to save after its window closes.

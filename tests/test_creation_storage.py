@@ -12,8 +12,16 @@ import pytest
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError
+from opendirector.infrastructure import creation_projects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects, read_json
+
+
+@pytest.fixture
+def unrecycled(monkeypatch):
+    """Delete through the filesystem so tests never touch the machine recycle bin."""
+    monkeypatch.setattr(creation_projects.recycle, 'remove',
+                        lambda path, *, recoverable: shutil.rmtree(path))
 
 
 def request(project_id, kind='project.create', *, versions=(), **payload):
@@ -34,6 +42,11 @@ def create(store, name='Example'):
 
 def rename(command, name='Renamed', revision=1):
     return request(command.projectId, 'project.rename', name=name,
+                   versions=[version('project', command.projectId, revision)])
+
+
+def trash(command, revision=1):
+    return request(command.projectId, 'project.trash',
                    versions=[version('project', command.projectId, revision)])
 
 
@@ -473,6 +486,71 @@ def test_active_jobs_prevent_rename_and_background_completion_survives_closed_wi
     assert projects.commit(completed, cancel, source='background').status == 'applied'
     assert projects.changes(created.projectId)['events'][-1].source == 'background'
     assert projects.execute(rename(created)).status == 'applied'
+
+
+def test_delete_requires_a_closed_project_and_removes_it_from_the_list(projects, unrecycled):
+    created = create(projects)
+    removal = trash(created)
+    session = str(uuid4())
+    projects.open(created.projectId, session)
+    with pytest.raises(ProjectError, match='关闭工程后再删除'):
+        projects.execute(removal)
+    assert (projects.root / 'Example' / 'project.json').exists()
+    projects.local.release(session)
+
+    receipt = projects.execute(removal)
+    assert receipt.status == 'noop'
+    assert not (projects.root / 'Example').exists()
+    assert projects.list_projects()['projects'] == []
+    assert restarted(projects).list_projects()['projects'] == []
+    with pytest.raises(ProjectError) as missing:
+        projects.snapshot(created.projectId)
+    assert missing.value.status == 404
+    # A lost response reports the project as gone instead of resurrecting it.
+    with pytest.raises(ProjectError) as repeated:
+        projects.execute(trash(created))
+    assert repeated.value.status == 404
+    # The name is free again.
+    reused = create(projects, 'Example')
+    assert projects.snapshot(reused.projectId).project.name == 'Example'
+
+
+def test_delete_mode_reports_the_platform_recycle_bin(projects, monkeypatch):
+    assert projects.delete_mode in {'recycle_bin', 'permanent'}
+    monkeypatch.setattr(creation_projects.recycle, 'recyclable', lambda path: False)
+    assert projects.delete_mode == 'permanent'
+    monkeypatch.setattr(creation_projects.recycle, 'recyclable', lambda path: True)
+    assert projects.delete_mode == 'recycle_bin'
+
+
+def test_a_deletion_that_cannot_reach_the_recycle_bin_keeps_the_project(projects, monkeypatch):
+    created = create(projects)
+    assert projects.delete_mode == 'recycle_bin'
+    seen = {}
+    def refuse(path, *, recoverable):
+        seen['recoverable'] = recoverable
+        raise OSError('项目未能移入回收站（Shell 返回 124），工程文件已保留。')
+    monkeypatch.setattr(creation_projects.recycle, 'recyclable', lambda path: True)
+    monkeypatch.setattr(creation_projects.recycle, 'remove', refuse)
+    with pytest.raises(ProjectError, match='回收站') as refused:
+        projects.execute(trash(created))
+    assert refused.value.status == 409 and refused.value.code == 'storage_unavailable'
+    assert seen['recoverable'] is True
+    # Nothing was deleted, the project stays openable and a retry can succeed.
+    assert projects.snapshot(created.projectId).project.name == 'Example'
+    monkeypatch.setattr(creation_projects.recycle, 'remove',
+                        lambda path, *, recoverable: shutil.rmtree(path))
+    assert projects.execute(trash(created)).status == 'noop'
+    assert not (projects.root / 'Example').exists()
+
+
+def test_restore_from_trash_is_not_offered(projects, unrecycled):
+    created = create(projects)
+    projects.execute(trash(created))
+    with pytest.raises(ProjectError) as unsupported:
+        projects.execute(request(created.projectId, 'project.restore',
+                                 versions=[version('project', created.projectId)]))
+    assert unsupported.value.status == 501
 
 
 def test_unversioned_internal_writes_and_unknown_schema_versions_preserve_prior_state(projects):

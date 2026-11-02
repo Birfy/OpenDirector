@@ -1,0 +1,61 @@
+/* Keep XYFlow's native group dragging, with enough room for node headings. */
+.cw-workspace .react-flow__nodesselection-rect {
+  left: calc(-1 * var(--cw-selection-padding));
+  top: calc(-28px - var(--cw-selection-padding));
+  box-sizing: content-box;
+  padding: calc(28px + var(--cw-selection-padding)) var(--cw-selection-padding)
+    var(--cw-selection-padding);
+  border: 0;
+  border-radius: 10px;
+  outline: none;
+  background: transparent;
+}
+.cw-multi-selection-frame {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed #a7a0bc88;
+  background: #aaa0cc08;
+  pointer-events: none;
+}
+.cw-workspace[data-canvas-interacting="true"] .react-flow__nodesselection-rect {
+  outline: 1px dashed #a7a0bc88;
+}
+.cw-workspace .cw-selection-reference-port {
+  width: 20px;
+  height: 20px;
+  background: #f4f1fc;
+  border: 1px solid #bdb1da;
+  color: #30263f;
+  box-shadow: 0 3px 12px #0004;
+}
+.cw-workspace .cw-selection-reference-port:hover {
+  background: #dfd3fa;
+}
+.cw-workspace .cw-selection-reference-port:focus-visible {
+  outline: 2px solid #b7a0ef;
+  outline-offset: 3px;
+}
+.cw-workspace .cw-selection-reference-port:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+:root[data-theme="light"] .cw-multi-selection-frame {
+  border-color: #6686c49c;
+  background: #386ddd06;
+}
+:root[data-theme="light"]
+  .cw-workspace[data-canvas-interacting="true"]
+  .react-flow__nodesselection-rect {
+  outline-color: #6686c49c;
+}
+:root[data-theme="light"]
+  .cw-workspace
+  .cw-reference-port.cw-selection-reference-port {
+  background: #fff;
+  color: #3d6bd6;
+  border-color: #9cb5e8;
+  box-shadow: 0 3px 12px #34558b26;
+}
+:root[data-theme="light"] .cw-workspace .cw-selection-reference-port:hover {
+  background: #eaf1ff;
+}

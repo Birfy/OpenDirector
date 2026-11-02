@@ -1,0 +1,14 @@
+.cw-workspace .cw-node-reference-port[data-active="false"] {
+  color: #ffffff50;
+  border-color: #ffffff50;
+}
+.cw-workspace .cw-node-reference-port:focus-visible {
+  outline: 2px solid #b7a0ef;
+  outline-offset: 3px;
+}
+:root[data-theme="light"]
+  .cw-workspace
+  .cw-node-reference-port[data-active="false"] {
+  color: #3d6bd666;
+  border-color: #3d6bd666;
+}

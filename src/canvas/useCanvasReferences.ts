@@ -10,10 +10,17 @@ import {
   floatingReferencePort,
   insideNode,
   referencePreviewPath,
+  referencePortMetrics,
+  restingReferencePort,
+  REFERENCE_PORT_MIDPOINT_RADIUS,
   type PortSide,
 } from "./connectionPorts";
 import { absolutePosition } from "./geometry";
 import type { CanvasNode, Point } from "./model";
+import {
+  magneticSelectionPort,
+  sourceReferencePreviews,
+} from "./selectionReferences.ts";
 export { portPoint, type PortSide } from "./connectionPorts";
 
 const hoverBlocked =
@@ -40,9 +47,10 @@ export function useCanvasReferences(options: {
   disabled: boolean;
   locked: Set<string>;
   world: (point: Point) => Point;
-  connect: (source: string, target: string) => void;
+  selectionPort?: Point;
+  connect: (sources: string[], target: string) => void;
   create: (
-    source: string,
+    sources: string[],
     side: PortSide,
     client: Point,
     world: Point,
@@ -57,12 +65,17 @@ export function useCanvasReferences(options: {
     point: Point;
     anchor: Point;
   } | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<
+    { sourceId: string; path: string }[]
+  >([]);
+  const [selectionPointer, setSelectionPointer] = useState<Point | null>(null);
+  const [hoveredSource, setHoveredSource] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [targetId, setTargetId] = useState<string | null>(null);
+  const [sourceIds, setSourceIds] = useState<string[]>([]);
   const drag = useRef<{
     pointer: number;
-    source: string;
+    sources: string[];
     side: PortSide;
     x: number;
     y: number;
@@ -72,42 +85,76 @@ export function useCanvasReferences(options: {
   const cancel = useCallback(() => {
     drag.current = null;
     setConnecting(false);
-    setPreview(null);
+    setPreviews([]);
+    setSelectionPointer(null);
     setPort(null);
+    setHoveredSource(null);
     setTargetId(null);
+    setSourceIds([]);
   }, []);
   const hover = (event: ReactPointerEvent) => {
     if (drag.current) return;
-    if (
-      current.current.disabled ||
-      event.buttons ||
-      (event.target as Element).closest(hoverBlocked)
-    ) {
+    const hit = event.target as Element;
+    if (current.current.disabled || event.buttons) {
       setPort(null);
+      setHoveredSource(null);
+      setSelectionPointer(null);
       return;
     }
     const { nodes, zoom, locked, world } = current.current;
     const point = world({ x: event.clientX, y: event.clientY });
-    if (
-      nodes.some(
-        (node) =>
-          node.type !== "group" &&
-          insideNode(
-            {
-              ...absolutePosition(node, nodes),
-              width: node.width,
-              height: node.height,
-            },
-            point,
-          ),
-      )
-    ) {
+    const blocked = hit.closest(hoverBlocked);
+    if (current.current.selectionPort) {
       setPort(null);
+      setHoveredSource(null);
+      if (blocked) {
+        setSelectionPointer(null);
+        return;
+      }
+      const anchor = current.current.selectionPort;
+      const next =
+        Math.hypot(point.x - anchor.x, point.y - anchor.y) * zoom <=
+        REFERENCE_PORT_MIDPOINT_RADIUS
+          ? { x: event.clientX, y: event.clientY }
+          : null;
+      setSelectionPointer((old) =>
+        old?.x === next?.x && old?.y === next?.y ? old : next,
+      );
+      return;
+    }
+    setSelectionPointer(null);
+    const hoveredPort = hit.closest(".cw-node-reference-port");
+    const hoveredId =
+      hoveredPort?.getAttribute("data-reference-source") ??
+      hit.closest(".react-flow__node")?.getAttribute("data-id");
+    const hoveredNode = nodes.find((node) => node.id === hoveredId);
+    const available = (node: CanvasNode | undefined) =>
+      node && !locked.has(node.id) && canStartReference(node);
+    if (blocked) {
+      setPort(null);
+      setHoveredSource(available(hoveredNode) ? hoveredNode!.id : null);
+      return;
+    }
+    const interior = nodes.find(
+      (node) =>
+        node.type !== "group" &&
+        insideNode(
+          {
+            ...absolutePosition(node, nodes),
+            width: node.width,
+            height: node.height,
+          },
+          point,
+        ),
+    );
+    if (interior) {
+      setPort(null);
+      const owner = hoveredNode ?? interior;
+      setHoveredSource(available(owner) ? owner.id : null);
       return;
     }
     let nearest: typeof port = null;
     let distance = Infinity;
-    const hoveredPort = (event.target as Element).closest(".cw-reference-port");
     if (
       hoveredPort &&
       document
@@ -117,11 +164,12 @@ export function useCanvasReferences(options: {
         )
     ) {
       setPort(null);
+      setHoveredSource(available(hoveredNode) ? hoveredNode!.id : null);
       return;
     }
     for (const node of nodes) {
       if (locked.has(node.id) || !canStartReference(node)) continue;
-      if (hoveredPort && port && node.id !== port.nodeId) continue;
+      if (hoveredPort && hoveredId && node.id !== hoveredId) continue;
       const bounds = {
         ...absolutePosition(node, nodes),
         width: node.width,
@@ -132,6 +180,7 @@ export function useCanvasReferences(options: {
         point,
         zoom,
         port?.nodeId === node.id ? port.side : undefined,
+        referencePortMetrics(zoom).diameter / 2 + 6 / zoom,
       );
       if (candidate && candidate.distance < distance) {
         distance = candidate.distance;
@@ -143,6 +192,9 @@ export function useCanvasReferences(options: {
         };
       }
     }
+    setHoveredSource(
+      nearest?.nodeId ?? (available(hoveredNode) ? hoveredNode!.id : null),
+    );
     setPort((old) =>
       old?.nodeId === nearest?.nodeId &&
       old?.side === nearest?.side &&
@@ -152,35 +204,62 @@ export function useCanvasReferences(options: {
         : nearest,
     );
   };
-  const start = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || options.disabled || !port) return;
+  const begin = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    sources: string[],
+    side: PortSide,
+    anchor: Point,
+  ) => {
+    if (event.button !== 0 || options.disabled || !sources.length) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = {
       pointer: event.pointerId,
-      source: port.nodeId,
-      side: port.side,
+      sources: [...sources],
+      side,
       x: event.clientX,
       y: event.clientY,
       moved: false,
-      anchor: { ...port.anchor },
+      anchor: { ...anchor },
     };
+    setSourceIds([...sources]);
     setConnecting(true);
   };
+  const start = (event: ReactPointerEvent<HTMLButtonElement>, from = port) => {
+    if (from) begin(event, [from.nodeId], from.side, from.anchor);
+  };
+  const startSelection = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    sources: string[],
+    anchor: Point,
+  ) => begin(event, sources, "right", anchor);
   useEffect(() => {
     const move = (event: PointerEvent) => {
       const d = drag.current;
       if (!d || d.pointer !== event.pointerId) return;
       d.moved ||= Math.hypot(event.clientX - d.x, event.clientY - d.y) > 4;
       const { nodes, world } = current.current;
-      const source = nodes.find((n) => n.id === d.source);
-      if (!source || !canStartReference(source)) {
+      if (
+        !d.sources.every((id) => {
+          const source = nodes.find((n) => n.id === id);
+          return source && canStartReference(source);
+        })
+      ) {
         cancel();
         return;
       }
       const point = world({ x: event.clientX, y: event.clientY });
-      setPreview(referencePreviewPath(d.anchor, d.side, point));
+      setPreviews(
+        d.sources.length > 1
+          ? sourceReferencePreviews(nodes, d.sources, point, d.side)
+          : [
+              {
+                sourceId: d.sources[0],
+                path: referencePreviewPath(d.anchor, d.side, point),
+              },
+            ],
+      );
       const target = referenceDropTarget(event.clientX, event.clientY);
       setTargetId(target?.kind === "node" ? target.id : null);
     };
@@ -188,10 +267,14 @@ export function useCanvasReferences(options: {
       const d = drag.current;
       if (!d || d.pointer !== event.pointerId) return;
       const { nodes, locked, world, connect, create } = current.current;
-      const source = nodes.find((n) => n.id === d.source);
       const hit = referenceDropTarget(event.clientX, event.clientY);
       cancel();
-      if (!source || locked.has(source.id) || !canStartReference(source))
+      if (
+        !d.sources.every((id) => {
+          const source = nodes.find((n) => n.id === id);
+          return source && !locked.has(id) && canStartReference(source);
+        })
+      )
         return;
       if (d.moved && !hit) return;
       const id = d.moved && hit?.kind === "node" ? hit.id : null;
@@ -200,7 +283,7 @@ export function useCanvasReferences(options: {
       if (id && !target) return;
       const client = { x: event.clientX, y: event.clientY };
       if (target && target.type !== "group") {
-        connect(d.source, target.id);
+        connect(d.sources, target.id);
         return;
       }
       const start = d.anchor;
@@ -215,7 +298,7 @@ export function useCanvasReferences(options: {
               (d.side === "top" ? -100 : d.side === "bottom" ? 100 : 0),
           };
       if (target && locked.has(target.id)) return;
-      create(d.source, d.side, client, point, d.anchor);
+      create(d.sources, d.side, client, point, d.anchor);
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") cancel();
@@ -236,16 +319,62 @@ export function useCanvasReferences(options: {
   useEffect(() => {
     if (options.disabled) cancel();
   }, [options.disabled]);
+  const owner = options.disabled
+    ? undefined
+    : options.nodes.find((node) => node.id === (port?.nodeId ?? hoveredSource));
+  // An uploaded material only feeds downstream nodes, so its left edge offers no
+  // extra starting point; generated nodes keep both sides.
+  const sides: PortSide[] =
+    owner?.data.mediaRole === "asset" ? ["right"] : ["left", "right"];
+  if (port && port.side !== "left" && !sides.includes(port.side))
+    sides.push(port.side);
+  const ports =
+    owner && !options.locked.has(owner.id) && canStartReference(owner)
+      ? sides.map((side) => ({
+          ...(port?.nodeId === owner.id && port.side === side
+            ? port
+            : {
+                nodeId: owner.id,
+                ...restingReferencePort(
+                  {
+                    ...absolutePosition(owner, options.nodes),
+                    width: owner.width,
+                    height: owner.height,
+                  },
+                  side,
+                  options.zoom,
+                ),
+              }),
+          active: port?.nodeId === owner.id && port.side === side,
+        }))
+      : [];
   return {
+    disabled: options.disabled,
     port,
-    preview,
+    ports,
+    previews,
+    selectionPort: options.selectionPort
+      ? magneticSelectionPort(
+          options.selectionPort,
+          selectionPointer
+            ? options.world(selectionPointer)
+            : options.selectionPort,
+          options.zoom,
+        )
+      : null,
     connecting,
     targetId,
+    sourceIds,
     hover,
     start,
+    startSelection,
     cancel,
     hide: () => {
-      if (!drag.current) setPort(null);
+      if (!drag.current) {
+        setPort(null);
+        setHoveredSource(null);
+        setSelectionPointer(null);
+      }
     },
   };
 }
