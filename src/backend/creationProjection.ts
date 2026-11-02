@@ -771,7 +771,7 @@ export class CreationProjection {
             videoMode:
               settings?.videoMode === "first-last"
                 ? "first_frame"
-                : (settings?.videoMode ?? "first_frame"),
+                : (settings?.videoMode ?? "reference"),
             durationSeconds: settings?.durationSeconds ?? null,
             aspectRatio:
               settings?.aspectRatio === "自动"

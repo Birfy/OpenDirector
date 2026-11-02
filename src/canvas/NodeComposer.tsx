@@ -10,7 +10,6 @@ import {
   generationBlocker,
   generationDefaults,
   generationModel,
-  generationModelsFor,
   generationReferenceIssue,
   generationReferenceRole,
   GENERATION_RATIOS,
@@ -29,6 +28,10 @@ import {
   isGenerationModel,
   type ModelConfig,
 } from "../backend/rules.ts";
+import {
+  applyModelResolution,
+  resolveGenerationModel,
+} from "./modelResolution.ts";
 import { copyGenerationSettings } from "./dataBoundary";
 import { GenerationComposerShell } from "./GenerationComposerShell";
 import { generationPrompt } from "./generationReferenceContent.ts";
@@ -59,9 +62,13 @@ export interface NodeComposerProps {
 export type ComposerSettings = GenerationSettings;
 const ratios = GENERATION_RATIOS;
 type Panel = "parameters" | "duration" | "voices" | null;
+const UNCONFIGURED_MODEL = "尚未配置可用的生成模型，请到“设置 → 模型接入”添加。";
 
 /** Shared defaults let the workspace run the same parameters that the controls display. */
-export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
+export function getNodeGenerationSettings(
+  node: CanvasNode,
+  models?: readonly ModelConfig[],
+): ComposerSettings {
   const mode =
     node.data.kind === "video"
       ? "video"
@@ -81,7 +88,7 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
     "配乐创意",
     "环境音创意",
   ].includes(sameMode?.model ?? "");
-  return {
+  const next: ComposerSettings = {
     ...defaults,
     ...sameMode,
     mode,
@@ -104,6 +111,11 @@ export function getNodeGenerationSettings(node: CanvasNode): ComposerSettings {
       ? sameMode.voiceName
       : (sameMode?.voiceName ?? defaults.voiceName),
   };
+  // The creator only offers configured service models, so the displayed model
+  // has to be the resolved one: reading and running then agree, and reopening a
+  // node never drifts to whatever the catalog happens to define.
+  if (!models) return next;
+  return applyModelResolution(next, resolveGenerationModel(next, mode, models));
 }
 
 export function NodeComposer({
@@ -130,28 +142,28 @@ export function NodeComposer({
     !["image", "video", "audio"].includes(selectedNode.data.kind)
   )
     return null;
-  const settings = getNodeGenerationSettings(selectedNode);
+  const settings = getNodeGenerationSettings(selectedNode, backendModels);
   const mode = settings.mode;
   const backend = Boolean(settings.modelConfigId);
   const config = backendModel(settings, backendModels);
   const serviceModels = backendModels.filter(
     (item) => item.kind === mode && isGenerationModel(item),
   );
+  const resolution = resolveGenerationModel(settings, mode, backendModels);
+  const unconfigured = resolution.status === "unconfigured";
   const referenceIssue = (node: CanvasNode) =>
     !backend
       ? generationReferenceIssue(node, settings)
       : config
         ? backendReferenceIssue(node, settings, config)
         : "所选模型配置不可用";
-  const blocker = backend
-    ? backendBlocker(settings, incomingNodes, backendModels)
-    : generationBlocker(settings, incomingNodes);
+  const blocker = unconfigured
+    ? UNCONFIGURED_MODEL
+    : backend
+      ? backendBlocker(settings, incomingNodes, backendModels)
+      : generationBlocker(settings, incomingNodes);
   const canRun = !blocker;
   const model = backend ? undefined : generationModel(settings);
-  const choices = generationModelsFor(settings).map((item) => item.name);
-  const currentModels = choices.includes(settings.model)
-    ? choices
-    : [settings.model, ...choices];
   const resolutions = backend
     ? backendResolutions(settings, config, incomingNodes)
     : (model?.resolutions ?? []);
@@ -439,11 +451,14 @@ export function NodeComposer({
               aria-label="生成模型"
               title={settings.model}
               value={
-                backend ? `config:${settings.modelConfigId}` : settings.model
+                backend ? `config:${settings.modelConfigId}` : "unconfigured"
               }
-              disabled={running}
+              disabled={running || serviceModels.length === 0}
               onChange={(event) => chooseModel(event.target.value)}
             >
+              {serviceModels.length === 0 && (
+                <option value="unconfigured">未配置生成模型</option>
+              )}
               {backend && !config && (
                 <option value={`config:${settings.modelConfigId}`}>
                   {settings.model}（配置不可用）
@@ -458,13 +473,6 @@ export function NodeComposer({
                   ))}
                 </optgroup>
               )}
-              <optgroup label="即梦参考目录 · 未连接">
-                {(backend ? choices : currentModels).map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </optgroup>
             </select>
             <CanvasIcon name="chevronDown" size={12} />
           </div>

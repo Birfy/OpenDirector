@@ -6,6 +6,7 @@ import {
   type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeKind,
+  type GenerationSettings,
 } from "./model.ts";
 import { absolutePosition } from "./geometry.ts";
 import { indexNodes, isNodeLocked } from "./hierarchy.ts";
@@ -256,6 +257,7 @@ export function appendPendingResult(
   kind: "image" | "video" | "audio",
   title: string,
   resultId?: string,
+  model?: Pick<GenerationSettings, "model" | "modelConfigId">,
 ): PlacementResult {
   if (resultId && document.nodes.some((node) => node.id === resultId))
     return { document, ids: [], error: "结果节点身份已存在。" };
@@ -268,10 +270,21 @@ export function appendPendingResult(
     [{ kind, src: "", mimeType: "", title }],
     { x: p.x + target.width + 100, y: p.y },
   );
+  // Start from the canonical placeholder shape and only freeze the model, so
+  // the node is still recognisable as an unfilled placeholder.
+  const settings: GenerationSettings = model
+    ? {
+        ...pendingSettings(kind),
+        ...(model.model ? { model: model.model } : {}),
+        ...(model.modelConfigId
+          ? { modelConfigId: model.modelConfigId }
+          : {}),
+      }
+    : pendingSettings(kind);
   const node = {
     ...createNode(kind, placed!.position, {
       title,
-      settings: pendingSettings(kind),
+      settings,
     }),
     ...(resultId ? { id: resultId } : {}),
   };
@@ -293,14 +306,18 @@ export function appendPendingResult(
   };
 }
 
-/** Canonical draft parameters survive the C04 presentation round trip. */
+/**
+ * Canonical draft parameters survive the C04 presentation round trip. A new
+ * video result starts in omni-reference mode: the first/last-frame slots are
+ * only meaningful once the viewer assigns frames on purpose.
+ */
 function pendingSettings(kind: "image" | "video" | "audio") {
   return {
     ...DEFAULT_SETTINGS,
     mode: kind,
     count: 1,
     ...(kind === "video"
-      ? { videoMode: "first-last" as const, resolution: "auto" }
+      ? { videoMode: "reference" as const, resolution: "auto" }
       : {}),
   };
 }
@@ -335,10 +352,14 @@ export function pendingResultNode(
     return undefined;
   const settings = node.data.settings;
   const defaults = pendingSettings(node.type as "image" | "video" | "audio");
+  // The model is frozen from the dialog when the node is created, so it never
+  // matches the canonical defaults; only real user edits disqualify a placeholder.
   if (
     settings &&
     Object.entries(settings).some(
       ([key, value]) =>
+        key !== "model" &&
+        key !== "modelConfigId" &&
         value !== undefined &&
         value !== (defaults as unknown as Record<string, unknown>)[key],
     )

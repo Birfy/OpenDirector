@@ -43,6 +43,7 @@ export function TextNodeComposer({
   useEffect(() => setPanel(null), [node.id]);
   const settings = agentNodeSettings(node),
     agents = models.filter((m) => m.kind === "agent");
+  // The node keeps the model it was created with; the picker only fills a gap.
   const selected = settings.modelConfigId ?? agents[0]?.id,
     model = agents.find((m) => m.id === selected);
   const blocker = agentGenerationBlocker(node, incoming, model);

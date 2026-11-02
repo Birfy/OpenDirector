@@ -42,6 +42,7 @@ import {
   visibleItems,
 } from "../backend/creationClient.ts";
 import { CreationEditorSession } from "../backend/creationEditorSession";
+import type { ModelSelections } from "../backend/chat";
 import { fingerprint, type GenerationRequest } from "../backend/generation.ts";
 import { previewImageSelection } from "../backend/imageSelections";
 import { MediaPublication } from "../backend/mediaPublication";
@@ -52,6 +53,7 @@ import {
   backendModel,
   backendReferences,
   backendVideoMode,
+  modelLabel,
   serviceVoice,
 } from "../backend/rules.ts";
 import {
@@ -174,6 +176,11 @@ import {
   type LinkedMediaResult,
   type ResultSource,
 } from "./linkedResults";
+import { generationDefaults } from "./generationCatalog.ts";
+import {
+  applyModelResolution,
+  resolveGenerationModel,
+} from "./modelResolution.ts";
 import { LocalImageTools } from "./LocalImageTools";
 import { LocalMediaEditor } from "./LocalMediaEditor";
 import {
@@ -472,6 +479,9 @@ function Workspace() {
   const [expandedComposerId, setExpandedComposerId] = useState<string | null>(
     null,
   );
+  // The assistant picker is read once per new node (see snapshotModel); it is
+  // never consulted again for nodes already on the canvas.
+  const [assistantModels, setAssistantModels] = useState<ModelSelections>({});
   const [panel, setPanel] = useState<Panel>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [subjectImport, setSubjectImport] = useState<{
@@ -1372,6 +1382,40 @@ function Workspace() {
       x: window.innerWidth / 2 - (panel ? 150 : 0),
       y: window.innerHeight * 0.32,
     });
+  // A node freezes the dialog's model at creation. Changing the picker later
+  // must not rewrite a model the viewer already has on the canvas, so this is
+  // the only place the assistant selection is read.
+  const snapshotModel = (kind: CanvasNodeKind): Partial<CanvasNodeData> => {
+    if (kind === "text") {
+      const agents = backendCatalog.models.filter(
+        (model) => model.kind === "agent",
+      );
+      const chosen =
+        agents.find((model) => model.id === assistantModels.agent) ??
+        agents[0];
+      return chosen
+        ? {
+            agentSettings: {
+              modelConfigId: chosen.id,
+              thinking: "auto",
+              maxTokens: 8192,
+            },
+          }
+        : {};
+    }
+    if (kind !== "image" && kind !== "video" && kind !== "audio") return {};
+    return {
+      settings: applyModelResolution(
+        generationDefaults(kind),
+        resolveGenerationModel(
+          { modelConfigId: undefined },
+          kind,
+          backendCatalog.models,
+          assistantModels,
+        ),
+      ),
+    };
+  };
   const addNode = (
     kind: CanvasNodeKind,
     position?: Point,
@@ -1405,6 +1449,7 @@ function Workspace() {
     const where = position ?? center();
     const count = doc.nodes.filter((n) => n.type === kind).length + 1;
     const node = createNode(kind, where, {
+      ...snapshotModel(kind),
       title: `${labels[kind]} ${count}`,
       ...extra,
     });
@@ -2424,7 +2469,8 @@ function Workspace() {
       }
       // A model that continues its own clips (H3) extends seamlessly from cached latents.
       const draft = next.document.nodes.find((node) => node.id === next.ids[0]);
-      const settings = draft && getNodeGenerationSettings(draft);
+      const settings =
+        draft && getNodeGenerationSettings(draft, backendCatalog.models);
       if (
         draft &&
         settings &&
@@ -2594,7 +2640,11 @@ function Workspace() {
                       }
                     : {
                         settings: {
-                          ...getNodeGenerationSettings(node),
+                          ...getNodeGenerationSettings(
+                            node,
+                            backendCatalog.models,
+                          ),
+                          model: modelLabel(request.config),
                           modelConfigId: request.config.id,
                           prompt: request.prompt,
                         },
@@ -2707,6 +2757,7 @@ function Workspace() {
         outputKind,
         title,
         targetNodeId,
+        snapshotModel(outputKind).settings,
       );
       if (pending.error) {
         notify(pending.error);
@@ -2951,7 +3002,7 @@ function Workspace() {
       ];
     });
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
-    const settings = getNodeGenerationSettings(node);
+    const settings = getNodeGenerationSettings(node, backendCatalog.models);
     const config = backendModel(settings, backendCatalog.models);
     const blocked = backendBlocker(settings, incoming, backendCatalog.models);
     if (blocked || !config) {
@@ -3108,7 +3159,7 @@ function Workspace() {
       return;
     }
 
-    const settings = getNodeGenerationSettings(node);
+    const settings = getNodeGenerationSettings(node, backendCatalog.models);
     if (settings.modelConfigId) {
       try {
         runServiceGeneration(node, incoming);
@@ -5486,6 +5537,7 @@ function Workspace() {
             );
           }}
           onTurnEnd={() => void syncServiceResults()}
+          onModelSelections={setAssistantModels}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
             setSettingsCategory("models");

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import openDirectorLogo from "../assets/open_director_logo.png";
-import type { ChatAsset, Thinking } from "../backend/chat";
+import type { ChatAsset, ModelSelections, Thinking } from "../backend/chat";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation.ts";
 import type { BackendModels } from "../backend/models";
@@ -63,6 +63,7 @@ export function AssistantPanel({
   selectionRequest,
   onClose,
   onTurnEnd,
+  onModelSelections,
   onOpenSettings,
   onPrepareReferences,
 }: {
@@ -77,6 +78,8 @@ export function AssistantPanel({
   selectionRequest: number;
   onClose: () => void;
   onTurnEnd: () => void;
+  /** Lets the canvas default new nodes to the model this dialog is using. */
+  onModelSelections?: (selections: ModelSelections) => void;
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
@@ -103,6 +106,12 @@ export function AssistantPanel({
   const confirming = useRef<AbortController | null>(null);
   const latest = useRef({ value, selectedNodes, open });
   latest.current = { value, selectedNodes, open };
+  // Keep the canvas defaulting new nodes to the model this dialog is using.
+  const report = useRef(onModelSelections);
+  report.current = onModelSelections;
+  useEffect(() => {
+    report.current?.(value.modelSelections);
+  }, [value.modelSelections]);
   const locked =
     !chat.loaded ||
     chat.adding ||

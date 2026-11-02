@@ -54,8 +54,31 @@ test("a running tool gets an empty result node linked to the right of its source
   );
 });
 
-test("the first output fills the pending node and further outputs join the source", () => {
-  const { source, document, origin } = fixture();
+test("a video placeholder starts in omni-reference mode", () => {
+  const { document, origin } = fixture();
+  const pending = appendPendingResult(document, origin, "video", "视频");
+  const node = pendingResultNode(pending.document, pending.ids[0]!)!;
+  assert.equal(node.data.settings?.videoMode, "reference");
+  assert.equal(node.data.settings?.modelConfigId, undefined);
+});
+
+test("a caller-supplied model is kept on the placeholder", () => {
+  const { document, origin } = fixture();
+  const pending = appendPendingResult(
+    document,
+    origin,
+    "video",
+    "视频",
+    undefined,
+    { model: "本地模型", modelConfigId: "cfg-1" },
+  );
+  const node = pendingResultNode(pending.document, pending.ids[0]!)!;
+  assert.equal(node.data.settings?.modelConfigId, "cfg-1");
+  assert.equal(node.data.settings?.model, "本地模型");
+  assert.equal(node.data.settings?.videoMode, "reference");
+});
+
+test("the first output fills the pending node and further outputs join the source", () => {  const { source, document, origin } = fixture();
   const pending = appendPendingResult(document, origin, "image", "图层分解");
   const id = pending.ids[0]!;
   const filled = fillPendingResult(pending.document, origin, id, [
