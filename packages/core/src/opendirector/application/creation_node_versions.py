@@ -8,9 +8,9 @@ from uuid import UUID, uuid5
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import (
-    CreationCanvas, asset_ref, current_asset, prompt_projection, resolved_inputs,
+    CreationCanvas, asset_ref, current_asset, prompt_projection, resolve_reference, resolved_inputs,
 )
-from opendirector.domain.creation.generation import validate_generation
+from opendirector.domain.creation.generation import FollowingReference, validate_generation
 from opendirector.domain.creation.commands import EditorWrite
 from opendirector.domain.creation.models import ModelConfigPublic
 from opendirector.domain.creation.validation import ContractError
@@ -34,12 +34,13 @@ def available_model(projects, frozen):
         return None
 
 
-def version_family(projects, project_id, item_id, snapshot):
+def version_family(projects, project_id, item_id, snapshot, *, records=None):
     item_id = UUID(str(item_id))
     item = next((i for i in snapshot.canvasItems if i.id == item_id), None)
     if item is None or item.kind not in {'text', 'image', 'video', 'audio'}:
         raise ContractError('missing_object', '该媒体节点不存在。', item_id)
-    records = projects.history(project_id)
+    if records is None:
+        records = projects.history(project_id)
     family, spec_ids = {}, set()
     for record in reversed(records):
         previous = next((i for i in record.snapshot.canvasItems if i.id == item_id), None)
@@ -61,10 +62,35 @@ def version_family(projects, project_id, item_id, snapshot):
     return item, family
 
 
-def node_versions(projects, project_id, item_id):
-    snapshot = projects.snapshot(project_id)
-    item, family = version_family(projects, project_id, item_id, snapshot)
-    service = CreationAssets(projects)
+def current_references_differ(snapshot, frozen):
+    """Compare content, not source revisions (moves/renames do not change inputs)."""
+    groups = {}
+    for reference in frozen.references:
+        groups.setdefault(reference.referenceId, []).append(reference)
+    for reference_id, historical in groups.items():
+        first = historical[0]
+        if first.sourceVersion is None:
+            continue  # An explicit asset has no live node to follow.
+        reference = FollowingReference(id=reference_id, projectId=snapshot.project.id,
+            targetSpecId=frozen.spec.id, role=first.role, binding='follow_current',
+            source=dict(id=first.sourceVersion.id))
+        try:
+            current = resolve_reference(snapshot, reference)
+        except ContractError:
+            return True  # Applying still performs the authoritative validation.
+        def content(values):
+            return [(value.asset, value.subjectRole, value.role) for value in values]
+        if content(current) != content(historical):
+            return True
+    return False
+
+
+def node_versions(projects, project_id, item_id, *, assets=None):
+    records = projects.history(project_id)
+    snapshot = records[0].snapshot
+    item, family = version_family(projects, project_id, item_id, snapshot, records=records)
+    service = assets or CreationAssets(projects)
+    models = {}
     rows = []
     for asset in reversed(snapshot.assets):
         evidence = family.get(asset.id)
@@ -74,16 +100,26 @@ def node_versions(projects, project_id, item_id):
         available = True
         try:
             # Empty text is a valid stored version, even if it cannot be a reference.
-            stream, _ = service.open_media(project_id, asset_id)
+            stream, _ = service.open_media(project_id, asset_id, snapshot=snapshot)
             stream.close()
         except (ProjectError, ContractError, OSError, ValueError):
             available = False
         job = evidence.get('job')
+        if job:
+            key = job.inputSnapshot.model.model_dump_json()
+            if key not in models:
+                models[key] = available_model(projects, job.inputSnapshot.model) is not None
         rows.append(dict(asset=asset, source='generated' if job else asset.provenance.source,
             available=available, commandId=evidence['commandId'], resultId=evidence['result'].id if job else None,
-            jobId=job.id if job else None, inputSnapshot=job.inputSnapshot if job else None,
-            modelAvailable=available_model(projects, job.inputSnapshot.model) is not None if job else None))
-    return dict(item=item, versions=rows)
+            jobId=job.id if job else None, createdAt=job.createdAt if job else None, inputSnapshot=job.inputSnapshot if job else None,
+            modelAvailable=models[key] if job else None,
+            currentReferencesDiffer=current_references_differ(snapshot, job.inputSnapshot) if job else False))
+    from opendirector.infrastructure.creation_projects import object_index
+    current = current_asset(snapshot, item)
+    return dict(item=item, versions=rows, currentAssetId=current.id if current else None,
+        eventCursor=snapshot.eventCursor,
+        expectedVersions=[dict(objectType=kind, id=obj.id, revision=obj.revision)
+                          for (kind, _), obj in object_index(snapshot).items()])
 
 
 def apply_node_version(history, before, command):
@@ -158,6 +194,7 @@ def apply_node_version(history, before, command):
                 source=dict(objectType='canvas_item', id=str(first.sourceVersion.id)) if follow else value.asset.model_dump(mode='json'))
             if not follow:
                 ref['subjectRole'] = value.subjectRole
+                ref['sourceVersion'] = value.sourceVersion.model_dump(mode='json') if value.sourceVersion else None
             refs.append(ref)
             replacements[str(reference_id)].append(key)
     restored = {r['id'] for r in refs}

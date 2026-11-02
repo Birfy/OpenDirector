@@ -1,5 +1,6 @@
 """Real filesystem commits, process interruption and file/receipt consistency."""
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
@@ -295,6 +296,54 @@ def test_symlinks_and_missing_commit_records_are_not_followed_or_replaced(projec
     with pytest.raises(ProjectError, match='缺失或损坏'):
         projects.snapshot(created.projectId)
     assert json.loads(outside.read_text())['receipt']['status'] == 'applied'
+
+
+@pytest.mark.parametrize('change', ['in_place', 'replacement', 'missing'])
+@pytest.mark.skipif(os.name == 'nt', reason='Commit signature caching requires POSIX change time')
+def test_cached_history_still_detects_changed_ancestor_with_same_size_and_mtime(projects, monkeypatch, change):
+    from opendirector.infrastructure import creation_projects as module
+    created = create(projects)
+    projects.execute(rename(created))
+    projects.snapshot(created.projectId)
+    reads = []
+    original = module.read_json
+    def reading(path):
+        if path.parent.name == 'commits':
+            reads.append(path)
+        return original(path)
+    monkeypatch.setattr(module, 'read_json', reading)
+    assert projects.snapshot(created.projectId).project.name == 'Renamed'
+    assert reads == []  # Validated records are reused, but every file is still checked.
+    ancestor = projects.root / 'Renamed' / 'commits' / f'{created.commandId}.json'
+    stat = ancestor.stat()
+    if change == 'missing':
+        ancestor.unlink()
+    else:
+        damaged = ancestor.read_bytes().replace(b'Example', b'Corrupt', 1)
+        assert len(damaged) == stat.st_size
+        if change == 'replacement':
+            temporary = ancestor.with_suffix('.tmp')
+            temporary.write_bytes(damaged)
+            temporary.replace(ancestor)
+        else:
+            ancestor.write_bytes(damaged)
+        os.utime(ancestor, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    with pytest.raises(ProjectError, match='缺失或损坏'):
+        projects.snapshot(created.projectId)
+
+
+def test_returned_snapshots_and_history_cannot_mutate_record_cache(projects):
+    created = create(projects)
+    session = str(uuid4())
+    projects.open(created.projectId, session)
+    operation = request(created.projectId, 'editor.create', document=dict(
+        id=uuid4(), projectId=created.projectId, kind='media_edit',
+        data=dict(tool='image-hd', parameters={'scale': 2})))
+    assert projects.execute(operation, session=session).status == 'applied'
+    projects.snapshot(created.projectId).editorDocuments[0].data.parameters['scale'] = 99
+    projects.history(created.projectId)[0].snapshot.editorDocuments[0].data.parameters['scale'] = 88
+    projects.open(created.projectId, session).editorDocuments[0].data.parameters['scale'] = 77
+    assert projects.snapshot(created.projectId).editorDocuments[0].data.parameters == {'scale': 2}
 
 
 def test_storage_commit_checks_object_versions_and_replays_without_rerunning_service(projects):

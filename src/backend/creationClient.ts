@@ -314,6 +314,28 @@ export class CreationClient {
     }
     return abortable(pending, options.signal);
   }
+  thumbnailUrl(assetId: string) {
+    const key = `thumbnail:${assetId}`;
+    let pending = this.media.get(key);
+    if (!pending) {
+      pending = resilientRead(
+        async (signal) => {
+          const response = await fetch(
+            `/api${creationPath(this.id)}/assets/${assetId}/thumbnail`,
+            { headers, signal },
+          );
+          if (!response.ok) throw await responseError(response);
+          return URL.createObjectURL(await response.blob());
+        },
+        { timeoutMs: 120_000, attempts: 3 },
+      ).catch((error) => {
+        this.media.delete(key);
+        throw error;
+      });
+      this.media.set(key, pending);
+    }
+    return pending;
+  }
   textContent(assetId: string) {
     let pending = this.text.get(assetId);
     if (!pending) {

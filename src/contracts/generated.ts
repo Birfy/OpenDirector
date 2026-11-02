@@ -803,6 +803,7 @@ export interface PaletteProvenanceInput extends ContractInput {
 export interface PinnedReferenceInput extends ReferenceBaseInput {
   readonly binding: "pinned";
   readonly source: AssetRefInput;
+  readonly sourceVersion?: ObjectVersionInput | null;
   readonly subjectRole?: "main" | "auxiliary" | "voice" | null;
 }
 
@@ -2154,6 +2155,7 @@ export interface PaletteProvenance extends Contract {
 export interface PinnedReference extends ReferenceBase {
   readonly binding: "pinned";
   readonly source: AssetRef;
+  readonly sourceVersion?: ObjectVersion | null;
   readonly subjectRole?: "main" | "auxiliary" | "voice" | null;
 }
 

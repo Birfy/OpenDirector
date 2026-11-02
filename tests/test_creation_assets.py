@@ -529,3 +529,27 @@ def test_interrupted_http_upload_releases_lock_and_partial_bytes(storage):
         assert writer.finish().status == 'ready'
     finally:
         writer.abort()
+
+
+def test_thumbnail_is_bounded_cached_and_revalidates_source(storage):
+    projects, pid, _ = storage
+    output = BytesIO()
+    Image.new('RGB', (1800, 1200), 'orange').save(output, format='PNG')
+    asset, _, _ = import_asset(storage, data=output.getvalue())
+    service = CreationAssets(projects)
+    preview, returned = service.thumbnail(pid, asset.id)
+    assert returned == asset
+    with Image.open(BytesIO(preview)) as image:
+        assert image.format == 'WEBP' and image.size == (480, 320)
+    assert service.thumbnail(pid, asset.id)[0] is preview
+    (projects.root / 'Assets' / asset.path).write_bytes(b'tampered')
+    with pytest.raises(ProjectError, match='内容已变化'):
+        service.thumbnail(pid, asset.id)
+
+
+def test_media_read_basis_cannot_cross_projects(storage):
+    projects, pid, _ = storage
+    asset, _, _ = import_asset(storage)
+    snapshot = projects.snapshot(pid)
+    with pytest.raises(ProjectError, match='不属于'):
+        CreationAssets(projects).open_media(uuid4(), asset.id, snapshot=snapshot)

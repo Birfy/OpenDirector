@@ -10,6 +10,8 @@ export interface CanvasActions {
   nameEdit?: { id: string; value: string } | null;
   changeNameDraft?: (value: string) => void;
   finishNameEdit?: (save: boolean) => void;
+  versionCount?: (id: string) => number;
+  showVersions?: (id: string, anchor: DOMRect) => void;
   upload: (id: string) => void;
   preview: (id: string) => void;
   newConnected: (id: string, direction: "source" | "target") => void;

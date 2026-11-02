@@ -35,6 +35,88 @@ function empty(): ProjectSnapshot {
   };
 }
 
+test("visibility receipts reuse hydrated nodes but content and layout changes take a full projection read", async () => {
+  const snapshot = empty();
+  const node = createNode("text", { x: 10, y: 20 }, { text: "Saved text" });
+  const item: CanvasItem = {
+    id: node.id,
+    projectId: snapshot.project.id,
+    revision: 1,
+    kind: "text",
+    title: node.data.title,
+    position: node.position,
+    width: node.width,
+    height: node.height,
+    locked: false,
+    visible: false,
+    zIndex: 0,
+    parentId: null,
+    tags: [],
+    editors: [],
+    binding: { role: "empty", draftSpec: null, manualText: "Saved text" },
+  };
+  const basis = { ...snapshot, canvasItems: [item] };
+  const client = new CommandCapture(snapshot.project.id);
+  client.install(basis);
+  let viewReads = 0;
+  const view = client.view.bind(client);
+  client.view = async () => {
+    viewReads++;
+    return view();
+  };
+  const projection = new CreationProjection(client);
+  projection.basis = basis;
+  projection.baseline = await projection.read(basis);
+  const hydratedNode = projection.baseline.hiddenNodes![0];
+  viewReads = 0;
+  const shown = {
+    ...basis,
+    eventCursor: 2,
+    canvasItems: [{ ...item, visible: true, revision: 2 }],
+  };
+  const quick = await projection.read(shown);
+  assert.equal(viewReads, 0);
+  assert.equal(quick.nodes[0], hydratedNode);
+  assert.deepEqual(quick.hiddenNodes, []);
+  assert.deepEqual(projection.baseline.nodes, []); // No mutation before acknowledgement is installed.
+  // A save acknowledgement can advance the editing basis before the new content
+  // is hydrated. It must not make the cached old text eligible for reuse.
+  projection.basis = {
+    ...basis,
+    canvasItems: [
+      {
+        ...item,
+        binding: {
+          role: "empty",
+          draftSpec: null,
+          manualText: "New text while hidden",
+        },
+      },
+    ],
+  };
+  const content = await projection.read({
+    ...shown,
+    canvasItems: [
+      {
+        ...shown.canvasItems[0]!,
+        binding: {
+          role: "empty",
+          draftSpec: null,
+          manualText: "New text while hidden",
+        },
+      },
+    ],
+  });
+  assert.equal(viewReads, 1);
+  assert.equal(content.nodes[0]?.data.text, "New text while hidden");
+  const moved = await projection.read({
+    ...shown,
+    canvasItems: [{ ...shown.canvasItems[0]!, position: { x: 90, y: 70 } }],
+  });
+  assert.equal(viewReads, 2);
+  assert.deepEqual(moved.nodes[0]?.position, { x: 90, y: 70 });
+});
+
 test("a lost command response resolves its original receipt without issuing another command", async () => {
   const fetch = globalThis.fetch,
     snapshot = empty(),
@@ -737,4 +819,40 @@ test("cancel compares the same execution after confirmed progress conflicts, nev
       assert.equal(calls, 1);
     }
   }
+});
+
+test("clean business flush skips preparation and preserves the basis of unseen changes", async () => {
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const projection = new CreationProjection(client);
+  const document = {
+    ...createDocument(),
+    id: client.id,
+    title: snapshot.project.name,
+  };
+  projection.basis = snapshot;
+  projection.baseline = document;
+  let batches = 0;
+  client.batch = async (operations) => {
+    batches++;
+    assert.deepEqual(operations, []);
+    return undefined;
+  };
+  client.view = async () => {
+    throw new Error("history must not save view state");
+  };
+  const prepare = projection.prepare.bind(projection);
+  projection.prepare = async () => {
+    throw new Error("clean flush must not prepare");
+  };
+  client.install({ ...snapshot, eventCursor: snapshot.eventCursor + 1 });
+  assert.equal(await projection.save(document, { saveView: false }), false);
+  assert.equal(batches, 0);
+  assert.equal(projection.basis, snapshot);
+  assert.equal(projection.viewError, "");
+  projection.prepare = prepare;
+  // Normal saves still retain their independent view-state failure reporting.
+  await projection.save(document);
+  assert.match(projection.viewError, /must not save view/);
 });

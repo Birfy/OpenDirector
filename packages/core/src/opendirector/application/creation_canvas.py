@@ -87,6 +87,7 @@ def resolve_reference(snapshot, reference):
     assets = {a.id: a for a in snapshot.assets}
     source_version, document_version, sources, source_title = None, None, [], ''
     if reference.binding == 'pinned':
+        source_version = reference.sourceVersion
         sources = [(reference.source, reference.subjectRole)]
     else:
         item = next((i for i in snapshot.canvasItems if i.id == reference.source.id), None)
@@ -173,6 +174,15 @@ def reference_evidence(snapshot, spec, reference):
     if job is None:
         return 'unknown'
     old = [r for r in job.inputSnapshot.references if r.referenceId == reference.id and r.transmission != 'context_only']
+    if reference.binding == 'pinned' and reference.sourceVersion:
+        # A historical subject reference expands into independent fixed slots.
+        # Match the recorded source + asset + role, not the newly split ID.
+        old = [r for r in job.inputSnapshot.references
+               if r.sourceVersion and r.sourceVersion.id == reference.sourceVersion.id
+               and r.asset.assetId == reference.source.assetId and r.role == reference.role
+               and r.subjectRole == reference.subjectRole and r.transmission != 'context_only']
+        old = old[:1]
+
     try:
         now = reference_policy(spec, resolve_reference(snapshot, reference), job.inputSnapshot.model.inputRules,
             selected_frame=any(r.active and r.role == 'first_frame' and r.targetSpecId == spec.id for r in snapshot.references))
@@ -181,6 +191,18 @@ def reference_evidence(snapshot, spec, reference):
         return 'unavailable'
     # Layout/visibility/title revisions are not evidence of a creative change.
     identity = lambda refs: [(r.asset.assetId, r.asset.fingerprint, r.role, r.subjectRole) for r in refs]
+    if reference.binding == 'pinned' and reference.sourceVersion:
+        source = next((i for i in snapshot.canvasItems if i.id == reference.sourceVersion.id), None)
+        asset = current_asset(snapshot, source) if source else None
+        if source and source.kind == 'subject':
+            doc = next(d for d in snapshot.editorDocuments if d.id == source.binding.objectRef.id)
+            candidates = ([doc.data.main] if reference.subjectRole == 'main' else
+                          [doc.data.voice] if reference.subjectRole == 'voice' else doc.data.auxiliaries)
+            matches = any(ref and ref.assetId == reference.source.assetId and ref.fingerprint == reference.source.fingerprint for ref in candidates)
+        else:
+            matches = bool(asset and asset.id == reference.source.assetId and asset.fingerprint == reference.source.fingerprint)
+        if not matches:
+            return 'pending'
     return 'used' if old and identity(old) == identity(now) else 'pending'
 
 
@@ -572,6 +594,22 @@ class CreationCanvas:
 
     def projection(self, project_id):
         snapshot = self.projects.snapshot(project_id)
+        availability = {}
+
+        def check_asset(asset):
+            # One verified snapshot and one file check per asset in this query.
+            # Cache failures too; the next query retries files that were restored.
+            if asset.id not in availability:
+                try:
+                    availability[asset.id] = self.assets.reference_available(
+                        asset.projectId, asset.id, snapshot=snapshot)
+                except (ContractError, ProjectError, OSError) as error:
+                    availability[asset.id] = error
+            value = availability[asset.id]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
         visible = visible_item_ids(snapshot)
         edges, capabilities = [], {}
         from opendirector.infrastructure.model_configs import ModelConfigs
@@ -585,10 +623,10 @@ class CreationCanvas:
             state = reference_evidence(snapshot, spec, reference)
             try:
                 for value in resolve_reference(snapshot, reference):
-                    self._available(next(asset for asset in snapshot.assets if asset.id == value.asset.assetId))
+                    check_asset(next(asset for asset in snapshot.assets if asset.id == value.asset.assetId))
             except (ContractError, ProjectError, OSError):
                 state = 'unavailable'
-            edges.append(dict(referenceId=reference.id, sourceItemId=reference.source.id if reference.binding == 'follow_current' else None,
+            edges.append(dict(referenceId=reference.id, sourceItemId=reference.source.id if reference.binding == 'follow_current' else reference.sourceVersion.id if reference.sourceVersion else None,
                 targetSpecId=spec.id, state=state))
         for item in snapshot.canvasItems:
             spec, model, references, available = None, None, (), False
@@ -604,13 +642,13 @@ class CreationCanvas:
                     references = resolved_inputs(snapshot, spec.id, model.inputRules)
                     for reference in references:
                         if reference.transmission != 'context_only':
-                            self._available(next(asset for asset in snapshot.assets if asset.id == reference.asset.assetId))
+                            check_asset(next(asset for asset in snapshot.assets if asset.id == reference.asset.assetId))
                 except (ContractError, ProjectError, OSError, ValueError):
                     model = None
             asset = current_asset(snapshot, item)
             if asset:
                 try:
-                    self._available(asset)
+                    check_asset(asset)
                     available = True
                 except (ProjectError, ContractError, OSError):
                     pass
@@ -624,7 +662,7 @@ class CreationCanvas:
                 doc = next(d for d in snapshot.editorDocuments if d.id == item.binding.objectRef.id)
                 if doc.data.main:
                     try:
-                        self._available(next(asset for asset in snapshot.assets if asset.id == doc.data.main.assetId))
+                        check_asset(next(asset for asset in snapshot.assets if asset.id == doc.data.main.assetId))
                         value = value.model_copy(update={'canUseAsReference': not effective.locked})
                     except (ProjectError, ContractError, OSError):
                         pass

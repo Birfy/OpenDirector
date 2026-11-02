@@ -29,6 +29,18 @@ export type ReferenceAsset = ChatAsset & {
   height?: number | null;
   durationSeconds?: number | null;
 };
+/** Visibility is about source identity, never a matching filename or asset. */
+export function referenceIsOffCanvas(
+  part: Extract<ContentPart, { type: "reference" }>,
+  asset: ReferenceAsset | undefined,
+  visibleNodeIds: ReadonlySet<string>,
+) {
+  const id =
+    part.binding === "asset"
+      ? (asset?.logicalNodeId ?? asset?.nodeId)
+      : (part.nodeId ?? asset?.nodeId ?? asset?.logicalNodeId);
+  return !id || !visibleNodeIds.has(id);
+}
 export function fingerprintMatches(asset: ReferenceAsset, value: string) {
   return (
     asset.fingerprint === value || !!asset.fingerprintAliases?.includes(value)

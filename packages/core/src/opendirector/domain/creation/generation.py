@@ -98,7 +98,15 @@ class ReferenceBase(ProjectEntity):
 class PinnedReference(ReferenceBase):
     binding: Literal['pinned']
     source: AssetRef
+    # Historical provenance only; execution always uses the pinned asset.
+    sourceVersion: ObjectVersion | None = Field(default=None, exclude_if=lambda value: value is None)
     subjectRole: Literal['main', 'auxiliary', 'voice'] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode='after')
+    def source_identity(self):
+        if self.sourceVersion and self.sourceVersion.objectType != 'canvas_item':
+            raise ValueError('Pinned source provenance must identify a canvas item')
+        return self
 
 
 class FollowingReference(ReferenceBase):

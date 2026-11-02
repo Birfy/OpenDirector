@@ -7078,6 +7078,17 @@
           "source": {
             "$ref": "#/$defs/AssetRef"
           },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "subjectRole": {
             "anyOf": [
               {
@@ -19147,6 +19158,17 @@
           },
           "source": {
             "$ref": "#/$defs/AssetRef"
+          },
+          "sourceVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ObjectVersion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "subjectRole": {
             "anyOf": [

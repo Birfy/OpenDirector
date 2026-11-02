@@ -6,6 +6,7 @@ is the commit point; reads first finish pending intents under the catalog lock.
 SQLite coordinates leases only and is never used to roll back file writes.
 """
 from collections.abc import Callable
+from collections import OrderedDict
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -163,6 +164,8 @@ class CreationProjects:
         self.intents = directory(child(self.state_dir, 'creation-commits'))
         self._blocked = {}
         self._warnings = []
+        self._records_cache = OrderedDict()
+        self._records_cache_bytes = 0
         with local.transaction():
             self._recover()
 
@@ -221,8 +224,33 @@ class CreationProjects:
         return path, self._manifest(path)
 
     def _record(self, path, head):
+        file = child(directory(child(path, 'commits')), f'{head}.json')
         try:
-            return CommitRecord.model_validate(read_json(child(directory(child(path, 'commits')), f'{head}.json')))
+            def signature():
+                stat = file.stat(follow_symlinks=False)
+                return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+            before = signature()
+            cached = self._records_cache.get(file)
+            if cached and cached[0] == before:
+                self._records_cache.move_to_end(file)
+                # Private repository records are read-only. Public query
+                # boundaries copy returned values, not every historical snapshot.
+                return cached[1]
+            if cached:
+                self._records_cache_bytes -= self._records_cache.pop(file)[0][2]
+            record = CommitRecord.model_validate(read_json(file))
+            if signature() != before:
+                raise ValueError('Commit changed during read')
+            # Windows ctime can be file creation time rather than change time.
+            # Keep full reads there instead of trusting a restored mtime.
+            if os.name != 'nt' and before[2] <= 8 * 1024 * 1024:
+                self._records_cache[file] = (before, record)
+                self._records_cache_bytes += before[2]
+                while len(self._records_cache) > 128 or self._records_cache_bytes > 8 * 1024 * 1024:
+                    _, removed = self._records_cache.popitem(last=False)
+                    self._records_cache_bytes -= removed[0][2]
+            return record
         except (ValueError, TypeError, KeyError, FileNotFoundError):
             raise ProjectError('工程提交记录缺失或损坏，已阻止自动覆盖。', 409, code='storage_unavailable') from None
 
@@ -294,12 +322,12 @@ class CreationProjects:
     def snapshot(self, project_id):
         with self.local.transaction() as db:
             self._recover()
-            return self._load(db, project_id)[2][0].snapshot
+            return self._load(db, project_id)[2][0].snapshot.model_copy(deep=True)
 
     def history(self, project_id):
         with self.local.transaction() as db:
             self._recover()
-            return tuple(self._load(db, project_id)[2])
+            return tuple(record.model_copy(deep=True) for record in self._load(db, project_id)[2])
 
     def view(self, project_id, client_id, value=None, *, session=None):
         with self.local.transaction() as db:
@@ -322,7 +350,7 @@ class CreationProjects:
             self._recover()
             path, _, records = self._load(db, project_id)
             self.local._open(db, dict(id=str(project_id), path=str(path)), session)
-            return records[0].snapshot
+            return records[0].snapshot.model_copy(deep=True)
 
     def heartbeat(self, session, project_id):
         self.open(project_id, session)
@@ -334,7 +362,7 @@ class CreationProjects:
             found = next((record.receipt for record in records if str(record.command.commandId) == str(command_id)), None)
             if found is None:
                 raise ProjectError('没有该命令的已提交回执。', 404)
-            return found
+            return found.model_copy(deep=True)
 
     def changes(self, project_id, *, after=0, limit=100):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 200:
@@ -346,6 +374,7 @@ class CreationProjects:
             if after > cursor:
                 raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
             events = [record.event for record in reversed(records) if record.event and record.event.cursor > after][:limit]
+            events = [event.model_copy(deep=True) for event in events]
             return dict(events=events, nextCursor=events[-1].cursor if events else after,
                         currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
 
@@ -379,7 +408,7 @@ class CreationProjects:
             return None
         if record.receipt.inputFingerprint != command_fingerprint(command):
             raise ProjectError('该 commandId 已用于不同输入，请使用新的命令标识。', 409, code='command_conflict')
-        return record.receipt
+        return record.receipt.model_copy(deep=True)
 
     def replay(self, command):
         """Resolve an already committed command before reading upload handles."""

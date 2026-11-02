@@ -237,9 +237,7 @@ const icons: Record<string, ReactNode> = {
   cursor: (
     <path d="M5.5 3.5a1 1 0 0 0-1.4 1.2l4.5 16a1 1 0 0 0 1.9.1l2.6-7 7-2.6a1 1 0 0 0 .1-1.9Z" />
   ),
-  minimap: (
-    <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Zm6-3v15m6-12v15" />
-  ),
+  minimap: <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Zm6-3v15m6-12v15" />,
   connections: (
     <>
       <path d="m8.2 10.7 7.6-4.4m-7.6 7 7.6 4.4" />

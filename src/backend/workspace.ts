@@ -48,8 +48,14 @@ export async function openWorkspaceProject(project: WorkspaceProject) {
   return document;
 }
 
-export async function saveWorkspaceDocument(document: CanvasDocument) {
-  const changed = await workspaceProjection(document.id).save(document);
+export async function saveWorkspaceDocument(
+  document: CanvasDocument,
+  options: { saveView?: boolean } = {},
+) {
+  const changed = await workspaceProjection(document.id).save(
+    document,
+    options,
+  );
   if (changed)
     creationClient(document.id).install(creationClient(document.id).snapshot);
   return;

@@ -201,6 +201,8 @@ export interface CanvasEdge {
   intent?: "generation_input" | "post_edit_result" | "assembly_input";
   /** Retained subject slot or timeline clip, independent of generation references. */
   assemblySlotId?: string;
+  /** Pinned edge is provenance for a fixed input, never a live source insertion. */
+  referenceBinding?: "follow_current" | "pinned";
   /** Read-only business query projection, never an editable relationship. */
   referenceState?: "used" | "pending" | "unknown" | "unavailable";
 }
@@ -450,6 +452,7 @@ export function applyCommand(
       next.edges.some(
         (edge) =>
           edge.intent !== "post_edit_result" &&
+          edge.referenceBinding !== "pinned" &&
           edge.target === node.id &&
           edge.source === source.id,
       ),
@@ -983,6 +986,7 @@ function applyCanvasCommand(
           document.edges.some(
             (edge) =>
               edge.intent !== "post_edit_result" &&
+              edge.referenceBinding !== "pinned" &&
               edge.source === source.id &&
               edge.target === node.id,
           ),

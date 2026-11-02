@@ -18,6 +18,7 @@ import {
   currentReferences,
   referencePart,
   referenceIds,
+  referenceIsOffCanvas,
   fingerprintMatches,
   validContent,
   type ReferenceAsset,
@@ -80,6 +81,7 @@ interface Props {
   referenceRules?: ReferenceRules;
   submitOnEnter?: boolean;
   metadataOnlyKinds?: readonly string[];
+  visibleReferenceNodeIds?: ReadonlySet<string>;
   onPasteReference?: (
     part: Extract<ReferenceContent[number], { type: "reference" }>,
     signal: AbortSignal,
@@ -119,6 +121,7 @@ export function ChatReferenceEditor({
   referenceRules = defaultRules,
   submitOnEnter = true,
   metadataOnlyKinds = [],
+  visibleReferenceNodeIds,
   onPasteReference,
   rebindOnPaste = false,
   ref,
@@ -144,8 +147,22 @@ export function ChatReferenceEditor({
     [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
-  const latest = useRef({ onChange, onChoose, onOpen, assets, previews });
-  latest.current = { onChange, onChoose, onOpen, assets, previews };
+  const latest = useRef({
+    onChange,
+    onChoose,
+    onOpen,
+    assets,
+    previews,
+    visibleReferenceNodeIds,
+  });
+  latest.current = {
+    onChange,
+    onChoose,
+    onOpen,
+    assets,
+    previews,
+    visibleReferenceNodeIds,
+  };
   const listId = useId();
   const categories = mentionCategories(options);
   const effectiveCategory = categories.includes(category) ? category : "all";
@@ -167,15 +184,33 @@ export function ChatReferenceEditor({
       ?.querySelectorAll<HTMLElement>("[data-reference]")
       .forEach((chip) => {
         const part = JSON.parse(chip.dataset.reference!);
-        const asset = latest.current.assets.find(
-          (asset) => asset.id === part.assetId,
+        const asset =
+          latest.current.assets.find(
+            (asset) =>
+              asset.id === part.assetId &&
+              asset.referenceId === part.referenceId,
+          ) ?? latest.current.assets.find((asset) => asset.id === part.assetId);
+        const displayName = assetDisplayName(asset?.nodeTitle || part.name);
+        const label = chip.querySelector<HTMLElement>(
+          ".cw-chat-reference-label",
         );
+        if (label) label.textContent = displayName;
+        chip.setAttribute("aria-label", `参考：${displayName}`);
         const src = latest.current.previews[part.assetId];
         const metadataOnly =
           asset && metadataOnlyKinds.includes(assetKind(asset));
+        const offCanvas =
+          !!latest.current.visibleReferenceNodeIds &&
+          referenceIsOffCanvas(
+            part,
+            asset,
+            latest.current.visibleReferenceNodeIds,
+          );
+        chip.classList.toggle("is-off-canvas", offCanvas);
         chip.title =
-          assetDisplayName(part.name) +
+          displayName +
           (part.binding === "asset" ? "（固定版本）" : "") +
+          (offCanvas ? "（未显示在画布上，仍作为参考）" : "") +
           (metadataOnly ? "（仅传递素材信息）" : "");
         chip.querySelector("[data-reference-info]")?.remove();
         if (metadataOnly) {
@@ -562,7 +597,12 @@ export function ChatReferenceEditor({
       paint(value, at);
     }
   }, [value]);
-  useEffect(decorate, [assets, previews, metadataOnlyKinds]);
+  useEffect(decorate, [
+    assets,
+    previews,
+    metadataOnlyKinds,
+    visibleReferenceNodeIds,
+  ]);
   useLayoutEffect(() => {
     if (!autoGrow || !root.current) return;
     const element = root.current;

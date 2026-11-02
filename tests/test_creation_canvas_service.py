@@ -76,6 +76,38 @@ def test_hidden_follow_source_reopens_with_stable_identity_and_duplicate_referen
     assert len(reloaded.snapshot(pid).canvasItems) == 2
 
 
+def test_projection_reuses_read_basis_checks_each_asset_once_and_rechecks_changed_files(project, monkeypatch):
+    store, pid, session = project
+    source, asset = text_material(project, text='v1')
+    target, spec = media(project)
+    assert send(store, pid, 'reference.add', session=session,
+        versions=[ver('generation_spec', spec), ver('canvas_item', target)],
+        reference=dict(id=uuid4(), projectId=pid, binding='follow_current', source=dict(id=source.id), targetSpecId=spec.id)).status == 'applied'
+    canvas = CreationCanvas(store)
+    loads, checks = [], []
+    load, check = store._load, canvas.assets.reference_available
+    def loading(*args, **kwargs):
+        loads.append(1)
+        return load(*args, **kwargs)
+    def checking(project_id, asset_id, **kwargs):
+        checks.append(asset_id)
+        assert kwargs['snapshot'].project.id == pid
+        return check(project_id, asset_id, **kwargs)
+    monkeypatch.setattr(store, '_load', loading)
+    monkeypatch.setattr(canvas.assets, 'reference_available', checking)
+    projection = canvas.projection(pid)
+    assert len(loads) == 1 and checks == [asset.id]
+    assert projection['edges'][0]['state'] != 'unavailable'
+    file = store.root / 'Unified' / asset.path
+    original = file.read_bytes()
+    file.write_bytes(b'v2')  # Same length; cached verification must still invalidate.
+    assert canvas.projection(pid)['edges'][0]['state'] == 'unavailable'
+    file.write_bytes(original)
+    assert canvas.projection(pid)['edges'][0]['state'] != 'unavailable'
+    file.unlink()
+    assert canvas.projection(pid)['edges'][0]['state'] == 'unavailable'
+
+
 def test_blank_rejected_and_batch_rolls_back_all_earlier_operations(project):
     store, pid, session = project
     source, _ = media(project)
@@ -215,6 +247,49 @@ def test_hidden_group_projection_and_show_child_restore_ancestor_identity(projec
     assert send(store, pid, 'canvas.show', session=session, versions=[ver('canvas_item', current_child), ver('canvas_item', current_parent)], item=current_child).status == 'applied'
     assert set(CreationCanvas(store).projection(pid)['visibleItemIds']) == {child.id, parent.id}
     assert len(store.snapshot(pid).assets) == 1
+
+
+def test_reveal_batch_preserves_content_and_groups_rejects_stale_input_and_undoes_visibility(project):
+    store, pid, session = project
+    first, _ = text_material(project, title='First')
+    second, _ = text_material(project, title='Second')
+    target, spec = media(project)
+    parent_id = uuid4()
+    assert send(store, pid, 'creation.batch', session=session,
+        versions=[ver('canvas_item', first), ver('canvas_item', second), ver('canvas_item', target), ver('generation_spec', spec)], operations=[
+            dict(type='canvas.show', payload=dict(item=dict(id=parent_id, projectId=pid, kind='group'))),
+            *[dict(type='canvas.update', payload=dict(itemId=item.id, parentId=parent_id)) for item in (first, second)],
+            *[dict(type='reference.add', payload=dict(reference=dict(id=uuid4(), projectId=pid,
+                binding='follow_current', source=dict(id=item.id), targetSpecId=spec.id, order=index)))
+                for index, item in enumerate((first, second))],
+        ]).status == 'applied'
+    parent = store.snapshot(pid).canvasItems[-1]
+    assert send(store, pid, 'canvas.hide', session=session,
+        versions=[ver('canvas_item', parent)], itemId=parent.id).status == 'applied'
+    before = store.snapshot(pid)
+    sources = [item for item in before.canvasItems if item.id in {first.id, second.id}]
+    operations = [dict(type='canvas.show', payload=dict(item=item)) for item in sources]
+    versions = [ver('canvas_item', item) for item in before.canvasItems]
+    # Concurrent changes reject the whole reveal, including its ancestor group.
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', sources[1])],
+        itemId=second.id, title='New title while hidden').status == 'applied'
+    current = store.snapshot(pid)
+    assert send(store, pid, 'creation.batch', session=session, versions=versions, operations=operations).status == 'rejected'
+    assert store.snapshot(pid) == current
+    sources = [item for item in current.canvasItems if item.id in {first.id, second.id}]
+    receipt = send(store, pid, 'creation.batch', session=session,
+        versions=[ver('canvas_item', item) for item in current.canvasItems],
+        operations=[dict(type='canvas.show', payload=dict(item=item)) for item in sources])
+    assert receipt.status == 'applied', receipt
+    after = store.snapshot(pid)
+    assert set(CreationCanvas(store).projection(pid)['visibleItemIds']) == {item.id for item in after.canvasItems}
+    for old, new in zip(current.canvasItems, after.canvasItems):
+        assert old.model_dump(exclude={'visible', 'revision'}) == new.model_dump(exclude={'visible', 'revision'})
+    for field in ('assets', 'generationSpecs', 'references', 'jobs', 'results', 'editorDocuments'):
+        assert getattr(current, field) == getattr(after, field)
+    assert send(store, pid, 'history.undo', session=session,
+        versions=[ver('canvas_item', item) for item in after.canvasItems], targetCommandId=receipt.commandId).status == 'applied'
+    assert CreationCanvas(store).projection(pid)['visibleItemIds'] == [target.id]
 
 
 def test_missing_and_blank_text_sources_are_unavailable_and_cannot_be_connected(project):

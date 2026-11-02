@@ -1,3 +1,4 @@
+import { creationClient } from "../backend/creationClient.ts";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
@@ -156,6 +157,46 @@ export function GenerationReferenceEditor({
           controls?.assets.find((asset) => asset.id === part.assetId)?.type ??
           "text/reference",
       });
+  const projectId = controls?.projectId;
+  const pinnedImageIds = JSON.stringify(
+    [
+      ...new Set(
+        assets
+          .filter(
+            (asset) =>
+              asset.binding === "asset" && assetKind(asset) === "image",
+          )
+          .map((asset) => asset.id),
+      ),
+    ].sort(),
+  );
+  const [fixedPreviews, setFixedPreviews] = useState<{
+    projectId: string;
+    urls: Record<string, string>;
+  }>();
+  useEffect(() => {
+    let active = true;
+    if (!projectId) return;
+    const client = creationClient(projectId);
+    void Promise.all(
+      (JSON.parse(pinnedImageIds) as string[]).map(async (id) => {
+        try {
+          return [id, await client.mediaUrl(id)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((values) => {
+      if (active)
+        setFixedPreviews({
+          projectId,
+          urls: Object.fromEntries(values.filter((value) => value !== null)),
+        });
+    });
+    return () => {
+      active = false;
+    };
+  }, [projectId, pinnedImageIds]);
   const library = (controls?.assets ?? []).map((asset) => ({
     ...asset,
     nodeId:
@@ -447,11 +488,21 @@ export function GenerationReferenceEditor({
         }}
       />
       <ChatReferenceEditor
+        visibleReferenceNodeIds={
+          controls
+            ? new Set(controls.visibleNodes.map((source) => source.id))
+            : undefined
+        }
         ref={editor}
         scope={controls?.projectId ?? node.id}
         value={value}
         assets={assets}
-        previews={previews}
+        previews={{
+          ...previews,
+          ...(fixedPreviews?.projectId === projectId
+            ? fixedPreviews?.urls
+            : {}),
+        }}
         options={options}
         disabled={running || uploading}
         referencesDisabled={running || uploading}

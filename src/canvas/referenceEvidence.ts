@@ -41,7 +41,7 @@ export function referencePresentation(
     const current = edge.referenceState === "used";
     return {
       state: current ? ("current" as const) : ("pending" as const),
-      description: `${name}：${current ? "当前结果已使用该参考" : edge.referenceState === "unknown" ? "未记录生成输入" : edge.referenceState === "unavailable" ? "参考缺失" : "待生成参考"}`,
+      description: `${name}：${current ? "当前结果已使用该参考" : edge.referenceState === "unknown" ? "未记录生成输入" : edge.referenceState === "unavailable" ? "参考缺失" : edge.referenceBinding === "pinned" ? "固定历史参考与来源当前内容或当前结果不同" : "待生成参考"}${edge.referenceBinding === "pinned" ? "；下次生成仍使用固定历史素材" : ""}`,
     };
   }
   return {

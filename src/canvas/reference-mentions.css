@@ -185,6 +185,9 @@
   object-fit: cover;
   border-radius: 2px;
 }
+:root .cw-workspace .is-off-canvas:is(.cw-chat-reference, .cw-frame-slot) {
+  background: rgb(99 140 220 / 18%);
+}
 .cw-chat-reference-label {
   min-width: 0;
   overflow: hidden;

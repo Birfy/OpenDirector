@@ -26,7 +26,7 @@ def creation_routes(projects: CreationProjects, generation=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
     canvas = CreationCanvas(projects)
-    history = CreationHistory(projects)
+    history = CreationHistory(projects, assets=assets)
 
     @router.get('/projects')
     def list_projects():
@@ -85,6 +85,10 @@ def creation_routes(projects: CreationProjects, generation=None):
     @router.get('/projects/{project_id}/specs/{spec_id}/versions')
     def versions(project_id: UUID, spec_id: UUID):
         return history.versions(project_id, spec_id)
+
+    @router.get('/projects/{project_id}/version-counts')
+    def version_counts(project_id: UUID):
+        return history.version_counts(project_id)
 
     @router.get('/projects/{project_id}/items/{item_id}/versions')
     def node_versions(project_id: UUID, item_id: UUID):
@@ -167,6 +171,13 @@ def creation_routes(projects: CreationProjects, generation=None):
     @router.get('/projects/{project_id}/assets/{asset_id}', response_model=Asset)
     def describe_asset(project_id: UUID, asset_id: UUID):
         return assets.get(project_id, asset_id)
+
+    @router.get('/projects/{project_id}/assets/{asset_id}/thumbnail')
+    def thumbnail(project_id: UUID, asset_id: UUID):
+        value, asset = assets.thumbnail(project_id, asset_id)
+        return Response(value, media_type='image/webp', headers={
+            'Cache-Control': 'private, no-cache', 'ETag': '"thumbnail-' + asset.fingerprint + '"',
+            'X-Content-Type-Options': 'nosniff'})
 
     @router.get('/projects/{project_id}/assets/{asset_id}/content')
     def content(project_id: UUID, asset_id: UUID, range_header: str | None = Header(default=None, alias='Range'),

@@ -223,6 +223,10 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       ...(raw.intent !== undefined
         ? { intent: raw.intent as CanvasEdge["intent"] }
         : {}),
+      ...(raw.referenceBinding === "pinned" ||
+      raw.referenceBinding === "follow_current"
+        ? { referenceBinding: raw.referenceBinding }
+        : {}),
       ...(raw.sourceHandle !== undefined
         ? { sourceHandle: raw.sourceHandle as string | null }
         : {}),

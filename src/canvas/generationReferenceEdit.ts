@@ -35,7 +35,11 @@ export function referenceContentCommand(
     (edge) =>
       edge.intent !== "post_edit_result" &&
       edge.target === targetId &&
-      !desired.has(edge.source),
+      (edge.referenceBinding === "pinned"
+        ? !content.some(
+            (part) => part.type === "reference" && part.referenceId === edge.id,
+          )
+        : !desired.has(edge.source)),
   );
   if (removed.length) {
     const remove: CanvasCommand = {
@@ -51,6 +55,7 @@ export function referenceContentCommand(
     const existing = working.edges.find(
       (edge) =>
         edge.intent !== "post_edit_result" &&
+        edge.referenceBinding !== "pinned" &&
         edge.target === targetId &&
         edge.source === part.nodeId,
     );

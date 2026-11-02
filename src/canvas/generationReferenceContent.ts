@@ -64,7 +64,10 @@ export function incomingReferenceNodes(
   );
   const target = targetId && logical.get(targetId);
   const edges = document.edges.filter(
-    (edge) => edge.intent !== "post_edit_result" && edge.target === targetId,
+    (edge) =>
+      edge.intent !== "post_edit_result" &&
+      edge.referenceBinding !== "pinned" &&
+      edge.target === targetId,
   );
   const connected = new Set(edges.map((edge) => edge.source));
   const mentioned = target

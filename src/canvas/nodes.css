@@ -1660,5 +1660,9 @@
 }
 .cw-subject-main:hover .cw-subject-replace,
 .cw-subject-video:hover .cw-subject-replace,
-.cw-subject-replace:focus-visible { opacity: 1; }
-.cw-subject-replace:disabled { cursor: not-allowed; }
+.cw-subject-replace:focus-visible {
+  opacity: 1;
+}
+.cw-subject-replace:disabled {
+  cursor: not-allowed;
+}

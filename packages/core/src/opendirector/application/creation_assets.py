@@ -1,5 +1,6 @@
 """Shared C04 asset registration for uploads, text and trusted media outputs."""
 from collections import OrderedDict
+from io import BytesIO
 import os
 from pathlib import Path
 from threading import Lock
@@ -23,9 +24,10 @@ class CreationAssets:
         self.uploads = CreationUploads(projects)
         self._verified = OrderedDict()
         self._verification_lock = Lock()
+        self._thumbnails = OrderedDict()
 
-    def reference_available(self, project_id, asset_id):
-        stream, asset = self.open_media(project_id, asset_id)
+    def reference_available(self, project_id, asset_id, *, snapshot=None):
+        stream, asset = self.open_media(project_id, asset_id, snapshot=snapshot)
         with stream:
             if asset.kind == 'text' and not stream.read().decode('utf-8-sig').strip():
                 raise ContractError('reference_invalid', '空白文本不能作为参考。', asset.id)
@@ -169,13 +171,24 @@ class CreationAssets:
         except ContractError:
             raise ProjectError('素材不在当前工程中。', 404) from None
 
-    def open_media(self, project_id, asset_id):
-        """Open a pinned descriptor so a later project rename cannot retarget it."""
+    def open_media(self, project_id, asset_id, *, snapshot=None):
+        """Pin the descriptor under the catalog lock, then verify outside it.
+
+        Trusted queries may reuse a snapshot verified earlier in the same read.
+        Resolve the current path under the lock even then: a project rename must
+        never retarget media. No HTTP parameter can supply this read basis.
+        """
         with self.projects.local.transaction() as db:
             self.projects._recover()
-            path, _, records = self.projects._load(db, project_id)
+            if snapshot is None:
+                path, _, records = self.projects._load(db, project_id)
+                snapshot = records[0].snapshot
+            else:
+                if snapshot.project.id != UUID(str(project_id)):
+                    raise ProjectError('素材读取快照不属于当前工程。', 409)
+                path, _ = self.projects._find(db, project_id)
             try:
-                asset = self._asset(records[0].snapshot, asset_id)
+                asset = self._asset(snapshot, asset_id)
             except ContractError:
                 raise ProjectError('素材不在当前工程中。', 404) from None
             file = child(directory(child(path, 'assets')), str(asset.id))
@@ -203,3 +216,28 @@ class CreationAssets:
         except BaseException:
             stream.close()
             raise
+
+    def thumbnail(self, project_id, asset_id):
+        """A bounded, disposable image preview; always verify its source first."""
+        from PIL import Image, ImageOps
+        stream, asset = self.open_media(project_id, asset_id)
+        with stream:
+            if asset.kind != 'image':
+                raise ProjectError('只有图片素材支持缩略图。', 400)
+            key = asset.fingerprint
+            with self._verification_lock:
+                cached = self._thumbnails.get(key)
+                if cached is not None:
+                    self._thumbnails.move_to_end(key)
+                    return cached, asset
+            with Image.open(stream) as source:
+                source.thumbnail((480, 480))
+                image = ImageOps.exif_transpose(source).convert('RGBA')
+                output = BytesIO()
+                image.save(output, format='WEBP', quality=80)
+                value = output.getvalue()
+            with self._verification_lock:
+                self._thumbnails[key] = value
+                while len(self._thumbnails) > 64:
+                    self._thumbnails.popitem(last=False)
+            return value, asset

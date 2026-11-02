@@ -118,6 +118,29 @@ export function NodeFrame({
         {locked && <CanvasIcon name="lock" size={12} />}
       </div>
       {children}
+      {["text", "image", "video", "audio"].includes(kind) &&
+        (actions?.versionCount?.(id) ?? 0) > 1 && (
+          <button
+            type="button"
+            className="cw-node-version-button nodrag nopan nowheel"
+            aria-label={`历史版本，共 ${actions?.versionCount?.(id)} 个`}
+            title="历史版本（含当前版本）"
+            onPointerDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              actions?.showVersions?.(
+                id,
+                event.currentTarget.getBoundingClientRect(),
+              );
+            }}
+          >
+            <span className="cw-node-badge-count">
+              {actions?.versionCount?.(id)}
+            </span>
+            <CanvasIcon name="chevronDown" size={11} />
+          </button>
+        )}
       {kind !== "group" && (
         <>
           <Handle

@@ -1,3 +1,4 @@
+import { pinnedReferenceAssets } from "./pinnedReferenceAssets.ts";
 import {
   Background,
   BackgroundVariant,
@@ -25,6 +26,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { NodeVersionHistory, useNodeVersionCounts } from "./NodeVersionHistory";
 import openDirectorLogoAnimation from "../assets/open_director_logo_anim.gif";
 import { request as apiRequest, errorMessage } from "../backend/api.ts";
 import {
@@ -433,6 +435,13 @@ function Workspace() {
   const historyRef = useRef(history);
   historyRef.current = history;
   const doc = history.present;
+  const versionCounts = useNodeVersionCounts(doc.id);
+  const [versionHistory, setVersionHistory] = useState<{
+    projectId: string;
+    itemId: string;
+    anchor: DOMRect;
+    preparation: Promise<void>;
+  } | null>(null);
   const [ready, setReady] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => !document.hidden);
   const [initializationError, setInitializationError] = useState("");
@@ -640,39 +649,13 @@ function Workspace() {
       const snapshot = creationClient(doc.id).snapshot;
       const item = snapshot?.canvasItems.find((item) => item.id === target.id);
       const spec = item && itemSpec(snapshot, item);
-      return (
-        snapshot?.references.flatMap((ref) => {
-          if (
-            !ref.active ||
-            ref.binding !== "pinned" ||
-            ref.targetSpecId !== spec?.id
-          )
-            return [];
-          const source = ref.source;
-          const asset = snapshot.assets.find(
-            (asset) => asset.id === source.assetId,
-          );
-          return asset
-            ? [
-                {
-                  id: asset.id,
-                  name: asset.name,
-                  referenceId: ref.id,
-                  binding: "asset" as const,
-                  kind: asset.kind,
-                  type: asset.metadata.mimeType,
-                  size: asset.metadata.size,
-                  fingerprint: asset.fingerprint,
-                },
-              ]
-            : [];
-        }) ?? []
-      );
+      return snapshot && spec ? pinnedReferenceAssets(snapshot, spec.id) : [];
     })(),
     referenceId: (source) =>
       doc.edges.find(
         (edge) =>
           edge.intent !== "post_edit_result" &&
+          edge.referenceBinding !== "pinned" &&
           edge.source === source &&
           edge.target === target.id,
       )?.id,
@@ -865,28 +848,31 @@ function Workspace() {
     if (issues.length) notify(`部分素材未能放入画布：${issues.join("；")}`);
   };
 
-  const persist = useCallback((snapshot: CanvasDocument): Promise<boolean> => {
-    saveQueue.current = saveQueue.current
-      .then(async () => {
-        await saveWorkspaceDocument(snapshot);
-        saveError.current = "";
-        if (historyRef.current.present === snapshot) {
-          const warning = workspaceProjection(snapshot.id).viewError;
-          setSaveStatus(
-            warning
-              ? `工程已保存；界面状态保存失败：${warning}`
-              : "已保存到本机",
-          );
-        }
-        return true;
-      })
-      .catch((error) => {
-        saveError.current = errorMessage(error);
-        setSaveStatus(`保存失败：${String(error)}`);
-        return false;
-      });
-    return saveQueue.current;
-  }, []);
+  const persist = useCallback(
+    (snapshot: CanvasDocument, saveView = true): Promise<boolean> => {
+      saveQueue.current = saveQueue.current
+        .then(async () => {
+          await saveWorkspaceDocument(snapshot, { saveView });
+          saveError.current = "";
+          if (historyRef.current.present === snapshot) {
+            const warning = workspaceProjection(snapshot.id).viewError;
+            setSaveStatus(
+              warning
+                ? `工程已保存；界面状态保存失败：${warning}`
+                : "已保存到本机",
+            );
+          }
+          return true;
+        })
+        .catch((error) => {
+          saveError.current = errorMessage(error);
+          setSaveStatus(`保存失败：${String(error)}`);
+          return false;
+        });
+      return saveQueue.current;
+    },
+    [],
+  );
   const importLibrarySubjects = async (items: LibraryItem[]) => {
     if (subjectLibraryBusy || switchPending.current)
       throw new Error("请等待当前操作完成。");
@@ -2942,9 +2928,12 @@ function Workspace() {
   const pinnedSubmissionInputs = (node: CanvasNode) =>
     (node.data.promptContent ?? []).flatMap((part) => {
       if (part.type !== "reference" || part.binding !== "asset") return [];
-      const asset = referenceAssets.assets.find(
+      const saved = creationClient(doc.id).snapshot?.assets.find(
         (asset) => asset.id === part.assetId,
       );
+      const asset =
+        saved ??
+        referenceAssets.assets.find((asset) => asset.id === part.assetId);
       if (
         !asset ||
         !["text", "image", "video", "audio"].includes(asset.kind ?? "")
@@ -3530,6 +3519,29 @@ function Workspace() {
       if (lockedIds.has(id)) notify("请先解锁节点或所属分组。");
       else if (n) setRename({ id, value: n.data.title });
     },
+    versionCount: (id: string) => versionCounts[id] ?? 0,
+    showVersions: (id: string, anchor: DOMRect) => {
+      const preparation = (async () => {
+        // Let focused text fields commit their blur before flushing the canvas.
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+        if (
+          !(await persistCurrentDocument(
+            () => historyRef.current.present,
+            (snapshot) => persist(snapshot, false),
+          ))
+        )
+          throw new Error(
+            saveError.current || "当前修改保存失败，请关闭后重试。",
+          );
+        if (historyRef.current.present.id !== doc.id)
+          throw new Error("当前项目已切换。");
+      })();
+      // The dialog owns the error state. Also handle dismissal before it mounts.
+      void preparation.catch(() => {});
+      setVersionHistory({ projectId: doc.id, itemId: id, anchor, preparation });
+    },
     upload: (id: string) => openFilePicker(id),
     preview: (id: string) => {
       const node = doc.nodes.find((node) => node.id === id);
@@ -4101,6 +4113,24 @@ function Workspace() {
         />
       )}
 
+      {versionHistory?.projectId === doc.id && (
+        <NodeVersionHistory
+          key={`${doc.id}:${versionHistory.itemId}`}
+          projectId={doc.id}
+          itemId={versionHistory.itemId}
+          anchor={versionHistory.anchor}
+          preparation={versionHistory.preparation}
+          onClose={() => setVersionHistory(null)}
+          onApplied={(referencesChanged) => {
+            setVersionHistory(null);
+            notify(
+              referencesChanged
+                ? "历史版本已应用。部分参考与历史版本不同，已使用来源节点当前内容。"
+                : "历史版本已应用到画布，未开始新的生成任务。",
+            );
+          }}
+        />
+      )}
       <header className="cw-topbar">
         <div className="cw-project-heading">
           <img
@@ -5753,8 +5783,8 @@ function Workspace() {
             </dl>
             <p className="cw-panel-note">
               项目与画布保存在本地 projects 目录，导出 JSON
-              可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置 →
-              模型接入”中的模型。助手对话、云分享和云端资产尚未接入。
+              可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置
+              → 模型接入”中的模型。助手对话、云分享和云端资产尚未接入。
             </p>
           </section>
         </div>

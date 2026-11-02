@@ -22,16 +22,16 @@ class Preview(Contract):
     clearHistory: bool
 
 
-def fields(before, after):
+def fields(before, after, *, root=True):
     """Nested field paths prevent undoing one edit from clobbering another."""
     if isinstance(before, dict) and isinstance(after, dict):
         for key in before.keys() | after.keys():
-            if key == 'revision':
+            if key == 'revision' and root:
                 continue
             if key not in before or key not in after:
                 yield (key,), before.get(key, ABSENT), after.get(key, ABSENT)
             else:
-                for path, old, new in fields(before[key], after[key]):
+                for path, old, new in fields(before[key], after[key], root=False):
                     yield (key, *path), old, new
     elif before != after:
         yield (), before, after
@@ -55,8 +55,10 @@ def put(value, path, content):
 
 
 class CreationHistory:
-    def __init__(self, projects):
+    def __init__(self, projects, *, assets=None):
+        from opendirector.application.creation_assets import CreationAssets
         self.projects = projects
+        self.assets = assets or CreationAssets(projects)
 
     def states(self, project_id):
         records = self.projects.history(project_id)
@@ -204,9 +206,33 @@ class CreationHistory:
             return self._revisions(before, data)
         return self.projects.commit(command, apply, session=session, source=source)
 
+    def version_counts(self, project_id):
+        records = self.projects.history(project_id)
+        snapshot = records[0].snapshot
+        families = {i.id: set() for i in snapshot.canvasItems if i.kind in {'text', 'image', 'video', 'audio'}}
+        owners = {}
+        for record in records:
+            for item in record.snapshot.canvasItems:
+                if item.id not in families:
+                    continue
+                asset = current_asset(record.snapshot, item)
+                if asset:
+                    families[item.id].add(asset.id)
+                binding = item.binding
+                spec = binding.objectRef if binding.role == 'generation' else binding.draftSpec if binding.role == 'empty' else None
+                if spec:
+                    owners.setdefault(spec.id, set()).add(item.id)
+        jobs = {j.id: j for j in snapshot.jobs}
+        for result in snapshot.results:
+            for item_id in owners.get(result.specId, set()) | {jobs[result.jobId].originItemId}:
+                if item_id in families:
+                    families[item_id].add(result.asset.assetId)
+        assets = {a.id for a in snapshot.assets}
+        return dict(eventCursor=snapshot.eventCursor, counts={str(key): len(value & assets) for key, value in families.items()})
+
     def node_versions(self, project_id, item_id):
         from opendirector.application.creation_node_versions import node_versions
-        return node_versions(self.projects, project_id, item_id)
+        return node_versions(self.projects, project_id, item_id, assets=self.assets)
 
     @staticmethod
     def _revisions(before, data):
@@ -243,7 +269,8 @@ class CreationHistory:
             values = [ref.model_dump(mode='json')]
             if command.payload.referencePolicy == 'pinned':
                 values = [{**ref.model_dump(mode='json'), 'id': str(ref.id if index == 0 else uuid5(command.commandId, f'{ref.id}:{index}')),
-                    'binding': 'pinned', 'source': value.asset.model_dump(mode='json')}
+                    'binding': 'pinned', 'source': value.asset.model_dump(mode='json'),
+                    'sourceVersion': value.sourceVersion.model_dump(mode='json') if value.sourceVersion else None}
                     for index, value in enumerate(resolve_reference(record.snapshot, ref))]
             for value in values:
                 previous = old_refs.get(UUID(value['id']))

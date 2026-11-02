@@ -56,6 +56,7 @@ async def generated(project):
 async def test_full_apply_uses_actual_inputs_with_hidden_follow_sources_and_atomic_undo_redo(project):
     store, pid, session = project
     source, original, target, spec, ref_id, output, _ = await generated(project)
+    assert not CreationHistory(store).node_versions(pid, target.id)['versions'][0]['currentReferencesDiffer']
     frozen = deepcopy(store.snapshot(pid).jobs)
     assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)), name='v2.md', text='New source', previousAsset=asset_ref(original)).status == 'applied'
     newer = store.snapshot(pid).assets[-1]
@@ -64,6 +65,7 @@ async def test_full_apply_uses_actual_inputs_with_hidden_follow_sources_and_atom
     assert send(store, pid, 'reference.remove', session=session, versions=versions(store.snapshot(pid)), referenceId=ref_id).status == 'applied'
     assert send(store, pid, 'generationSpec.setPrompt', session=session, versions=versions(store.snapshot(pid)), specId=spec.id, prompt='New draft').status == 'applied'
     before = store.snapshot(pid)
+    assert CreationHistory(store).node_versions(pid, target.id)['versions'][0]['currentReferencesDiffer']
     command, receipt = apply(store, pid, session, target, output)
     assert receipt.status == 'applied', receipt
     assert store.execute(command, session=session) == receipt
@@ -196,6 +198,9 @@ async def test_active_job_blocks_version_application_and_pin_subject_expansion_k
     state = store.snapshot(pid)
     active = [r for r in state.references if r.active]
     assert {r.subjectRole for r in active} == {'main', 'auxiliary'}
+    from opendirector.application.creation_canvas import reference_evidence
+    assert all(r.sourceVersion.id == source_id for r in active)
+    assert all(reference_evidence(state, state.generationSpecs[-1], r) == 'used' for r in active)
     assert len(state.generationSpecs[-1].promptContent) == 5  # Both occurrences expand.
     assert state.jobs[0] == frozen
     # A second accepted task holds the node until its actual outcome is settled.
@@ -211,3 +216,158 @@ async def test_active_job_blocks_version_application_and_pin_subject_expansion_k
     provider.finish.set()
     await asyncio.gather(*(j.future for j in list(runner.jobs.values())))
     await runner.close()
+
+
+@pytest.mark.anyio
+async def test_pinned_history_retains_source_edges_and_does_not_rewrite_neighbors(project):
+    from opendirector.application.creation_canvas import CreationCanvas, reference_evidence
+    store, pid, session = project
+    source, original, target, spec, ref_id, output, _ = await generated(project)
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)), name='new.md', text='changed', previousAsset=asset_ref(original)).status == 'applied'
+    newer = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)), itemId=source.id, asset=asset_ref(newer)).status == 'applied'
+    before = store.snapshot(pid)
+    command, receipt = apply(store, pid, session, target, output, 'pinned')
+    assert receipt.status == 'applied'
+    state = store.snapshot(pid)
+    pin = next(r for r in state.references if r.id == ref_id)
+    assert pin.sourceVersion.id == source.id
+    assert resolved_inputs(state, spec.id)[0].asset.assetId == original.id
+    assert state.canvasItems[0] == before.canvasItems[0]
+    assert state.jobs == before.jobs and state.results == before.results
+    assert reference_evidence(state, state.generationSpecs[-1], pin) == 'pending'
+    edge = next(e for e in CreationCanvas(store).projection(pid)['edges'] if e['referenceId'] == ref_id)
+    assert edge['sourceItemId'] == source.id
+    assert send(store, pid, 'canvas.hide', session=session, versions=versions(state), itemId=source.id).status == 'applied'
+    assert resolved_inputs(store.snapshot(pid), spec.id)[0].asset.assetId == original.id
+    assert apply(store, pid, session, source, original)[1].status == 'applied'
+    state = store.snapshot(pid)
+    assert reference_evidence(state, state.generationSpecs[-1], pin) == 'used'
+    assert state.jobs == before.jobs
+
+
+def test_version_counts_include_manual_history_but_not_layout_or_reapplication(project, monkeypatch):
+    store, pid, session = project
+    node, first = text_material(project)
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)), name='two.md', text='two', previousAsset=asset_ref(first)).status == 'applied'
+    second = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)), itemId=node.id, asset=asset_ref(second)).status == 'applied'
+    assert apply(store, pid, session, node, first)[1].status == 'applied'
+    assert send(store, pid, 'canvas.hide', session=session, versions=versions(store.snapshot(pid)), itemId=node.id).status == 'applied'
+    history = CreationHistory(store)
+    from opendirector.application.creation_assets import CreationAssets
+    monkeypatch.setattr(CreationAssets, 'open_media', lambda *args: pytest.fail('counts must not read media'))
+    counts = history.version_counts(pid)
+    assert counts['counts'][str(node.id)] == 2
+    assert counts['eventCursor'] == store.snapshot(pid).eventCursor
+
+
+@pytest.mark.anyio
+async def test_restore_changes_outgoing_evidence_without_mutating_downstream(project):
+    from opendirector.application.creation_canvas import reference_evidence
+    store, pid, session = project
+    _, _, target, _, _, output, config = await generated(project)
+    provider = Provider()
+    runner, _ = runtime(project, provider)
+    downstream, downstream_spec = configure(project, config)
+    ref_id = uuid4()
+    assert send(store, pid, 'reference.add', session=session, versions=versions(store.snapshot(pid)),
+        reference=dict(id=ref_id, projectId=pid, targetSpecId=downstream_spec.id, binding='follow_current', source=dict(id=target.id))).status == 'applied'
+    downstream_spec = store.snapshot(pid).generationSpecs[-1]
+    provider.finish.set()
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+        expectedVersions=versions(store.snapshot(pid)), payload=dict(specId=downstream_spec.id,
+        expectedSpecRevision=downstream_spec.revision, originItemId=downstream.id)))
+    assert (await runner.execute(command, session=session)).status == 'accepted'
+    await asyncio.wait_for(provider.started.wait(), 3)
+    await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+    await runner.close()
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)), name='edited.md', text='new local text', previousAsset=asset_ref(output)).status == 'applied'
+    changed_asset = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)), itemId=target.id, asset=asset_ref(changed_asset), discardGenerationDraft=True).status == 'applied'
+    before = store.snapshot(pid)
+    ref = next(ref for ref in before.references if ref.id == ref_id)
+    spec = next(spec for spec in before.generationSpecs if spec.id == downstream_spec.id)
+    assert reference_evidence(before, spec, ref) == 'pending'
+    command, receipt = apply(store, pid, session, target, output, 'pinned')
+    assert receipt.status == 'applied'
+    after = store.snapshot(pid)
+    assert next(item for item in after.canvasItems if item.id == downstream.id) == next(item for item in before.canvasItems if item.id == downstream.id)
+    assert next(item for item in after.generationSpecs if item.id == spec.id) == spec
+    assert next(item for item in after.references if item.id == ref_id) == ref
+    assert after.jobs == before.jobs and after.results == before.results
+    assert reference_evidence(after, spec, ref) == 'used'
+    undo = send(store, pid, 'history.undo', session=session, versions=versions(after), targetCommandId=command.commandId)
+    assert undo.status == 'applied', undo
+    assert reference_evidence(store.snapshot(pid), spec, ref) == 'pending'
+
+@pytest.mark.anyio
+async def test_follow_history_next_execution_uses_current_source_and_keeps_old_execution(project):
+    from opendirector.application.creation_generation import CreationGeneration
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    from opendirector.application.creation_node_versions import current_references_differ
+    store, pid, session = project
+    source, original, target, spec, _, output, _ = await generated(project)
+    old_job = store.snapshot(pid).jobs[0]
+    # Presentation-only changes do not trigger a reference-content warning.
+    moved = store.snapshot(pid).model_copy(update={'canvasItems': tuple(
+        item.model_copy(update={'title': 'Renamed', 'revision': item.revision + 1}) if item.id == source.id else item
+        for item in store.snapshot(pid).canvasItems)})
+    assert not current_references_differ(moved, old_job.inputSnapshot)
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)),
+        name='new.md', text='Current canvas reference', previousAsset=asset_ref(original)).status == 'applied'
+    newer = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)),
+        itemId=source.id, asset=asset_ref(newer)).status == 'applied'
+    assert apply(store, pid, session, target, output)[1].status == 'applied'
+    assert current_references_differ(store.snapshot(pid), old_job.inputSnapshot)
+    assert store.snapshot(pid).jobs[0] == old_job
+    provider = Provider()
+    provider.finish.set()
+    runner = CreationGeneration(store, ModelConfigs(store.local.repository), provider)
+    try:
+        current = next(value for value in store.snapshot(pid).generationSpecs if value.id == spec.id)
+        command = parse_command(dict(commandId=uuid4(), projectId=pid, type='generation.submit',
+            expectedVersions=versions(store.snapshot(pid)),
+            payload=dict(specId=spec.id, expectedSpecRevision=current.revision, originItemId=target.id)))
+        assert (await runner.execute(command, session=session)).status == 'accepted'
+        await asyncio.gather(*(job.future for job in list(runner.jobs.values())))
+        latest = store.snapshot(pid).jobs[-1]
+        assert latest.status == 'succeeded'
+        assert latest.inputSnapshot.references[0].asset.assetId == newer.id
+        assert store.snapshot(pid).jobs[0] == old_job
+        assert not current_references_differ(store.snapshot(pid), latest.inputSnapshot)
+    finally:
+        await runner.close()
+
+
+def test_listing_and_counts_load_history_once_and_recheck_changed_files(project, monkeypatch):
+    store, pid, session = project
+    node, first = text_material(project)
+    assert send(store, pid, 'asset.writeText', session=session, versions=versions(store.snapshot(pid)),
+        name='second.md', text='second', previousAsset=asset_ref(first)).status == 'applied'
+    second = store.snapshot(pid).assets[-1]
+    assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)),
+        itemId=node.id, asset=asset_ref(second)).status == 'applied'
+    history = CreationHistory(store)
+    original = store._load
+    calls = []
+    def load(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(store, '_load', load)
+    listing = history.node_versions(pid, node.id)
+    assert len(calls) == 1
+    assert all(row['available'] for row in listing['versions'])
+    calls.clear()
+    history.version_counts(pid)
+    assert len(calls) == 1
+    # A warm verification cache cannot hide replacement or missing media.
+    path = store.root / 'Unified' / first.path
+    path.write_bytes(b'changed')
+    calls.clear()
+    listing = history.node_versions(pid, node.id)
+    assert len(calls) == 1
+    assert not next(row for row in listing['versions'] if row['asset'].id == first.id)['available']
+    path.unlink()
+    assert not next(row for row in history.node_versions(pid, node.id)['versions'] if row['asset'].id == first.id)['available']

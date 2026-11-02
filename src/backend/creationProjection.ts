@@ -54,6 +54,7 @@ const extension: Record<string, string> = {
 export class CreationProjection {
   baseline!: CanvasDocument;
   basis!: ProjectSnapshot;
+  private hydrated?: { snapshot: ProjectSnapshot; document: CanvasDocument };
   private imported = new Map<string, Promise<AssetRef>>();
   private importHandles = new Map<string, string>();
   private masks = new Map<string, Promise<string>>();
@@ -317,7 +318,86 @@ export class CreationProjection {
       }
     }
   }
+  /** A visibility-only receipt can reuse already hydrated nodes, including
+   * hidden sources. Any business/content/layout change takes the full read path. */
+  private visibilityProjection(
+    snapshot: ProjectSnapshot,
+  ): CanvasDocument | undefined {
+    const cached = this.hydrated;
+    if (!cached || snapshot.project.id !== cached.document.id) return;
+    for (const key of [
+      "project",
+      "assets",
+      "generationSpecs",
+      "references",
+      "editorDocuments",
+      "jobs",
+      "results",
+    ] as const) {
+      if (!same(snapshot[key], cached.snapshot[key])) return;
+    }
+    if (snapshot.canvasItems.length !== cached.snapshot.canvasItems.length)
+      return;
+    const previous = new Map(
+      cached.snapshot.canvasItems.map((item) => [item.id, item]),
+    );
+    let changed = false;
+    for (const item of snapshot.canvasItems) {
+      const old = previous.get(item.id);
+      if (
+        !old ||
+        !same(
+          { ...old, visible: true, revision: 0 },
+          { ...item, visible: true, revision: 0 },
+        )
+      )
+        return;
+      changed ||= old.visible !== item.visible;
+    }
+    if (!changed) return;
+    const nodes = new Map(
+      [...cached.document.nodes, ...(cached.document.hiddenNodes ?? [])].map(
+        (node) => [node.id, node],
+      ),
+    );
+    const visible = visibleItems(snapshot);
+    const ordered: CanvasNode[] = [];
+    for (const item of snapshot.canvasItems) {
+      const node = nodes.get(item.id);
+      if (!node || (visible.has(item.id) && node.data.assetState === "missing"))
+        return;
+      ordered.push(node);
+    }
+    return {
+      ...cached.document,
+      nodes: ordered.filter((node) => visible.has(node.id)),
+      hiddenNodes: ordered.filter((node) => !visible.has(node.id)),
+      edges: cached.document.edges.map((edge) => ({
+        ...edge,
+        ...(this.client.referenceStates.has(edge.id)
+          ? { referenceState: this.client.referenceStates.get(edge.id) }
+          : {}),
+      })),
+    };
+  }
+
+  private rememberProjection(
+    snapshot: ProjectSnapshot,
+    document: CanvasDocument,
+  ) {
+    // Save acknowledgements advance the editing basis before hydration finishes.
+    // Only a completed read may seed this cache, and late reads cannot roll it back.
+    if (
+      !this.hydrated ||
+      snapshot.eventCursor >= this.hydrated.snapshot.eventCursor
+    )
+      this.hydrated = { snapshot, document };
+    return document;
+  }
+
   async read(snapshot = this.client.snapshot): Promise<CanvasDocument> {
+    const visibility = this.visibilityProjection(snapshot);
+    if (visibility) return this.rememberProjection(snapshot, visibility);
     const document = {
       ...createDocument(snapshot.project.name),
       id: snapshot.project.id,
@@ -554,12 +634,22 @@ export class CreationProjection {
       }),
     );
     document.edges = snapshot.references.flatMap((ref) => {
-      if (!ref.active || ref.binding !== "follow_current") return [];
+      if (!ref.active) return [];
+      const sourceId =
+        ref.binding === "follow_current"
+          ? ref.source.id
+          : ref.sourceVersion?.id;
+      if (
+        !sourceId ||
+        !snapshot.canvasItems.some((item) => item.id === sourceId)
+      )
+        return [];
       return snapshot.canvasItems
         .filter((item) => itemSpec(snapshot, item)?.id === ref.targetSpecId)
         .map((item) => ({
           id: ref.id,
-          source: ref.source.id,
+          source: sourceId,
+          referenceBinding: ref.binding,
           target: item.id,
           intent: "generation_input" as const,
           referenceState: this.client.referenceStates.get(ref.id),
@@ -603,7 +693,7 @@ export class CreationProjection {
       (node) => !visible.has(node.id),
     );
     document.nodes = document.nodes.filter((node) => visible.has(node.id));
-    return document;
+    return this.rememberProjection(snapshot, document);
   }
   async open() {
     await this.client.open();
@@ -1325,7 +1415,12 @@ export class CreationProjection {
         }
         continue;
       }
-      if (edge.intent === "post_edit_result" || oldEdges.has(edge.id)) continue;
+      if (
+        edge.intent === "post_edit_result" ||
+        edge.referenceBinding === "pinned" ||
+        oldEdges.has(edge.id)
+      )
+        continue;
       const target = items.get(edge.target),
         current = target && itemSpec(basis, target);
       const specId = specs.get(edge.target) ?? current?.id;
@@ -1591,12 +1686,25 @@ export class CreationProjection {
   }
 
   viewError = "";
-  async save(document: CanvasDocument) {
+  async save(document: CanvasDocument, options: { saveView?: boolean } = {}) {
+    // Run inside the caller's save queue, after any pending acknowledgement.
+    // A no-op must not advance the editing basis to unseen server changes.
+    if (
+      options.saveView === false &&
+      this.baseline &&
+      document.id === this.baseline.id &&
+      same(
+        [document.nodes, document.hiddenNodes, document.edges],
+        [this.baseline.nodes, this.baseline.hiddenNodes, this.baseline.edges],
+      )
+    )
+      return false;
     const { operations, versions } = await this.prepare(document);
     await this.client.batch(operations, versions);
     // Business acknowledgement cannot be undone by a view preference failure.
     this.basis = this.client.snapshot;
     this.baseline = document;
+    if (options.saveView === false) return operations.length > 0;
     this.viewError = "";
     try {
       const view = await this.client.view();

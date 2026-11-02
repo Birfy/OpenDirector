@@ -271,10 +271,17 @@ export function NodeComposer({
               const unavailable = Boolean(
                 id && (!node?.data.src || node.data.assetState === "missing"),
               );
+              const offCanvas =
+                !!id &&
+                !!referenceControls &&
+                !referenceControls.visibleNodes.some(
+                  (source) => source.id === id,
+                );
               return (
                 <div
                   key={field}
-                  className={`cw-frame-slot${index === 1 ? " cw-frame-last" : ""}${unavailable ? " cw-frame-unavailable" : ""}${blocked && !id ? " cw-frame-disabled" : ""}`}
+                  className={`cw-frame-slot${index === 1 ? " cw-frame-last" : ""}${unavailable ? " cw-frame-unavailable" : ""}${blocked && !id ? " cw-frame-disabled" : ""}${offCanvas ? " is-off-canvas" : ""}`}
+                  title={offCanvas ? "未显示在画布上，仍作为参考" : undefined}
                 >
                   <span className="cw-frame-thumbnail">
                     {node?.data.src && node.data.assetState !== "missing" ? (
