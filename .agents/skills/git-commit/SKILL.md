@@ -36,9 +36,9 @@ drafting the message; execute a commit when the user requests it.
 
 ## Staging and commit boundaries
 
-- Never run `git add`, `git stage`, `git commit -a` / `--all`, or any
-  equivalent staging operation, including `git update-index` or
-  `git apply --cached` / `--index`.
+- While preparing or creating a commit, never run `git add`, `git stage`,
+  `git commit -a` / `--all`, or any equivalent staging operation, including
+  `git update-index` or `git apply --cached` / `--index`.
 - Never use `git commit --include`, `--only`, or path arguments. They can
   commit working-tree content or bypass part of the reviewed index.
 - Do not unstage, reset, stash, restore, edit, or regenerate project files
@@ -46,8 +46,34 @@ drafting the message; execute a commit when the user requests it.
 - Do not split staged work, amend commits, bypass hooks, or push unless
   separately requested. Mixed staged changes may use an umbrella title and
   summary bullets; do not silently select a subset.
+- Before any separately requested `git push`, you must first run `git rebase`
+  onto the current branch's configured upstream. If no upstream is configured,
+  do not push; report the blocker instead. If the rebase stops with conflicts,
+  follow the workflow below and do not push until it completes successfully.
 - If a hook changes the index or files, report the observed effect. Do not
   undo its changes or claim that the index necessarily remained unchanged.
+
+## Rebase conflict handling
+
+When the required pre-push rebase stops with conflicts:
+
+1. Run `git status` and `git diff --name-only --diff-filter=U` to identify
+   every conflicted path. Inspect both sides of each conflict before editing.
+2. Resolve each conflict deliberately, preserving intended local and upstream
+   changes. Never discard user work or select an entire side merely to make
+   the conflict disappear.
+3. Stage only resolved conflict paths with explicit `git add -- <path>...`
+   commands. Do not stage unrelated working-tree changes; this is the only
+   exception to the no-staging rule above.
+4. Confirm `git diff --name-only --diff-filter=U` is empty and run
+   `git diff --cached --check`. Run relevant focused validation for the
+   resolved files when available.
+5. Run `git rebase --continue`, preserving the existing commit message.
+   Repeat these steps if a later commit conflicts.
+6. After successful completion, run `git status` and ensure no rebase is in
+   progress before pushing. If a conflict cannot be resolved confidently, run
+   `git rebase --abort`, report the affected paths and blocker, and wait for
+   instructions. Never use a force push to bypass conflicts.
 
 ## Title
 
