@@ -281,9 +281,20 @@ const icons: Record<string, ReactNode> = {
     </>
   ),
   fullscreen: <path d="M3 9V3h6m6 0h6v6M3 15v6h6m6 0h6v-6" />,
+  exitFullscreen: <path d="M9 3v6H3m12-6v6h6M9 21v-6H3m12 6v-6h6" />,
   volume: (
     <>
       <path d="M11 4 6 8H2v8h4l5 4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />
+    </>
+  ),
+  volumeHigh: (
+    <>
+      <path d="M11 4 6 8H2v8h4l5 4ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />
+    </>
+  ),
+  volumeOff: (
+    <>
+      <path d="M11 4 6 8H2v8h4l5 4Zm5 4 5 6m0-6-5 6" />
     </>
   ),
   clock: (

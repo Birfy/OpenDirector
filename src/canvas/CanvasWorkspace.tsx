@@ -3861,7 +3861,9 @@ function Workspace() {
     >
       <CanvasPlaybackProvider
         blocked={
-          interacting ||
+          // Dragging a node is intentionally absent here: the video node keeps
+          // playing while the node is dragged. Only gestures that move the
+          // viewport or open another surface interrupt playback.
           panning ||
           references.connecting ||
           Boolean(

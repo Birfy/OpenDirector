@@ -110,6 +110,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
               src={data.src}
               playsInline
               preload="metadata"
+              selected={selected}
               onClick={selectMedia}
               onDurationChange={(event) =>
                 actions?.metadata(id, {

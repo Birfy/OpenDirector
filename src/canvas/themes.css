@@ -176,6 +176,12 @@
 :root[data-theme="light"] .cw-node-media {
   --cw-media-well: #e9ecf2;
 }
+/* Video controls sit on top of the video frame, which stays dark in both
+   themes, so only the surface needs to stay legible against it. */
+:root[data-theme="light"] .cw-video-controls {
+  background: rgba(12, 13, 16, 0.74);
+  box-shadow: 0 6px 20px rgba(20, 24, 32, 0.28);
+}
 :root[data-theme="light"] .cw-node-empty:not(.cw-node-timeline):not(.cw-node-group):not(.cw-node-stack) {
   /* Keep the well clearly distinct from the #f7f8fa canvas without going
      back to a dark block: a cool grey with a solid border reads as media. */
