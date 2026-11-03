@@ -3,6 +3,7 @@ import base64
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
+import shutil
 import subprocess
 import wave
 from uuid import uuid4
@@ -140,3 +141,26 @@ def test_global_canvas_copy_probes_media_without_subject_duration_limit(store):
     value=sources.prepare(owner,node_id,row['revision'],subject=False)
     assert value['media'][0]['metadata']['durationSeconds']==16
     assert value['media'][0]['metadata']['mimeType']=='audio/wav'
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='requires local FFmpeg')
+def test_canvas_source_preview_is_a_small_immutable_jpeg(client, store):
+    """A grid card asks for `thumb`; the original bytes stay one request away."""
+    owner, session, node_id, projects, _ = canvas_source(store, payload=png('red', (1600, 1200)))
+    revision = CanvasSources(projects).list(owner)[0]['revision']
+    url = f'/api/library/canvases/{owner}/nodes/{node_id}/media/main'
+    original = client.get(url, params=dict(revision=revision))
+    assert original.status_code == 200 and original.content == png('red', (1600, 1200))
+    # Revision-addressed bytes never change, so the browser may keep them.
+    assert 'immutable' in original.headers['cache-control']
+
+    preview = client.get(url, params=dict(revision=revision, size='thumb'))
+    assert preview.status_code == 200, preview.text
+    assert preview.headers['content-type'] == 'image/jpeg'
+    assert preview.content[:3] == b'\xff\xd8\xff'
+    assert len(preview.content) < len(original.content)
+
+    # The preview is cached by revision, so a second view is the same bytes.
+    again = client.get(url, params=dict(revision=revision, size='thumb'))
+    assert again.content == preview.content
+    projects.heartbeat(session, owner)

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 import os
+import threading
 import time
 
 from pydantic import ValidationError, model_validator
@@ -158,6 +159,18 @@ def object_changes(before, after, command):
 # enough to expire sessions and interrupt running jobs.
 RECORD_CACHE_ENTRIES = 4096
 RECORD_CACHE_BYTES = 512 * 1024 * 1024
+# Only the validated head of each open project is kept, so this stays small.
+CURRENT_CACHE_ENTRIES = 16
+
+
+def _head_signature(path, head):
+    """Cheap identity of a commit file, or None when it cannot be read."""
+    file = child(directory(child(path, 'commits')), f'{head}.json')
+    try:
+        stat = file.stat(follow_symlinks=False)
+    except OSError:
+        return None
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
 
 
 class CreationProjects:
@@ -176,6 +189,9 @@ class CreationProjects:
         self._invalid = []
         self._records_cache = OrderedDict()
         self._records_cache_bytes = 0
+        self._current_cache: "OrderedDict[tuple, CommitRecord]" = OrderedDict()
+        # Reads arrive on several threads; the dict is only ever touched here.
+        self._cache_lock = threading.Lock()
         with local.transaction():
             self._recover()
 
@@ -292,6 +308,42 @@ class CreationProjects:
         records = self._history(path, manifest)
         return path, manifest, records
 
+    def _remember_current(self, path, record):
+        signature = _head_signature(path, record.command.commandId)
+        if signature is None:
+            return
+        key = (str(path), str(record.command.commandId), signature)
+        with self._cache_lock:
+            self._current_cache[key] = record
+            self._current_cache.move_to_end(key)
+            while len(self._current_cache) > CURRENT_CACHE_ENTRIES:
+                self._current_cache.popitem(last=False)
+
+    def _current(self, db, project_id, path, manifest):
+        """The head commit, reused while its file is untouched.
+
+        Replaying and re-validating the whole chain for every read made opening
+        a canvas take about a second. A commit leaves the old files alone and
+        moves the head, and an outside rewrite changes the head file's
+        signature, so both are noticed without trusting a bare timestamp.
+        """
+        signature = _head_signature(path, manifest.head)
+        key = (str(path), str(manifest.head), signature)
+        if signature is not None:
+            with self._cache_lock:
+                cached = self._current_cache.get(key)
+                if cached is not None:
+                    self._current_cache.move_to_end(key)
+                    return cached
+        record = self._load(db, project_id)[2][0]
+        if signature is not None:
+            with self._cache_lock:
+                self._current_cache[key] = record
+                self._current_cache.move_to_end(key)
+                while len(self._current_cache) > CURRENT_CACHE_ENTRIES:
+                    self._current_cache.popitem(last=False)
+        return record
+
     def _lease(self, db, project_id, path, session):
         if session is None:
             raise ProjectError('修改工程需要已打开的会话。', 409)
@@ -334,8 +386,14 @@ class CreationProjects:
                 unreadable.extend(self._unreadable_item(path, reason, project_id) for path in paths)
                 continue
             try:
-                path, _, records = self._load(db, project_id)
-                projects.append(dict(id=project_id, name=records[0].snapshot.project.name, path=str(path)))
+                path, manifest = self._find(db, project_id)
+                # Parsing the head alone proves the project still opens, and the
+                # manifest already carries the name it must agree with; a full
+                # chain replay just to list a name cost about a second.
+                record = self._record(path, manifest.head)
+                if record.snapshot.project.name != manifest.name:
+                    raise ProjectError('工程提交历史与清单不一致，原文件已保留。', 409, code='storage_unavailable')
+                projects.append(dict(id=project_id, name=manifest.name, path=str(path)))
             except (ProjectError, OSError):
                 reason = f'工程 {project_id} 需要恢复，原文件已保留。'
                 warnings.append(reason)
@@ -413,7 +471,17 @@ class CreationProjects:
     def snapshot(self, project_id):
         with self.local.transaction() as db:
             self._recover()
-            return self._load(db, project_id)[2][0].snapshot.model_copy(deep=True)
+            path, manifest = self._find(db, project_id)
+            return self._current(db, project_id, path, manifest).snapshot.model_copy(deep=True)
+
+    def head(self, project_id):
+        """The current head commit, cheap enough to gate content-addressed caches.
+
+        It skips the journal recovery that snapshot() runs: a caller only uses
+        this to notice that a cached read is stale.
+        """
+        with self.local.transaction() as db:
+            return self._find(db, project_id)[1].head
 
     def history(self, project_id):
         with self.local.transaction() as db:
@@ -423,7 +491,7 @@ class CreationProjects:
     def view(self, project_id, client_id, value=None, *, session=None):
         with self.local.transaction() as db:
             self._recover()
-            path, _, _ = self._load(db, project_id)
+            path, _ = self._find(db, project_id)
             folder = directory(child(path, 'views'))
             file = child(folder, f'{UUID(str(client_id))}.json')
             if value is not None:
@@ -439,9 +507,9 @@ class CreationProjects:
     def open(self, project_id, session):
         with self.local.transaction() as db:
             self._recover()
-            path, _, records = self._load(db, project_id)
+            path, manifest = self._find(db, project_id)
             self.local._open(db, dict(id=str(project_id), path=str(path)), session)
-            return records[0].snapshot.model_copy(deep=True)
+            return self._current(db, project_id, path, manifest).snapshot.model_copy(deep=True)
 
     def heartbeat(self, session, project_id):
         self.open(project_id, session)
@@ -720,6 +788,9 @@ class CreationProjects:
         self._journal(record.command.projectId).unlink()
         sync_directory(self.intents)
         self._checkpoint('finished')
+        # The record just published is the new head, so the read that follows a
+        # save does not need to replay and re-parse the whole chain.
+        self._remember_current(path, record)
         try:
             cleanup_staging(record.command.projectId, intent.files, self.state_dir)
         except (OSError, ProjectError):

@@ -2,6 +2,12 @@ import type { LibraryItem } from "../canvas/library/libraryClient.ts";
 import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import { headers, json, request, responseError } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
+import {
+  cachedRequest,
+  invalidateCached,
+  peekCached,
+  prefetchRequest,
+} from "./requestCache.ts";
 
 export type SubjectLibraryItem = LibraryItem & {
   available: boolean;
@@ -21,15 +27,41 @@ type Media = {
   };
 };
 type Prepared = { item: LibraryItem; media: Media[] };
-export const listLibrarySubjects = (query: string) =>
-  request<SubjectLibraryItem[]>(
-    `/library/subjects?query=${encodeURIComponent(query)}`,
+const subjectsKey = (query: string) => `library:subjects:${query}`;
+
+export const listLibrarySubjects = (
+  query: string,
+  read: { fresh?: boolean } = {},
+) =>
+  cachedRequest<SubjectLibraryItem[]>(
+    subjectsKey(query),
+    () =>
+      request<SubjectLibraryItem[]>(
+        `/library/subjects?query=${encodeURIComponent(query)}`,
+      ),
+    read,
   );
-export const backUpLibrarySubject = (projectId: string, nodeId: string) =>
-  request<LibraryItem>(
+
+/** Subjects already fetched for this session, so the tab paints instantly. */
+export const peekLibrarySubjects = (query: string) =>
+  peekCached<SubjectLibraryItem[]>(subjectsKey(query));
+
+export function prefetchLibrarySubjects(query = "") {
+  prefetchRequest(subjectsKey(query), () =>
+    request<SubjectLibraryItem[]>(
+      `/library/subjects?query=${encodeURIComponent(query)}`,
+    ),
+  );
+}
+
+export const backUpLibrarySubject = async (projectId: string, nodeId: string) => {
+  const item = await request<LibraryItem>(
     "/library/subjects/from-canvas",
     json("POST", { projectId, nodeId }),
   );
+  invalidateCached("library:");
+  return item;
+};
 
 /** Validate the whole selection and read every byte before registering copies. */
 export async function copyLibrarySubjects(

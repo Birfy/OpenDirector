@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import { errorMessage } from "../../backend/api";
 import {
   listItems,
+  peekItems,
   purgeAll,
   purgeOne,
   restoreItems,
+  sameLibraryItems,
   type LibraryItem,
 } from "./libraryClient";
 import { MediaCard } from "./MediaCard";
@@ -32,10 +34,18 @@ export function TrashPanel({
 
   useEffect(() => {
     let active = true;
-    setBusy(true);
+    // A reopened tab paints the rows already fetched instead of an empty grid.
+    const seed = peekItems({ state: "trashed", query });
+    if (seed) {
+      setItems(seed);
+      setBusy(false);
+    } else setBusy(true);
     listItems({ state: "trashed", query })
       .then((rows) => {
-        if (active) setItems(rows);
+        if (active)
+          setItems((previous) =>
+            sameLibraryItems(previous, rows) ? previous : rows,
+          );
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));

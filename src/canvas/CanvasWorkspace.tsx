@@ -30,6 +30,7 @@ import { NodeVersionHistory, useNodeVersionCounts } from "./NodeVersionHistory";
 import openDirectorLogoAnimation from "../assets/open_director_logo_anim.gif";
 import { request as apiRequest, errorMessage } from "../backend/api.ts";
 import {
+  canvasSources,
   copyCanvasSource,
   copySubjectAsset,
   type CanvasSource,
@@ -283,6 +284,8 @@ import {
 } from "./useCanvasReferences";
 import { useCanvasWheelBoundary } from "./useCanvasWheelBoundary";
 import { useGenerationJobs } from "./useGenerationJobs";
+import { prefetchLibrary } from "./library/libraryPrefetch";
+import { liveCanvasSources } from "./library/liveCanvasSources";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useSelectionPresentation } from "./useSelectionPresentation";
 import { VideoActionEditor } from "./VideoActionEditor";
@@ -460,6 +463,12 @@ function Workspace() {
   const historyRef = useRef(history);
   historyRef.current = history;
   const doc = history.present;
+  // The library's canvas tab shows the open document itself, so it never waits
+  // for a round trip and never disagrees with what the canvas is showing.
+  const liveCanvas = useMemo(
+    () => ({ projectId: doc.id, sources: liveCanvasSources(doc) }),
+    [doc],
+  );
   const versionCounts = useNodeVersionCounts(doc.id);
   const [versionHistory, setVersionHistory] = useState<{
     projectId: string;
@@ -669,6 +678,11 @@ function Workspace() {
     [doc.nodes, doc.hiddenNodes, doc.edges, composerNodeId],
   );
   const referenceAssets = useProjectMentionAssets(doc.id, ready);
+  useEffect(() => {
+    // Warm the library and the project selector after this canvas settles, so
+    // both open from cache; switching projects warms the next one the same way.
+    if (ready) prefetchLibrary(doc.id);
+  }, [ready, doc.id]);
   const generationReferenceControls = (
     target: CanvasNode,
   ): GenerationReferenceControls => ({
@@ -1063,10 +1077,18 @@ function Workspace() {
       !(await persistCurrentDocument(() => historyRef.current.present, persist))
     )
       throw new Error("请先保存画布。");
+    // Rows of the open canvas come from the document, which carries no revision
+    // until the server is asked; only copying needs one.
+    const resolved =
+      source.revision || originProjectId !== projectId
+        ? source
+        : ((await canvasSources(originProjectId, { fresh: true })).find(
+            (entry) => entry.nodeId === source.nodeId,
+          ) ?? source);
     const copied = await copyCanvasSource(
       projectId,
       originProjectId,
-      source,
+      resolved,
       "main",
       false,
     );
@@ -6159,6 +6181,7 @@ function Workspace() {
       {libraryOpen && (
         <AssetLibraryDialog
           currentId={doc.id}
+          liveCanvas={liveCanvas}
           subjectBusy={subjectLibraryBusy || switching || projectRenaming}
           backupSubjectIssue={
             single?.type === "subject" &&

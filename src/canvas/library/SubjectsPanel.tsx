@@ -1,10 +1,11 @@
 /** 「主体」: global subjects snapshotted from completed subject nodes. */
 import { useEffect, useState } from "react";
 import { errorMessage } from "../../backend/api";
-import { trashItems, type LibraryItem } from "./libraryClient";
+import { trashItems, sameLibraryItems, type LibraryItem } from "./libraryClient";
 import { MediaCard } from "./MediaCard";
 import {
   listLibrarySubjects,
+  peekLibrarySubjects,
   type SubjectLibraryItem,
 } from "../../backend/subjectLibrary";
 
@@ -41,11 +42,19 @@ export function SubjectsPanel({
 
   useEffect(() => {
     let active = true;
-    setBusy(true);
+    // A reopened tab paints the rows already fetched instead of an empty grid.
+    const seed = peekLibrarySubjects(query);
+    if (seed) {
+      setItems(seed);
+      setBusy(false);
+    } else setBusy(true);
     setError("");
     listLibrarySubjects(query)
       .then((rows) => {
-        if (active) setItems(rows);
+        if (active)
+          setItems((previous) =>
+            sameLibraryItems(previous, rows) ? previous : rows,
+          );
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));

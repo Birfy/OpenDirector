@@ -4,6 +4,7 @@ import {
   canvasSourceMedia,
   type CanvasSource,
 } from "../../backend/canvasSources";
+import { CanvasIcon } from "../CanvasIcon";
 import { MediaCard } from "./MediaCard";
 
 export function CanvasSourceCard({
@@ -12,22 +13,30 @@ export function CanvasSourceCard({
   selected,
   disabled,
   onSelect,
+  preview = true,
 }: {
   item: CanvasSource;
   projectId: string;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  /** Off for the open canvas: its media is already on screen. */
+  preview?: boolean;
 }) {
-  const [src, setSrc] = useState<string>();
+  const [src, setSrc] = useState<string | undefined>(() =>
+    item.main.kind === "image" ? item.main.src : undefined,
+  );
   useEffect(() => {
-    if (item.main.kind !== "image") return;
+    if (!preview) return;
+    // Videos get a rendered first frame too: the original can be tens of MB.
+    if (item.main.kind !== "image" && item.main.kind !== "video") return;
     let active = true,
       url: string | undefined;
-    fetch(canvasSourceMedia(projectId, item), { headers })
+    fetch(canvasSourceMedia(projectId, item, "main", "thumb"), { headers })
       .then(async (response) => {
         if (!response.ok) throw await responseError(response);
-        url = URL.createObjectURL(await response.blob());
+        const blob = await response.blob();
+        url = URL.createObjectURL(blob);
         if (active) setSrc(url);
         else URL.revokeObjectURL(url);
       })
@@ -36,7 +45,7 @@ export function CanvasSourceCard({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [item, projectId]);
+  }, [item, projectId, preview]);
   return (
     <MediaCard
       title={item.title}
@@ -53,6 +62,14 @@ export function CanvasSourceCard({
                 : item.main.kind === "file"
                   ? "file"
                   : "image"
+      }
+      action={
+        // The preview is a still frame, so keep the play marker it replaced.
+        item.main.kind === "video" && src ? (
+          <span className="cw-lib-badge" aria-hidden>
+            <CanvasIcon name="video" size={16} />
+          </span>
+        ) : undefined
       }
       selected={selected}
       disabled={disabled}

@@ -1,6 +1,12 @@
 /** Typed client for the global cross-canvas library (docs/ASSET-LIBRARY-DESIGN.md §6). */
 import { useEffect, useState } from "react";
 import { request, responseError, headers } from "../../backend/api.ts";
+import {
+  cachedRequest,
+  invalidateCached,
+  peekCached,
+  prefetchRequest,
+} from "../../backend/requestCache.ts";
 import type { CanvasResource } from "../model";
 
 export type LibraryKind = "asset" | "subject";
@@ -166,20 +172,64 @@ function query(params: Record<string, string | undefined>): string {
   return text ? `?${text}` : "";
 }
 
-export async function listItems(options: {
+export type LibraryQuery = {
   kind?: LibraryKind;
   state?: LibraryState;
   query?: string;
   mediaKind?: LibraryMediaKind;
-} = {}): Promise<LibraryItem[]> {
-  return request<LibraryItem[]>(
-    `/library/items${query({
-      kind: options.kind,
-      state: options.state,
-      query: options.query,
-      mediaKind: options.mediaKind,
-    })}`,
+};
+
+const itemsPath = (options: LibraryQuery) =>
+  `/library/items${query({
+    kind: options.kind,
+    state: options.state,
+    query: options.query,
+    mediaKind: options.mediaKind,
+  })}`;
+const itemsKey = (options: LibraryQuery) => `library:items${itemsPath(options)}`;
+
+export async function listItems(
+  options: LibraryQuery = {},
+  read: { fresh?: boolean } = {},
+): Promise<LibraryItem[]> {
+  return cachedRequest<LibraryItem[]>(
+    itemsKey(options),
+    () => request<LibraryItem[]>(itemsPath(options)),
+    read,
   );
+}
+
+/** Rows already fetched for this session, so a reopened tab paints instantly. */
+export const peekItems = (options: LibraryQuery = {}) =>
+  peekCached<LibraryItem[]>(itemsKey(options));
+
+/**
+ * A refreshed list usually holds the same rows. Keeping the previous array in
+ * that case leaves card props untouched, so media is not downloaded again.
+ */
+export function sameLibraryItems(
+  previous: LibraryItem[],
+  next: LibraryItem[],
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every(
+      (item, index) =>
+        item.id === next[index]?.id && item.revision === next[index]?.revision,
+    )
+  );
+}
+
+export function prefetchItems(options: LibraryQuery = {}) {
+  prefetchRequest(itemsKey(options), () =>
+    request<LibraryItem[]>(itemsPath(options)),
+  );
+}
+
+/** A write makes every cached library list eligible to change. */
+function changed<T>(value: T): T {
+  invalidateCached("library:");
+  return value;
 }
 
 export async function uploadItem(file: File): Promise<LibraryItem> {
@@ -195,7 +245,7 @@ export async function uploadItem(file: File): Promise<LibraryItem> {
     },
   );
   if (!response.ok) throw await responseError(response);
-  return (await response.json()) as LibraryItem;
+  return changed((await response.json()) as LibraryItem);
 }
 
 export async function addFromCanvas(
@@ -203,11 +253,13 @@ export async function addFromCanvas(
   assetId: string,
   name?: string,
 ): Promise<LibraryItem> {
-  return request<LibraryItem>("/library/items/from-canvas", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId, assetId, ...(name ? { name } : {}) }),
-  });
+  return changed(
+    await request<LibraryItem>("/library/items/from-canvas", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId, assetId, ...(name ? { name } : {}) }),
+    }),
+  );
 }
 
 /**
@@ -233,7 +285,7 @@ export async function addInlineFromCanvas(
     { method: "POST", headers: { ...headers, "content-type": mime }, body: blob },
   );
   if (!upload.ok) throw await responseError(upload);
-  return (await upload.json()) as LibraryItem;
+  return changed((await upload.json()) as LibraryItem);
 }
 
 export async function addSubject(
@@ -249,46 +301,54 @@ export async function addSubject(
     preview?: string | null;
   },
 ): Promise<LibraryItem> {
-  return request<LibraryItem>("/library/items/from-subject", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return changed(
+    await request<LibraryItem>("/library/items/from-subject", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
 }
 
 export async function renameItem(id: string, name: string): Promise<LibraryItem> {
-  return request<LibraryItem>(`/library/items/${id}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
+  return changed(
+    await request<LibraryItem>(`/library/items/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  );
 }
 
 export async function trashItems(itemIds: string[]): Promise<LibraryItem[]> {
-  return request<LibraryItem[]>("/library/items/trash", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ itemIds }),
-  });
+  return changed(
+    await request<LibraryItem[]>("/library/items/trash", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ itemIds }),
+    }),
+  );
 }
 
 export async function restoreItems(itemIds: string[]): Promise<LibraryItem[]> {
-  return request<LibraryItem[]>("/library/trash/restore", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ itemIds }),
-  });
+  return changed(
+    await request<LibraryItem[]>("/library/trash/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ itemIds }),
+    }),
+  );
 }
 
 export async function purgeAll(): Promise<{
   purged: string[];
   blobsRemoved: string[];
 }> {
-  return request("/library/trash", { method: "DELETE" });
+  return changed(await request("/library/trash", { method: "DELETE" }));
 }
 
 export async function purgeOne(
   id: string,
 ): Promise<{ purged: string[]; blobsRemoved: string[] }> {
-  return request(`/library/trash/${id}`, { method: "DELETE" });
+  return changed(await request(`/library/trash/${id}`, { method: "DELETE" }));
 }

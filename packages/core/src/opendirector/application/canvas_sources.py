@@ -1,6 +1,8 @@
 """Read-only node sources with stable identity; copies never borrow edit leases."""
 import hashlib
 import json
+import threading
+from collections import OrderedDict
 from pathlib import Path
 import tempfile
 
@@ -12,10 +14,35 @@ from opendirector.infrastructure.creation_uploads import inspect_file
 
 
 class CanvasSources:
+    _CACHE_PROJECTS = 8
+
     def __init__(self, projects):
         self.projects = projects
+        # A grid asks for one request per card; replaying the commit chain for
+        # each of them turned four previews into a ten-second wait.
+        self._latest: "OrderedDict[str, tuple]" = OrderedDict()
+        # The catalog lock is global and polling, so waiting on it from several
+        # threads at once is far slower than taking turns here.
+        self._lock = threading.Lock()
 
     def _read(self, project_id):
+        key = str(project_id)
+        # Everything here takes turns: the catalog lock is global and polling,
+        # so a grid of parallel requests was collapsing to a crawl.
+        with self._lock:
+            head = self.projects.head(project_id)
+            cached = self._latest.get(key)
+            if cached is not None and cached[0] == head:
+                self._latest.move_to_end(key)
+                return cached[1], cached[2]
+            rows, read = self._build(project_id)
+            self._latest[key] = (head, rows, read)
+            self._latest.move_to_end(key)
+            while len(self._latest) > self._CACHE_PROJECTS:
+                self._latest.popitem(last=False)
+            return rows, read
+
+    def _build(self, project_id):
         snapshot = self.projects.snapshot(project_id)
         assets = {asset.id: asset for asset in snapshot.assets}
         documents = {doc.id: doc for doc in snapshot.editorDocuments}
@@ -24,7 +51,9 @@ class CanvasSources:
             return dict(id=str(asset.id), assetId=str(asset.id), kind=asset.kind, title=asset.name,
                         **asset.metadata.model_dump(mode='json'), fingerprint=asset.fingerprint)
         def read(value):
-            stream, _ = CreationAssets(self.projects).open_media(project_id, value['assetId'])
+            # The snapshot above already pins this read; reloading the chain per
+            # media request made a grid of thumbnails wait seconds for nothing.
+            stream, _ = CreationAssets(self.projects).open_media(project_id, value['assetId'], snapshot=snapshot)
             with stream:
                 return stream.read()
         rows = []

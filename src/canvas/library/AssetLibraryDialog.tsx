@@ -19,6 +19,7 @@ const tabs = [
 export function AssetLibraryDialog({
   initialTab = "assets",
   currentId,
+  liveCanvas,
   onClose,
   onInsert,
   onImportCanvas,
@@ -29,6 +30,8 @@ export function AssetLibraryDialog({
 }: {
   initialTab?: LibraryTab;
   currentId: string;
+  /** Rows of the open canvas, so its tab never waits on the network. */
+  liveCanvas?: { projectId: string; sources: CanvasSource[] };
   onClose: () => void;
   onInsert?: (items: LibraryItem[]) => Promise<void>;
   onImportCanvas?: (projectId: string, item: CanvasSource) => Promise<void>;
@@ -215,6 +218,7 @@ export function AssetLibraryDialog({
           {tab === "canvases" && (
             <CanvasesPanel
               currentId={currentId}
+              live={liveCanvas}
               query={query}
               selected={selected}
               onToggle={(item) => toggle({ id: item.nodeId })}

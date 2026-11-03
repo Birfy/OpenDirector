@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import { creationClient } from "../src/backend/creationClient.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import { releaseBackendProject } from "../src/backend/projects.ts";
+import { invalidateCached } from "../src/backend/requestCache.ts";
 import {
   cleanupUnreadableWorkspaceProjects,
   createWorkspaceProject,
@@ -18,6 +19,8 @@ import {
 
 /** Entry/session orchestration; projection round-trips are exercised separately. */
 function fixture(t: TestContext) {
+  // Each test stands for a fresh page, whose list cache starts empty.
+  invalidateCached();
   const oldFetch = globalThis.fetch;
   const descriptors = ["window", "localStorage"].map(
     (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,

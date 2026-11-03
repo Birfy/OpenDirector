@@ -14,6 +14,11 @@ from starlette.concurrency import run_in_threadpool
 from opendirector.application.library import Library
 from opendirector.application.subject_library import SubjectLibrary
 from opendirector.application.canvas_sources import CanvasSources
+from opendirector.media import thumbnails
+
+# Node revisions cover the asset fingerprint, so a revision-addressed URL never
+# changes content and browsers may keep it instead of refetching megabytes.
+MEDIA_CACHE = 'private, max-age=31536000, immutable'
 
 
 class LibrarySelection(BaseModel):
@@ -87,11 +92,23 @@ def library_routes(projects):
         return sources.prepare(project_id, value.nodeId, value.revision, value.slot, value.subject)
 
     @router.get('/canvases/{project_id}/nodes/{node_id}/media/{slot}')
-    def canvas_source_media(project_id: UUID, node_id: str, slot: str, revision: str = Query(pattern=r'^[0-9a-f]{64}$')):
+    def canvas_source_media(project_id: UUID, node_id: str, slot: str, revision: str = Query(pattern=r'^[0-9a-f]{64}$'),
+                            size: str = Query(default='', pattern=r'^(|thumb)$')):
+        preview_key = f'{node_id}:{revision}:{slot}'
+        if size == 'thumb':
+            # Serving a grid must not read the megabytes behind each card, so an
+            # already rendered preview answers before any media is loaded.
+            known = thumbnails.lookup(preview_key)
+            if known is not None:
+                return Response(known, media_type='image/jpeg', headers={'Cache-Control': MEDIA_CACHE})
         data, value = sources.media(project_id, node_id, revision, slot)
+        if size == 'thumb':
+            rendered = thumbnails.preview(preview_key, data, value.get('kind') or '')
+            if rendered:
+                return Response(rendered, media_type='image/jpeg', headers={'Cache-Control': MEDIA_CACHE})
         src = value.get('src', '')
         mime = value.get('mimeType') or (src[5:].split(';', 1)[0] if src.startswith('data:') else 'application/octet-stream')
-        return Response(data, media_type=mime, headers={'Cache-Control': 'no-store'})
+        return Response(data, media_type=mime, headers={'Cache-Control': MEDIA_CACHE})
 
     @router.post('/items/{item_id}/prepare-subject-media')
     def prepare_subject_media(item_id: UUID, value: SubjectMediaPreparation):

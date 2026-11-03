@@ -7,6 +7,11 @@ import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import type { SubjectMediaSlot } from "../canvas/subjectMedia.ts";
 import { headers, json, request, responseError } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
+import {
+  cachedRequest,
+  peekCached,
+  prefetchRequest,
+} from "./requestCache.ts";
 
 export interface CanvasSource {
   nodeId: string;
@@ -31,14 +36,42 @@ export interface SourceMedia {
     durationSeconds?: number | null;
   };
 }
-export const canvasSources = (projectId: string) =>
-  request<CanvasSource[]>(`/library/canvases/${projectId}/sources`);
+/** The open canvas reads its own document, so this only guards other projects. */
+const SOURCES_MAX_AGE_MS = 120_000;
+const sourcesKey = (projectId: string) => `library:canvases:${projectId}`;
+
+export const canvasSources = (
+  projectId: string,
+  read: { fresh?: boolean } = {},
+) =>
+  cachedRequest<CanvasSource[]>(
+    sourcesKey(projectId),
+    () => request<CanvasSource[]>(`/library/canvases/${projectId}/sources`),
+    { maxAgeMs: SOURCES_MAX_AGE_MS, ...read },
+  );
+
+/** Sources already fetched for this project, so the tab paints instantly. */
+export const peekCanvasSources = (projectId: string) =>
+  peekCached<CanvasSource[]>(sourcesKey(projectId), SOURCES_MAX_AGE_MS);
+
+export function prefetchCanvasSources(projectId: string) {
+  prefetchRequest(
+    sourcesKey(projectId),
+    () => request<CanvasSource[]>(`/library/canvases/${projectId}/sources`),
+    { maxAgeMs: SOURCES_MAX_AGE_MS },
+  );
+}
+/**
+ * A card shows a few hundred pixels, so it asks for the rendered preview;
+ * copying a source still reads the original bytes.
+ */
 export const canvasSourceMedia = (
   projectId: string,
   source: CanvasSource,
   slot = "main",
+  size?: "thumb",
 ) =>
-  `/api/library/canvases/${projectId}/nodes/${encodeURIComponent(source.nodeId)}/media/${encodeURIComponent(slot)}?revision=${source.revision}`;
+  `/api/library/canvases/${projectId}/nodes/${encodeURIComponent(source.nodeId)}/media/${encodeURIComponent(slot)}?revision=${source.revision}${size ? `&size=${size}` : ""}`;
 
 export async function copyOwnedSourceMedia(
   projectId: string,

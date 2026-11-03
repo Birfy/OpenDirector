@@ -4,6 +4,8 @@ import { errorMessage } from "../../backend/api";
 import {
   ASSET_CATEGORIES,
   listItems,
+  peekItems,
+  sameLibraryItems,
   trashItems,
   uploadItem,
   type LibraryItem,
@@ -49,16 +51,25 @@ export function AssetsPanel({
   );
   useEffect(() => {
     let active = true;
-    setBusy(true);
-    setError("");
-    listItems({
-      kind: "asset",
-      state: "active",
+    const filters = {
+      kind: "asset" as const,
+      state: "active" as const,
       query,
       mediaKind: kind || undefined,
-    })
+    };
+    // A reopened tab paints the rows already fetched instead of an empty grid.
+    const seed = peekItems(filters);
+    if (seed) {
+      setItems(seed);
+      setBusy(false);
+    } else setBusy(true);
+    setError("");
+    listItems(filters)
       .then((rows) => {
-        if (active) setItems(rows);
+        if (active)
+          setItems((previous) =>
+            sameLibraryItems(previous, rows) ? previous : rows,
+          );
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));

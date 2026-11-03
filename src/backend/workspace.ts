@@ -15,6 +15,12 @@ import {
   openBackendProject,
   releaseBackendProject,
 } from "./projects.ts";
+import {
+  cachedRequest,
+  invalidateCached,
+  peekCached,
+  prefetchRequest,
+} from "./requestCache.ts";
 
 const projections = new Map<string, CreationProjection>();
 export function workspaceProjection(id: string) {
@@ -47,9 +53,25 @@ export interface WorkspaceCleanupResult {
   failed: { name: string; message: string }[];
 }
 const lastKey = "opendirector.lastUnifiedFilesystemProject";
+/** The project selector opens and closes often; the list is cheap to reuse. */
+const PROJECTS_KEY = "workspace:projects";
 
-export const listWorkspaceProjects = () =>
-  request<WorkspaceProjectList>("/creation/projects");
+export const listWorkspaceProjects = (read: { fresh?: boolean } = {}) =>
+  cachedRequest<WorkspaceProjectList>(
+    PROJECTS_KEY,
+    () => request<WorkspaceProjectList>("/creation/projects"),
+    read,
+  );
+
+/** Rows already fetched for this page, for a selector that opens instantly. */
+export const peekWorkspaceProjects = () =>
+  peekCached<WorkspaceProjectList>(PROJECTS_KEY);
+
+export function prefetchWorkspaceProjects() {
+  prefetchRequest(PROJECTS_KEY, () =>
+    request<WorkspaceProjectList>("/creation/projects"),
+  );
+}
 
 export const cleanupUnreadableWorkspaceProjects = () =>
   request<WorkspaceCleanupResult>("/creation/projects/cleanup", {
@@ -92,6 +114,7 @@ export async function saveWorkspaceDocument(
 export async function createWorkspaceProject(name: string, id: string) {
   // Unified creation does not acquire a lease; projection.open does that.
   await creationClient(id).command("project.create", { name });
+  invalidateCached(PROJECTS_KEY);
   return (await listWorkspaceProjects()).projects.find(
     (project) => project.id === id,
   )!;
@@ -191,6 +214,7 @@ export async function renameWorkspaceProject(
   } finally {
     if (current) await openBackendProject(project.id, name).catch(() => {});
   }
+  invalidateCached(PROJECTS_KEY);
   return (await listWorkspaceProjects()).projects.find(
     (item) => item.id === project.id,
   )!;
@@ -221,4 +245,5 @@ export async function trashWorkspaceProject(project: WorkspaceProject) {
   }
   creationClient(project.id).close();
   projections.delete(project.id);
+  invalidateCached(PROJECTS_KEY);
 }
