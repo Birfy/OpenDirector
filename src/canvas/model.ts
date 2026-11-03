@@ -263,6 +263,27 @@ export function mediaNodeSize(
   };
 }
 
+/** Allocate a default title without renaming existing or hidden sources. */
+export function nextNodeTitle(
+  document: Pick<CanvasDocument, "nodes" | "hiddenNodes">,
+  kind: CanvasNodeKind,
+  label: string,
+): string {
+  const nodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
+  const titles = new Set(nodes.map((node) => node.data.title));
+  const prefix = `${label} `;
+  let next = 1n;
+  for (const node of nodes) {
+    if (node.type !== kind || !node.data.title.startsWith(prefix)) continue;
+    const suffix = node.data.title.slice(prefix.length);
+    if (!/^[1-9]\d*$/.test(suffix)) continue;
+    const number = BigInt(suffix);
+    if (number >= next) next = number + 1n;
+  }
+  while (titles.has(`${prefix}${next}`)) next++;
+  return `${prefix}${next}`;
+}
+
 export function createNode(
   kind: CanvasNodeKind,
   position: Point = { x: 0, y: 0 },
@@ -355,7 +376,12 @@ export type NodePatch = Partial<Omit<CanvasNode, "id" | "data">> & {
   data?: Partial<CanvasNodeData>;
 };
 export type CanvasCommand =
-  | { type: "add-nodes"; nodes: CanvasNode[] }
+  | {
+      type: "add-nodes";
+      nodes: CanvasNode[];
+      /** Assign default titles against the latest state when applying. */
+      titlePrefix?: string;
+    }
   | { type: "update-node"; id: string; patch: NodePatch }
   | {
       type: "resize-node";
@@ -544,6 +570,25 @@ function applyCanvasCommand(
   if (command.type === "viewport")
     return { ...document, viewport: { ...command.viewport } };
   if (command.type === "add-nodes") {
+    const titlePrefix = command.titlePrefix;
+    if (titlePrefix !== undefined) {
+      return command.nodes.reduce(
+        (current, node) =>
+          applyCanvasCommand(current, {
+            type: "add-nodes",
+            nodes: [
+              {
+                ...node,
+                data: {
+                  ...node.data,
+                  title: nextNodeTitle(current, node.type, titlePrefix),
+                },
+              },
+            ],
+          }),
+        document,
+      );
+    }
     const ids = new Set(document.nodes.map((node) => node.id));
     for (const node of command.nodes) {
       if (ids.has(node.id)) throw new Error(`节点 ID 重复：${node.id}`);

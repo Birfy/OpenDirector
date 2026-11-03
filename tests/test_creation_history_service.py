@@ -140,6 +140,9 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
 
     store, pid, session = project
     item, material = text_material(project)
+    assert send(store, pid, 'canvas.update', session=session,
+                versions=[ver('canvas_item', item)], itemId=item.id, title='Hidden node').status == 'applied'
+    item = store.snapshot(pid).canvasItems[0]
     assert send(store, pid, 'canvas.hide', session=session,
                 versions=[ver('canvas_item', item)], itemId=item.id).status == 'applied'
     for name in ['Tool input', 'Unused']:
@@ -172,7 +175,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     assert listing['eventCursor'] == snapshot.eventCursor
     assert [row['asset'].id for row in listing['items']] == [unused.id, tool_input.id, material.id]
     rows = {row['asset'].id: row for row in listing['items']}
-    assert rows[material.id]['owners'] == [dict(itemId=item.id, visible=False)]
+    assert rows[material.id]['owners'] == [dict(itemId=item.id, title='Hidden node', visible=False)]
     assert rows[material.id]['usage']['hiddenItemIds'] == [str(item.id)]
     assert any(reason['type'] == 'undo_history' for reason in rows[material.id]['usage']['reasons'])
     assert rows[tool_input.id]['usage']['reasons'] == [dict(type='tool_task', id=task_id)]
@@ -180,9 +183,96 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     assert service.asset_list(pid, usage='unused')['total'] == 1
     page = service.asset_list(pid, usage='used', offset=1, limit=1)
     assert page['total'] == 2 and page['items'][0]['asset'].id == material.id
+    assert service.asset_list(pid, text='HIDDEN NODE')['items'][0]['asset'].id == material.id
     assert service.asset_list(pid, text='TOOL')['items'][0]['asset'].id == tool_input.id
     # Re-read the independent ledger on the next request, even at the same cursor.
     durable_json(ledger, dict(id=task_id, sourceAssetIds=[], outputs=[]))
     refreshed = service.asset_list(pid, usage='unused')
     assert refreshed['eventCursor'] == listing['eventCursor']
     assert {row['asset'].id for row in refreshed['items']} == {tool_input.id, unused.id}
+
+
+def test_asset_list_visibility_uses_all_owners_and_group_visibility_before_paging(project):
+    store, pid, session = project
+    item, asset = text_material(project)
+    service = CreationHistory(store)
+    assert service.asset_list(pid, visibility='visible')['total'] == 1
+    assert service.asset_list(pid, visibility='hidden')['total'] == 0
+    parent_id = uuid4()
+    assert send(store, pid, 'creation.batch', session=session, versions=[ver('canvas_item', item)], operations=[
+        dict(type='canvas.show', payload=dict(item=dict(id=parent_id, projectId=pid, kind='group'))),
+        dict(type='canvas.update', payload=dict(itemId=item.id, parentId=parent_id)),
+    ]).status == 'applied'
+    parent = next(i for i in store.snapshot(pid).canvasItems if i.id == parent_id)
+    assert send(store, pid, 'canvas.hide', session=session,
+                versions=[ver('canvas_item', parent)], itemId=parent.id).status == 'applied'
+    hidden = service.asset_list(pid, visibility='hidden')
+    assert hidden['total'] == 1 and hidden['items'][0]['usage']['used']
+    assert service.asset_list(pid, visibility='visible')['total'] == 0
+    # Another visible owner makes this shared asset displayed even with a hidden owner.
+    duplicate = item.model_copy(update={'id': uuid4(), 'parentId': None, 'title': 'Second owner'})
+    assert send(store, pid, 'canvas.show', session=session, item=duplicate).status == 'applied'
+    assert service.asset_list(pid, visibility='visible')['total'] == 1
+    assert service.asset_list(pid, visibility='hidden')['total'] == 0
+    assert send(store, pid, 'asset.writeText', session=session, name='Unplaced.md', text='Unplaced').status == 'applied'
+    unplaced = store.snapshot(pid).assets[-1]
+    page = service.asset_list(pid, visibility='hidden', limit=1)
+    assert page['total'] == 1 and page['items'][0]['asset'].id == unplaced.id
+    assert service.asset_list(pid, visibility='hidden', offset=1, limit=1)['items'] == []
+    assert service.asset_list(pid, visibility='visible', text='SECOND')['items'][0]['asset'].id == asset.id
+
+
+def test_asset_categories_include_subject_and_timeline_nodes_with_counts_before_paging(project):
+    from io import BytesIO
+    from PIL import Image
+    from opendirector.application.creation_assets import CreationAssets
+    from opendirector.application.creation_canvas import asset_ref
+
+    store, pid, session = project
+    image = BytesIO()
+    Image.new('RGB', (16, 16), 'blue').save(image, 'PNG')
+    handle = uuid4()
+    writer = CreationAssets(store).uploads.begin(pid, handle, session, 'Subject.png', expected_kind='image')
+    writer.write(image.getvalue())
+    writer.finish()
+    assert send(store, pid, 'asset.import', session=session, uploadHandle=handle,
+                name='Subject.png', expectedKind='image').status == 'applied'
+    asset = store.snapshot(pid).assets[0]
+    subject_id, timeline_id = uuid4(), uuid4()
+    assert send(store, pid, 'creation.batch', session=session, operations=[
+        dict(type='editor.create', payload=dict(document=dict(id=subject_id, projectId=pid, kind='subject', data=dict(main=asset_ref(asset))))),
+        dict(type='canvas.show', payload=dict(item=dict(id=uuid4(), projectId=pid, kind='subject', title='Actor', binding=dict(role='editor', objectRef=dict(id=subject_id, kind='subject'))))),
+        dict(type='editor.create', payload=dict(document=dict(id=timeline_id, projectId=pid, kind='timeline', data=dict(fps=30, width=1920, height=1080,
+            tracks=[dict(id='visual', kind='visual', title='Visual', clips=[dict(id='clip', inPoint=0, outPoint=2, resource=dict(asset=asset_ref(asset), title='Subject'))])])))),
+        dict(type='canvas.show', payload=dict(item=dict(id=uuid4(), projectId=pid, kind='timeline', title='Scene', binding=dict(role='editor', objectRef=dict(id=timeline_id, kind='timeline'))))),
+    ]).status == 'applied'
+    assert send(store, pid, 'asset.writeText', session=session, name='Notes.md', text='Notes').status == 'applied'
+    service = CreationHistory(store)
+    for category in ['image', 'subject', 'timeline']:
+        page = service.asset_list(pid, category=category, limit=1)
+        assert page['total'] == 1
+        if category == 'image':
+            assert page['items'][0]['asset'].id == asset.id and not page['nodes']
+        else:
+            assert not page['items'] and len(page['nodes']) == 1
+            assert page['nodes'][0]['title'] == ('Actor' if category == 'subject' else 'Scene')
+            assert page['nodes'][0]['asset'].id == asset.id
+        assert page['counts'] == dict(all=4, image=1, video=0, audio=0, text=1, subject=1, timeline=1)
+        assert service.asset_list(pid, category=category, offset=1, limit=1)['total'] == 1
+        assert not service.asset_list(pid, category=category, offset=1, limit=1)['nodes']
+    assert service.asset_list(pid, limit=1)['total'] == 4
+    assert service.asset_list(pid, category='video')['total'] == 0
+    searched = service.asset_list(pid, category='text', text='NOTES')
+    assert searched['total'] == searched['counts']['all'] == searched['counts']['text'] == 1
+    assert searched['counts']['image'] == 0
+    empty_document, empty_item = uuid4(), uuid4()
+    assert send(store, pid, 'creation.batch', session=session, operations=[
+        dict(type='editor.create', payload=dict(document=dict(id=empty_document, projectId=pid, kind='subject', data={}))),
+        dict(type='canvas.show', payload=dict(item=dict(id=empty_item, projectId=pid, kind='subject', title='Empty actor', binding=dict(role='editor', objectRef=dict(id=empty_document, kind='subject'))))),
+    ]).status == 'applied'
+    item = next(item for item in store.snapshot(pid).canvasItems if item.id == empty_item)
+    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', item)], itemId=item.id).status == 'applied'
+    empty = service.asset_list(pid, category='subject', text='empty', visibility='hidden')
+    assert empty['total'] == 1 and empty['nodes'][0]['asset'] is None
+    assert empty['nodes'][0]['itemId'] == empty_item and not empty['nodes'][0]['visible']
+    assert service.asset_list(pid, category='subject', text='empty', visibility='visible')['total'] == 0

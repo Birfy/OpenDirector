@@ -201,3 +201,19 @@ def test_app_assembly_recovers_a_previously_interrupted_commit(tmp_path):
         path = '/api/creation/projects/' + project_id
         assert client.get(path).json()['project']['name'] == 'Recovered'
         assert client.get(path + '/receipts/' + str(command.commandId)).json()['status'] == 'applied'
+
+
+def test_asset_list_accepts_visibility_filter_and_rejects_usage_values_in_its_place(api):
+    client, _ = api
+    path, command, _ = create(client)
+    assert client.post(path + '/open').status_code == 200
+    write = dict(type='asset.writeText', commandId=str(uuid4()), projectId=command['projectId'],
+                 payload=dict(name='Unplaced.md', text='Unplaced'))
+    assert client.post(path + '/commands', json=write).json()['status'] == 'applied'
+    assert client.get(path + '/asset-list', params={'visibility': 'all'}).json()['total'] == 1
+    assert client.get(path + '/asset-list', params={'visibility': 'hidden'}).json()['total'] == 1
+    assert client.get(path + '/asset-list', params={'visibility': 'visible'}).json()['total'] == 0
+    assert client.get(path + '/asset-list', params={'visibility': 'used'}).status_code == 422
+    assert client.get(path + '/asset-list', params={'category': 'text'}).json()['counts']['text'] == 1
+    assert client.get(path + '/asset-list', params={'category': 'image'}).json()['total'] == 0
+    assert client.get(path + '/asset-list', params={'category': 'other'}).status_code == 422

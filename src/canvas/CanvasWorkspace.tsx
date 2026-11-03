@@ -205,6 +205,7 @@ import {
   canAddReference,
   createDocument,
   createNode,
+  nextNodeTitle,
   MAX_ZOOM,
   MIN_ZOOM,
   type CanvasCommand,
@@ -501,6 +502,7 @@ function Workspace() {
   // never consulted again for nodes already on the canvas.
   const [assistantModels, setAssistantModels] = useState<ModelSelections>({});
   const [panel, setPanel] = useState<Panel>(null);
+  const assetListAnchor = useRef<HTMLSpanElement>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [subjectImport, setSubjectImport] = useState<{
     projectId: string;
@@ -1552,10 +1554,9 @@ function Workspace() {
       return;
     }
     const where = position ?? center();
-    const count = doc.nodes.filter((n) => n.type === kind).length + 1;
     const node = createNode(kind, where, {
       ...snapshotModel(kind),
-      title: `${labels[kind]} ${count}`,
+      title: nextNodeTitle(current, kind, labels[kind]),
       ...(sourceIds.length > 1 && kind === "video"
         ? { settings: { videoMode: "reference" as const } }
         : {}),
@@ -1586,11 +1587,11 @@ function Workspace() {
         node.position = { x: where.x - node.width / 2, y: where.y };
     }
     if (menu?.parentId) {
-      const parent = doc.nodes.find(
+      const parent = current.nodes.find(
         (candidate) => candidate.id === menu.parentId,
       );
       if (parent) {
-        const origin = absolutePosition(parent, doc.nodes);
+        const origin = absolutePosition(parent, current.nodes);
         node.parentId = parent.id;
         node.position = {
           x: node.position.x - origin.x,
@@ -1598,7 +1599,13 @@ function Workspace() {
         };
       }
     }
-    const commands: CanvasCommand[] = [{ type: "add-nodes", nodes: [node] }];
+    const commands: CanvasCommand[] = [
+      {
+        type: "add-nodes",
+        nodes: [node],
+        ...(extra.title === undefined ? { titlePrefix: labels[kind] } : {}),
+      },
+    ];
     if (sourceIds.length > 1) {
       const plan = planReferenceBatch(
         { ...current, nodes: [...current.nodes, node] },
@@ -4485,17 +4492,21 @@ function Workspace() {
           )}
         </div>
         <div className="cw-top-actions">
-          <IconButton
-            name="search"
-            label={"资产列表"}
-            tooltipSide="bottom"
-            active={panel === "search"}
-            onClick={() => {
-              void persist(historyRef.current.present, false).then((saved) => {
-                if (saved) togglePanel("search");
-              });
-            }}
-          />
+          <span ref={assetListAnchor} className="cw-asset-list-anchor">
+            <IconButton
+              name="search"
+              label={"资产列表"}
+              tooltipSide="bottom"
+              active={panel === "search"}
+              onClick={() => {
+                void persist(historyRef.current.present, false).then(
+                  (saved) => {
+                    if (saved) togglePanel("search");
+                  },
+                );
+              }}
+            />
+          </span>
           <IconButton
             name="history"
             label="生成历史"
@@ -5412,6 +5423,7 @@ function Workspace() {
         <CreationAssetList
           key={`assets:${doc.id}`}
           projectId={doc.id}
+          anchor={assetListAnchor.current}
           position={center()}
           onClose={() => setPanel(null)}
           onLocate={(id) => {

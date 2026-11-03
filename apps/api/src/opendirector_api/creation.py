@@ -109,8 +109,10 @@ def creation_routes(projects: CreationProjects, generation=None):
     @router.get('/projects/{project_id}/asset-list')
     def asset_list(project_id: UUID, text: str = Query(default='', max_length=1000),
                    usage: str = Query(default='all', pattern='^(all|used|unused)$'),
+                   visibility: str = Query(default='all', pattern='^(all|visible|hidden)$'),
+                   category: str = Query(default='all', pattern='^(all|image|video|audio|text|subject|timeline)$'),
                    offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=200)):
-        return history.asset_list(project_id, text=text, usage=usage, offset=offset, limit=limit)
+        return history.asset_list(project_id, text=text, usage=usage, visibility=visibility, category=category, offset=offset, limit=limit)
 
     @router.post('/projects/{project_id}/asset-delete-preview')
     def asset_delete_preview(project_id: UUID, value: dict):

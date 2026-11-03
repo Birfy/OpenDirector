@@ -438,7 +438,7 @@ class CreationHistory:
                 current.update(ref.assetId for ref in asset_references(doc))
         return current, current_results, historical
 
-    def asset_list(self, project_id, *, text='', usage='all', offset=0, limit=100):
+    def asset_list(self, project_id, *, text='', usage='all', visibility='all', category='all', offset=0, limit=100):
         records = self.projects.history(project_id)
         snapshot = records[0].snapshot
         current, current_results, historical = self._inventory(snapshot, records=records)
@@ -447,10 +447,12 @@ class CreationHistory:
         for item in snapshot.canvasItems:
             asset = current_asset(snapshot, item)
             if asset:
-                owners.setdefault(asset.id, []).append(dict(itemId=item.id, visible=item.id in visible))
+                owners.setdefault(asset.id, []).append(dict(itemId=item.id, title=item.title, visible=item.id in visible))
         query = text.casefold()
         candidates = [(order, asset) for order, asset in enumerate(snapshot.assets)
-                      if (asset.id not in historical or asset.id in current) and query in asset.name.casefold()]
+                      if (asset.id not in historical or asset.id in current)
+                      and (visibility == 'all' or any(owner['visible'] for owner in owners.get(asset.id, [])) == (visibility == 'visible'))
+                      and (query in asset.name.casefold() or any(query in owner['title'].casefold() for owner in owners.get(asset.id, [])))]
         statuses = self._usage_many(snapshot, [asset.id for _, asset in candidates], records=records)
         listed = []
         for order, asset in candidates:
@@ -458,6 +460,34 @@ class CreationHistory:
             if usage != 'all' and status['used'] != (usage == 'used'):
                 continue
             listed.append(dict(asset=asset, usage=status, owners=owners.get(asset.id, []),
-                               specId=current_results.get(asset.id), createdOrder=order))
+                               specId=current_results.get(asset.id), createdOrder=order,
+                               categories=[asset.kind]))
         listed.sort(key=lambda row: (-row['createdOrder'], row['asset'].name.casefold()))
-        return dict(items=listed[offset:offset+limit], total=len(listed), eventCursor=snapshot.eventCursor)
+        documents = {document.id: document for document in snapshot.editorDocuments}
+        assets = {asset.id: asset for asset in snapshot.assets}
+        node_rows = []
+        for index, item in enumerate(snapshot.canvasItems):
+            if item.kind not in {'subject', 'timeline'} or item.binding.role != 'editor':
+                continue
+            displayed = item.id in visible
+            if visibility != 'all' and displayed != (visibility == 'visible'):
+                continue
+            if query not in item.title.casefold():
+                continue
+            document = documents[item.binding.objectRef.id]
+            preview = document.data.main if item.kind == 'subject' else next(
+                (clip.resource.asset for track in document.data.tracks if track.kind == 'visual' for clip in track.clips), None)
+            node_rows.append(dict(itemId=item.id, title=item.title, kind=item.kind, visible=displayed,
+                asset=assets.get(preview.assetId) if preview else None,
+                previewLabel='主体' if item.kind == 'subject' else '时间线首个画面',
+                createdOrder=len(snapshot.assets) + index))
+        kinds = ('image', 'video', 'audio', 'text', 'subject', 'timeline')
+        counts = dict(all=len(listed) + len(node_rows), **{kind:
+            sum(kind in row['categories'] for row in listed) + sum(row['kind'] == kind for row in node_rows) for kind in kinds})
+        entries = [('asset', row) for row in listed if category == 'all' or category in row['categories']]
+        entries.extend(('node', row) for row in node_rows if category == 'all' or row['kind'] == category)
+        entries.sort(key=lambda entry: -entry[1]['createdOrder'])
+        page = entries[offset:offset+limit]
+        return dict(items=[row for kind, row in page if kind == 'asset'],
+            nodes=[row for kind, row in page if kind == 'node'], total=len(entries),
+            eventCursor=snapshot.eventCursor, counts=counts)
