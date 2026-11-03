@@ -51,6 +51,16 @@
   position: absolute;
   inset: 0;
 }
+/* The empty canvas selects on drag, so the arrow is the resting pointer.
+   React Flow marks an actual viewport drag (including the middle button) with
+   `dragging`, which is when the closed hand reports that the canvas is held. */
+.cw-workspace .react-flow__pane.selection:not(.draggable) {
+  cursor: default;
+}
+.cw-workspace .react-flow__pane.dragging,
+.cw-workspace .react-flow__pane.selection.dragging {
+  cursor: grabbing;
+}
 .cw-workspace .react-flow__node {
   font-family: inherit;
 }

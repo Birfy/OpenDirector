@@ -41,6 +41,31 @@ export type EdgeSelectionCache = WeakMap<
   }
 >;
 
+/** A marquee that reaches a selectable node owns the gesture; edges stay out. */
+export function selectionTouchesNode(root: HTMLElement, rect: Rect) {
+  if (rect.width <= 0 || rect.height <= 0) return false;
+  const origin = root.getBoundingClientRect();
+  const left = origin.x + rect.x,
+    top = origin.y + rect.y,
+    right = left + rect.width,
+    bottom = top + rect.height;
+  for (const node of root.querySelectorAll<HTMLElement>(
+    ".react-flow__node.selectable",
+  )) {
+    const box = node.getBoundingClientRect();
+    if (
+      box.width > 0 &&
+      box.height > 0 &&
+      box.right > left &&
+      box.left < right &&
+      box.bottom > top &&
+      box.top < bottom
+    )
+      return true;
+  }
+  return false;
+}
+
 /** Test the displayed curves, including stack projections, in their SVG coordinates. */
 export function edgesInSelectionRect(
   root: HTMLElement,
@@ -49,6 +74,7 @@ export function edgesInSelectionRect(
   cache: EdgeSelectionCache,
 ) {
   const selected = new Set<string>();
+  if (selectionTouchesNode(root, rect)) return selected;
   const origin = root.getBoundingClientRect();
   for (const edge of root.querySelectorAll<SVGGElement>(
     ".react-flow__edge[data-id]",
