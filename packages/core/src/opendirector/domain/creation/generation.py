@@ -1,4 +1,5 @@
 """Generation intent, references and fixed execution facts, independent of nodes."""
+import math
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import UUID
@@ -35,20 +36,37 @@ class VideoParameters(Contract):
 # Music models count audio frames at 25 per second, between 200 and 9000 frames.
 MUSIC_SECONDS = (8, 360)
 DEFAULT_MUSIC_SECONDS = 30
+# A cover can run a little longer than its reference (tempo, held endings);
+# the cap leaves this much room so the model ends the piece itself.
+REFERENCE_LENGTH_HEADROOM = 1.1
+
+
+def reference_music_seconds(reference_seconds):
+    """The length cap for a piece that follows a reference recording."""
+    return min(MUSIC_SECONDS[1], max(MUSIC_SECONDS[0], math.ceil(reference_seconds * REFERENCE_LENGTH_HEADROOM)))
 
 
 class AudioParameters(Contract):
     creationType: Literal['audio', 'music'] = 'audio'
     mode: Literal['tts', 'unified'] = 'tts'
     voice: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_.-]{1,64}$')
-    # Music only: the prompt is the style description. A song sings its lyrics;
-    # an instrumental piece has no vocals and ignores any lyrics left in the spec.
+    # Legacy: a release stored an explicit instrumental choice. It stays readable
+    # so those specs and job fingerprints still load; generation ignores it.
+    instrumental: bool = Field(default=False, exclude_if=lambda value: value is False)
+    # Music only: the prompt is the style description; empty lyrics ask for an instrumental piece.
     # Unset music fields stay out of the dump, so specs and job fingerprints
     # recorded before music support keep their identity.
-    instrumental: bool = Field(default=False, exclude_if=lambda value: value is False)
     lyrics: str = Field(default='', max_length=5000, exclude_if=lambda value: value == '')
     durationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = Field(
         default=None, exclude_if=lambda value: value is None)
+    # Music with a reference recording: follow its melody only, or its melody and chords.
+    scoreMode: Literal['melody', 'full'] = Field(
+        default='melody', exclude_if=lambda value: value == 'melody',
+        description='Music with one audio reference: follow its transcribed melody, or melody and chords')
+    durationFromReference: bool | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+        description='Music with one audio reference: cap the length at the reference length (unset follows it) '
+                    'instead of durationSeconds')
 
 
 class PromptText(Contract):
@@ -212,10 +230,13 @@ class AudioExecution(Contract):
     format: Literal['mp3', 'wav']
     sampleRate: PositiveInt | None = None
     creationType: Literal['audio', 'music'] = Field(default='audio', exclude_if=lambda value: value == 'audio')
+    # Legacy, see AudioParameters.instrumental.
     instrumental: bool = Field(default=False, exclude_if=lambda value: value is False)
     # A music model may end the piece earlier than this cap.
     maxDurationSeconds: Annotated[float, Field(strict=True, ge=MUSIC_SECONDS[0], le=MUSIC_SECONDS[1])] | None = Field(
         default=None, exclude_if=lambda value: value is None)
+    # Set when the piece follows a reference recording's transcribed score.
+    scoreMode: Literal['melody', 'full'] | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class TextExecution(TextParameters):
@@ -305,6 +326,8 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         raise ValueError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
     if model.inputRules.profile == 'vllm-omni-depth':
         raise ValueError('视频深度模型仅用于深度动作捕捉，请选择生成模型。')
+    if model.inputRules.profile == 'vllm-omni-score':
+        raise ValueError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
     if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
         raise ValueError('Generation prompt is empty')
     rules = model.inputRules
@@ -321,6 +344,14 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         if ref.metadata.size > limit:
             raise ValueError('Reference file exceeds the model byte limit')
     kinds = [ref.asset.kind for ref in references if ref.transmission != 'context_only']
+    if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':
+        # Count connected recordings even where the policy would leave them
+        # unsent: a music piece silently ignoring its reference would mislead.
+        recordings = sum(ref.asset.kind == 'audio' for ref in references)
+        if recordings and 'audio' not in rules.allowedKinds:
+            raise ValueError('所选音乐模型不支持参照音乐，请换用 YuE2 或断开参照。')
+        if recordings > rules.maxAudios:
+            raise ValueError('参照音乐最多连接 1 个音频节点。')
     if any(kind not in rules.allowedKinds for kind in kinds):
         raise ValueError('Model does not accept this reference kind')
     for kind, limit in [('image', rules.maxImages), ('video', rules.maxVideos), ('audio', rules.maxAudios)] if spec.kind != 'text' else []:
@@ -335,8 +366,6 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':
         if spec.parameters.creationType != 'music':
             raise ValueError('所选模型用于音乐生成，请切换为音乐生成。')
-        if not spec.parameters.instrumental and not spec.parameters.lyrics.strip():
-            raise ValueError('歌曲需要歌词；不需要人声请选择纯音乐。')
     elif spec.kind == 'audio' and (spec.parameters.creationType != 'audio' or spec.parameters.mode != 'tts'):
         raise ValueError('当前语音服务仅支持文本朗读。')
     if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):

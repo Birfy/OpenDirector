@@ -60,9 +60,12 @@ export interface GenerationSettings {
   audioCreationType?: "audio" | "music";
   audioMode?: "unified" | "tts";
   voiceName?: string;
-  /** Music models: an instrumental piece has no vocals; a song sings `lyrics`. */
-  musicInstrumental?: boolean;
+  /** Music models: words to sing; empty asks for an instrumental piece. */
   lyrics?: string;
+  /** Music with a reference recording: follow its melody, or its melody and chords. */
+  scoreMode?: "melody" | "full";
+  /** Music with a reference recording: cap the length at the recording's own (unset follows it). */
+  durationFromReference?: boolean;
   imagePreset?: "none" | "product-views";
   /** A model configured in the local API; catalog models leave it unset. */
   modelConfigId?: string;

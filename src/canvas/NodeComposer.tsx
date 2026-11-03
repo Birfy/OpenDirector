@@ -27,6 +27,7 @@ import {
   modelLabel,
   isGenerationModel,
   isMusicModel,
+  hasMusicReference,
   MUSIC_SECONDS,
   serviceAudioSettings,
   type ModelConfig,
@@ -65,6 +66,12 @@ export interface NodeComposerProps {
 export type ComposerSettings = GenerationSettings;
 const ratios = GENERATION_RATIOS;
 type Panel = "parameters" | "duration" | "voices" | null;
+/** 239 s → "3:59", for reference lengths. */
+function clockTime(seconds: number) {
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
 const UNCONFIGURED_MODEL = "尚未配置可用的生成模型，请到“设置 → 模型接入”添加。";
 
 /** Shared defaults let the workspace run the same parameters that the controls display. */
@@ -184,6 +191,19 @@ export function NodeComposer({
       : settings.audioCreationType === "music");
   const reading =
     mode === "audio" && !music && (backend || settings.audioMode === "tts");
+  // YuE2-style music models can follow one connected recording.
+  const musicReferences =
+    music && Boolean(config?.inputRules.allowedKinds.includes("audio"));
+  const followsReference = Boolean(
+    config && hasMusicReference(settings, incomingNodes, config),
+  );
+  const referenceSeconds = followsReference
+    ? incomingNodes.find((node) => node.data.kind === "audio")?.data.media
+        ?.durationSeconds
+    : undefined;
+  // New music nodes follow the reference length until the user turns it off.
+  const lengthFromReference =
+    followsReference && (settings.durationFromReference ?? true);
   const frameCandidates = incomingNodes.filter(
     (node) => node.data.kind === "image",
   );
@@ -397,7 +417,7 @@ export function NodeComposer({
         )}
         {!firstLast &&
           !reading &&
-          !music &&
+          (!music || musicReferences) &&
           (mode === "video" || incomingNodes.length > 0) && (
             <div className="cw-reference-strip">
               <TooltipButton
@@ -455,7 +475,7 @@ export function NodeComposer({
                     : "描述台词、音色和声音场景，可添加音频参考…"
           }
         />
-        {backend && music && !settings.musicInstrumental && (
+        {backend && music && (
           <textarea
             className="cw-prompt-input cw-lyrics-input"
             aria-label="歌词"
@@ -464,7 +484,9 @@ export function NodeComposer({
             disabled={running}
             spellCheck={false}
             placeholder={
-              "歌词。段落标签单独成一行，例如：\n[verse]\n雨落在窗前\n[chorus]\n说不出的话，让旋律回答"
+              followsReference
+                ? "歌词（可选，留空生成纯音乐）。按参照音乐的段落和乐句填写，段落标签单独成一行，例如：\n[verse]\n雨落在窗前\n[chorus]\n说不出的话，让旋律回答"
+                : "歌词（可选，留空生成纯音乐）。段落标签单独成一行，例如：\n[verse]\n雨落在窗前\n[chorus]\n说不出的话，让旋律回答"
             }
             onChange={(event) => updateSettings({ lyrics: event.target.value })}
           />
@@ -514,7 +536,9 @@ export function NodeComposer({
             <span>
               {mode === "audio"
                 ? music
-                  ? `${backend ? "最长 " : ""}${settings.durationSeconds} 秒`
+                  ? lengthFromReference
+                    ? `跟随参照时长${referenceSeconds ? ` ${clockTime(referenceSeconds)}` : ""}`
+                    : `${backend ? "最长 " : ""}${settings.durationSeconds} 秒`
                   : reading
                     ? "文本朗读"
                     : "全能配音"
@@ -522,21 +546,6 @@ export function NodeComposer({
             </span>
           </button>
           <div className="cw-generation-mode-controls">
-            {backend && music && (
-              <select
-                aria-label="音乐类型"
-                value={settings.musicInstrumental ? "instrumental" : "song"}
-                disabled={running}
-                onChange={(event) =>
-                  updateSettings({
-                    musicInstrumental: event.target.value === "instrumental",
-                  })
-                }
-              >
-                <option value="instrumental">纯音乐</option>
-                <option value="song">歌曲（带人声）</option>
-              </select>
-            )}
             {mode === "image" && (
               <select
                 aria-label="图片创作预设"
@@ -594,6 +603,22 @@ export function NodeComposer({
                       : label}
                   </option>
                 ))}
+              </select>
+            )}
+            {followsReference && (
+              <select
+                aria-label="参照方式"
+                value={settings.scoreMode ?? "melody"}
+                disabled={running}
+                onChange={(event) =>
+                  updateSettings({
+                    scoreMode: event.target
+                      .value as ComposerSettings["scoreMode"],
+                  })
+                }
+              >
+                <option value="melody">跟随参照旋律</option>
+                <option value="full">跟随旋律与和弦</option>
               </select>
             )}
             {mode === "audio" && !backend && (
@@ -658,17 +683,20 @@ export function NodeComposer({
               </button>
             )}
           </div>
-          {!firstLast && !reading && !music && incomingNodes.length === 0 && (
-            <TooltipButton
-              type="button"
-              className="cw-reference-trigger"
-              aria-label="添加参考素材"
-              label="添加参考素材"
-              onClick={() => mentions.current?.openUpload()}
-            >
-              <CanvasIcon name="plus" size={16} />
-            </TooltipButton>
-          )}
+          {!firstLast &&
+            !reading &&
+            (!music || musicReferences) &&
+            incomingNodes.length === 0 && (
+              <TooltipButton
+                type="button"
+                className="cw-reference-trigger"
+                aria-label={musicReferences ? "添加参照音乐" : "添加参考素材"}
+                label={musicReferences ? "添加参照音乐" : "添加参考素材"}
+                onClick={() => mentions.current?.openUpload()}
+              >
+                <CanvasIcon name="plus" size={16} />
+              </TooltipButton>
+            )}
           {mode === "video" && (
             <button
               type="button"
@@ -837,6 +865,27 @@ export function NodeComposer({
           )}
           {music && (
             <div className="cw-parameter-section">
+              {followsReference && (
+                <label className="cw-audio-toggle">
+                  <span>
+                    <CanvasIcon name="audio" size={16} />
+                    跟随参照时长
+                    {referenceSeconds
+                      ? `（${clockTime(referenceSeconds)}）`
+                      : ""}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={lengthFromReference}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSettings({
+                        durationFromReference: event.target.checked,
+                      })
+                    }
+                  />
+                </label>
+              )}
               <span className="cw-field-label">
                 {backend ? "最长时长（模型可能提前结束）" : "时长"}
               </span>
@@ -844,7 +893,7 @@ export function NodeComposer({
                 <DurationControl
                   values={durationValues}
                   value={settings.durationSeconds}
-                  disabled={running}
+                  disabled={running || lengthFromReference}
                   scale={
                     backend
                       ? { min: 0, max: MUSIC_SECONDS.max, step: 60 }

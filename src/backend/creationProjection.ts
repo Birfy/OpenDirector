@@ -588,9 +588,10 @@ export class CreationProjection {
                     audioMode: spec.parameters.mode,
                     ...(spec.parameters.creationType === "music"
                       ? {
-                          musicInstrumental:
-                            spec.parameters.instrumental ?? false,
                           lyrics: spec.parameters.lyrics,
+                          scoreMode: spec.parameters.scoreMode ?? "melody",
+                          durationFromReference:
+                            spec.parameters.durationFromReference ?? undefined,
                           durationSeconds:
                             spec.parameters.durationSeconds ??
                             MUSIC_SECONDS.initial,
@@ -773,8 +774,10 @@ export class CreationProjection {
             mode: node.data.settings?.audioMode ?? "tts",
             ...(node.data.settings?.audioCreationType === "music"
               ? {
-                  instrumental: node.data.settings.musicInstrumental ?? true,
                   lyrics: node.data.settings.lyrics ?? "",
+                  scoreMode: node.data.settings.scoreMode ?? "melody",
+                  durationFromReference:
+                    node.data.settings.durationFromReference ?? null,
                   durationSeconds:
                     node.data.settings.durationSeconds ?? MUSIC_SECONDS.initial,
                 }

@@ -46,8 +46,9 @@ const SETTINGS_KEYS = [
   "audioCreationType",
   "audioMode",
   "voiceName",
-  "musicInstrumental",
   "lyrics",
+  "scoreMode",
+  "durationFromReference",
   "imagePreset",
   "modelConfigId",
 ] as const;
@@ -87,9 +88,12 @@ export function isGenerationSettings(
       value.audioMode === "unified" ||
       value.audioMode === "tts") &&
     optionalString(value.voiceName) &&
-    (value.musicInstrumental === undefined ||
-      typeof value.musicInstrumental === "boolean") &&
     (value.lyrics === undefined || typeof value.lyrics === "string") &&
+    (value.scoreMode === undefined ||
+      value.scoreMode === "melody" ||
+      value.scoreMode === "full") &&
+    (value.durationFromReference === undefined ||
+      typeof value.durationFromReference === "boolean") &&
     (value.imagePreset === undefined ||
       value.imagePreset === "none" ||
       value.imagePreset === "product-views") &&

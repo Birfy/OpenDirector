@@ -51,6 +51,7 @@ export interface ModelConfig {
     | "vllm_omni_segmentation"
     | "vllm_omni_music"
     | "vllm_omni_depth"
+    | "vllm_omni_score"
     | null;
   authMode: "none" | "bearer" | null;
   inputRules: InputRules;
@@ -76,6 +77,11 @@ export function isDepthModel(model: Pick<ModelConfig, "kind" | "protocol">) {
   return model.protocol === "vllm_omni_depth";
 }
 
+/** SheetSage2 configurations transcribe reference music into scores only. */
+export function isScoreModel(model: Pick<ModelConfig, "kind" | "protocol">) {
+  return model.protocol === "vllm_omni_score";
+}
+
 /** vLLM-Omni music models read a style description and lyrics instead of text to speak. */
 export function isMusicModel(model: Pick<ModelConfig, "kind" | "protocol">) {
   return model.kind === "audio" && model.protocol === "vllm_omni_music";
@@ -99,17 +105,30 @@ export function serviceAudioSettings(
     ...(music && !(seconds >= MUSIC_SECONDS.min && seconds <= MUSIC_SECONDS.max)
       ? { durationSeconds: MUSIC_SECONDS.initial }
       : {}),
-    // New music nodes start instrumental, the common case for a soundtrack.
-    ...(music && settings.musicInstrumental === undefined
-      ? { musicInstrumental: true }
-      : {}),
   };
+}
+
+/** A music node follows a connected recording once its model accepts audio references. */
+export function hasMusicReference(
+  settings: GenerationSettings,
+  incoming: readonly CanvasNode[],
+  config: ModelConfig,
+) {
+  return (
+    settings.mode === "audio" &&
+    isMusicModel(config) &&
+    backendReferences(settings, incoming, config).some(
+      (item) => item.node.data.kind === "audio",
+    )
+  );
 }
 
 export function isGenerationModel(
   model: Pick<ModelConfig, "kind" | "protocol">,
 ) {
-  return !isSegmentationModel(model) && !isDepthModel(model);
+  return (
+    !isSegmentationModel(model) && !isDepthModel(model) && !isScoreModel(model)
+  );
 }
 
 const LABELS: Record<string, string> = {
@@ -417,6 +436,8 @@ export function backendBlocker(
     return "模型类型与节点不符，请重新选择模型。";
   if (isDepthModel(config))
     return "视频深度模型仅用于深度动作捕捉，请选择生成模型。";
+  if (isScoreModel(config))
+    return "扒谱模型仅用于参照音乐生成，请选择音乐生成模型。";
   if (!isGenerationModel(config))
     return "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。";
   if (!settings.prompt.trim())
@@ -445,9 +466,17 @@ export function backendBlocker(
       )
     )
       return `音乐最长时长需在 ${MUSIC_SECONDS.min}–${MUSIC_SECONDS.max} 秒之间。`;
-    if (!settings.musicInstrumental && !(settings.lyrics ?? "").trim())
-      return "请填写歌词，或改为纯音乐。";
     if ((settings.lyrics ?? "").length > 5000) return "歌词最多 5000 字。";
+    if (
+      !config.inputRules.allowedKinds.includes("audio") &&
+      incoming.some((node) => node.data.kind === "audio")
+    )
+      return "所选音乐模型不支持参照音乐，请换用 YuE2 或断开参照。";
+    if (
+      hasMusicReference(settings, incoming, config) &&
+      !models.some(isScoreModel)
+    )
+      return "参照音乐需要先扒谱，请在“模型接入”中添加扒谱模型（vLLM-Omni 扒谱接口）。";
   } else if (
     settings.mode === "audio" &&
     ((settings.audioCreationType && settings.audioCreationType !== "audio") ||
