@@ -132,3 +132,57 @@ def test_stack_document_retains_hidden_material_even_after_clearing_undo(project
     preview = CreationHistory(store).delete_preview(pid, [asset.id], True)
     assert not preview['canDelete']
     assert any(reason['type'] == 'editor_document' for reason in preview['usage'][0]['reasons'])
+
+
+def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(project, monkeypatch):
+    from opendirector.infrastructure.creation_projects import durable_json
+    import opendirector.application.creation_history as history_module
+
+    store, pid, session = project
+    item, material = text_material(project)
+    assert send(store, pid, 'canvas.hide', session=session,
+                versions=[ver('canvas_item', item)], itemId=item.id).status == 'applied'
+    for name in ['Tool input', 'Unused']:
+        assert send(store, pid, 'asset.writeText', session=session, name=name + '.md', text=name).status == 'applied'
+    snapshot = store.snapshot(pid)
+    tool_input, unused = snapshot.assets[-2:]
+    task_id = str(uuid4())
+    folder = store.root / 'Unified' / 'tool-tasks'
+    folder.mkdir()
+    ledger = folder / f'{task_id}.json'
+    durable_json(ledger, dict(id=task_id, sourceAssetIds=[str(tool_input.id)], outputs=[]))
+    loads, history_reads, ledger_reads = [], [], []
+    load, history, read = store._load, store.history, history_module.read_json
+    def loading(*args, **kwargs):
+        loads.append(1)
+        return load(*args, **kwargs)
+    def records(*args, **kwargs):
+        history_reads.append(1)
+        return history(*args, **kwargs)
+    def reading(path):
+        ledger_reads.append(path)
+        return read(path)
+    monkeypatch.setattr(store, '_load', loading)
+    monkeypatch.setattr(store, 'history', records)
+    monkeypatch.setattr(history_module, 'read_json', reading)
+    service = CreationHistory(store)
+    listing = service.asset_list(pid)
+    assert len(history_reads) == 1 and len(loads) == 2
+    assert ledger_reads == [ledger]
+    assert listing['eventCursor'] == snapshot.eventCursor
+    assert [row['asset'].id for row in listing['items']] == [unused.id, tool_input.id, material.id]
+    rows = {row['asset'].id: row for row in listing['items']}
+    assert rows[material.id]['owners'] == [dict(itemId=item.id, visible=False)]
+    assert rows[material.id]['usage']['hiddenItemIds'] == [str(item.id)]
+    assert any(reason['type'] == 'undo_history' for reason in rows[material.id]['usage']['reasons'])
+    assert rows[tool_input.id]['usage']['reasons'] == [dict(type='tool_task', id=task_id)]
+    assert not rows[unused.id]['usage']['used']
+    assert service.asset_list(pid, usage='unused')['total'] == 1
+    page = service.asset_list(pid, usage='used', offset=1, limit=1)
+    assert page['total'] == 2 and page['items'][0]['asset'].id == material.id
+    assert service.asset_list(pid, text='TOOL')['items'][0]['asset'].id == tool_input.id
+    # Re-read the independent ledger on the next request, even at the same cursor.
+    durable_json(ledger, dict(id=task_id, sourceAssetIds=[], outputs=[]))
+    refreshed = service.asset_list(pid, usage='unused')
+    assert refreshed['eventCursor'] == listing['eventCursor']
+    assert {row['asset'].id for row in refreshed['items']} == {tool_input.id, unused.id}

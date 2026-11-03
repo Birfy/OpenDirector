@@ -52,7 +52,9 @@ export function CreationAssetList({
   position: Point;
 }) {
   const [text, setText] = useState(""),
-    [usage, setUsage] = useState("all");
+    [usage, setUsage] = useState("all"),
+    [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
   const [listing, setListing] = useState<Listing | null>(null),
     [error, setError] = useState("");
   const [selected, setSelected] = useState<string[]>([]),
@@ -76,9 +78,14 @@ export function CreationAssetList({
     return () => element.close();
   }, []);
   useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(text), 200);
+    return () => window.clearTimeout(timer);
+  }, [text]);
+  useEffect(() => {
     const controller = new AbortController();
     let active = true;
     setListing(null);
+    setLoading(true);
     setError("");
     void (async () => {
       const rows: Row[] = [];
@@ -86,7 +93,7 @@ export function CreationAssetList({
         cursor = 0;
       while (rows.length < total) {
         const page = await request<Listing>(
-          `${creationPath(projectId)}/asset-list?text=${encodeURIComponent(text)}&usage=${usage}&offset=${rows.length}&limit=200`,
+          `${creationPath(projectId)}/asset-list?text=${encodeURIComponent(query)}&usage=${usage}&offset=${rows.length}&limit=200`,
           { signal: controller.signal },
         );
         if (rows.length && page.eventCursor !== cursor)
@@ -94,22 +101,28 @@ export function CreationAssetList({
         rows.push(...page.items);
         total = page.total;
         cursor = page.eventCursor;
+        if (active)
+          setListing({ items: [...rows], total, eventCursor: cursor });
         if (!page.items.length) break;
       }
       if (active) {
-        setListing({ items: rows, total, eventCursor: cursor });
+        setLoading(false);
         setSelected((ids) =>
           ids.filter((id) => rows.some((row) => row.asset.id === id)),
         );
       }
     })().catch((reason) => {
-      if (active) setError(errorMessage(reason));
+      if (active) {
+        setListing(null);
+        setLoading(false);
+        setError(errorMessage(reason));
+      }
     });
     return () => {
       active = false;
       controller.abort();
     };
-  }, [projectId, text, usage, attempt]);
+  }, [projectId, query, usage, attempt]);
   const perform = async (action: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -315,7 +328,12 @@ export function CreationAssetList({
               <option value="unused">未使用</option>
             </select>
           </div>
-          {!listing && !error && <p role="status">正在读取资产和使用状态…</p>}
+          {loading && !error && (
+            <p role="status">
+              正在读取资产和使用状态…
+              {listing && `（${listing.items.length}/${listing.total}）`}
+            </p>
+          )}
           <div className="cw-creation-asset-rows">
             {listing?.items.map((row) => (
               <div key={row.asset.id} className="cw-creation-asset-row">

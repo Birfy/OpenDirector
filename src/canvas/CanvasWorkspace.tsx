@@ -4491,7 +4491,7 @@ function Workspace() {
             tooltipSide="bottom"
             active={panel === "search"}
             onClick={() => {
-              void persist(historyRef.current.present).then((saved) => {
+              void persist(historyRef.current.present, false).then((saved) => {
                 if (saved) togglePanel("search");
               });
             }}

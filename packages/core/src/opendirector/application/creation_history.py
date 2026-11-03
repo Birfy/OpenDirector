@@ -61,7 +61,10 @@ class CreationHistory:
         self.assets = assets or CreationAssets(projects)
 
     def states(self, project_id):
-        records = self.projects.history(project_id)
+        return self._states(self.projects.history(project_id))
+
+    @staticmethod
+    def _states(records):
         cleared = records[0].snapshot.undoClearedThrough
         states = {}
         for record in reversed(records):
@@ -284,39 +287,50 @@ class CreationHistory:
 
     def usage(self, snapshot, asset_id, *, include_history=True):
         asset_id = UUID(str(asset_id))
-        reasons, hidden_owners = [], []
+        return self._usage_many(snapshot, [asset_id], include_history=include_history)[asset_id]
+
+    def _usage_many(self, snapshot, asset_ids, *, include_history=True, records=None):
+        """Build dependencies once per query; never cache mutable usage across requests."""
+        statuses = {key: dict(assetId=str(key), used=False, reasons=[], hiddenItemIds=[]) for key in asset_ids}
+        if not statuses:
+            return statuses
         visible = visible_item_ids(snapshot)
-        def used(kind, obj):
-            if any(r.assetId == asset_id for r in asset_references(obj)):
-                reasons.append(dict(type=kind, id=str(obj.id)))
+        def used(kind, obj, ids=None, *, exclude_self=False):
+            keys = set(ids if ids is not None else (ref.assetId for ref in asset_references(obj)))
+            for key in keys & statuses.keys():
+                if not exclude_self or key != obj.id:
+                    statuses[key]['reasons'].append(dict(type=kind, id=str(obj.id)))
         for item in snapshot.canvasItems:
-            if item.binding.role == 'generation' and item.binding.materialOverride and item.binding.materialOverride.assetId == asset_id:
-                reasons.append(dict(type='visible_canvas_item' if item.id in visible else 'hidden_canvas_item', id=str(item.id)))
-            if item.binding.role == 'material' and item.binding.objectRef.assetId == asset_id:
-                if item.id in visible:
-                    reasons.append(dict(type='visible_canvas_item', id=str(item.id)))
-                else:
-                    hidden_owners.append(str(item.id))
+            if item.binding.role == 'generation' and item.binding.materialOverride:
+                key = item.binding.materialOverride.assetId
+                if key in statuses:
+                    statuses[key]['reasons'].append(dict(type='visible_canvas_item' if item.id in visible else 'hidden_canvas_item', id=str(item.id)))
+            if item.binding.role == 'material':
+                key = item.binding.objectRef.assetId
+                if key in statuses:
+                    if item.id in visible:
+                        statuses[key]['reasons'].append(dict(type='visible_canvas_item', id=str(item.id)))
+                    else:
+                        statuses[key]['hiddenItemIds'].append(str(item.id))
         for ref in snapshot.references:
             if not ref.active:
                 continue
             try:
-                if any(r.asset.assetId == asset_id for r in resolve_reference(snapshot, ref)):
-                    reasons.append(dict(type='reference', id=str(ref.id)))
+                used('reference', ref, (value.asset.assetId for value in resolve_reference(snapshot, ref)))
             except ContractError:
                 # An unresolved relation is never evidence of unused media.
-                reasons.append(dict(type='unresolved_reference', id=str(ref.id)))
+                for status in statuses.values():
+                    status['reasons'].append(dict(type='unresolved_reference', id=str(ref.id)))
         for kind, objects in [('editor_document', snapshot.editorDocuments), ('job', snapshot.jobs),
                                ('result', snapshot.results), ('asset_provenance', snapshot.assets)]:
             for obj in objects:
-                if obj.id != asset_id:
-                    used(kind, obj)
+                used(kind, obj, exclude_self=True)
         for document in snapshot.editorDocuments:
-            if document.kind == 'stack' and any(item.id in document.data.nodeIds and (asset := current_asset(snapshot, item)) is not None
-                                              and asset.id == asset_id for item in snapshot.canvasItems):
-                reasons.append(dict(type='editor_document', id=str(document.id)))
-        # Tool ledgers retain execution facts even after a draft changes or
-        # its output is hidden. Those pinned inputs cannot be deleted as unused.
+            if document.kind == 'stack':
+                used('editor_document', document, (asset.id for item in snapshot.canvasItems
+                    if item.id in document.data.nodeIds and (asset := current_asset(snapshot, item)) is not None))
+        # Read independent tool ledgers once, retaining their deletion protection.
+        asset_keys = {str(key): key for key in statuses}
         with self.projects.local.transaction() as db:
             path, _, _ = self.projects._load(db, snapshot.project.id)
             folder = child(path, 'tool-tasks')
@@ -325,16 +339,21 @@ class CreationHistory:
                     task = read_json(child(folder, entry.name))
                     ids = {*task.get('sourceAssetIds', []), task.get('maskAssetId'), task.get('annotationAssetId'),
                            *(output['id'] for output in task.get('outputs', []))}
-                    if str(asset_id) in ids:
-                        reasons.append(dict(type='tool_task', id=task['id']))
-        records = self.projects.history(snapshot.project.id)
-        historical_pins = {ref.id for record in records for ref in record.snapshot.references
-                           if ref.binding == 'pinned' and ref.source.assetId == asset_id}
-        for ref_id in historical_pins:
-            if not any(ref.id == ref_id and ref.binding == 'pinned' and ref.source.assetId == asset_id for ref in snapshot.references):
-                reasons.append(dict(type='configuration_history', id=str(ref_id)))
+                    for key in ids & asset_keys.keys():
+                        statuses[asset_keys[key]]['reasons'].append(dict(type='tool_task', id=task['id']))
+        records = self.projects.history(snapshot.project.id) if records is None else records
+        historical_pins = {}
+        for record in records:
+            for ref in record.snapshot.references:
+                if ref.binding == 'pinned' and ref.source.assetId in statuses:
+                    historical_pins.setdefault(ref.source.assetId, set()).add(ref.id)
+        current_pins = {(ref.id, ref.source.assetId) for ref in snapshot.references if ref.binding == 'pinned'}
+        for key, ref_ids in historical_pins.items():
+            for ref_id in ref_ids:
+                if (ref_id, key) not in current_pins:
+                    statuses[key]['reasons'].append(dict(type='configuration_history', id=str(ref_id)))
         if include_history:
-            states = self.states(snapshot.project.id)
+            states = self._states(records)
             by_id = {record.command.commandId: record for record in records}
             for record in records:
                 if record.command.commandId in states and record.command.type in UNDOABLE:
@@ -347,9 +366,11 @@ class CreationHistory:
                                 references.extend(asset_references(obj))
                                 if obj.id in previous:
                                     references.extend(asset_references(previous[obj.id]))
-                    if any(ref.assetId == asset_id for ref in references):
-                        reasons.append(dict(type='undo_history', id=str(record.command.commandId)))
-        return dict(assetId=str(asset_id), used=bool(reasons), reasons=reasons, hiddenItemIds=hidden_owners)
+                    for key in {ref.assetId for ref in references} & statuses.keys():
+                        statuses[key]['reasons'].append(dict(type='undo_history', id=str(record.command.commandId)))
+        for status in statuses.values():
+            status['used'] = bool(status['reasons'])
+        return statuses
 
     def delete_preview(self, project_id, asset_ids, clear_history=False):
         snapshot = self.projects.snapshot(project_id)
@@ -359,7 +380,8 @@ class CreationHistory:
         for asset_id in ids:
             if not any(a.id == asset_id for a in snapshot.assets):
                 raise ContractError('missing_object', '素材已不存在。', asset_id)
-        usage = [self.usage(snapshot, key, include_history=not clear_history) for key in ids]
+        statuses = self._usage_many(snapshot, ids, include_history=not clear_history)
+        usage = [statuses[key] for key in ids]
         fingerprint = digest(Preview(snapshot=snapshot, assetIds=ids, clearHistory=clear_history))
         return dict(fingerprint=fingerprint, usage=usage, canDelete=not any(item['used'] for item in usage),
                     clearsAllUndoRedo=clear_history, hiddenItemIds=[key for item in usage for key in item['hiddenItemIds']])
@@ -398,7 +420,7 @@ class CreationHistory:
             return self._revisions(before, data)
         return self.projects.commit(command, apply, session=session, source=source, deletes=files)
 
-    def _inventory(self, snapshot):
+    def _inventory(self, snapshot, *, records=None):
         current = {asset.id for item in snapshot.canvasItems if (asset := current_asset(snapshot, item)) is not None}
         current_results = {result.asset.assetId: spec.id for spec in snapshot.generationSpecs for result in snapshot.results if spec.currentResultId == result.id}
         current.update(current_results)
@@ -406,7 +428,7 @@ class CreationHistory:
         historical.update(source.assetId for asset in snapshot.assets for source in asset.provenance.sources)
         # Every adopted manual/uploaded sibling is a version, including a newer
         # sibling after applying an older version. Hidden current owners stay live.
-        for record in self.projects.history(snapshot.project.id):
+        for record in self.projects.history(snapshot.project.id) if records is None else records:
             historical.update(asset.id for item in record.snapshot.canvasItems if (asset := current_asset(record.snapshot, item)) is not None)
             for doc in record.snapshot.editorDocuments:
                 if doc.kind == 'subject':
@@ -417,20 +439,25 @@ class CreationHistory:
         return current, current_results, historical
 
     def asset_list(self, project_id, *, text='', usage='all', offset=0, limit=100):
-        snapshot = self.projects.snapshot(project_id)
-        current, current_results, historical = self._inventory(snapshot)
+        records = self.projects.history(project_id)
+        snapshot = records[0].snapshot
+        current, current_results, historical = self._inventory(snapshot, records=records)
         visible = visible_item_ids(snapshot)
-        order = {a.id: n for n, a in enumerate(snapshot.assets)}
+        owners = {}
+        for item in snapshot.canvasItems:
+            asset = current_asset(snapshot, item)
+            if asset:
+                owners.setdefault(asset.id, []).append(dict(itemId=item.id, visible=item.id in visible))
+        query = text.casefold()
+        candidates = [(order, asset) for order, asset in enumerate(snapshot.assets)
+                      if (asset.id not in historical or asset.id in current) and query in asset.name.casefold()]
+        statuses = self._usage_many(snapshot, [asset.id for _, asset in candidates], records=records)
         listed = []
-        for asset in snapshot.assets:
-            if asset.id in historical and asset.id not in current:
-                continue
-            if text.casefold() not in asset.name.casefold():
-                continue
-            status = self.usage(snapshot, asset.id)
+        for order, asset in candidates:
+            status = statuses[asset.id]
             if usage != 'all' and status['used'] != (usage == 'used'):
                 continue
-            owners = [dict(itemId=i.id, visible=i.id in visible) for i in snapshot.canvasItems if (a := current_asset(snapshot, i)) is not None and a.id == asset.id]
-            listed.append(dict(asset=asset, usage=status, owners=owners, specId=current_results.get(asset.id), createdOrder=order[asset.id]))
+            listed.append(dict(asset=asset, usage=status, owners=owners.get(asset.id, []),
+                               specId=current_results.get(asset.id), createdOrder=order))
         listed.sort(key=lambda row: (-row['createdOrder'], row['asset'].name.casefold()))
         return dict(items=listed[offset:offset+limit], total=len(listed), eventCursor=snapshot.eventCursor)
