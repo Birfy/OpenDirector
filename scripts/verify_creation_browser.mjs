@@ -132,8 +132,11 @@ try {
       bounds.x + bounds.width + 22,
       bounds.y + bounds.height / 2,
     );
-    await page.locator(".cw-reference-port").waitFor();
-    const port = await page.locator(".cw-reference-port").boundingBox();
+    const outputPort = page.locator(
+      `.cw-reference-port[data-reference-source="${sourceId}"][data-side="right"]`,
+    );
+    await outputPort.waitFor();
+    const port = await outputPort.boundingBox();
     assert.ok(port);
     await page.mouse.move(port.x + port.width / 2, port.y + port.height / 2);
     await page.mouse.down();
@@ -204,8 +207,16 @@ try {
       .press("Control+Enter");
     snapshot = await until((value) => value.jobs.length === 1, "job accepted");
     const jobId = snapshot.jobs[0].id;
-    await source.click({ button: "right", position: { x: 80, y: 60 } });
-    await page.getByRole("menuitem", { name: /^删除/ }).click();
+    // Hide the display without changing the target's reference intent.
+    await page.evaluate(async ({ projectId, sourceId }) => {
+      const { creationClient, objectVersion } =
+        await import("/src/backend/creationClient.ts");
+      const client = creationClient(projectId);
+      const item = client.snapshot.canvasItems.find((item) => item.id === sourceId);
+      await client.command("canvas.hide", { itemId: sourceId }, [
+        objectVersion("canvas_item", item),
+      ]);
+    }, { projectId, sourceId });
     await until(
       (value) =>
         !value.canvasItems.find((item) => item.id === sourceId).visible,
@@ -240,7 +251,7 @@ try {
     await list.waitFor();
     const sourceRow = list
       .locator(".cw-creation-asset-row")
-      .filter({ has: page.getByText(sourceAsset.name, { exact: true }) });
+      .filter({ has: page.getByText("Source A", { exact: true }) });
     await sourceRow.waitFor();
     assert.equal(
       await page.getByRole("dialog", { name: "资产列表", exact: true }).count(),
