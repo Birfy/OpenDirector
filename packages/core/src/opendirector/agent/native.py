@@ -19,8 +19,11 @@ from opendirector.integrations.chat_completions import ChatCompletions
 
 def executable(runtime: str) -> str | None:
     if runtime == 'default':
-        path = ROOT / 'node_modules/opencode-ai/bin/opencode.exe'
-        return str(path) if path.is_file() else None
+        for name in ('opencode.exe', 'opencode'):
+            path = ROOT / 'node_modules/opencode-ai/bin' / name
+            if path.is_file():
+                return str(path)
+        return None
     return shutil.which(runtime)
 
 
@@ -41,15 +44,17 @@ def prepare_skills(directory: Path, catalog: list[dict]) -> list[Path]:
 
 
 def command(runtime: str, work: Path, socket: str, token: str, model: str | None,
-            model_url: str, catalog: list[dict], *, input_modalities: list[str] | None = None) -> tuple[list[str], dict[str, str]]:
+            model_url: str, catalog: list[dict], *, input_modalities: list[str] | None = None,
+            bridge_env: dict[str, str] | None = None) -> tuple[list[str], dict[str, str]]:
     binary = executable(runtime)
     if binary is None:
         raise ProjectError('内置 OpenCode 未安装，请执行 npm ci。' if runtime == 'default' else f'{runtime} CLI 未安装，请先安装。', 503)
     bundled = runtime == 'default'
     if bundled:
         runtime = 'opencode'
+    # Windows CPython has no AF_UNIX support, so the caller may pass a loopback address instead.
     bridge = {'command': sys.executable, 'args': [str(ROOT / 'scripts/agent-mcp.py')],
-              'env': {'OPENDIRECTOR_AGENT_SOCKET': socket, 'OPENDIRECTOR_AGENT_TOKEN': token}}
+              'env': {**(bridge_env or {'OPENDIRECTOR_AGENT_SOCKET': socket}), 'OPENDIRECTOR_AGENT_TOKEN': token}}
     env = dict(os.environ)
     if runtime == 'opencode':
         config = {'autoupdate': False, 'default_agent': 'opendirector',
@@ -122,7 +127,7 @@ class NativeRuntime:
         closed = False
         token = secrets.token_urlsafe(32)
         process = pump = stderr_task = None
-        with TemporaryDirectory(prefix='od-agent-', dir='/tmp') as temporary:
+        with TemporaryDirectory(prefix='od-agent-', dir=None if os.name == 'nt' else '/tmp') as temporary:
             work = (directory / 'agent-runs' / str(turn_id) / 'work').resolve()
             work.mkdir(parents=True, exist_ok=False)
             roots = prepare_skills(work, catalog)
@@ -172,13 +177,20 @@ class NativeRuntime:
                     writer.close()
                     await writer.wait_closed()
                     pending.discard(task)
-            server = await asyncio.start_unix_server(connection, str(Path(temporary) / 'mcp.sock'), limit=4 * 1024 * 1024)
+            endpoint = str(Path(temporary) / 'mcp.sock')
+            bridge_env = None
+            if hasattr(asyncio, 'start_unix_server'):
+                server = await asyncio.start_unix_server(connection, endpoint, limit=4 * 1024 * 1024)
+            else:
+                server = await asyncio.start_server(connection, '127.0.0.1', 0, limit=4 * 1024 * 1024)
+                host, port = server.sockets[0].getsockname()[:2]
+                bridge_env = {'OPENDIRECTOR_AGENT_HOST': str(host), 'OPENDIRECTOR_AGENT_PORT': str(port)}
             model = ModelGateway(config, thinking, token, str(project_id), str(turn_id), self.transport) if run.runtime == 'default' else None
             model_server = await asyncio.start_server(model.connect, '127.0.0.1', 0) if model else None
             try:
                 model_url = f'http://127.0.0.1:{model_server.sockets[0].getsockname()[1]}' if model_server else ''
-                args, env = command(run.runtime, work, str(Path(temporary) / 'mcp.sock'), token,
-                    config['modelId'] if config else runtime_model, model_url, catalog,
+                args, env = command(run.runtime, work, endpoint, token,
+                    config['modelId'] if config else runtime_model, model_url, catalog, bridge_env=bridge_env,
                     **({'input_modalities': config.get('inputModalities', ['text'])} if run.runtime == 'default' else {}))
                 if thinking != 'auto' and runtime == 'codex':
                     args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']

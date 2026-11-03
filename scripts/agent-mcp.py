@@ -6,13 +6,26 @@ import socket
 import sys
 
 
+def connect() -> socket.socket:
+    """Connect to the turn's gateway: loopback TCP on Windows, AF_UNIX elsewhere."""
+    host = os.environ.get("OPENDIRECTOR_AGENT_HOST")
+    if host:
+        return socket.create_connection((host, int(os.environ["OPENDIRECTOR_AGENT_PORT"])))
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        connection.connect(os.environ["OPENDIRECTOR_AGENT_SOCKET"])
+    except BaseException:
+        connection.close()
+        raise
+    return connection
+
+
 def main() -> None:
     for line in sys.stdin:
         request = json.loads(line)
         if "id" not in request:
             continue
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.connect(os.environ["OPENDIRECTOR_AGENT_SOCKET"])
+        with connect() as connection:
             payload = {
                 "token": os.environ["OPENDIRECTOR_AGENT_TOKEN"],
                 "request": request,

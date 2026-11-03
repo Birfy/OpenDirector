@@ -17,7 +17,7 @@ async def skills(repository: Path, directory: Path) -> list[dict[str, str]]:
         raise ProjectError('技能发现需要内置 OpenCode，请执行 npm ci。', 503)
     roots = [path.resolve() for path in [directory / '.opendirector/skills',
         repository / '.opendirector/skills', ROOT / 'packages/agent/skills'] if path.is_dir()]
-    with TemporaryDirectory(prefix='od-skills-', dir='/tmp') as temporary:
+    with TemporaryDirectory(prefix='od-skills-') as temporary:
         env = {**os.environ, 'XDG_CONFIG_HOME': temporary,
                'OPENCODE_DISABLE_EXTERNAL_SKILLS': '1', 'OPENCODE_DISABLE_CLAUDE_CODE_SKILLS': '1',
                'OPENCODE_CONFIG_CONTENT': json.dumps({'skills': {'paths': list(map(str, roots))}})}
