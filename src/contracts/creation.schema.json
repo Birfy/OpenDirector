@@ -882,6 +882,11 @@
             "title": "Creationtype",
             "type": "string"
           },
+          "instrumental": {
+            "default": false,
+            "title": "Instrumental",
+            "type": "boolean"
+          },
           "maxDurationSeconds": {
             "anyOf": [
               {
@@ -1043,6 +1048,11 @@
             ],
             "default": null,
             "title": "Voice"
+          },
+          "instrumental": {
+            "default": false,
+            "title": "Instrumental",
+            "type": "boolean"
           },
           "lyrics": {
             "default": "",
@@ -12951,6 +12961,11 @@
             "title": "Creationtype",
             "type": "string"
           },
+          "instrumental": {
+            "default": false,
+            "title": "Instrumental",
+            "type": "boolean"
+          },
           "maxDurationSeconds": {
             "anyOf": [
               {
@@ -13122,6 +13137,11 @@
             ],
             "default": null,
             "title": "Voice"
+          },
+          "instrumental": {
+            "default": false,
+            "title": "Instrumental",
+            "type": "boolean"
           },
           "lyrics": {
             "default": "",
