@@ -173,7 +173,7 @@ def test_canvas_continues_a_previous_h3_clip_by_its_job_id(project, tmp_path):
         uploaded = canvas.import_file(value['id'], str(uuid4()), 'upload.mp4', clip.read_bytes(), session)
         with pytest.raises(ProjectError, match='不能接续'):
             await generate({'prompt': '接着上传的视频', 'referenceIds': [uploaded['id']], 'videoMode': 'continuation'})
-        with pytest.raises(ProjectError, match='Continuation requires one prior video'):
+        with pytest.raises(ProjectError, match='视频续写'):
             await generate({'prompt': '没有上一段', 'referenceIds': [], 'videoMode': 'continuation'})
         await manager.close()
 

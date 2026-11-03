@@ -321,7 +321,7 @@ def execution_spec(spec, references, rules):
 def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, references: tuple[ResolvedReference, ...] = ()):
     """Pure shared validation; it never submits, uploads or changes a project."""
     if spec.modelConfigId != model.id or model.kind != ('agent' if spec.kind == 'text' else spec.kind):
-        raise ValueError('Selected model does not match generation kind')
+        raise ValueError('所选模型与生成类型不匹配。')
     if model.inputRules.profile == 'vllm-omni-segmentation':
         raise ValueError('视觉分割模型仅用于选区、分割和抠像，请选择生成模型。')
     if model.inputRules.profile == 'vllm-omni-depth':
@@ -329,20 +329,20 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if model.inputRules.profile == 'vllm-omni-score':
         raise ValueError('扒谱模型仅用于参照音乐生成，请选择音乐生成模型。')
     if (spec.promptContent is not None and not any(isinstance(part, PromptReference) or part.text.strip() for part in spec.promptContent)) or (spec.promptContent is None and not spec.prompt.strip()):
-        raise ValueError('Generation prompt is empty')
+        raise ValueError('请填写生成提示词。')
     rules = model.inputRules
     if len(references) > 64:
-        raise ValueError('Too many references')
+        raise ValueError('参考素材数量超过上限。')
     unique([(ref.referenceId, ref.asset.assetId) for ref in references], 'resolved reference assets')
     if spec.promptContent and any(isinstance(part, PromptReference) and part.referenceId not in {ref.referenceId for ref in references} for part in spec.promptContent):
-        raise ValueError('Prompt points to an unresolved reference')
+        raise ValueError('提示词引用了未解析的参考素材。')
     transmitted = [ref for ref in references if ref.role != 'continuation' and ref.transmission != 'context_only']
     if sum(ref.metadata.size for ref in transmitted) > rules.requestBytes:
-        raise ValueError('Reference data exceeds the model request budget')
+        raise ValueError('参考素材总大小超过模型请求上限。')
     for ref in transmitted:
         limit = rules.imageBytes if ref.asset.kind == 'image' else rules.videoBytes if ref.asset.kind == 'video' else rules.requestBytes
         if ref.metadata.size > limit:
-            raise ValueError('Reference file exceeds the model byte limit')
+            raise ValueError('参考文件超过模型的单文件大小限制。')
     kinds = [ref.asset.kind for ref in references if ref.transmission != 'context_only']
     if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':
         # Count connected recordings even where the policy would leave them
@@ -353,11 +353,12 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
         if recordings > rules.maxAudios:
             raise ValueError('参照音乐最多连接 1 个音频节点。')
     if any(kind not in rules.allowedKinds for kind in kinds):
-        raise ValueError('Model does not accept this reference kind')
+        raise ValueError('当前模型不支持这种参考素材类型。')
     for kind, limit in [('image', rules.maxImages), ('video', rules.maxVideos), ('audio', rules.maxAudios)] if spec.kind != 'text' else []:
         count = sum(ref.asset.kind == kind for ref in transmitted)
         if count > limit:
-            raise ValueError(f'Too many {kind} references')
+            label = {'image': '图片', 'video': '视频', 'audio': '音频'}[kind]
+            raise ValueError(f'{label}参考素材数量超过上限。')
     if spec.kind == 'image':
         from opendirector.domain.image_output import resolve_image_output
         if spec.parameters.preset != 'none':
@@ -369,10 +370,10 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     elif spec.kind == 'audio' and (spec.parameters.creationType != 'audio' or spec.parameters.mode != 'tts'):
         raise ValueError('当前语音服务仅支持文本朗读。')
     if spec.kind == 'audio' and spec.promptContent is not None and not any(part.type == 'text' and part.text.strip() for part in spec.promptContent):
-        raise ValueError('Speech generation requires actual text, not reference labels')
+        raise ValueError('语音生成需要实际文本，不能只使用参考标签。')
     if spec.kind != 'video':
         if any(ref.role != 'reference' for ref in references):
-            raise ValueError('Frame and continuation roles require video generation')
+            raise ValueError('首尾帧和续写参考只能用于视频生成。')
         return
     params = spec.parameters
     if not params.generateAudio and model.protocol != 'volcengine':
@@ -380,34 +381,35 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
     if params.videoMode == 'first_frame' and len({ref.referenceId for ref in references if ref.asset.kind == 'image' and ref.subjectRole is None}) > 2:
         raise ValueError('首尾帧模式最多连接 2 个图片节点，请先断开多余连线。')
     if params.videoMode not in rules.videoModes:
-        raise ValueError('Model does not support this video mode')
+        raise ValueError('当前模型不支持这种视频模式。')
     if params.videoMode == 'continuation':
         continuation = [ref for ref in references if ref.role == 'continuation']
         if len(continuation) != 1 or continuation[0].asset.kind != 'video' or kinds.count('video') != 1:
-            raise ValueError('Continuation requires one prior video')
+            raise ValueError('视频续写需要且只能连接一个原视频。')
         if params.resolution != 'auto':
-            raise ValueError('Continuation keeps the previous video size')
+            raise ValueError('视频续写会沿用原视频尺寸，不能修改分辨率。')
     elif any(ref.role == 'continuation' for ref in references):
-        raise ValueError('Continuation references require continuation mode')
+        raise ValueError('续写参考必须使用续写模式。')
     if params.videoMode == 'first_frame' and (kinds.count('image') > 1 or any(kind in {'audio', 'video'} for kind in kinds)):
-        raise ValueError('First-frame mode accepts at most one image and text')
+        raise ValueError('首帧模式最多只能连接一个图片参考和文本。')
     if params.videoMode != 'first_frame' and any(ref.role == 'first_frame' for ref in references):
-        raise ValueError('First-frame references require first-frame mode')
+        raise ValueError('首帧参考必须使用首帧模式。')
     if kinds.count('audio') and not (kinds.count('image') or kinds.count('video')):
-        raise ValueError('Audio video references require an image or video')
+        raise ValueError('音频参考必须同时连接图片或视频参考。')
     for kind in ('audio', 'video'):
         seconds = [ref.metadata.durationSeconds for ref in transmitted if ref.asset.kind == kind]
         minimum = 2 if kind == 'audio' else 0
         if any(value is None or value < minimum or value <= 0 for value in seconds) or sum(seconds) > 15:
-            raise ValueError(f'{kind.title()} references require a known total duration of at most 15 seconds')
+            label = '视频' if kind == 'video' else '音频'
+            raise ValueError(f'{label}参考的时长必须已知，且总时长不能超过 15 秒。')
     if rules.profile == 'fasth3-omni' and sum(kind in {'image', 'video', 'audio'} for kind in kinds) > 12:
-        raise ValueError('FastH3 accepts at most 12 media references')
+        raise ValueError('FastH3 最多支持 12 个媒体参考。')
     if params.resolution != 'auto':
         choices = rules.referenceImageResolutions if params.videoMode == 'reference' and 'image' in kinds and rules.referenceImageResolutions is not None else rules.outputResolutions
         if params.resolution not in choices:
-            raise ValueError('Unsupported output resolution for this reference mode')
+            raise ValueError('当前参考模式不支持该输出分辨率。')
     caps = rules.videoCapabilities
     if caps and params.durationSeconds is not None:
         choices = [output for output in caps.outputs if params.resolution == 'auto' or output.resolution == params.resolution]
         if not any(params.durationSeconds in output.durations for output in choices):
-            raise ValueError('Unsupported duration/resolution combination')
+            raise ValueError('当前时长与分辨率组合不受支持。')

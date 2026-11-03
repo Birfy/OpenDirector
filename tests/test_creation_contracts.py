@@ -337,14 +337,14 @@ def test_video_capabilities_and_reference_rules_reuse_existing_profiles():
     config = model('video', videoAdapter='minimax_h3')
     assert config.inputRules.profile == 'vllm-omni-h3'
     validate_generation(video_spec(durationSeconds=5, resolution='480P'), config)
-    with pytest.raises(ValueError, match='duration'):
+    with pytest.raises(ValueError, match='时长'):
         validate_generation(video_spec(durationSeconds=3, resolution='480P'), config)
-    with pytest.raises(ValueError, match='Continuation'):
+    with pytest.raises(ValueError, match='视频续写'):
         validate_generation(video_spec(videoMode='continuation'), config)
     prior = ResolvedReference(**resolved('video', 'continuation'))
     validate_generation(video_spec(videoMode='continuation'), config, (prior,))
     image = ResolvedReference(**resolved(size=config.inputRules.imageBytes + 1))
-    with pytest.raises(ValueError, match='byte limit'):
+    with pytest.raises(ValueError, match='单文件大小限制'):
         validate_generation(video_spec(), config, (image,))
 
 
@@ -364,9 +364,9 @@ def test_seedance_image_reference_resolution_and_audio_duration_constraints():
     config = model('video', url='https://ark.cn-beijing.volces.com/api/plan/v3', protocol='volcengine', modelId='doubao-seedance-2.0')
     image = ResolvedReference(**resolved())
     audio = ResolvedReference(**{**resolved('audio', durationSeconds=16), 'referenceId': uid(81)})
-    with pytest.raises(ValueError, match='resolution'):
+    with pytest.raises(ValueError, match='分辨率'):
         validate_generation(video_spec(videoMode='reference', resolution='1080P'), config, (image,))
-    with pytest.raises(ValueError, match='15 seconds'):
+    with pytest.raises(ValueError, match='音频参考.*15 秒'):
         validate_generation(video_spec(videoMode='reference'), config, (image, audio))
 
 

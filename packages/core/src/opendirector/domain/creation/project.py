@@ -192,18 +192,18 @@ class ProjectSnapshot(Contract):
                 if data.main and data.main.kind == 'video':
                     seconds = assets[data.main.assetId].metadata.durationSeconds
                     if seconds is not None and seconds > 15:
-                        raise ValueError('Subject video exceeds 15 seconds')
+                        raise ValueError('主体视频不能超过 15 秒。')
                 if data.voice:
                     seconds = assets[data.voice.assetId].metadata.durationSeconds
                     if seconds is not None and not 0 < seconds <= 15:
-                        raise ValueError('Subject voice must be within 15 seconds')
+                        raise ValueError('主体配音必须在 15 秒以内。')
             if isinstance(doc, TimelineDocument):
                 for track in doc.data.tracks:
                     for clip in track.clips:
                         asset = assets[clip.resource.asset.assetId]
                         duration = asset.metadata.durationSeconds
                         if asset.kind != 'image' and duration is not None and clip.outPoint > duration + 1e-6:
-                            raise ValueError('Timeline clip exceeds its actual asset duration')
+                            raise ValueError('时间线片段超过素材的实际时长。')
         return self
 
 

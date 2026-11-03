@@ -125,7 +125,7 @@ def test_explicit_ratio_wins_over_references_and_automatic_fit_prefers_video():
 
 @pytest.mark.parametrize('resolution', ['720P', '1080P', '4K'])
 def test_unsupported_h3_resolutions_are_rejected_before_task_acceptance(tmp_path, resolution):
-    with pytest.raises(ProjectError, match='Unsupported output resolution'):
+    with pytest.raises(ProjectError, match='输出分辨率'):
         prepare(tmp_path, resolution=resolution)
     assert not list(tmp_path.glob('projects/*/tasks/*.json'))
 

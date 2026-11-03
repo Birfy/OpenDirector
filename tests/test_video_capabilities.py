@@ -129,7 +129,7 @@ def test_custom_contract_reaches_generic_wire_without_fasth3_sampling_fields(tmp
 
 
 def test_invalid_duration_resolution_pair_never_accepts_a_task(tmp_path):
-    with pytest.raises(ProjectError, match='Unsupported duration/resolution combination'):
+    with pytest.raises(ProjectError, match='时长与分辨率组合'):
         prepare(tmp_path, '540P', 7)
     assert not list(tmp_path.glob('projects/*/tasks/*.json'))
 

@@ -92,7 +92,7 @@ def test_generates_a_16_9_png_with_text_references_inlined(project):
 def test_reference_images_are_rejected_before_any_request(project):
     store, value, session, _ = project
     picture = CreationToolAssets(store).import_file(value['id'], str(uuid4()), '角色.png', png(), session)
-    with pytest.raises(ProjectError, match='Model does not accept this reference kind'):
+    with pytest.raises(ProjectError, match='参考素材类型'):
         run_image(project, httpx.Response(500), [picture['id']])
 
 
