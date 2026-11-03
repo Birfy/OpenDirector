@@ -530,7 +530,8 @@
                 "enum": [
                   "opencode",
                   "codex",
-                  "claude"
+                  "claude",
+                  "jiuwenswarm"
                 ],
                 "type": "string"
               },
@@ -12584,7 +12585,8 @@
                 "enum": [
                   "opencode",
                   "codex",
-                  "claude"
+                  "claude",
+                  "jiuwenswarm"
                 ],
                 "type": "string"
               },

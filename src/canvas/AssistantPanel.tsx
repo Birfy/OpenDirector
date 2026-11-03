@@ -510,7 +510,7 @@ export function AssistantPanel({
             key={documentId}
             ref={editor}
             onSlashChange={setSlashQuery}
-            skillsEnabled
+            skillsEnabled={chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills !== false}
             scope={documentId}
             value={(() => {
               const content = referenceContent(value.draft, value.assets.map(asset => asset.id), value.assets, value.draftContent);
@@ -637,7 +637,7 @@ export function AssistantPanel({
               projectId={documentId}
               selected={value.skills ?? []}
               slashQuery={slashQuery}
-              disabled={referenceDisabled || chat.sending}
+              disabled={referenceDisabled || chat.sending || chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills === false}
               onChange={(skills, fromSlash) => editor.current?.setSkill(skills[0] ?? null, fromSlash)}
             />
             <ModelPicker

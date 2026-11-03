@@ -8,6 +8,7 @@ from typing import Literal
 from opendirector.agent.context import AgentEvent, RunContext, RuntimeId
 from opendirector.agent.gateway import ToolGateway
 import opendirector.agent.native as native
+import opendirector.agent.jiuwenswarm as jiuwenswarm
 from opendirector.agent.tools import AgentTools
 from opendirector.agent.process import terminate
 from opendirector.domain.projects import ProjectError
@@ -21,6 +22,7 @@ class RuntimeSpec:
     modelSource: Literal['settings', 'cli']
     modelOverride: bool
     engine: RuntimeId
+    supportsSkills: bool = True
 
 
 RUNTIMES = {
@@ -28,6 +30,7 @@ RUNTIMES = {
     'opencode': RuntimeSpec(id='opencode', label='OpenCode CLI', group='harness', modelSource='cli', modelOverride=True, engine='opencode'),
     'codex': RuntimeSpec(id='codex', label='Codex', group='harness', modelSource='cli', modelOverride=True, engine='codex'),
     'claude': RuntimeSpec(id='claude', label='Claude Code', group='harness', modelSource='cli', modelOverride=True, engine='claude'),
+    'jiuwenswarm': RuntimeSpec(id='jiuwenswarm', label='JiuwenSwarm', group='harness', modelSource='cli', modelOverride=True, engine='jiuwenswarm'),
 }
 
 
@@ -40,6 +43,8 @@ def runtime_spec(name: str) -> RuntimeSpec:
 
 def runtime_available(name: str) -> bool:
     spec = runtime_spec(name)
+    if spec.engine == 'jiuwenswarm':
+        return jiuwenswarm.executable() is not None
     return native.executable(spec.engine) is not None
 
 
@@ -49,6 +54,8 @@ def runtime_catalog() -> list[dict]:
 
 
 async def runtime_readiness(engine: str) -> str:
+    if engine == 'jiuwenswarm':
+        return await jiuwenswarm.readiness()
     executable = native.executable(engine)
     if executable is None:
         return 'not_installed'
@@ -86,6 +93,7 @@ class AgentRuntimes:
     def __init__(self, projects, generation, configs, provider=None):
         self.business = AgentTools(projects, generation, configs)
         self.adapter = native.NativeRuntime(provider)
+        self.jiuwenswarm = jiuwenswarm.JiuwenSwarmRuntime()
 
     async def stream(self, run: RunContext) -> AsyncIterator[AgentEvent]:
         runtime_spec(run.runtime)
@@ -98,7 +106,8 @@ class AgentRuntimes:
                 run = replace(run, runtime_model=default)
         gateway = ToolGateway(self.business, run)
         try:
-            async for event in self.adapter.stream(run, gateway):
+            adapter = self.jiuwenswarm if run.runtime == 'jiuwenswarm' else self.adapter
+            async for event in adapter.stream(run, gateway):
                 yield event
         finally:
             await gateway.close()

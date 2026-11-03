@@ -52,3 +52,14 @@ test("invalid or unavailable preference storage leaves the server conversation i
   assert.equal(restoreAgentSelection("project", saved, blocked), saved);
   assert.doesNotThrow(() => rememberAgentSelection("project", saved, blocked));
 });
+
+test("JiuwenSwarm model selection survives refresh without changing other harness choices", () => {
+  const local = storage();
+  const value: Conversation = {...draft(), runtime: "jiuwenswarm", runtimeModel: "local-model#0",
+    harnessModels: {jiuwenswarm: "local-model#0", codex: "gpt-model"}};
+  rememberAgentSelection("project", value, local);
+  const restored = restoreAgentSelection("project", draft(), local);
+  assert.equal(restored.runtime, "jiuwenswarm");
+  assert.equal(restored.runtimeModel, "local-model#0");
+  assert.deepEqual(restored.harnessModels, value.harnessModels);
+});

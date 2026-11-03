@@ -50,6 +50,9 @@ async def opencode_fallback(binary: str, configured_providers: list[str]) -> str
 
 
 async def model_choices(runtime: str) -> list[dict]:
+    if runtime == 'jiuwenswarm':
+        from opendirector.agent.jiuwenswarm import model_choices as swarm_models
+        return await swarm_models()
     if runtime not in {'opencode', 'codex', 'claude'}:
         raise ProjectError('此引擎使用模型设置中的模型。')
     binary = executable(runtime)

@@ -204,6 +204,7 @@ export function useAssistantChat(
   );
   const canSend =
     !!currentRuntime?.available &&
+    (currentRuntime.id !== "jiuwenswarm" || currentRuntime.status === "ready") &&
     (currentRuntime.modelSource === "cli" || !!agent);
   const addAssets = (assets: ChatAsset[]) => {
     assets.forEach((asset) =>

@@ -1,7 +1,12 @@
 import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
 import { headers, json, request, responseError } from "./api.ts";
 
-export type AgentRuntime = "default" | "opencode" | "codex" | "claude";
+export type AgentRuntime =
+  | "default"
+  | "opencode"
+  | "codex"
+  | "claude"
+  | "jiuwenswarm";
 export interface RuntimeInfo {
   id: AgentRuntime;
   label: string;
@@ -9,7 +14,14 @@ export interface RuntimeInfo {
   modelSource: "settings" | "cli";
   modelOverride: boolean;
   available: boolean;
-  status: "ready" | "not_installed" | "needs_login" | "unknown";
+  status:
+    | "ready"
+    | "not_installed"
+    | "needs_login"
+    | "needs_configuration"
+    | "unsupported_version"
+    | "unknown";
+  supportsSkills?: boolean;
 }
 export interface ChatSkill {
   source?: "builtin" | "workspace" | "project";
@@ -68,7 +80,7 @@ export interface ChatDraft {
   runtime?: AgentRuntime;
   runtimeModel?: string | null;
   harnessModels?: Partial<
-    Record<"opencode" | "codex" | "claude", string | null>
+    Record<Exclude<AgentRuntime, "default">, string | null>
   >;
   skills?: string[];
 }

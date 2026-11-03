@@ -34,7 +34,7 @@ class Draft(BaseModel):
     assets: list[dict[str, JsonValue]] = Field(default_factory=list, max_length=64)
     runtime: Runtime = 'default'
     runtimeModel: str | None = Field(default=None, max_length=200)
-    harnessModels: dict[Literal["opencode", "codex", "claude"], Annotated[str, Field(max_length=200)] | None] = Field(default_factory=dict)
+    harnessModels: dict[Literal["opencode", "codex", "claude", "jiuwenswarm"], Annotated[str, Field(max_length=200)] | None] = Field(default_factory=dict)
     thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     modelSelections: dict[str, str | None] = Field(default_factory=dict)
     skills: list[str] = Field(default_factory=list, max_length=1)
@@ -185,7 +185,7 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         return await configured_runtimes()
 
     @router.get('/runtimes/{runtime}/models')
-    async def runtime_models(project_id: UUID, runtime: Literal['opencode', 'codex', 'claude']):
+    async def runtime_models(project_id: UUID, runtime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm']):
         await asyncio.to_thread(conversations.path, project_id)
         return await model_choices(runtime)
 
@@ -217,8 +217,12 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
             if not runtime_available(value.runtime):
                 raise ProjectError(f'{value.runtime} 未安装，请安装 CLI 并登录。', 503)
             spec = runtime_spec(value.runtime)
+            if not spec.supportsSkills and value.skills:
+                raise ProjectError(f'{spec.label} 不支持技能，请移除技能后发送。', 409)
+            if value.runtime == 'jiuwenswarm' and value.thinking != 'auto':
+                raise ProjectError('JiuwenSwarm 当前使用原生默认推理强度。', 409)
             config = await asyncio.to_thread(configs.resolve, str(value.modelId), 'agent') if spec.modelSource == 'settings' else None
-            available = await skills(projects.local.repository, directory)
+            available = await skills(projects.local.repository, directory) if spec.supportsSkills else []
             if set(value.skills) - {item['name'] for item in available}:
                 raise ProjectError('技能已失效，请重新选择。', 409)
             snapshot = await asyncio.to_thread(projects.snapshot, project_id)

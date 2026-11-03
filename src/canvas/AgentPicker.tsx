@@ -76,21 +76,37 @@ export function AgentPicker({
       ? "尚未安装"
       : item.status === "needs_login"
         ? "尚未登录"
-        : item.status === "unknown"
-          ? "无法确认登录状态"
-          : "尚未配置模型";
+        : item.status === "needs_configuration"
+          ? "尚未配置模型"
+          : item.status === "unsupported_version"
+            ? "版本不支持所需协议"
+            : item.status === "unknown"
+              ? item.id === "jiuwenswarm"
+                ? "无法读取模型目录，请检查配置"
+                : "无法确认配置状态"
+              : "尚未配置模型";
+  const harnessDetail = (item: RuntimeInfo & { id: Harness }) =>
+    !ready(item)
+      ? reason(item)
+      : item.modelSource === "settings"
+        ? (configuredModel(item.id)?.modelId ?? "选择模型")
+        : modelLabel(item.id);
   const setupCommand =
-    setup === "codex"
-      ? "codex login"
-      : setup === "claude"
-        ? "claude auth login"
-        : "opencode";
+    setup === "jiuwenswarm"
+      ? "jiuwenswarm-init"
+      : setup === "codex"
+        ? "codex login"
+        : setup === "claude"
+          ? "claude auth login"
+          : "opencode";
   const setupLink =
-    setup === "codex"
-      ? "https://developers.openai.com/codex/cli/"
-      : setup === "claude"
-        ? "https://code.claude.com/docs/en/setup"
-        : "https://opencode.ai/docs/";
+    setup === "jiuwenswarm"
+      ? "https://github.com/openJiuwen-ai/jiuwenswarm"
+      : setup === "codex"
+        ? "https://developers.openai.com/codex/cli/"
+        : setup === "claude"
+          ? "https://code.claude.com/docs/en/setup"
+          : "https://opencode.ai/docs/";
   const editingSpec = harnesses.find((item) => item.id === editing);
   const runtime = value.runtime ?? "default";
   const harness = harnesses.find((item) => item.id === runtime);
@@ -162,6 +178,7 @@ export function AgentPicker({
         : override;
     onChange({
       runtime: id,
+      ...(id === "jiuwenswarm" ? { thinking: "auto" } : {}),
       runtimeModel: fromSettings ? null : configured,
       harnessModels: { ...value.harnessModels, [id]: configured },
       ...(fromSettings
@@ -317,6 +334,9 @@ export function AgentPicker({
               <h3>配置 {setupSpec.label}</h3>
               <p>{ready(setupSpec) ? "已就绪" : reason(setupSpec)}</p>
               <p>在启动 OpenDirector 的机器上完成配置，再重新检查。</p>
+              {setupSpec.id === "jiuwenswarm" && (
+                <p>配置 JiuwenSwarm 的对话模型，然后重新检查模型目录。</p>
+              )}
               {setupSpec.modelSource === "settings" && setupSpec.available ? (
                 <button
                   type="button"
@@ -385,6 +405,11 @@ export function AgentPicker({
                     type="button"
                     role="menuitemradio"
                     aria-checked={runtime === item.id}
+                    title={
+                      item.id === "jiuwenswarm"
+                        ? harnessDetail(item)
+                        : undefined
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "ArrowRight" && ready(item)) {
                         event.preventDefault();
@@ -401,13 +426,7 @@ export function AgentPicker({
                   >
                     <CanvasIcon name="cube" />
                     <strong>{item.label}</strong>
-                    <small>
-                      {!ready(item)
-                        ? reason(item)
-                        : item.modelSource === "settings"
-                          ? (configuredModel(item.id)?.modelId ?? "选择模型")
-                          : modelLabel(item.id)}
-                    </small>
+                    <small>{harnessDetail(item)}</small>
                     {runtime === item.id && <CanvasIcon name="check" />}
                   </button>
                   {ready(item) &&
