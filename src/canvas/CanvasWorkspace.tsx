@@ -168,6 +168,7 @@ import {
   createHistory,
   executeCommand,
   recordChange,
+  sameCanvasContent,
   type CanvasHistory,
 } from "./history";
 import { ImageActionEditor, isImageActionTool } from "./ImageActionEditor";
@@ -945,7 +946,17 @@ function Workspace() {
     (snapshot: CanvasDocument, saveView = true): Promise<boolean> => {
       saveQueue.current = saveQueue.current
         .then(async () => {
-          await saveWorkspaceDocument(snapshot, { saveView });
+          const projection = workspaceProjection(snapshot.id);
+          // A preceding write can change the baseline while this save waits.
+          if (
+            saveView &&
+            projection.baseline &&
+            sameCanvasContent(snapshot, projection.baseline)
+          ) {
+            await projection.saveView(snapshot);
+          } else {
+            await saveWorkspaceDocument(snapshot, { saveView });
+          }
           saveError.current = "";
           if (historyRef.current.present === snapshot) {
             const warning = workspaceProjection(snapshot.id).viewError;
@@ -1402,10 +1413,12 @@ function Workspace() {
   }, [installDocument, notify]);
   useEffect(() => {
     if (!ready || switching || projectRenaming) return;
-    setSaveStatus("保存中…");
+    const baseline = workspaceProjection(doc.id).baseline;
+    const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
+    if (contentChanged) setSaveStatus("保存中…");
     const timeout = setTimeout(() => {
       if (!switchPending.current && !editorSaving.current) void persist(doc);
-    }, 450);
+    }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
   }, [doc, ready, switching, projectRenaming, persist]);
   useEffect(() => {

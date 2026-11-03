@@ -497,6 +497,18 @@ def test_concurrent_same_revision_commands_have_one_winner(projects):
     assert len(projects.changes(created.projectId)['events']) == 2
 
 
+def test_caught_up_poll_uses_the_cached_head_without_replaying_history(projects, monkeypatch):
+    created = create(projects)
+    projects.execute(rename(created))
+    warm = projects.changes(created.projectId)
+    def no_history(*_):
+        raise AssertionError('history replayed')
+    monkeypatch.setattr(projects, '_load', no_history)
+    caught_up = projects.changes(created.projectId, after=warm['currentCursor'])
+    assert caught_up == dict(events=[], nextCursor=warm['currentCursor'],
+                             currentCursor=warm['currentCursor'], hasMore=False)
+
+
 def test_paginated_outbox_has_no_duplicate_or_skipped_events(projects):
     created = create(projects)
     for revision in range(1, 4):

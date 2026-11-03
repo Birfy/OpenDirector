@@ -528,10 +528,17 @@ class CreationProjects:
             raise ProjectError('变更游标或分页大小无效。')
         with self.local.transaction() as db:
             self._recover()
-            records = self._load(db, project_id)[2]
-            cursor = records[0].snapshot.eventCursor
+            path, manifest = self._find(db, project_id)
+            # A subscriber that is already caught up is the common polling
+            # path. Replaying the commit chain here held the catalog lock for
+            # about a second per poll on Windows and starved saves/heartbeats.
+            head = self._current(db, project_id, path, manifest)
+            cursor = head.snapshot.eventCursor
             if after > cursor:
                 raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
+            if after == cursor:
+                return dict(events=[], nextCursor=after, currentCursor=cursor, hasMore=False)
+            records = self._load(db, project_id)[2]
             events = [record.event for record in reversed(records) if record.event and record.event.cursor > after][:limit]
             events = [event.model_copy(deep=True) for event in events]
             return dict(events=events, nextCursor=events[-1].cursor if events else after,

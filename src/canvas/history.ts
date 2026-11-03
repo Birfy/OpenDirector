@@ -139,8 +139,22 @@ function sameContent(a: CanvasDocument, b: CanvasDocument): boolean {
         edge.sourceHandle === other.sourceHandle &&
         edge.targetHandle === other.targetHandle &&
         edge.intent === other.intent &&
-        edge.assemblySlotId === other.assemblySlotId
+        edge.assemblySlotId === other.assemblySlotId &&
+        edge.referenceBinding === other.referenceBinding
       );
     })
   );
+}
+
+/** Autosave also has to notice changes to logical objects that are hidden from the canvas. */
+export function sameCanvasContent(a: CanvasDocument, b: CanvasDocument) {
+  if (sameContent(a, b)) {
+    const hiddenA = a.hiddenNodes ?? [],
+      hiddenB = b.hiddenNodes ?? [];
+    return (
+      hiddenA.length === hiddenB.length &&
+      hiddenA.every((node, index) => sameNode(node, hiddenB[index]!))
+    );
+  }
+  return false;
 }

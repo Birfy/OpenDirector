@@ -145,14 +145,15 @@ class ToolTasks:
     def _directory(self, project_id, session=None):
         with self.store.transaction() as db:
             self.projects._recover()
-            path, _, _ = self.projects._load(db, project_id)
+            path, manifest = self.projects._find(db, project_id)
+            self.projects._current(db, project_id, path, manifest)
             if session is not None:
                 self.projects._lease(db, project_id, path, session)
             return path
 
     def list(self, project_id):
-        directory = self._directory(project_id)
-        tasks = [self.get(project_id, path.stem) for path in self._folder(directory).glob('*.json')]
+        folder = self._folder(self._directory(project_id))
+        tasks = [self._read_task(project_id, child(folder, path.name)) for path in folder.glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
 
     def placement(self, project_id, task_id, state, session, *, policy="if_current"):
@@ -193,6 +194,10 @@ class ToolTasks:
         identifier(project_id)
         identifier(task_id)
         path = child(self._folder(self._directory(project_id, session)), task_id + '.json')
+        return self._read_task(project_id, path, session)
+
+    def _read_task(self, project_id, path, session=None):
+        task_id = identifier(path.stem)
         if not path.is_file():
             raise ProjectError('工具任务不存在。', 404)
         task = read_json(path)

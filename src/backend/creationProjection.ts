@@ -1731,6 +1731,12 @@ export class CreationProjection {
     this.basis = this.client.snapshot;
     this.baseline = document;
     if (options.saveView === false) return operations.length > 0;
+    await this.saveView(document);
+    return operations.length > 0;
+  }
+
+  /** View state is independent of the business commit; panning only needs this. */
+  async saveView(document: CanvasDocument) {
     this.viewError = "";
     try {
       const view = await this.client.view();
@@ -1748,6 +1754,5 @@ export class CreationProjection {
     } catch (error) {
       this.viewError = error instanceof Error ? error.message : String(error);
     }
-    return operations.length > 0;
   }
 }

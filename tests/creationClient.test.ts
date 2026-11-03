@@ -850,6 +850,26 @@ test("an older square audio card projects as the compact control strip", async (
   assert.equal(document.nodes[0]?.height, 112);
 });
 
+test("a viewport-only save skips business preparation and batching", async () => {
+  const snapshot = empty();
+  const client = new CommandCapture(snapshot.project.id);
+  client.install(snapshot);
+  const projection = new CreationProjection(client);
+  const document = {
+    ...createDocument(),
+    id: client.id,
+    title: snapshot.project.name,
+  };
+  projection.prepare = async () => {
+    throw new Error("view-only save must not prepare");
+  };
+  client.batch = async () => {
+    throw new Error("view-only save must not batch");
+  };
+  await projection.saveView(document);
+  assert.equal(projection.viewError, "");
+});
+
 test("clean business flush skips preparation and preserves the basis of unseen changes", async () => {
   const snapshot = empty();
   const client = new CreationClient(snapshot.project.id);
