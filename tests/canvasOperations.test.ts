@@ -5,6 +5,8 @@ import { createDocument, createNode } from "../src/canvas/model.ts";
 import type { CanvasDocument, CanvasNode } from "../src/canvas/model.ts";
 import {
   copySelection,
+  edgesAttachedTo,
+  deleteSelection,
   orderNodesForCanvas,
   groupSelection,
   pasteFragment,
@@ -329,4 +331,37 @@ test("rendering orders parents before children without losing layer values or mu
     [4, 2, 3],
   );
   assert.equal(input[0], nested);
+});
+
+test("deleting nodes lists its attached references while other edges stay", () => {
+  const source = createNode("image", undefined, { title: "A" });
+  const other = createNode("image", undefined, { title: "B" });
+  const target = createNode("video", undefined, { title: "C" });
+  const document = {
+    ...createDocument(),
+    nodes: [source, other, target],
+    edges: [
+      { id: "e-source", source: source.id, target: target.id },
+      { id: "e-other", source: other.id, target: target.id },
+    ],
+  };
+  assert.deepEqual(edgesAttachedTo(document, [source.id]), ["e-source"]);
+  assert.deepEqual(
+    edgesAttachedTo(document, [source.id, other.id]).sort(),
+    ["e-other", "e-source"],
+  );
+  // The target's incoming references belong to it as well.
+  assert.deepEqual(edgesAttachedTo(document, [target.id]).sort(), [
+    "e-other",
+    "e-source",
+  ]);
+  assert.deepEqual(edgesAttachedTo(document, []), []);
+  const group = createNode("group");
+  const grouped = {
+    ...document,
+    nodes: [group, { ...source, parentId: group.id }, { ...other, locked: true }, target],
+  };
+  const deleted = deleteSelection(grouped, [group.id, other.id], []);
+  assert.deepEqual(deleted.nodes.map((node) => node.id), [other.id, target.id]);
+  assert.deepEqual(deleted.edges.map((edge) => edge.id), ["e-other"]);
 });

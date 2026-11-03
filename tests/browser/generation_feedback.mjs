@@ -129,6 +129,30 @@ try {
       assert.equal(await overlay.getAttribute("data-phase"), "submitting");
       assert.equal(await submit.count(), 0);
       assert.ok(await cancel.isVisible());
+      const dock = page.locator(".cw-composer-dock").filter({ has: cancel });
+      const locked = await dock.evaluate((element) => {
+        const prompt = element.querySelector(".cw-prompt-input");
+        const root = document.documentElement;
+        const theme = root.getAttribute("data-theme");
+        root.dataset.theme = "dark";
+        const dark = getComputedStyle(prompt).color;
+        root.dataset.theme = "light";
+        const light = getComputedStyle(prompt).color;
+        if (theme === null) root.removeAttribute("data-theme");
+        else root.dataset.theme = theme;
+        return {
+          editable: prompt.getAttribute("contenteditable"),
+          dark,
+          light,
+          enabled: [...element.querySelectorAll("button:enabled")]
+            .filter((button) => button.getClientRects().length)
+            .map((button) => button.getAttribute("aria-label")),
+        };
+      });
+      assert.equal(locked.editable, "false");
+      assert.equal(locked.dark, "rgb(125, 130, 145)");
+      assert.equal(locked.light, "rgb(123, 130, 144)");
+      assert.deepEqual(locked.enabled, ["取消生成"]);
       assert.equal((await state()).jobs.length, 0);
       hold.release();
       await until(async () => (await state()).jobs.length === 1);

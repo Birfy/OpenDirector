@@ -2,6 +2,8 @@ import {
   applyCommand,
   createNode,
   DEFAULT_SETTINGS,
+  derivedNodeTitle,
+  takenNodeTitles,
   type CanvasDocument,
   type CanvasNode,
   type CanvasNodeData,
@@ -276,9 +278,7 @@ export function appendPendingResult(
     ? {
         ...pendingSettings(kind),
         ...(model.model ? { model: model.model } : {}),
-        ...(model.modelConfigId
-          ? { modelConfigId: model.modelConfigId }
-          : {}),
+        ...(model.modelConfigId ? { modelConfigId: model.modelConfigId } : {}),
       }
     : pendingSettings(kind);
   const node = {
@@ -286,6 +286,11 @@ export function appendPendingResult(
       title,
       settings,
     }),
+    // The pending card previews the same envelope as its source, so a portrait
+    // clip does not wait for completion inside a landscape placeholder.
+    ...((kind === "image" || kind === "video") && target.type === kind
+      ? { width: target.width, height: target.height }
+      : {}),
     ...(resultId ? { id: resultId } : {}),
   };
   return {
@@ -611,6 +616,7 @@ export function placeResults(
       width: node.width,
       height: node.height,
     }));
+  const titles = takenNodeTitles(document);
   return outputs.map((output, index) => {
     const node = createNode(
       output.kind as CanvasNodeKind,
@@ -620,7 +626,7 @@ export function placeResults(
       },
       output.kind === "text"
         ? {
-            title: output.title,
+            title: derivedNodeTitle(output.title, titles),
             text: output.text,
             backendAssetId: output.assetId,
           }
@@ -628,7 +634,7 @@ export function placeResults(
             src: output.src,
             backendAssetId: output.assetId,
             byteSize: output.byteSize,
-            title: output.title,
+            title: derivedNodeTitle(output.title, titles),
             mimeType: output.mimeType,
             assetState: "ready",
             mediaRole: "asset",

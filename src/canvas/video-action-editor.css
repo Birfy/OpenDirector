@@ -41,8 +41,8 @@
 .cw-video-action-editor select:focus-visible,
 .cw-video-action-editor textarea:focus-visible,
 .cw-video-action-overlay button:focus-visible {
-  outline: 2px solid var(--cw-control-accent);
-  outline-offset: 2px;
+  outline: 1px solid var(--cw-control-accent);
+  outline-offset: 1px;
 }
 .cw-video-action-editor > header {
   display: flex;

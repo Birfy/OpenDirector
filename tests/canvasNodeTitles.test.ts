@@ -4,10 +4,14 @@ import {
   applyCommand,
   createDocument,
   createNode,
+  derivedNodeTitle,
   nextNodeTitle,
+  takenNodeTitles,
   type CanvasNodeKind,
 } from "../src/canvas/model.ts";
 import { createHistory, executeCommand } from "../src/canvas/history.ts";
+import { copySelection, pasteFragment } from "../src/canvas/operations.ts";
+import { placeResults } from "../src/canvas/linkedResults.ts";
 
 test("hidden sources reserve their default numbers and retain titles when restored", () => {
   const nodes = Array.from({ length: 4 }, (_, index) =>
@@ -134,4 +138,56 @@ test("default numbering applies to all node kinds and handles long numeric suffi
     nextNodeTitle(document, "image", "图片"),
     "图片 9007199254740993",
   );
+});
+
+test("copies and derived results never reuse the source title", () => {
+  const source = createNode("video", undefined, {
+    title: "无声视频",
+    src: "blob:video",
+    mimeType: "video/mp4",
+    mediaRole: "asset",
+  });
+  const document = { ...createDocument(), nodes: [source] };
+  const titles = takenNodeTitles(document);
+  assert.equal(derivedNodeTitle("无声视频", titles), "无声视频 2");
+  assert.equal(derivedNodeTitle("无声视频", titles), "无声视频 3");
+  assert.equal(derivedNodeTitle("全新素材", titles), "全新素材");
+  // Numbered names continue their own series instead of stacking suffixes.
+  const numbered = {
+    ...createDocument(),
+    nodes: [
+      createNode("video", undefined, { title: "视频 2" }),
+      createNode("video", undefined, { title: "视频 3" }),
+    ],
+  };
+  assert.equal(derivedNodeTitle("视频 2", takenNodeTitles(numbered)), "视频 4");
+
+  const pasted = pasteFragment(document, copySelection(document, [source.id]));
+  assert.deepEqual(
+    pasted.document.nodes.map((node) => node.data.title),
+    ["无声视频", "无声视频 2"],
+  );
+  const twice = pasteFragment(
+    pasted.document,
+    copySelection(pasted.document, [source.id]),
+  );
+  assert.deepEqual(
+    twice.document.nodes.map((node) => node.data.title),
+    ["无声视频", "无声视频 2", "无声视频 3"],
+  );
+
+  const [result] = placeResults(
+    document,
+    [
+      {
+        kind: "video",
+        title: "无声视频",
+        src: "blob:edited",
+        mimeType: "video/mp4",
+        byteSize: 10,
+      },
+    ],
+    { x: 0, y: 0 },
+  );
+  assert.equal(result?.data.title, "无声视频 2");
 });

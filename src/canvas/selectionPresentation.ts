@@ -9,7 +9,8 @@ export type SelectionChrome = {
   scaleComposer?: boolean;
 };
 
-const TITLE_SPACE = 32;
+export const SELECTION_TITLE_SPACE = 32;
+const TITLE_SPACE = SELECTION_TITLE_SPACE;
 const TOOLBAR_GAP = 8;
 const COMPOSER_GAP = 16;
 const clamp = (value: number, min: number, max: number) =>
@@ -58,6 +59,47 @@ export function selectionViewport(
     zoom,
     x: center - (node.x + node.width / 2) * zoom,
     y: top - node.y * zoom,
+  };
+}
+
+/** Anchors the multi-selection action bar to the envelope it acts on. */
+export function selectionBarPlacement(
+  selection: Rect,
+  view: Viewport,
+  toolbar: ScreenSize,
+  safe: Rect,
+  gap = 8,
+) {
+  const selectionLeft = selection.x * view.zoom + view.x;
+  const selectionTop = selection.y * view.zoom + view.y;
+  const selectionRight = selectionLeft + selection.width * view.zoom;
+  const selectionBottom = selectionTop + selection.height * view.zoom;
+  const center = (selectionLeft + selectionRight) / 2;
+  const left = clamp(
+    center - toolbar.width / 2,
+    safe.x,
+    Math.max(safe.x, safe.x + safe.width - toolbar.width),
+  );
+  const above = selectionTop - gap - toolbar.height;
+  const below = selectionBottom + gap;
+  const top =
+    above >= safe.y
+      ? above
+      : below + toolbar.height <= safe.y + safe.height
+        ? below
+        : clamp(
+            above,
+            safe.y,
+            Math.max(safe.y, safe.y + safe.height - toolbar.height),
+          );
+  return {
+    left,
+    top,
+    visible:
+      selectionBottom > safe.y &&
+      selectionTop < safe.y + safe.height &&
+      selectionRight > safe.x &&
+      selectionLeft < safe.x + safe.width,
   };
 }
 

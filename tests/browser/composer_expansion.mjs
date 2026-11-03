@@ -229,6 +229,23 @@ try {
     await parameters.press("Escape");
     await parameters.waitFor({ state: "hidden" });
     assert.equal(await dock.getAttribute("data-expanded"), "true");
+    const picker = page.getByRole("dialog", {
+      name: "引用项目资产",
+      exact: true,
+    });
+    await editor.press("Control+Home");
+    await editor.press("End");
+    await editor.press("@");
+    await picker.waitFor();
+    const belowCaret = await picker.evaluate((element) => {
+      const caret = document.getSelection().getRangeAt(0).getBoundingClientRect();
+      const bounds = element.getBoundingClientRect();
+      return Math.abs(bounds.left - caret.left) < 2 &&
+        Math.abs(bounds.top - caret.bottom - 6) < 2;
+    });
+    assert.equal(belowCaret, true, "The expanded picker opens below the caret when it fits");
+    await editor.press("Escape");
+    await editor.press("Backspace");
     await editor.press("Control+End");
     await editor.press("Enter");
     await editor.press("@");

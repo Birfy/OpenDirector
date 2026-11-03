@@ -16,7 +16,7 @@ import {
   referencePart,
 } from "../src/canvas/chatReferenceContent.ts";
 import { referenceCandidates } from "../src/canvas/referenceCandidates.ts";
-import { cutSelection, ungroupSelection } from "../src/canvas/operations.ts";
+import { cutSelection, pasteFragment, ungroupSelection } from "../src/canvas/operations.ts";
 import { parseDocument, serializeDocument } from "../src/canvas/storage.ts";
 import {
   generationDefaults,
@@ -37,7 +37,32 @@ const fixture = () => {
   return { source, target, doc };
 };
 
-test("cut and ungroup retain hidden reference identities and their parent hierarchy", () => {
+test("cut detaches references and paste does not reconnect even an internal edge", () => {
+  const { doc, source, target } = fixture();
+  const linked = applyCommand(
+    doc,
+    referenceContentCommand(doc, target.id, [
+      { type: "text", text: "Keep this " },
+      referencePart(nodeReferenceAsset(source)),
+    ]),
+  );
+  const sourceOnly = cutSelection(linked, [source.id]);
+  assert.equal(sourceOnly.document.edges.length, 0);
+  assert.deepEqual(sourceOnly.document.nodes[0]?.data.promptContent, [
+    { type: "text", text: "Keep this " },
+  ]);
+  const both = cutSelection(linked, [source.id, target.id]);
+  assert.ok(both.fragment);
+  const pasted = pasteFragment(both.document, both.fragment);
+  assert.equal(pasted.document.edges.length, 0);
+  assert.equal(pasted.ids.length, 2);
+  assert.deepEqual(pasted.document.nodes.find((node) => node.type === "image" &&
+    node.data.promptContent?.length)?.data.promptContent, [
+    { type: "text", text: "Keep this " },
+  ]);
+});
+
+test("ungroup retains hidden reference identities and their parent hierarchy", () => {
   const { doc, source, target } = fixture();
   const linked = applyCommand(
     doc,
@@ -45,7 +70,7 @@ test("cut and ungroup retain hidden reference identities and their parent hierar
       referencePart(nodeReferenceAsset(source)),
     ]),
   );
-  const cut = cutSelection(linked, [source.id]).document;
+  const cut = applyCommand(linked, { type: "hide-nodes", ids: [source.id] });
   assert.equal(cut.hiddenNodes?.[0]?.id, source.id);
   assert.equal(cut.edges[0]?.source, source.id);
   assert.equal(

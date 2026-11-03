@@ -5,6 +5,7 @@ import type { SubjectMediaSlot } from "./subjectMedia.ts";
 
 export interface CanvasActions {
   select: (id: string, event: MouseEvent) => void;
+  reopenComposer: (id: string, event: MouseEvent) => void;
   update: (id: string, data: Partial<CanvasNodeData>) => void;
   rename: (id: string) => void;
   nameEdit?: { id: string; value: string } | null;

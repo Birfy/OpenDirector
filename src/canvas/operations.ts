@@ -4,6 +4,7 @@ import { mapSettingsNodeReferences } from "./model.ts";
 import { generationContentPatch } from "./generationReferenceContent.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
 import { applyCommand, createNode } from "./model.ts";
+import { derivedNodeTitle, takenNodeTitles } from "./model.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
@@ -210,6 +211,33 @@ export function copySelection(
   };
 }
 
+/** Edges that touch any of the given nodes. */
+export function edgesAttachedTo(
+  document: Pick<CanvasDocument, "edges">,
+  ids: Iterable<string>,
+): string[] {
+  const removed = new Set(ids);
+  return document.edges
+    .filter((edge) => removed.has(edge.source) || removed.has(edge.target))
+    .map((edge) => edge.id);
+}
+
+export function deleteSelection(
+  document: CanvasDocument,
+  ids: string[],
+  selectedEdges: string[],
+): CanvasDocument {
+  const hidden = applyCommand(document, { type: "hide-nodes", ids });
+  const visible = new Set(hidden.nodes.map((node) => node.id));
+  const removed = document.nodes
+    .filter((node) => !visible.has(node.id))
+    .map((node) => node.id);
+  const edges = [...new Set([...selectedEdges, ...edgesAttachedTo(document, removed)])];
+  // Clear prompt references while all affected nodes are still visible.
+  const detached = applyCommand(document, { type: "remove-edges", ids: edges });
+  return applyCommand(detached, { type: "hide-nodes", ids: removed });
+}
+
 /** Cut the same complete hierarchy/stack that paste owns, or leave everything unchanged. */
 export function cutSelection(
   document: CanvasDocument,
@@ -218,12 +246,18 @@ export function cutSelection(
   const fragment = copySelection(document, ids);
   if (!fragment.nodes.length) return { document };
   const included = new Set(fragment.nodes.map((node) => node.id));
-  const next = applyCommand(document, {
-    type: "hide-nodes",
-    ids: [...included],
+  const hide = { type: "hide-nodes" as const, ids: [...included] };
+  // Check the original relationships before detaching anything.
+  if (applyCommand(document, hide).nodes.some((node) => included.has(node.id)))
+    return { document };
+  const detached = applyCommand(document, {
+    type: "remove-edges",
+    ids: edgesAttachedTo(document, included),
   });
+  if (edgesAttachedTo(detached, included).length) return { document };
+  const next = applyCommand(detached, hide);
   if (next.nodes.some((node) => included.has(node.id))) return { document };
-  return { document: next, fragment };
+  return { document: next, fragment: copySelection(detached, ids) };
 }
 
 /**
@@ -264,9 +298,12 @@ export function pasteFragment(
     return id;
   };
   const remapped = new Map(fragment.nodes.map((node) => [node.id, newId()]));
+  // A copy is a different item, so it must not answer to the source's exact name.
+  const titles = takenNodeTitles(document);
   const nodes = fragment.nodes.map((node) => {
     const copy = structuredClone(node);
     copy.id = remapped.get(node.id)!;
+    copy.data.title = derivedNodeTitle(node.data.title, titles);
     if (copy.type === "image") copy.data.copiedSourceId = node.id;
     copy.data = remapDataReferences(copy.data, remapped);
     if (copy.data.promptContent && copy.data.settings && node.data.settings) {

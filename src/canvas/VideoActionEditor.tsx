@@ -1091,7 +1091,7 @@ function VideoActionSession({
               <label>
                 画幅
                 <select
-                  aria-label="视频裁剪画幅比例"
+                  aria-label="视频画面裁剪比例"
                   value={cropRatio}
                   disabled={busy}
                   onChange={(event) => changeCropRatio(event.target.value)}

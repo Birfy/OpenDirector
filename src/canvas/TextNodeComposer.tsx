@@ -38,9 +38,10 @@ export function TextNodeComposer({
 }) {
   const root = useRef<HTMLDivElement>(null),
     anchor = useRef<HTMLElement | null>(null);
-  const [panel, setPanel] = useState<"parameters" | null>(null);
+  const [openPanel, setPanel] = useState<"parameters" | null>(null);
+  const panel = running ? null : openPanel;
   const mentions = useRef<GenerationReferenceHandle>(null);
-  useEffect(() => setPanel(null), [node.id]);
+  useEffect(() => setPanel(null), [node.id, running]);
   const settings = agentNodeSettings(node),
     agents = models.filter((m) => m.kind === "agent");
   // The node keeps the model it was created with; the picker only fills a gap.
@@ -75,6 +76,7 @@ export function TextNodeComposer({
             <TooltipButton
               type="button"
               className="cw-add-reference"
+              disabled={running}
               aria-label="添加参考素材"
               label="添加参考素材"
               onClick={() => mentions.current?.openUpload()}
@@ -141,6 +143,7 @@ export function TextNodeComposer({
             type="button"
             className="cw-parameter-trigger"
             aria-label="Agent 参数"
+            disabled={running}
             aria-expanded={panel === "parameters"}
             onClick={(event) => toggle("parameters", event.currentTarget)}
           >
@@ -160,6 +163,7 @@ export function TextNodeComposer({
               className="cw-reference-trigger"
               aria-label="添加参考素材"
               label="添加参考素材"
+              disabled={running}
               onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={16} />
@@ -170,6 +174,7 @@ export function TextNodeComposer({
             className="cw-reference-trigger"
             aria-label="引用已连接节点"
             label="引用已连接节点"
+            disabled={running}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               setPanel(null);

@@ -186,6 +186,14 @@ const icons: Record<string, ReactNode> = {
       <path d="M6 2v16h16M2 6h16v16M10 6h8M6 10v8" />
     </>
   ),
+  /** Duration trim: two facing brackets with the playhead between them. */
+  trim: (
+    <>
+      <path d="M10 7H8.4A1.4 1.4 0 0 0 7 8.4v7.2A1.4 1.4 0 0 0 8.4 17H10" />
+      <path d="M14 7h1.6A1.4 1.4 0 0 1 17 8.4v7.2a1.4 1.4 0 0 1-1.4 1.4H14" />
+      <path d="M12 4v16" />
+    </>
+  ),
   rotate: (
     <>
       <path d="M4 10a8 8 0 1 1 1 8M4 4v6h6" />

@@ -294,7 +294,7 @@ export async function exportVideoRange(
     kind: "video",
     src,
     mimeType,
-    title: `${title} · ${crop ? "画幅裁剪" : "时长裁剪"}`,
+    title: `${title} · ${crop ? "画面裁剪" : "时长修剪"}`,
     media: {
       width: measured.width,
       height: measured.height,

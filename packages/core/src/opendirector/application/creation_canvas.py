@@ -8,7 +8,7 @@ from uuid import UUID
 from opendirector.domain.creation.assets import AssetRef
 from opendirector.domain.creation.base import ObjectVersion
 from opendirector.domain.creation.generation import ResolvedReference
-from opendirector.domain.creation.canvas import node_capabilities, VideoCanvasItem
+from opendirector.domain.creation.canvas import media_card_size, node_capabilities, VideoCanvasItem
 from opendirector.domain.creation.models import ModelConfigPublic
 from opendirector.domain.creation.project import ProjectSnapshot, asset_references
 from opendirector.domain.creation.validation import ContractError
@@ -470,6 +470,10 @@ class CreationCanvas:
                 if (spec['prompt'] or spec['modelConfigId'] or spec['promptContent']) and not payload.discardGenerationDraft:
                     raise ContractError('revision_conflict', '替换已有生成草稿需要明确确认。', payload.itemId)
             item['binding'] = {'role': 'material', 'objectRef': payload.asset.model_dump(mode='json')}
+            asset = next((entry for entry in data['assets'] if entry['id'] == str(payload.asset.assetId)), None)
+            if asset:
+                metadata = asset.get('metadata') or {}
+                item['width'], item['height'] = media_card_size(item['kind'], metadata.get('width'), metadata.get('height'), item['width'], item['height'])
             if item['kind'] == 'image':
                 item['editors'] = [ref for ref in item.get('editors', []) if ref['kind'] not in {'layers', 'image_crop'}]
         elif kind == 'canvas.configure':

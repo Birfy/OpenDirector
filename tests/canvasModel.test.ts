@@ -9,6 +9,7 @@ import {
   createNode,
   canAddReference,
 } from "../src/canvas/model.ts";
+import { sameCanvasContent } from "../src/canvas/history.ts";
 import {
   absolutePosition,
   arrangeNodes,
@@ -466,6 +467,35 @@ test("replacing media drops old pixel edits and metadata but allows atomic layer
   assert.equal(parseDocument(audio).ok, true);
 });
 
+test("moving the viewport is not a business content change", () => {
+  const document = createDocument("View only");
+  assert.equal(
+    sameCanvasContent(document, {
+      ...document,
+      viewport: { x: 420, y: -80, zoom: 0.7 },
+    }),
+    true,
+  );
+  assert.equal(
+    sameCanvasContent(document, { ...document, title: "Renamed" }),
+    false,
+  );
+  assert.equal(
+    sameCanvasContent(document, {
+      ...document,
+      nodes: [createNode("image")],
+    }),
+    false,
+  );
+  assert.equal(
+    sameCanvasContent(document, {
+      ...document,
+      hiddenNodes: [createNode("text")],
+    }),
+    false,
+  );
+});
+
 test("empty media cards use the agreed shapes and adopt the file aspect once known", () => {
   const blank = createNode("video");
   assert.deepEqual([blank.width, blank.height], [540, 300]);
@@ -504,6 +534,7 @@ test("empty media cards use the agreed shapes and adopt the file aspect once kno
   assert.deepEqual([same.nodes[0]!.width, same.nodes[0]!.height], [500, 200]);
   // Text and audio blocks never follow pixel sizes.
   const audio = createNode("audio");
+  assert.deepEqual([audio.width, audio.height], [300, 112]);
   const sound = applyCommand(
     { ...createDocument(), nodes: [audio] },
     {

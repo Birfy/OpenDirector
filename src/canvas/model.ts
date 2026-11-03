@@ -250,6 +250,8 @@ export function createDocument(title = "未命名画布"): CanvasDocument {
 
 /** Image and video blocks start as a 16:9 preview. */
 export const PREVIEW_SIZE = { width: 352, height: 198 } as const;
+/** Waveform and native playback controls fit without the old square card. */
+export const AUDIO_CARD_SIZE = { width: 300, height: 112 } as const;
 const MEDIA_KINDS: readonly CanvasNodeKind[] = ["image", "video"];
 
 /** Once a file's pixel size is known the block takes its aspect ratio and keeps its long edge. */
@@ -288,6 +290,34 @@ export function nextNodeTitle(
   return `${prefix}${next}`;
 }
 
+/** A copy or a derived result keeps its own name, but never the source's exact one.
+ * `taken` is updated in place so a batch of copies numbers itself as it goes.
+ */
+export function derivedNodeTitle(title: string, taken: Set<string>): string {
+  if (!taken.has(title)) {
+    taken.add(title);
+    return title;
+  }
+  const numbered = /^(.*\S)\s([1-9]\d*)$/.exec(title);
+  const stem = numbered ? numbered[1]! : title;
+  let next = numbered ? BigInt(numbered[2]!) + 1n : 2n;
+  while (taken.has(`${stem} ${next}`)) next += 1n;
+  const derived = `${stem} ${next}`;
+  taken.add(derived);
+  return derived;
+}
+
+/** Titles already in use by visible and hidden items alike. */
+export function takenNodeTitles(
+  document: Pick<CanvasDocument, "nodes" | "hiddenNodes">,
+): Set<string> {
+  return new Set(
+    [...document.nodes, ...(document.hiddenNodes ?? [])].map(
+      (node) => node.data.title,
+    ),
+  );
+}
+
 export function createNode(
   kind: CanvasNodeKind,
   position: Point = { x: 0, y: 0 },
@@ -296,7 +326,7 @@ export function createNode(
   const sizes: Record<CanvasNodeKind, [number, number]> = {
     image: [300, 300],
     video: [540, 300],
-    audio: [300, 300],
+    audio: [AUDIO_CARD_SIZE.width, AUDIO_CARD_SIZE.height],
     file: [260, 110],
     text: [300, 300],
     group: [640, 480],

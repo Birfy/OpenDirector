@@ -77,7 +77,7 @@
 /* A generating node keeps its prompt read-only until the run settles. Dim the
    text and its inline reference labels so it reads as a preview of what is
    running rather than as live input. */
-.cw-composer .cw-prompt-input[contenteditable="false"] {
+.cw-workspace .cw-composer .cw-prompt-input:is([contenteditable="false"], :disabled) {
   color: var(--cw-prompt-dim, #7d8291);
   cursor: default;
 }

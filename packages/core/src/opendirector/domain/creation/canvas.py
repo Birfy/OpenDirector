@@ -12,6 +12,26 @@ from .models import ModelConfigPublic
 CanvasKind = Literal['text', 'image', 'video', 'audio', 'file', 'group', 'timeline', 'subject', 'stack', 'tool', 'external']
 MediaRole = Literal['empty', 'material', 'generation']
 
+AUDIO_CARD_SIZE = (300, 112)
+MEDIA_CARD_MIN = (160, 120)
+
+
+def media_card_size(kind, media_width, media_height, base_width, base_height):
+    """Keep a media card's envelope in step with the pixels it presents.
+
+    The long edge of the existing card is retained so a portrait clip does not
+    jump to a landscape placeholder when an editor publishes its result.
+    """
+    if kind == 'audio':
+        return AUDIO_CARD_SIZE
+    if kind not in {'image', 'video'} or not media_width or not media_height:
+        return base_width, base_height
+    long_edge = max(base_width, base_height)
+    ratio = media_width / media_height
+    width = long_edge if ratio >= 1 else long_edge * ratio
+    height = long_edge / ratio if ratio >= 1 else long_edge
+    return max(MEDIA_CARD_MIN[0], int(width + 0.5)), max(MEDIA_CARD_MIN[1], int(height + 0.5))
+
 
 class GenerationSpecRef(Contract):
     objectType: Literal['generation_spec'] = 'generation_spec'

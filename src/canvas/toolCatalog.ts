@@ -482,8 +482,8 @@ export const CANVAS_TOOLS: readonly CanvasToolDefinition[] = [
   ),
   ...(
     [
-      ["video-trim", "时长裁剪"],
-      ["video-crop", "画幅裁剪"],
+      ["video-trim", "时长修剪"],
+      ["video-crop", "画面裁剪"],
       ["video-frame-capture", "视频取帧"],
     ] as const
   ).map(([id, title]) =>

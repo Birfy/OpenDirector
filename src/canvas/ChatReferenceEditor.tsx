@@ -672,12 +672,44 @@ export function ChatReferenceEditor({
           window.innerWidth - 24,
           Math.max(280, rect.width),
         );
-      const above = rect.top - 18,
-        below = window.innerHeight - rect.bottom - 18;
       element.style.width = `${width}px`;
-      element.style.maxHeight = `${Math.min(360, Math.max(100, above, below))}px`;
-      element.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
-      element.style.top = `${Math.max(12, above >= below ? rect.top - element.offsetHeight - 6 : rect.bottom + 6)}px`;
+      const expanded = editor.closest(
+        '.cw-composer-dock[data-expanded="true"]',
+      );
+      let anchor = rect;
+      if (expanded) {
+        const selection = document.getSelection();
+        if (selection?.focusNode && editor.contains(selection.focusNode)) {
+          const caret = document.createRange();
+          caret.setStart(selection.focusNode, selection.focusOffset);
+          caret.collapse(true);
+          const caretRect = caret.getBoundingClientRect();
+          if (caretRect.height) anchor = caretRect;
+        }
+      }
+      const top = expanded
+        ? Math.max(rect.top, Math.min(rect.bottom, anchor.top))
+        : rect.top;
+      const bottom = expanded
+        ? Math.max(
+            top,
+            Math.min(rect.bottom, anchor === rect ? rect.top : anchor.bottom),
+          )
+        : rect.bottom;
+      const above = top - 18;
+      const below = window.innerHeight - bottom - 18;
+      const list = element.querySelector(".cw-reference-mention-list");
+      const desiredHeight = Math.min(
+        360,
+        element.offsetHeight +
+          (list ? list.scrollHeight - list.clientHeight : 0),
+      );
+      const placeAbove = expanded
+        ? below < desiredHeight && (above >= desiredHeight || above > below)
+        : above >= below;
+      element.style.maxHeight = `${Math.min(360, Math.max(100, placeAbove ? above : below))}px`;
+      element.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))}px`;
+      element.style.top = `${Math.max(12, placeAbove ? top - element.offsetHeight - 6 : bottom + 6)}px`;
       element.style.visibility = "visible";
       frame = requestAnimationFrame(place);
     }

@@ -54,6 +54,27 @@ test("a running tool gets an empty result node linked to the right of its source
   );
 });
 
+test("a placeholder keeps the source video envelope", () => {
+  const source = createNode("video", { x: 0, y: 0 }, {
+    src: "original",
+    media: { width: 1080, height: 1920 },
+  });
+  const document = { ...createDocument(), nodes: [source] };
+  const pending = appendPendingResult(
+    document,
+    {
+      documentId: document.id,
+      nodeId: source.id,
+      kind: source.type,
+      src: source.data.src,
+    },
+    "video",
+    "抠像",
+  );
+  const node = pendingResultNode(pending.document, pending.ids[0]!)!;
+  assert.deepEqual([node.width, node.height], [source.width, source.height]);
+});
+
 test("a video placeholder starts in omni-reference mode", () => {
   const { document, origin } = fixture();
   const pending = appendPendingResult(document, origin, "video", "视频");

@@ -44,7 +44,8 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
     event.stopPropagation();
     // Media controls keep their native playback behavior. Their nodrag surface
     // does not reach React Flow selection, so select it explicitly on a click.
-    if (!selected) actions?.select(id, event);
+    if (selected) actions?.reopenComposer(id, event);
+    else actions?.select(id, event);
   };
 
   return (

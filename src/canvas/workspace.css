@@ -254,11 +254,12 @@
   margin-left: auto;
 }
 .cw-selection-bar select {
+  height: 28px;
   color: #ddd;
   background: #262628;
   border: 1px solid #ffffff20;
-  border-radius: 6px;
-  padding: 6px;
+  border-radius: 5px;
+  padding: 0 5px;
   font: inherit;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -479,6 +480,7 @@
   align-items: stretch;
 }
 .cw-project-option {
+  position: relative;
   display: flex;
   flex: 1;
   align-items: center;
@@ -501,6 +503,7 @@
   position: absolute;
   top: 50%;
   right: 5px;
+  z-index: 1;
   display: grid;
   place-items: center;
   width: 28px;
@@ -528,6 +531,7 @@
 }
 .cw-project-actions {
   position: absolute;
+  z-index: 2;
   left: calc(100% + 4px);
   display: flex;
   flex-direction: column;
@@ -564,9 +568,17 @@
 .cw-project-actions svg {
   flex-shrink: 0;
 }
+/* The check shares the trailing slot with the row actions button: hover and
+   focus raise that button over it instead of shifting the row's content. */
 .cw-project-check {
-  display: flex;
-  flex-shrink: 0;
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
   transition: opacity 120ms ease;
 }
 .cw-project-row:hover .cw-project-check,
@@ -672,7 +684,9 @@
   color: inherit;
 }
 .cw-project-dialog input:focus {
-  outline: 1px solid #85bfff;
+  border-color: var(--cw-control-accent);
+  outline: 1px solid var(--cw-control-accent);
+  caret-color: var(--cw-control-accent);
 }
 .cw-project-dialog p {
   margin: 0 0 8px;
@@ -834,12 +848,25 @@
 }
 .cw-export-button,
 .cw-import-button {
-  padding: 8px 14px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
   border: 1px solid #ffffff20;
-  border-radius: 8px;
+  border-radius: 7px;
   font-size: 12px;
   background: #242426;
   color: #dededf;
+}
+/* CJK ink sits below the line-box centre; trim the leading to the glyph edges
+   so the flex centring produces the same visual gap above and below. */
+.cw-export-button > span,
+.cw-import-button > span {
+  display: block;
+  line-height: 1;
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
 }
 .cw-export-button:hover,
 .cw-import-button:hover {
@@ -998,9 +1025,9 @@
 }
 .cw-vline {
   width: 1px;
-  height: 18px;
+  height: 16px;
   background: #ffffff15;
-  margin: 0 3px;
+  margin: 0 2px;
 }
 .cw-bottom-left {
   position: absolute;
@@ -1009,32 +1036,32 @@
   left: 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 .cw-settings-control {
-  padding: 3px;
-  border-radius: 10px;
+  padding: 2px;
+  border-radius: 9px;
   background: #202022;
   box-shadow: 0 3px 16px #0003;
 }
 .cw-settings-control .cw-icon-button {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
 }
 .cw-bottom-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
   background: #0b0b0b;
   box-shadow: 0 3px 16px #0003;
 }
 .cw-bottom-controls .cw-icon-button {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   color: #99999d;
 }
 .cw-bottom-controls .cw-icon-button svg {
@@ -1045,9 +1072,9 @@
   background: #222;
 }
 .cw-zoom-button {
-  padding: 0 9px;
-  width: 73px;
-  height: 32px;
+  padding: 0 7px;
+  width: 66px;
+  height: 26px;
   font-size: 11px !important;
   display: flex;
   justify-content: space-between;
@@ -1062,12 +1089,12 @@
   display: flex;
   gap: 1px;
   background: #202022;
-  border-radius: 10px;
-  padding: 3px;
+  border-radius: 9px;
+  padding: 2px;
 }
 .cw-undo-controls .cw-icon-button {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
 }
 .cw-bottom-right {
   position: absolute;
@@ -1249,25 +1276,36 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px 5px 15px;
+  gap: 4px;
+  padding: 3px 6px 3px 10px;
   background: #272729;
   border: 1px solid #ffffff12;
   border-radius: 10px;
   box-shadow: 0 3px 14px #0004;
 }
+.cw-selection-bar.is-anchored {
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
+}
 .cw-selection-bar > span {
   font-size: 11px;
   color: #999;
-  margin-right: 8px;
+  margin-right: 2px;
 }
 .cw-selection-bar > button {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  min-height: 28px;
   font-size: 12px;
   white-space: nowrap;
-  padding: 7px;
+  padding: 0 6px;
+}
+.cw-selection-bar > .cw-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
 .cw-selection-bar > button:hover {
   background: #ffffff0c;
@@ -1649,33 +1687,34 @@
   overflow: hidden;
 }
 .cw-toast {
+  width: fit-content;
   max-width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
   background: #303033;
   border: 1px solid #ffffff16;
-  border-radius: 9px;
-  padding: 12px 18px;
+  border-radius: 8px;
+  padding: 8px 10px 8px 12px;
   box-shadow: 0 6px 25px #0006;
   font-size: 12px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   color: #d0d9d1;
   pointer-events: auto;
   animation: cw-toast-enter 180ms ease-out;
 }
 .cw-toast > span {
   overflow-wrap: anywhere;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .cw-toast-close {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -1766,7 +1805,7 @@
   font-size: 11px;
 }
 .cw-help dd {
-  color: #a4b4a6;
+  color: var(--cw-control-highlight);
   margin: 0;
 }
 .cw-preview {

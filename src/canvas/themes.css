@@ -283,7 +283,7 @@
 :root[data-theme="light"] .cw-workspace .cw-composer .cw-prompt-input {
   background: transparent;
   border: 0;
-  color: #30343c;
+  --cw-prompt-color: #30343c;
 }
 /* Node summary in the top bar: keep the trigger quiet and the panel readable
    on the light canvas. */

@@ -226,10 +226,12 @@ import {
 import { getNodeGenerationSettings, NodeComposer } from "./NodeComposer";
 import { NodeInfoButton } from "./NodeInfoButton";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
+import { SelectionBarAnchor } from "./SelectionBarAnchor";
 import { NodeTaskPanel } from "./NodeTaskPanel";
 import {
   copySelection,
   cutSelection,
+  deleteSelection,
   groupSelection,
   orderNodesForCanvas,
   pasteFragment,
@@ -344,6 +346,35 @@ const jobTime = () =>
     hour: "2-digit",
     minute: "2-digit",
   });
+/** Shortcut hints name the keys the running platform actually has. */
+const helpShortcuts = (mac: boolean): Array<[string, string]> =>
+  mac
+    ? [
+        ["平移画布", "滚动 / 空格＋拖动"],
+        ["缩放画布", "⌘＋滚动"],
+        ["框选多个节点", "空白处拖动 / Shift"],
+        ["选择 / 抓手 / 文本", "V / H / T"],
+        ["上传本地素材", "⌘＋O"],
+        ["撤销 / 重做", "⌘ Z / ⌘ ⇧ Z"],
+        ["复制 / 粘贴 / 副本", "⌘ C / ⌘ V / ⌘ D"],
+        ["编组 / 取消编组", "⌘ G / ⌘ ⇧ G"],
+        ["适应内容 / 选区", "Shift 1 / Shift 2"],
+        ["移动 / 快速移动", "方向键 / Shift＋方向键"],
+        ["删除选中节点或连线", "Delete / ⌫"],
+      ]
+    : [
+        ["平移画布", "滚动 / 空格＋拖动"],
+        ["缩放画布", "Ctrl＋滚动"],
+        ["框选多个节点", "空白处拖动 / Shift"],
+        ["选择 / 抓手 / 文本", "V / H / T"],
+        ["上传本地素材", "Ctrl＋O"],
+        ["撤销 / 重做", "Ctrl Z / Ctrl Shift Z"],
+        ["复制 / 粘贴 / 副本", "Ctrl C / Ctrl V / Ctrl D"],
+        ["编组 / 取消编组", "Ctrl G / Ctrl Shift G"],
+        ["适应内容 / 选区", "Shift 1 / Shift 2"],
+        ["移动 / 快速移动", "方向键 / Shift＋方向键"],
+        ["删除选中节点或连线", "Delete / Backspace"],
+      ];
 const nodeTypes = {
   image: CanvasNodeView,
   video: CanvasNodeView,
@@ -666,6 +697,10 @@ function Workspace() {
     selected.length === 1
       ? (doc.nodes.find((n) => n.id === selected[0]) ?? null)
       : null;
+  const selectedNodes =
+    selected.length > 1
+      ? doc.nodes.filter((node) => selected.includes(node.id))
+      : [];
   // Keep the existing generator mounted while manipulating the canvas. Selection
   // can change on pointerdown; it must not mount a different panel mid-gesture.
   useEffect(() => {
@@ -1968,6 +2003,9 @@ function Workspace() {
   );
   const composerExpanded =
     hasComposer && expandedComposerId === composerNode?.id;
+  const composerRunning = Boolean(
+    composerNode && generationByNode.has(composerNode.id),
+  );
   const hasToolbar = Boolean(
     selectionControls &&
     !activeAction &&
@@ -2127,13 +2165,8 @@ function Workspace() {
   }, [flowNodes, flowEdges, doc.nodes, selected, selectedEdges, hoveredNode]);
 
   const removeSelected = () => {
-    command({
-      type: "batch",
-      commands: [
-        { type: "hide-nodes", ids: selectedRef.current },
-        { type: "remove-edges", ids: selectedEdges },
-      ],
-    });
+    const ids = selectedRef.current;
+    change((document) => deleteSelection(document, ids, selectedEdges));
     setSelected([]);
     setSelectedEdges([]);
     setMenu(null);
@@ -3712,6 +3745,18 @@ function Workspace() {
         });
       })().catch((error) => notify(errorMessage(error)));
     },
+    reopenComposer: (id: string, event: React.MouseEvent) => {
+      if (
+        dismissedComposer !== id ||
+        panning ||
+        pointerGesture.current.blocksClick(event.detail) ||
+        event.shiftKey ||
+        event.metaKey ||
+        event.ctrlKey
+      )
+        return;
+      setDismissedComposer(null);
+    },
     select: (id: string, event: React.MouseEvent) => {
       if (pointerGesture.current.blocksClick(event.detail)) return;
       if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
@@ -3872,8 +3917,8 @@ function Workspace() {
             ),
         ),
       );
+      const nextMedia = { ...node.data.media, ...actual };
       if (
-        !Object.keys(actual).length ||
         Object.entries(actual).every(
           ([key, value]) =>
             node.data.media?.[
@@ -3888,7 +3933,12 @@ function Workspace() {
         present: executeCommand(current, {
           type: "update-node",
           id,
-          patch: { data: { media: { ...node.data.media, ...actual } } },
+          patch: {
+            data: { media: nextMedia },
+            ...(node.data.media?.width && node.data.media.height
+              ? { width: node.width, height: node.height }
+              : {}),
+          },
         }).present,
       }));
     },
@@ -3967,8 +4017,11 @@ function Workspace() {
       )
         setMenu(null);
     };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    // Capture phase, like the selection and creation menus: surfaces that stop
+    // pointerdown propagation (the node composer, action docks, the assistant
+    // panel) must still dismiss this menu instead of trapping it open.
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
   }, [menu]);
   const portMetrics = referencePortMetrics(zoom);
   const pendingSource =
@@ -4541,10 +4594,10 @@ function Workspace() {
             className="cw-import-button"
             onClick={() => importInput.current?.click()}
           >
-            导入画布
+            <span>导入画布</span>
           </button>
           <button className="cw-export-button" onClick={exportDocument}>
-            导出画布
+            <span>导出画布</span>
           </button>
           <input
             ref={importInput}
@@ -4795,7 +4848,7 @@ function Workspace() {
         </div>
       )}
       {selected.length > 1 && !interacting && !spacePressed && (
-        <div className="cw-selection-bar">
+        <SelectionBarAnchor nodes={selectedNodes} allNodes={doc.nodes}>
           <span>已选 {selected.length} 个节点</span>
           <select
             aria-label="对齐所选节点"
@@ -4849,7 +4902,7 @@ function Workspace() {
             onClick={() => paste(true)}
           />
           <IconButton name="trash" label="删除所选" onClick={removeSelected} />
-        </div>
+        </SelectionBarAnchor>
       )}
       {hasToolbar && single && (
         <div
@@ -5177,6 +5230,7 @@ function Workspace() {
               <TooltipButton
                 type="button"
                 className="cw-composer-expand"
+                disabled={composerRunning}
                 label={composerExpanded ? "收起会话框" : "展开会话框"}
                 aria-label={composerExpanded ? "收起会话框" : "展开会话框"}
                 aria-expanded={composerExpanded}
@@ -5194,6 +5248,7 @@ function Workspace() {
               </TooltipButton>
               <TooltipButton
                 className="cw-composer-dismiss"
+                disabled={composerRunning}
                 label="关闭生成面板"
                 onClick={() => {
                   setExpandedComposerId(null);
@@ -5225,7 +5280,7 @@ function Workspace() {
                   referenceTarget.current = composerNode.id;
                   setLibraryOpen(true);
                 }}
-                running={generationByNode.has(composerNode.id)}
+                running={composerRunning}
               />
             ) : (
               <NodeComposer
@@ -5249,7 +5304,7 @@ function Workspace() {
                   referenceTarget.current = composerNode.id;
                   setLibraryOpen(true);
                 }}
-                running={generationByNode.has(composerNode.id)}
+                running={composerRunning}
                 backendModels={backendCatalog.models}
               />
             )}
@@ -6125,24 +6180,14 @@ function Workspace() {
               拖动节点排列画面，从节点右侧圆点拖到另一个节点左侧即可建立参考连线。点击圆点旁的按钮可创建关联节点。
             </p>
             <dl>
-              {[
-                ["平移画布", "滚动 / 空格＋拖动"],
-                ["缩放画布", "⌘ / Ctrl＋滚动"],
-                ["框选多个节点", "空白处拖动 / Shift"],
-                ["选择 / 抓手 / 文本", "V / H / T"],
-                ["上传本地素材", "⌘ / Ctrl＋O"],
-                ["撤销 / 重做", "⌘ Z / ⌘ ⇧ Z"],
-                ["复制 / 粘贴 / 副本", "⌘ C / ⌘ V / ⌘ D"],
-                ["编组 / 取消编组", "⌘ G / ⌘ ⇧ G"],
-                ["适应内容 / 选区", "Shift 1 / Shift 2"],
-                ["移动 / 快速移动", "方向键 / Shift＋方向键"],
-                ["删除选中节点或连线", "Delete / Backspace"],
-              ].map(([name, key]) => (
-                <div key={name}>
-                  <dt>{name}</dt>
-                  <dd>{key}</dd>
-                </div>
-              ))}
+              {helpShortcuts(navigator.platform.includes("Mac")).map(
+                ([name, key]) => (
+                  <div key={name}>
+                    <dt>{name}</dt>
+                    <dd>{key}</dd>
+                  </div>
+                ),
+              )}
             </dl>
             <p className="cw-panel-note">
               项目与画布保存在本地 projects 目录，导出的 .canvas 压缩包内含画布

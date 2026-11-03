@@ -12,6 +12,7 @@ from opendirector.application.creation_history import CreationHistory
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.application.tool_operations import TOOLS, Output
 from opendirector.application.tool_tasks import ToolTasks
+from opendirector.domain.creation.canvas import media_card_size
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import CreationProjects
@@ -24,6 +25,12 @@ def png(color='blue', size=(64, 48)):
     out = BytesIO()
     Image.new('RGBA', size, color).save(out, 'PNG')
     return out.getvalue()
+
+
+def test_media_card_size_matches_pixels_and_compacts_audio():
+    assert media_card_size('video', 1080, 1920, 300, 520) == (293, 520)
+    assert media_card_size('video', 1920, 1080, 300, 520) == (520, 293)
+    assert media_card_size('audio', 1080, 1920, 300, 520) == (300, 112)
 
 
 @pytest.fixture
@@ -86,6 +93,8 @@ def test_draft_snapshot_publication_replay_reopen_and_dependency_protection(prep
             assert {r.assetId for r in output.provenance.sources} == {source.id, mask.id}
             target = next(i for i in saved.canvasItems if str(i.id) == value['canvas']['targetNodeId'])
             assert target.binding.objectRef.assetId == output.id
+            assert target.width / target.height == pytest.approx(64 / 48)
+            assert max(target.width, target.height) == pytest.approx(352)
             continuation = next(d for d in saved.editorDocuments if d.id == target.editors[0].id)
             assert continuation.data.sources[0].assetId == output.id
             assert continuation.data.selection is None

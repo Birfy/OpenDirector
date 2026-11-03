@@ -217,7 +217,7 @@ export function NodeSelectionToolbar({
       },
     ]);
     addTool("video-depth-capture", "深度动作捕捉", "subject");
-    addEditor("video-trim", "视频修剪", "crop", "trim");
+    addEditor("video-trim", "时长修剪", "trim", "trim");
     addMenu("sound-separation", "声音分离", "audio", [
       {
         id: "extract-audio",
@@ -238,10 +238,10 @@ export function NodeSelectionToolbar({
       toolOption("video-frame-interpolation", "补帧", "video"),
       toolOption("video-subtitle-erasure", "字幕擦除", "text"),
       toolOption("video-matting", "视频抠像", "subject"),
-      toolOption("video-crop", "视频裁剪", "crop"),
+      toolOption("video-crop", "视频画面裁剪", "crop"),
     ]);
   } else if (node.type === "audio") {
-    addEditor("audio-trim", "音频裁剪", "crop", "trim");
+    addEditor("audio-trim", "音频裁剪", "trim", "trim");
     addTool("audio-separation", "分离音轨", "audio");
   } else if (editLabels[node.type]) {
     addEditor("edit", editLabels[node.type]!, node.type, "default");

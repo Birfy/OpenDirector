@@ -383,7 +383,7 @@ export function LocalMediaEditor({
         src,
         mimeType: "video/webm",
         kind: "video",
-        title: `${node.data.title} · ${mode === "crop" ? `画幅 ${crop!.width}×${crop!.height}` : "本地裁剪"}`,
+        title: `${node.data.title} · ${mode === "crop" ? `画幅 ${crop!.width}×${crop!.height}` : "本地时长修剪"}`,
         media: {
           width: measured.width,
           height: measured.height,
@@ -403,7 +403,7 @@ export function LocalMediaEditor({
   };
   return (
     <EditorModal
-      title={`${mode === "crop" ? "视频画幅裁剪" : mode === "frame" ? "视频取帧" : mode === "extract-audio" ? "提取音频" : isAudio ? "音频裁剪" : "视频裁剪"} · ${node.data.title}`}
+      title={`${mode === "crop" ? "视频画面裁剪" : mode === "frame" ? "视频取帧" : mode === "extract-audio" ? "提取音频" : isAudio ? "音频裁剪" : "视频时长修剪"} · ${node.data.title}`}
       subtitle={
         mode === "crop"
           ? "拖动选框或四角调整原视频像素区域；本地重编码 WebM，保留浏览器可捕获的原音轨，输出最高 30 帧/秒。"
@@ -525,7 +525,7 @@ export function LocalMediaEditor({
           <label>
             画幅
             <select
-              aria-label="视频裁剪画幅比例"
+              aria-label="视频画面裁剪比例"
               value={cropRatio}
               disabled={busy}
               onChange={(event) => {
@@ -555,7 +555,7 @@ export function LocalMediaEditor({
             <label key={key}>
               {{ x: "左", y: "上", width: "宽", height: "高" }[key]}
               <input
-                aria-label={`视频裁剪${{ x: "左边距", y: "上边距", width: "宽度", height: "高度" }[key]}`}
+                aria-label={`视频画面裁剪${{ x: "左边距", y: "上边距", width: "宽度", height: "高度" }[key]}`}
                 type="number"
                 step="1"
                 min={key === "x" || key === "y" ? 0 : 1}

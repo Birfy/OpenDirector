@@ -144,13 +144,14 @@ export function NodeComposer({
   backendModels = [],
   referenceControls,
 }: NodeComposerProps) {
-  const [panel, setPanel] = useState<Panel>(null);
+  const [openPanel, setPanel] = useState<Panel>(null);
+  const panel = running ? null : openPanel;
   const rootRef = useRef<HTMLDivElement>(null);
   const panelAnchor = useRef<HTMLElement | null>(null);
   const mentions = useRef<GenerationReferenceHandle>(null);
   useEffect(() => {
     setPanel(null);
-  }, [selectedNode?.id]);
+  }, [selectedNode?.id, running]);
 
   if (
     !selectedNode ||
@@ -423,6 +424,7 @@ export function NodeComposer({
               <TooltipButton
                 type="button"
                 className="cw-add-reference"
+                disabled={running}
                 onClick={() => mentions.current?.openUpload()}
                 aria-label="添加参考素材"
                 label="添加参考素材"
@@ -529,6 +531,7 @@ export function NodeComposer({
             type="button"
             className={`cw-parameter-trigger${panel === "parameters" ? " cw-is-active" : ""}`}
             aria-label="生成参数"
+            disabled={running}
             aria-expanded={panel === "parameters"}
             onClick={(event) => togglePanel("parameters", event.currentTarget)}
           >
@@ -674,6 +677,7 @@ export function NodeComposer({
                 type="button"
                 className="cw-voice-trigger"
                 aria-label="语音库"
+                disabled={running}
                 aria-expanded={panel === "voices"}
                 onClick={(event) => togglePanel("voices", event.currentTarget)}
               >
@@ -692,6 +696,7 @@ export function NodeComposer({
                 className="cw-reference-trigger"
                 aria-label={musicReferences ? "添加参照音乐" : "添加参考素材"}
                 label={musicReferences ? "添加参照音乐" : "添加参考素材"}
+                disabled={running}
                 onClick={() => mentions.current?.openUpload()}
               >
                 <CanvasIcon name="plus" size={16} />
@@ -726,6 +731,7 @@ export function NodeComposer({
               className="cw-reference-trigger"
               aria-label="引用已连接节点"
               label="引用已连接节点"
+              disabled={running}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setPanel(null);

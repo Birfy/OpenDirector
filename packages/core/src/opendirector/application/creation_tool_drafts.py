@@ -2,6 +2,7 @@
 from uuid import UUID, uuid5
 
 from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_asset
+from opendirector.domain.creation.canvas import media_card_size
 from opendirector.domain.creation.commands import parse_command
 from opendirector.domain.creation.editors import ToolDraftBinding
 from opendirector.domain.creation.validation import ContractError
@@ -187,9 +188,11 @@ def publish_outputs(service, task, session, policy):
                 operations.append(dict(type='canvas.show', payload=dict(item=item.model_dump(mode='json'))))
             operations.append(dict(type='canvas.materialize', payload=dict(itemId=item.id, asset=asset_ref(asset).model_dump(mode='json'), discardGenerationDraft=True)))
         else:
+            width, height = media_card_size(asset.kind, asset.metadata.width, asset.metadata.height,
+                                            source.width if source else 320, source.height if source else 240)
             operations.append(dict(type='canvas.show', payload=dict(item=dict(id=item_id, projectId=snapshot.project.id,
                 kind=asset.kind, title=output['title'], position=dict(x=(source.position.x + source.width + 120 if source else 80) + index * 360, y=source.position.y if source else 80),
-                width=320, height=240, binding=dict(role='material', objectRef=asset_ref(asset).model_dump(mode='json'))))))
+                width=width, height=height, binding=dict(role='material', objectRef=asset_ref(asset).model_dump(mode='json'))))))
         if asset.kind == 'image':
             editor_id = uuid5(UUID(task['id']), f'output-editor-{item_id}')
             # Continue editing the new pixels with fresh source identity. Never

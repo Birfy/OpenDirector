@@ -822,6 +822,34 @@ test("cancel compares the same execution after confirmed progress conflicts, nev
   }
 });
 
+test("an older square audio card projects as the compact control strip", async () => {
+  const snapshot = empty();
+  const audio = createNode("audio", { x: 10, y: 20 }, { title: "Voice" });
+  const item: CanvasItem = {
+    id: audio.id,
+    projectId: snapshot.project.id,
+    revision: 1,
+    kind: "audio",
+    title: audio.data.title,
+    position: audio.position,
+    width: 300,
+    height: 300,
+    locked: false,
+    visible: true,
+    zIndex: 0,
+    parentId: null,
+    tags: [],
+    editors: [],
+    binding: { role: "empty", draftSpec: null, manualText: null },
+  };
+  const basis = { ...snapshot, canvasItems: [item] };
+  const client = new CommandCapture(snapshot.project.id);
+  client.install(basis);
+  const document = await new CreationProjection(client).read(basis);
+  assert.equal(document.nodes[0]?.width, 300);
+  assert.equal(document.nodes[0]?.height, 112);
+});
+
 test("clean business flush skips preparation and preserves the basis of unseen changes", async () => {
   const snapshot = empty();
   const client = new CreationClient(snapshot.project.id);

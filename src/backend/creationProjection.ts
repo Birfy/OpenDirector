@@ -14,6 +14,7 @@ import type {
   TimelineResource,
 } from "../contracts/generated.ts";
 import {
+  AUDIO_CARD_SIZE,
   createDocument,
   createNode,
   DEFAULT_SETTINGS,
@@ -418,6 +419,9 @@ export class CreationProjection {
           parentId: item.parentId ?? undefined,
         };
         node.data.title = item.title;
+        // Audio cards are a fixed control strip; older square cards are
+        // compacted on read instead of waiting for a playback event.
+        if (node.type === "audio") node.height = AUDIO_CARD_SIZE.height;
         const asset = currentAsset(snapshot, item);
         if (asset) {
           try {

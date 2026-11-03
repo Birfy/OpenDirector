@@ -344,7 +344,7 @@ try {
   await page.getByRole("button", { name: "关闭视频编辑", exact: true }).click();
   for (const [label, title] of [
     ["智能超清", "视频超清"],
-    ["视频修剪", "时长裁剪"],
+    ["时长修剪", "时长修剪"],
   ]) {
     await select(fixture.video);
     await toolbar.getByRole("button", { name: label, exact: true }).click();
@@ -405,7 +405,7 @@ try {
     });
   await page.getByRole("button", { name: "关闭视频超清", exact: true }).click();
   await select(fixture.video);
-  await toolbar.getByRole("button", { name: "视频修剪", exact: true }).click();
+  await toolbar.getByRole("button", { name: "时长修剪", exact: true }).click();
   const trim = page.locator(".cw-va-range-fill");
   await trim.waitFor({ state: "visible" });
   assert.equal(await color(trim, "borderTopColor"), "rgb(167, 139, 212)");
@@ -413,7 +413,7 @@ try {
     await page.screenshot({
       path: `${process.env.THEME_SCREENSHOT_DIR}/video-trim-dark.png`,
     });
-  await page.getByRole("button", { name: "关闭时长裁剪", exact: true }).click();
+  await page.getByRole("button", { name: "关闭时长修剪", exact: true }).click();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await settings.getByLabel("主题", { exact: true }).selectOption("light");
   await page.getByRole("button", { name: "关闭设置", exact: true }).click();

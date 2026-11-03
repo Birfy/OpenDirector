@@ -86,6 +86,19 @@ try {
     assert.ok(
       (await node.getAttribute("class")).split(" ").includes("selected"),
     );
+    // The node composer stops pointerdown propagation; clicking it must still
+    // dismiss the menu instead of leaving it stuck open over the canvas. The
+    // menu can cover the composer, so send the pointerdown straight at it.
+    await openNodeMenu();
+    await page.evaluate(() => {
+      const composer = document.querySelector(
+        '[aria-label="文本生成提示词"]',
+      );
+      composer?.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+      );
+    });
+    await menu.waitFor({ state: "detached" });
     // Reference-port menu retains focus navigation and both dismissal methods.
     const openPortMenu = async () => {
       const box = await node.boundingBox();

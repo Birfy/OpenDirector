@@ -426,15 +426,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
+  /* The waveform owns the top edge; playback stays just above the bottom edge. */
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   height: 100%;
-  padding: 17px;
+  padding: 8px 12px;
   box-sizing: border-box;
 }
 .cw-audio-wave {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   gap: 4px;
@@ -451,6 +453,8 @@
   background: linear-gradient(#b3b4d7, #646780);
 }
 .cw-audio-preview audio {
+  display: block;
+  flex: none;
   width: 100%;
   height: 32px;
   color-scheme: dark;
@@ -843,7 +847,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #e0e1e7;
+  color: var(--cw-prompt-color, #e0e1e7);
   font-size: var(--cw-ui-font-size, 13px) !important;
   line-height: var(--prompt-line-height, 1.7) !important;
   scrollbar-width: thin;

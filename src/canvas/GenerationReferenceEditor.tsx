@@ -340,7 +340,9 @@ export function GenerationReferenceEditor({
   };
   useImperativeHandle(pickerRef, () => ({
     openPicker: () => editor.current?.openPicker(),
-    openUpload: () => file.current?.click(),
+    openUpload: () => {
+      if (!running && !uploading) file.current?.click();
+    },
     remove: (source) =>
       controls?.removeReference
         ? controls.removeReference(source)
@@ -487,6 +489,7 @@ export function GenerationReferenceEditor({
       <input
         ref={file}
         type="file"
+        disabled={running || uploading}
         hidden
         multiple
         accept="image/*,video/*,audio/*,.txt,.md"
