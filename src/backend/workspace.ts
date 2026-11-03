@@ -8,6 +8,7 @@ import {
   creationClient,
   creationPath,
   objectVersion,
+  visibleItems,
 } from "./creationClient.ts";
 import { CreationProjection } from "./creationProjection.ts";
 import {
@@ -180,7 +181,13 @@ export function openExampleWorkspaceProject(
       }
       return document;
     };
-    if (existing) return remember(await openWorkspaceProject(existing));
+    if (existing) {
+      const saved = await request<ProjectSnapshot>(creationPath(existing.id));
+      if (visibleItems(saved).size === 0) {
+        return remember(await importWorkspaceDocument(await createExample()));
+      }
+      return remember(await openWorkspaceProject(existing));
+    }
     const blocked = unreadable.find((project) => project.id === preferred);
     if (blocked) throw new Error(blocked.reason);
     const example = await createExample();

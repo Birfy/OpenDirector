@@ -88,6 +88,11 @@ function fixture(t: TestContext) {
       return Response.json({ ok: true });
     }
     const id = path.split("/")[4]!;
+    if (method === "GET" && path === `/api/creation/projects/${id}` && documents.has(id))
+      return Response.json({canvasItems: [
+        ...(documents.get(id)?.nodes ?? []).map(node => ({...node, visible: true})),
+        ...(documents.get(id)?.hiddenNodes ?? []).map(node => ({...node, visible: false})),
+      ]});
     if (path.endsWith("/commands")) {
       if (offline) throw new TypeError("offline");
       if (
@@ -285,7 +290,8 @@ test("existing default example is opened without a stored hint or saving over it
 
 test("renamed examples reopen by project identity and deleted examples are recreated", async (t) => {
   const f = fixture(t);
-  const prepare = async () => createDocument(EXAMPLE_PROJECT_TITLE);
+  const prepare = async () => ({...createDocument(EXAMPLE_PROJECT_TITLE),
+    nodes: [createNode("text", undefined, {text: "保留的示例"})]});
   const initial = await openExampleWorkspaceProject(
     EXAMPLE_PROJECT_TITLE,
     prepare,
@@ -344,8 +350,11 @@ test("an unreadable existing example fails without creating a replacement", asyn
   const prepare = async () => createDocument(EXAMPLE_PROJECT_TITLE);
   await openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare);
   f.calls.length = 0;
-  CreationProjection.prototype.open = async () => {
-    throw new Error("示例无法读取");
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith("/api/creation/projects/") && !options?.method)
+      return Response.json({detail: "示例无法读取"}, {status: 503});
+    return fetch(url, options);
   };
   await assert.rejects(
     openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare),
@@ -369,4 +378,36 @@ test("unknown example creation is not retried with another project identity", as
     1,
   );
   assert.equal(f.projects.size, 0);
+});
+
+
+test("an empty saved example creates a separate usable example without overwriting it", async (t) => {
+  const f = fixture(t);
+  const old = await createWorkspaceProject(EXAMPLE_PROJECT_TITLE, crypto.randomUUID());
+  const original = structuredClone(f.documents.get(old.id));
+  const reopened = await openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, async () => ({
+    ...createDocument(EXAMPLE_PROJECT_TITLE),
+    nodes: [createNode("text", undefined, {text: "示例内容"})],
+  }));
+  assert.notEqual(reopened.id, old.id);
+  assert.equal(reopened.nodes.length, 1);
+  assert.equal(reopened.title, EXAMPLE_PROJECT_TITLE + " (2)");
+  assert.deepEqual(f.documents.get(old.id), original);
+  assert.equal(f.projects.size, 2);
+});
+
+
+test("a numbered example with only hidden nodes creates a fresh example and preserves hidden content", async (t) => {
+  const f = fixture(t);
+  const prepare = async () => ({...createDocument(EXAMPLE_PROJECT_TITLE),
+    nodes: [createNode("text", undefined, {text: "示例"})]});
+  const initial = await openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare);
+  const name = EXAMPLE_PROJECT_TITLE + " (9)";
+  f.projects.set(initial.id, {...f.projects.get(initial.id)!, name});
+  const hidden = {...initial, title: name, nodes: [], hiddenNodes: initial.nodes};
+  f.documents.set(initial.id, hidden);
+  const reopened = await openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare);
+  assert.notEqual(reopened.id, initial.id);
+  assert.equal(reopened.nodes.length, 1);
+  assert.deepEqual(f.documents.get(initial.id), hidden);
 });
