@@ -1,9 +1,10 @@
 import { createDocument, createNode } from "./model.ts";
 import type { CanvasDocument } from "./model.ts";
-import { createLocalStage } from "./stageDocument.ts";
 import { loadLayerImage } from "./layerRenderer.ts";
 import { dataUrlToBlob } from "./downloadAssets.ts";
 export { downloadFilename } from "./downloadAssets.ts";
+
+export const EXAMPLE_PROJECT_TITLE = "光与山之间 · 镜头研究";
 
 /** Original vector study assets; these are illustrations, not AI results or remote media. */
 export function studyImage(seed = 0, title = "光与山之间"): string {
@@ -42,7 +43,7 @@ export async function exampleDocument(): Promise<CanvasDocument> {
       return canvas.toDataURL("image/png");
     }),
   );
-  const doc = createDocument("光与山之间 · 镜头研究");
+  const doc = createDocument(EXAMPLE_PROJECT_TITLE);
   const notes = createNode(
     "text",
     { x: 80, y: 150 },
@@ -155,30 +156,7 @@ export async function exampleDocument(): Promise<CanvasDocument> {
       },
     },
   );
-  const camera = createNode(
-    "tool",
-    { x: 1230, y: 600 },
-    {
-      title: "镜头参数",
-      tool: {
-        kind: "camera",
-        fields: [
-          { name: "景别", values: ["远景"] },
-          { name: "机位", values: ["平视"] },
-          { name: "焦距", values: ["35mm"] },
-        ],
-      },
-    },
-  );
-  const director = createNode(
-    "external",
-    { x: 1230, y: 890 },
-    {
-      title: "导演预演 · 机位研究",
-      localStage: createLocalStage(),
-    },
-  );
-  doc.nodes = [notes, a, b, video, timeline, subject, camera, director];
+  doc.nodes = [notes, a, b, video, timeline, subject];
   doc.edges = [
     { id: crypto.randomUUID(), source: b.id, target: video.id },
     {

@@ -14,7 +14,7 @@ import {
 import { createPortal } from "react-dom";
 import "./tooltips.css";
 
-type TooltipSide = "top" | "bottom" | "left" | "right";
+type TooltipSide = "top" | "bottom" | "left" | "right" | "bottom-right";
 const TooltipContext = createContext<{
   openId: string | null;
   setOpenId: Dispatch<SetStateAction<string | null>>;
@@ -34,6 +34,8 @@ export function TooltipButton({
   label,
   shortcut,
   tooltipSide = "top",
+  tooltipAnchorSelector,
+  tooltipCompact = false,
   tooltipDelay = 200,
   showTooltip = true,
   children,
@@ -47,6 +49,9 @@ export function TooltipButton({
   label: string;
   shortcut?: string;
   tooltipSide?: TooltipSide;
+  /** Anchor to a child icon when the button also contains a wider label. */
+  tooltipAnchorSelector?: string;
+  tooltipCompact?: boolean;
   tooltipDelay?: number;
   /** Off when the button already shows its label as text. */
   showTooltip?: boolean;
@@ -93,11 +98,15 @@ export function TooltipButton({
   );
   useLayoutEffect(() => {
     if (!open || !button.current || !tooltip.current) return;
-    const anchor = button.current.getBoundingClientRect();
+    const anchorElement = tooltipAnchorSelector
+      ? button.current.querySelector(tooltipAnchorSelector)
+      : null;
+    const anchor = (anchorElement ?? button.current).getBoundingClientRect();
     const tip = tooltip.current.getBoundingClientRect();
-    const gap = 12;
+    const corner = tooltipSide === "bottom-right";
+    const gap = corner ? 4 : 12;
     const padding = 12;
-    let side = tooltipSide;
+    let side = corner ? "right" : tooltipSide;
     if (side === "top" && anchor.top < tip.height + gap + padding)
       side = "bottom";
     if (
@@ -116,10 +125,11 @@ export function TooltipButton({
       side === "left"
         ? anchor.left - gap - tip.width
         : side === "right"
-          ? anchor.right + gap
+          ? (corner ? anchor.left + anchor.width / 2 : anchor.right) + gap
           : anchor.left + (anchor.width - tip.width) / 2;
-    const y =
-      side === "top"
+    const y = corner
+      ? anchor.bottom + 2
+      : side === "top"
         ? anchor.top - gap - tip.height
         : side === "bottom"
           ? anchor.bottom + gap
@@ -128,7 +138,14 @@ export function TooltipButton({
       x: Math.max(padding, Math.min(innerWidth - tip.width - padding, x)),
       y: Math.max(padding, Math.min(innerHeight - tip.height - padding, y)),
     });
-  }, [open, label, shortcut, tooltipSide]);
+  }, [
+    open,
+    label,
+    shortcut,
+    tooltipSide,
+    tooltipAnchorSelector,
+    tooltipCompact,
+  ]);
   useEffect(() => {
     if (!open && !pending) return;
     const dismiss = () => {
@@ -202,7 +219,7 @@ export function TooltipButton({
             ref={tooltip}
             id={id}
             role="tooltip"
-            className="cw-tooltip"
+            className={`cw-tooltip${tooltipCompact ? " is-compact" : ""}`}
             style={{ left: position.x, top: position.y }}
           >
             <span>{label}</span>

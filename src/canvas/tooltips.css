@@ -17,6 +17,12 @@
   overflow-wrap: anywhere;
   pointer-events: none;
 }
+.cw-tooltip.is-compact {
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+}
 .cw-tooltip kbd {
   flex-shrink: 0;
   color: #a2a2aa;

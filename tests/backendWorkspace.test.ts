@@ -8,6 +8,7 @@ import {
   cleanupUnreadableWorkspaceProjects,
   createWorkspaceProject,
   initializeWorkspace,
+  openExampleWorkspaceProject,
   saveWorkspaceDocument,
   type WorkspaceProject,
 } from "../src/backend/workspace.ts";
@@ -16,6 +17,7 @@ import {
   createNode,
   type CanvasDocument,
 } from "../src/canvas/model.ts";
+import { EXAMPLE_PROJECT_TITLE } from "../src/canvas/assets.ts";
 
 /** Entry/session orchestration; projection round-trips are exercised separately. */
 function fixture(t: TestContext) {
@@ -217,6 +219,151 @@ test("unknown creation outcome is not retried with another project identity", as
   const f = fixture(t);
   f.offline();
   await assert.rejects(initializeWorkspace(), /无法连接/);
+  assert.equal(
+    f.calls.filter((call) => call.path.endsWith("/commands")).length,
+    1,
+  );
+  assert.equal(f.projects.size, 0);
+});
+
+test("example opens share creation and reopen saved edits without rebuilding media", async (t) => {
+  const f = fixture(t);
+  let prepared = 0;
+  const prepare = async () => {
+    prepared++;
+    return createDocument(EXAMPLE_PROJECT_TITLE);
+  };
+  const first = openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare);
+  assert.equal(
+    openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare),
+    first,
+  );
+  const initial = await first;
+  const edited = {
+    ...initial,
+    nodes: [
+      createNode("text", undefined, { title: "我的修改", text: "保留内容" }),
+    ],
+  };
+  await saveWorkspaceDocument(edited);
+  const reopened = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    prepare,
+  );
+  assert.deepEqual(reopened, edited);
+  assert.equal(prepared, 1);
+  assert.equal(f.projects.size, 1);
+  assert.equal(
+    f.calls.filter((call) => call.path.endsWith("/commands")).length,
+    1,
+  );
+});
+
+test("existing default example is opened without a stored hint or saving over it", async (t) => {
+  const f = fixture(t);
+  const project = await createWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    crypto.randomUUID(),
+  );
+  const saved = {
+    ...createDocument(EXAMPLE_PROJECT_TITLE),
+    id: project.id,
+    nodes: [createNode("text", undefined, { text: "现有示例的修改" })],
+  };
+  f.documents.set(project.id, saved);
+  f.calls.length = 0;
+  const reopened = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    async () => {
+      throw new Error("不应重新生成示例");
+    },
+  );
+  assert.deepEqual(reopened, saved);
+  assert.ok(f.calls.every((call) => !call.path.endsWith("/commands")));
+  assert.equal(f.projects.size, 1);
+});
+
+test("renamed examples reopen by project identity and deleted examples are recreated", async (t) => {
+  const f = fixture(t);
+  const prepare = async () => createDocument(EXAMPLE_PROJECT_TITLE);
+  const initial = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    prepare,
+  );
+  const renamed = { ...f.projects.get(initial.id)!, name: "我改过的示例" };
+  f.projects.set(initial.id, renamed);
+  f.documents.set(initial.id, { ...initial, title: renamed.name });
+  const reopened = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    prepare,
+  );
+  assert.equal(reopened.id, initial.id);
+  assert.equal(reopened.title, renamed.name);
+  // The list cache still contains this row: reopening must consult the server.
+  f.projects.delete(initial.id);
+  f.documents.delete(initial.id);
+  const replacement = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    prepare,
+  );
+  assert.notEqual(replacement.id, initial.id);
+  assert.equal(replacement.title, EXAMPLE_PROJECT_TITLE);
+  assert.equal(f.projects.size, 1);
+});
+
+test("an example created in another window is reopened after a definite name conflict", async (t) => {
+  const f = fixture(t);
+  const id = crypto.randomUUID();
+  const saved = {
+    ...createDocument(EXAMPLE_PROJECT_TITLE),
+    id,
+    nodes: [createNode("text", undefined, { text: "另一窗口已保存" })],
+  };
+  const reopened = await openExampleWorkspaceProject(
+    EXAMPLE_PROJECT_TITLE,
+    async () => {
+      f.projects.set(id, {
+        id,
+        name: saved.title,
+        path: `/projects/${saved.title}`,
+      });
+      f.documents.set(id, saved);
+      return createDocument(EXAMPLE_PROJECT_TITLE);
+    },
+  );
+  assert.deepEqual(reopened, saved);
+  assert.equal(f.projects.size, 1);
+  assert.equal(
+    f.calls.filter((call) => call.path.endsWith("/commands")).length,
+    1,
+  );
+});
+
+test("an unreadable existing example fails without creating a replacement", async (t) => {
+  const f = fixture(t);
+  const prepare = async () => createDocument(EXAMPLE_PROJECT_TITLE);
+  await openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare);
+  f.calls.length = 0;
+  CreationProjection.prototype.open = async () => {
+    throw new Error("示例无法读取");
+  };
+  await assert.rejects(
+    openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, prepare),
+    /示例无法读取/,
+  );
+  assert.equal(f.projects.size, 1);
+  assert.ok(f.calls.every((call) => !call.path.endsWith("/commands")));
+});
+
+test("unknown example creation is not retried with another project identity", async (t) => {
+  const f = fixture(t);
+  f.offline();
+  await assert.rejects(
+    openExampleWorkspaceProject(EXAMPLE_PROJECT_TITLE, async () =>
+      createDocument(EXAMPLE_PROJECT_TITLE),
+    ),
+    /无法连接/,
+  );
   assert.equal(
     f.calls.filter((call) => call.path.endsWith("/commands")).length,
     1,

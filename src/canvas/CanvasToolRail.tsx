@@ -149,7 +149,9 @@ export function CanvasToolRail({
                   <TooltipButton
                     {...props}
                     label="暂未开放"
-                    tooltipSide="right"
+                    tooltipSide="bottom-right"
+                    tooltipAnchorSelector=".cw-rail-icon svg"
+                    tooltipCompact
                   >
                     {content}
                   </TooltipButton>

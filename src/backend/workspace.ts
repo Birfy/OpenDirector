@@ -120,7 +120,17 @@ export async function createWorkspaceProject(name: string, id: string) {
   )!;
 }
 
-/** JSON imports/examples become independent filesystem projects. */
+async function populateWorkspaceProject(
+  project: WorkspaceProject,
+  document: CanvasDocument,
+) {
+  await openWorkspaceProject(project);
+  const imported = { ...document, id: project.id, title: project.name };
+  await saveWorkspaceDocument(imported);
+  return imported;
+}
+
+/** JSON imports become independent filesystem projects. */
 export async function importWorkspaceDocument(document: CanvasDocument) {
   const { projects } = await listWorkspaceProjects();
   const occupied = new Set(
@@ -136,10 +146,61 @@ export async function importWorkspaceDocument(document: CanvasDocument) {
     suffix = 2;
   while (occupied.has(name.toLocaleLowerCase())) name = `${base} (${suffix++})`;
   const project = await createWorkspaceProject(name, crypto.randomUUID());
-  await openWorkspaceProject(project);
-  const imported = { ...document, id: project.id, title: project.name };
-  await saveWorkspaceDocument(imported);
-  return imported;
+  return populateWorkspaceProject(project, document);
+}
+
+const exampleOpenings = new Map<string, Promise<CanvasDocument>>();
+
+/** Reopen the user's example edits; generate the initial media only once. */
+export function openExampleWorkspaceProject(
+  name: string,
+  createExample: () => Promise<CanvasDocument>,
+): Promise<CanvasDocument> {
+  const opening = exampleOpenings.get(name);
+  if (opening) return opening;
+  const pending = (async () => {
+    const key = `opendirector.exampleWorkspaceProject:${name}`;
+    let preferred: string | undefined;
+    try {
+      preferred = localStorage.getItem(key) ?? undefined;
+    } catch {
+      /* Optional navigation hint; project contents stay on the server. */
+    }
+    const { projects, unreadable } = await listWorkspaceProjects({
+      fresh: true,
+    });
+    const existing =
+      projects.find((project) => project.id === preferred) ??
+      projects.find((project) => project.name === name);
+    const remember = (document: CanvasDocument) => {
+      try {
+        localStorage.setItem(key, document.id);
+      } catch {
+        /* Reopening by the original name still works without local storage. */
+      }
+      return document;
+    };
+    if (existing) return remember(await openWorkspaceProject(existing));
+    const blocked = unreadable.find((project) => project.id === preferred);
+    if (blocked) throw new Error(blocked.reason);
+    const example = await createExample();
+    let project: WorkspaceProject;
+    try {
+      project = await createWorkspaceProject(name, crypto.randomUUID());
+    } catch (error) {
+      // Another window may have created it after the list read. Only a
+      // definite create conflict can be resolved by opening that project.
+      if (!(error instanceof ApiError) || error.status !== 409) throw error;
+      const raced = (
+        await listWorkspaceProjects({ fresh: true })
+      ).projects.find((project) => project.name === name);
+      if (!raced) throw error;
+      return remember(await openWorkspaceProject(raced));
+    }
+    return remember(await populateWorkspaceProject(project, example));
+  })().finally(() => exampleOpenings.delete(name));
+  exampleOpenings.set(name, pending);
+  return pending;
 }
 
 let initialization: Promise<CanvasDocument> | undefined;

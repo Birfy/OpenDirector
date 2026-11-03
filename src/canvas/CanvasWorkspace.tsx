@@ -76,6 +76,7 @@ import {
   importWorkspaceDocument,
   initializeWorkspace,
   listWorkspaceProjects,
+  openExampleWorkspaceProject,
   openWorkspaceProject,
   renameWorkspaceProject,
   saveWorkspaceDocument,
@@ -87,6 +88,7 @@ import {
   downloadFile,
   downloadFilename,
   exampleDocument,
+  EXAMPLE_PROJECT_TITLE,
   studyImage,
 } from "./assets";
 import { AssistantPanel } from "./AssistantPanel";
@@ -1511,8 +1513,7 @@ function Workspace() {
         (model) => model.kind === "agent",
       );
       const chosen =
-        agents.find((model) => model.id === assistantModels.agent) ??
-        agents[0];
+        agents.find((model) => model.id === assistantModels.agent) ?? agents[0];
       return chosen
         ? {
             agentSettings: {
@@ -4608,7 +4609,11 @@ function Workspace() {
             <button
               onClick={() => {
                 void switchDocument(
-                  async () => importWorkspaceDocument(await exampleDocument()),
+                  () =>
+                    openExampleWorkspaceProject(
+                      EXAMPLE_PROJECT_TITLE,
+                      exampleDocument,
+                    ),
                   true,
                 );
               }}
