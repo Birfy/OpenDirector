@@ -1027,7 +1027,7 @@ export function TimelineEditor({
           )}
           <div className="cw-timeline-monitor">
             <div
-              className="cw-timeline-screen"
+              className={`cw-timeline-screen${currentVisual?.clip.resource.src ? "" : " is-empty"}`}
               style={{ aspectRatio: `${timeline.width}/${timeline.height}` }}
             >
               {currentVisual?.clip.resource.src ? (
