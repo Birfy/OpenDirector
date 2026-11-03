@@ -173,6 +173,7 @@ class CreationProjects:
         self.intents = directory(child(self.state_dir, 'creation-commits'))
         self._blocked = {}
         self._warnings = []
+        self._invalid = []
         self._records_cache = OrderedDict()
         self._records_cache_bytes = 0
         with local.transaction():
@@ -197,6 +198,7 @@ class CreationProjects:
     def _scan(self):
         self.local._check_root()
         grouped, unsupported, warnings = {}, set(), list(self._warnings)
+        self._invalid = []
         if self.root.is_dir():
             for path in sorted(self.root.iterdir()):
                 if path.is_symlink() or not path.is_dir() or path.name.startswith('.opendirector-'):
@@ -212,7 +214,9 @@ class CreationProjects:
                     if raw.get('format') != 'opendirector-project' or raw.get('formatVersion') != 2:
                         unsupported.add(project_id)
                 except (OSError, ValueError, TypeError, KeyError, ProjectError):
-                    warnings.append(f'工程“{path.name}”的清单无法读取，原文件已保留。')
+                    warning = f'工程“{path.name}”的清单无法读取，原文件已保留。'
+                    warnings.append(warning)
+                    self._invalid.append((path, warning))
         conflicts = {key for key, paths in grouped.items() if len(paths) > 1}
         for key in sorted(conflicts):
             warnings.append(f'工程标识重复：{key}；请移走重复目录后重试。')
@@ -309,24 +313,102 @@ class CreationProjects:
         if tools.exists() and any(read_json(child(tools, item.name)).get('status') in {'queued', 'running'} for item in tools.glob('*.json')):
             raise ProjectError(f'工程仍有工具任务，请等待或取消任务后再{verb}。', 409)
 
+    @staticmethod
+    def _unreadable_item(path, reason, project_id=None):
+        return dict(id=project_id, name=path.name, path=str(path), reason=reason)
+
+    def _catalog(self, db):
+        grouped, unsupported, conflicts, warnings = self._scan()
+        invalid = list(self._invalid)
+        projects = []
+        unreadable = [self._unreadable_item(path, reason) for path, reason in invalid]
+        for project_id in sorted(grouped):
+            paths = grouped[project_id]
+            if project_id in unsupported:
+                reason = f'工程 {project_id} 使用旧格式，统一工程接口不支持读取或转换。'
+                warnings.append(reason)
+                unreadable.extend(self._unreadable_item(path, reason, project_id) for path in paths)
+                continue
+            if project_id in conflicts:
+                reason = f'工程标识重复：{project_id}；请移走重复目录后重试。'
+                unreadable.extend(self._unreadable_item(path, reason, project_id) for path in paths)
+                continue
+            try:
+                path, _, records = self._load(db, project_id)
+                projects.append(dict(id=project_id, name=records[0].snapshot.project.name, path=str(path)))
+            except (ProjectError, OSError):
+                reason = f'工程 {project_id} 需要恢复，原文件已保留。'
+                warnings.append(reason)
+                unreadable.append(self._unreadable_item(paths[0], reason, project_id))
+        projects.sort(key=lambda item: (item['name'].casefold(), item['name']))
+        unreadable.sort(key=lambda item: (item['name'].casefold(), item['name']))
+        return dict(projects=projects, unreadable=unreadable, warnings=warnings)
+
     def list_projects(self):
         with self.local.transaction() as db:
             self._recover()
-            grouped, unsupported, conflicts, warnings = self._scan()
-            projects = []
-            for project_id in sorted(grouped):
-                if project_id in unsupported:
-                    warnings.append(f'工程 {project_id} 使用旧格式，统一工程接口不支持读取或转换。')
+            return self._catalog(db)
+
+    @staticmethod
+    def _cleanup_blocker(db, project_id, path):
+        active = db.execute('SELECT 1 FROM sessions WHERE expires>? AND (path=? OR project_id=?)',
+                            (time.time(), str(path), project_id or '')).fetchone()
+        if active:
+            return '工程仍在其他窗口中打开，请关闭后再清理。'
+        tools = path / 'tool-tasks'
+        if tools.exists() or tools.is_symlink():
+            try:
+                directory(tools)
+                tasks = [read_json(child(tools, item.name)) for item in tools.glob('*.json')]
+                if any(not isinstance(task, dict) for task in tasks):
+                    raise ValueError('Invalid tool task')
+            except (OSError, ValueError, TypeError, KeyError, ProjectError):
+                return '无法确认工具任务状态，请检查工程文件后再清理。'
+            if any(task.get('status') in {'queued', 'running'} for task in tasks):
+                return '工程仍有工具任务，请等待或取消任务后再清理。'
+        return None
+
+    def cleanup_unreadable(self):
+        """Remove only directories that a fresh catalog read still cannot open."""
+        with self.local.transaction() as db:
+            self._recover()
+            candidates = self._catalog(db)['unreadable']
+        removed, failed = [], []
+        for candidate in candidates:
+            with self.local.transaction() as db:
+                self._recover()
+                current = next((item for item in self._catalog(db)['unreadable']
+                                if item['path'] == candidate['path']), None)
+                if current is None:
                     continue
-                if project_id in conflicts:
-                    continue
-                try:
-                    path, _, records = self._load(db, project_id)
-                    projects.append(dict(id=project_id, name=records[0].snapshot.project.name, path=str(path)))
-                except (ProjectError, OSError):
-                    warnings.append(f'工程 {project_id} 需要恢复，原文件已保留。')
-            projects.sort(key=lambda item: (item['name'].casefold(), item['name']))
-            return dict(projects=projects, warnings=warnings)
+                path = Path(current['path'])
+                blocker = self._cleanup_blocker(db, current['id'], path)
+            if blocker:
+                failed.append(dict(name=current['name'], message=blocker))
+                continue
+            if not path.exists() and not path.is_symlink():
+                continue
+            try:
+                directory(path)
+                recycle.remove(path, recoverable=self.delete_mode == 'recycle_bin')
+            except (OSError, ProjectError) as error:
+                failed.append(dict(name=current['name'], message=str(error)))
+                continue
+            removed.append(current['name'])
+            if current['id']:
+                journal = self._journal(current['id'])
+                if journal.exists():
+                    # The project is gone; its pending recovery must not recreate
+                    # a permanent catalog warning on the next read.
+                    journal.unlink()
+                    sync_directory(self.intents)
+            with self.local.transaction() as db:
+                db.execute('DELETE FROM sessions WHERE path=?', (str(path),))
+                if current['id']:
+                    db.execute('DELETE FROM sessions WHERE project_id=?', (current['id'],))
+        if removed:
+            sync_directory(self.root)
+        return dict(removed=removed, failed=failed)
 
     def snapshot(self, project_id):
         with self.local.transaction() as db:

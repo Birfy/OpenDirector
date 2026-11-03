@@ -4,6 +4,7 @@ import { creationClient } from "../src/backend/creationClient.ts";
 import { CreationProjection } from "../src/backend/creationProjection.ts";
 import { releaseBackendProject } from "../src/backend/projects.ts";
 import {
+  cleanupUnreadableWorkspaceProjects,
   createWorkspaceProject,
   initializeWorkspace,
   saveWorkspaceDocument,
@@ -61,8 +62,22 @@ function fixture(t: TestContext) {
     if (path === "/api/creation/projects")
       return Response.json({
         projects: [...projects.values()],
+        unreadable: occupied
+          ? [
+              {
+                id: null,
+                name: "Legacy",
+                path: "/projects/Legacy",
+                reason: "旧格式工程已保留",
+              },
+            ]
+          : [],
         warnings: occupied ? ["旧格式工程已保留"] : [],
       });
+    if (path === "/api/creation/projects/cleanup" && method === "POST") {
+      occupied = false;
+      return Response.json({ removed: ["Legacy"], failed: [] });
+    }
     if (path.includes("/sessions/")) {
       lease = null;
       return Response.json({ ok: true });
@@ -130,6 +145,22 @@ function fixture(t: TestContext) {
     },
   };
 }
+
+test("unreadable project cleanup uses the dedicated command", async (t) => {
+  const f = fixture(t);
+  f.occupy();
+  assert.deepEqual(await cleanupUnreadableWorkspaceProjects(), {
+    removed: ["Legacy"],
+    failed: [],
+  });
+  assert.ok(
+    f.calls.some(
+      (call) =>
+        call.path === "/api/creation/projects/cleanup" &&
+        call.method === "POST",
+    ),
+  );
+});
 
 test("plain entry shares concurrent initialization, then rereads the saved project", async (t) => {
   const f = fixture(t);

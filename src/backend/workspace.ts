@@ -1,5 +1,8 @@
 import { type CanvasDocument } from "../canvas/model.ts";
-import type { CommandReceipt, ProjectSnapshot } from "../contracts/generated.ts";
+import type {
+  CommandReceipt,
+  ProjectSnapshot,
+} from "../contracts/generated.ts";
 import { ApiError, json, request } from "./api.ts";
 import {
   creationClient,
@@ -28,14 +31,30 @@ export interface WorkspaceProject {
   name: string;
   path: string;
 }
+export interface UnreadableWorkspaceProject {
+  id: string | null;
+  name: string;
+  path: string;
+  reason: string;
+}
 export interface WorkspaceProjectList {
   projects: WorkspaceProject[];
+  unreadable: UnreadableWorkspaceProject[];
   warnings: string[];
+}
+export interface WorkspaceCleanupResult {
+  removed: string[];
+  failed: { name: string; message: string }[];
 }
 const lastKey = "opendirector.lastUnifiedFilesystemProject";
 
 export const listWorkspaceProjects = () =>
   request<WorkspaceProjectList>("/creation/projects");
+
+export const cleanupUnreadableWorkspaceProjects = () =>
+  request<WorkspaceCleanupResult>("/creation/projects/cleanup", {
+    method: "POST",
+  });
 
 /** Whether removing a project lands in the operating system recycle bin. */
 export const projectDeleteMode = () =>
@@ -166,11 +185,9 @@ export async function renameWorkspaceProject(
   const current = activeBackendProjectId() === project.id;
   if (current) await releaseBackendProject();
   try {
-    await creationClient(project.id).command(
-      "project.rename",
-      { name },
-      [objectVersion("project", snapshot.project)],
-    );
+    await creationClient(project.id).command("project.rename", { name }, [
+      objectVersion("project", snapshot.project),
+    ]);
   } finally {
     if (current) await openBackendProject(project.id, name).catch(() => {});
   }
@@ -197,7 +214,8 @@ export async function trashWorkspaceProject(project: WorkspaceProject) {
       }),
     );
   } catch (error) {
-    if (current) await openBackendProject(project.id, project.name).catch(() => {});
+    if (current)
+      await openBackendProject(project.id, project.name).catch(() => {});
     // A lost response must not report a project that is already gone as an error.
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
   }

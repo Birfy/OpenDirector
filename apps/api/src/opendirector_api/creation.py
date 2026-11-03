@@ -32,6 +32,10 @@ def creation_routes(projects: CreationProjects, generation=None):
     def list_projects():
         return projects.list_projects()
 
+    @router.post('/projects/cleanup')
+    def cleanup_unreadable_projects():
+        return projects.cleanup_unreadable()
+
     @router.get('/storage')
     def storage():
         # Deleting a project is only promised to be recoverable when the

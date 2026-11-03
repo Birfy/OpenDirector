@@ -1,9 +1,11 @@
 from legacy_fixtures import legacy_project
 from uuid import uuid4
+import shutil
 
 from fastapi.testclient import TestClient
 import pytest
 
+from opendirector.infrastructure import creation_projects
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
@@ -104,6 +106,24 @@ def test_unknown_and_legacy_projects_are_not_reinitialized(api):
     assert client.get(f'/api/creation/projects/{uuid4()}').status_code == 404
     assert client.get('/api/creation/projects').json()['projects'] == []
     assert client.get('/api/projects').status_code == 404
+
+
+def test_cleanup_api_removes_unreadable_projects_only(api, monkeypatch):
+    client, local = api
+    monkeypatch.setattr(creation_projects.recycle, 'remove',
+                        lambda path, *, recoverable: shutil.rmtree(path))
+    path, _, _ = create(client, 'Readable')
+    legacy_project(local)
+    listing = client.get('/api/creation/projects').json()
+    assert [item['name'] for item in listing['projects']] == ['Readable']
+    assert [item['name'] for item in listing['unreadable']] == ['Legacy']
+
+    response = client.post('/api/creation/projects/cleanup')
+    assert response.status_code == 200, response.text
+    assert response.json() == dict(removed=['Legacy'], failed=[])
+    assert client.get(path).json()['project']['name'] == 'Readable'
+    assert client.get('/api/creation/projects').json()['unreadable'] == []
+    assert client.post('/api/creation/projects/cleanup').json() == dict(removed=[], failed=[])
 
 
 def test_views_queries_and_revision_scoped_history_do_not_replace_business_state(api):

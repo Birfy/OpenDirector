@@ -7,11 +7,19 @@ export function ProjectDeleteDialog({
   recycleBin,
   onClose,
   onSubmit,
+  title = "删除项目",
+  description,
+  submitLabel = "删除项目",
+  busyLabel = "正在删除…",
 }: {
   name: string;
   recycleBin: boolean;
   onClose: () => void;
   onSubmit: () => Promise<void>;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  busyLabel?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
@@ -50,8 +58,11 @@ export function ProjectDeleteDialog({
           }
         }}
       >
-        <h2 id="project-delete-title">删除项目</h2>
-        <p>“{name}”将从项目列表移除，正在生成的素材和工具任务需要先取消。</p>
+        <h2 id="project-delete-title">{title}</h2>
+        <p>
+          {description ??
+            `“${name}”将从项目列表移除，正在生成的素材和工具任务需要先取消。`}
+        </p>
         <p role="note">
           {recycleBin
             ? "删除后项目文件夹会放入本机回收站，需要时可以从回收站恢复。"
@@ -67,7 +78,7 @@ export function ProjectDeleteDialog({
             取消
           </button>
           <button className="cw-danger-button" disabled={busy} type="submit">
-            {busy ? "正在删除…" : "删除项目"}
+            {busy ? busyLabel : submitLabel}
           </button>
         </div>
       </form>

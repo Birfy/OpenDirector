@@ -1,6 +1,6 @@
 /** Ordinary URL, project lifecycle, unsupported-format isolation, and no legacy UI writes. */
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE ?? "playwright-core"
@@ -145,6 +145,21 @@ try {
     await readFile(join(health.root, ".opendirector", "models.json")),
     credentials,
   );
+  await page.getByRole("button", { name: "切换项目", exact: true }).click();
+  await page.getByRole("menuitem", { name: /清除不可读项目/ }).click();
+  const cleanup = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/creation/projects/cleanup") &&
+      r.request().method() === "POST",
+  );
+  await page
+    .getByRole("dialog", { name: "清除不可读项目", exact: true })
+    .getByRole("button", { name: "清除项目", exact: true })
+    .click();
+  assert.deepEqual((await (await cleanup).json()).removed, [old.name]);
+  await page.getByText("已清除 1 个不可读项目。", { exact: true }).waitFor();
+  await assert.rejects(access(old.path));
+  assert.deepEqual((await api("/creation/projects")).unreadable, []);
   console.log(
     JSON.stringify({
       passed: true,
@@ -154,6 +169,7 @@ try {
       initiallyEmpty,
       legacyRequests: legacy.length,
       oldFilesAndCredentialsUnchanged: true,
+      oldProjectCleaned: true,
     }),
   );
 } catch (error) {

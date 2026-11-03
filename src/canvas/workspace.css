@@ -587,7 +587,8 @@
 .cw-project-option > svg {
   flex-shrink: 0;
 }
-.cw-project-create {
+.cw-project-create,
+.cw-project-cleanup {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -598,8 +599,12 @@
   margin-top: 4px;
   text-align: left;
 }
-.cw-project-create:hover {
+.cw-project-create:hover,
+.cw-project-cleanup:hover {
   color: #fff;
+}
+.cw-project-cleanup {
+  color: #f0a3a3;
 }
 .cw-project-placeholder {
   color: #9a9a9e;
@@ -612,6 +617,11 @@
   padding: 0 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.cw-project-notice {
+  color: #a8d8b0;
+  font-size: 12px;
+  padding: 0 6px;
 }
 .cw-project-dialog {
   width: min(400px, calc(100vw - 32px));

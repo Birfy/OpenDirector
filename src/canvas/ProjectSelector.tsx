@@ -3,8 +3,10 @@ import { CanvasIcon } from "./CanvasIcon";
 import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import {
+  cleanupUnreadableWorkspaceProjects,
   listWorkspaceProjects,
   projectDeleteMode,
+  type UnreadableWorkspaceProject,
   type WorkspaceProject,
 } from "../backend/workspace";
 import { errorMessage } from "../backend/api";
@@ -33,8 +35,12 @@ export function ProjectSelector({
 }) {
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<WorkspaceProject[]>([]);
+  const [unreadable, setUnreadable] = useState<UnreadableWorkspaceProject[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(name);
@@ -48,6 +54,7 @@ export function ProjectSelector({
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceProject | null>(
     null,
   );
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const [recycleBin, setRecycleBin] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
   const nameButton = useRef<HTMLButtonElement>(null);
@@ -83,9 +90,13 @@ export function ProjectSelector({
   const loadProjects = useCallback(async () => {
     const result = await listWorkspaceProjects();
     setProjects(result.projects);
+    setUnreadable(result.unreadable);
     setError(result.warnings.join("\n"));
   }, []);
-  const openActions = (project: WorkspaceProject, button: HTMLButtonElement) => {
+  const openActions = (
+    project: WorkspaceProject,
+    button: HTMLButtonElement,
+  ) => {
     const dropdown = container.current?.querySelector<HTMLElement>(
       ".cw-project-dropdown",
     );
@@ -136,6 +147,7 @@ export function ProjectSelector({
     let active = true;
     setLoading(true);
     setError("");
+    setNotice("");
     void projectDeleteMode()
       .then((mode) => {
         if (active) setRecycleBin(mode.projectDelete === "recycle_bin");
@@ -148,6 +160,7 @@ export function ProjectSelector({
       .then((result) => {
         if (active) {
           setProjects(result.projects);
+          setUnreadable(result.unreadable);
           setError(result.warnings.join("\n"));
         }
       })
@@ -316,6 +329,11 @@ export function ProjectSelector({
               {error}
             </p>
           )}
+          {notice && (
+            <p className="cw-project-notice" role="status">
+              {notice}
+            </p>
+          )}
           <div
             className="cw-project-list"
             aria-busy={loading || busy}
@@ -367,7 +385,8 @@ export function ProjectSelector({
                     role="menuitem"
                     className="cw-project-more"
                     ref={(element) => {
-                      if (element) actionButtons.current.set(project.id, element);
+                      if (element)
+                        actionButtons.current.set(project.id, element);
                       else actionButtons.current.delete(project.id);
                     }}
                     disabled={disabled || busy}
@@ -386,6 +405,17 @@ export function ProjectSelector({
               ))
             )}
           </div>
+          {unreadable.length > 0 && (
+            <button
+              className="cw-project-cleanup"
+              role="menuitem"
+              disabled={busy || loading || disabled}
+              onClick={() => setCleanupOpen(true)}
+            >
+              <span>清除不可读项目（{unreadable.length}）</span>
+              <CanvasIcon name="trash" size={18} />
+            </button>
+          )}
           <button
             className="cw-project-create"
             role="menuitem"
@@ -459,6 +489,34 @@ export function ProjectSelector({
           onSubmit={async () => {
             await onDeleteProject(deleteTarget);
             await loadProjects();
+          }}
+        />
+      )}
+      {cleanupOpen && (
+        <ProjectDeleteDialog
+          name={unreadable.map((project) => project.name).join("、")}
+          title="清除不可读项目"
+          description={`将清除 ${unreadable.length} 个无法读取的项目，正常项目不受影响。仍打开或存在运行中工具任务的项目会保留。`}
+          submitLabel="清除项目"
+          busyLabel="正在清除…"
+          recycleBin={recycleBin}
+          onClose={() => setCleanupOpen(false)}
+          onSubmit={async () => {
+            const result = await cleanupUnreadableWorkspaceProjects();
+            await loadProjects();
+            if (result.failed.length) {
+              const failures = result.failed
+                .map((item) => `${item.name}：${item.message}`)
+                .join("\n");
+              throw new Error(
+                `${result.removed.length ? `已清除 ${result.removed.length} 个项目。\n` : ""}${failures}`,
+              );
+            }
+            setNotice(
+              result.removed.length
+                ? `已清除 ${result.removed.length} 个不可读项目。`
+                : "没有需要清理的不可读项目。",
+            );
           }}
         />
       )}

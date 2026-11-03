@@ -218,9 +218,89 @@ def test_duplicate_ids_unknown_projects_and_legacy_formats_are_rejected(projects
     assert error.value.status == 404
     created = create(projects)
     shutil.copytree(projects.root / 'Example', projects.root / 'Copy')
-    assert not projects.list_projects()['projects']
+    listing = projects.list_projects()
+    assert not listing['projects']
+    assert {item['name'] for item in listing['unreadable']} == {'Example', 'Copy', 'Legacy'}
     with pytest.raises(ProjectError, match='同标识'):
         projects.snapshot(created.projectId)
+
+
+def test_cleanup_unreadable_removes_only_invalid_project_directories(projects, unrecycled):
+    create(projects)
+    damaged = create(projects, 'Damaged')
+    (projects.root / 'Damaged' / 'commits' / f'{damaged.commandId}.json').write_text('{broken')
+    legacy = legacy_project(projects.local)
+    broken = projects.root / 'Broken'
+    broken.mkdir()
+    (broken / 'project.json').write_text('{broken')
+    ordinary = projects.root / 'Ordinary files'
+    ordinary.mkdir()
+    (ordinary / 'keep.txt').write_text('keep')
+    temporary = projects.root / '.opendirector-old'
+    temporary.mkdir()
+    (temporary / 'project.json').write_text('{broken')
+
+    listing = projects.list_projects()
+    assert [item['name'] for item in listing['projects']] == ['Example']
+    assert {item['name'] for item in listing['unreadable']} == {'Broken', 'Damaged', 'Legacy'}
+    assert next(item for item in listing['unreadable'] if item['name'] == 'Broken')['id'] is None
+
+    result = projects.cleanup_unreadable()
+    assert set(result['removed']) == {'Broken', 'Damaged', 'Legacy'}
+    assert result['failed'] == []
+    assert (projects.root / 'Example' / 'project.json').exists()
+    assert (ordinary / 'keep.txt').read_text() == 'keep'
+    assert temporary.is_dir()
+    assert not broken.exists() and not Path(legacy['path']).exists()
+    final = projects.list_projects()
+    assert [item['name'] for item in final['projects']] == ['Example']
+    assert final['unreadable'] == [] and final['warnings'] == []
+
+
+def test_cleanup_unreadable_reports_partial_failures_and_preserves_files(projects, monkeypatch):
+    legacy_project(projects.local, 'Disposable')
+    legacy_project(projects.local, 'Recycle failure')
+    blocked = Path(legacy_project(projects.local, 'Blocked')['path'])
+    tasks = blocked / 'tool-tasks'
+    tasks.mkdir()
+    (tasks / 'running.json').write_text(json.dumps(dict(status='running')))
+    opened = legacy_project(projects.local, 'Open')
+    with projects.local.transaction() as db:
+        db.execute('INSERT INTO sessions(id,project_id,expires,path) VALUES (?,?,?,?)',
+                   (str(uuid4()), opened['id'], 9999999999, opened['path']))
+
+    def remove(path, *, recoverable):
+        if path.name == 'Recycle failure':
+            raise OSError('模拟回收站失败，文件已保留。')
+        shutil.rmtree(path)
+    monkeypatch.setattr(creation_projects.recycle, 'remove', remove)
+
+    result = projects.cleanup_unreadable()
+    assert result['removed'] == ['Disposable']
+    assert {item['name'] for item in result['failed']} == {'Blocked', 'Open', 'Recycle failure'}
+    assert not (projects.root / 'Disposable').exists()
+    assert (projects.root / 'Recycle failure' / 'project.json').exists()
+    assert Path(opened['path']).is_dir()
+    assert (tasks / 'running.json').exists()
+    assert {item['name'] for item in projects.list_projects()['unreadable']} == {'Blocked', 'Open', 'Recycle failure'}
+
+
+def test_cleanup_unreadable_removes_pending_recovery_journal(projects, unrecycled):
+    created = create(projects)
+    command = rename(created)
+    fail_at(projects, 'journaled')
+    with pytest.raises(OSError):
+        projects.execute(command)
+    journal = projects.intents / f'{created.projectId}.json'
+    journal.write_text('{broken')
+    restored = restarted(projects)
+    assert [item['name'] for item in restored.list_projects()['unreadable']] == ['Example']
+
+    result = restored.cleanup_unreadable()
+    assert result == dict(removed=['Example'], failed=[])
+    assert not journal.exists()
+    final = restored.list_projects()
+    assert final['projects'] == [] and final['unreadable'] == [] and final['warnings'] == []
 
 
 def test_future_format_is_not_overwritten_or_read_as_an_empty_project(projects):
