@@ -60,7 +60,10 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     reference_id = uuid4()
     assert send(store, pid, 'reference.add', session=session, versions=[ver('generation_spec', spec), ver('canvas_item', target)],
         reference=dict(id=reference_id, projectId=pid, targetSpecId=spec.id, binding='follow_current', source=dict(id=source.id))).status == 'applied'
-    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
+    spec = store.snapshot(pid).generationSpecs[-1]
+    assert send(store, pid, 'generationSpec.setPrompt', session=session, versions=[ver('generation_spec', spec)],
+        specId=spec.id, prompt='Draw using ', promptContent=[
+            dict(type='text', text='Draw using '), dict(type='reference', referenceId=reference_id)]).status == 'applied'
     first_command, _ = await submit(runner, project, spec.id, target.id)
     await drain(runner)
     snapshot = store.snapshot(pid)
@@ -68,6 +71,7 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     assert snapshot.jobs[-1].status == 'succeeded'
     assert snapshot.jobs[-1].inputSnapshot.references[0].asset.assetId == a1.id
     assert CreationCanvas(store).projection(pid)['edges'][0]['state'] == 'used'
+    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
     assert send(store, pid, 'asset.writeText', session=session, versions=[ver('asset', a1)], name='A-v2.md',
         text='second source version', previousAsset=asset_ref(a1)).status == 'applied'
     a2 = store.snapshot(pid).assets[-1]
@@ -81,7 +85,9 @@ async def test_full_hidden_reference_version_history_timeline_and_restart_loop(p
     await drain(runner)
     snapshot = store.snapshot(pid)
     b2 = snapshot.results[-1]
-    assert snapshot.jobs[-1].inputSnapshot.references[0].asset.assetId == a2.id
+    assert not snapshot.jobs[-1].inputSnapshot.references
+    assert all(part.type == 'text' for part in snapshot.jobs[-1].inputSnapshot.spec.promptContent)
+    assert snapshot.jobs[-1].inputSnapshot.spec.prompt == 'Draw using '
     assert snapshot.jobs[-1].execution.size == '1024x1024'
     timeline_id, timeline_item = uuid4(), uuid4()
     timeline = dict(id=timeline_id, projectId=pid, kind='timeline', data=dict(fps=30, width=1920, height=1080,

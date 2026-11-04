@@ -578,11 +578,13 @@ export function CreationAssetList({
                         <CanvasIcon name={row.kind} size={24} />
                       </span>
                     )}
-                    <span>{row.title}</span>
+                    <span className={row.visible ? undefined : "is-removed"}>
+                      {row.title}
+                    </span>
                     <small>
                       {row.visible
                         ? t("canvasNodes.assets.locate")
-                        : t("canvasNodes.assets.show")}
+                        : t("canvasNodes.assets.restore")}
                     </small>
                   </button>
                 </div>
@@ -660,11 +662,17 @@ export function CreationAssetList({
                       onBlur={clearPreview}
                     >
                       <AssetThumbnail projectId={projectId} asset={row.asset} />
-                      <span>{name}</span>
+                      <span
+                        className={owner && !owner.visible ? "is-removed" : undefined}
+                      >
+                        {name}
+                      </span>
                       <small>
-                        {row.owners.some((owner) => owner.visible)
+                        {owner?.visible
                           ? t("canvasNodes.assets.locate")
-                          : t("canvasNodes.assets.show")}
+                          : owner
+                            ? t("canvasNodes.assets.restore")
+                            : t("canvasNodes.assets.show")}
                       </small>
                     </button>
                   </div>

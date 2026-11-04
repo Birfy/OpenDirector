@@ -146,10 +146,10 @@ def reference_policy(spec, values, rules=None, *, selected_frame=False):
     return tuple(output)
 
 
-def resolved_inputs(snapshot, spec_id, rules=None):
+def resolved_inputs(snapshot, spec_id, rules=None, *, excluded_ids=frozenset()):
     spec = next(s for s in snapshot.generationSpecs if s.id == spec_id)
     mentioned = list(dict.fromkeys(part.referenceId for part in spec.promptContent or () if part.type == 'reference'))
-    refs = sorted((r for r in snapshot.references if r.active and r.targetSpecId == spec_id),
+    refs = sorted((r for r in snapshot.references if r.active and r.targetSpecId == spec_id and r.id not in excluded_ids),
         key=lambda r: (mentioned.index(r.id) if r.id in mentioned else len(mentioned), r.order, str(r.id)))
     items = {item.id: item for item in snapshot.canvasItems}
     for ref in refs:
@@ -161,14 +161,37 @@ def resolved_inputs(snapshot, spec_id, rules=None):
         selected_frame=any(ref.role in {'first_frame', 'last_frame'} for ref in refs))
 
 
+def reference_source_visible(ref, visible):
+    if ref.binding == 'follow_current':
+        return ref.source.id in visible
+    return ref.sourceVersion is None or ref.sourceVersion.id in visible
+
+
+def current_generation_inputs(snapshot, spec, rules, visible=None):
+    """Project current inputs while preserving saved references and history."""
+    if visible is None:
+        visible = visible_item_ids(snapshot)
+    excluded = {ref.id for ref in snapshot.references
+                if ref.active and ref.targetSpecId == spec.id and not reference_source_visible(ref, visible)}
+    references = resolved_inputs(snapshot, spec.id, rules, excluded_ids=excluded)
+    if spec.promptContent is not None and excluded:
+        parts = tuple(part for part in spec.promptContent if part.type == 'text' or part.referenceId not in excluded)
+        if parts != spec.promptContent:
+            data = snapshot.model_dump(mode='json', include={'references', 'canvasItems', 'assets'})
+            spec = spec.model_copy(update={'promptContent': parts})
+            spec = spec.model_copy(update={'prompt': prompt_projection(data, spec.model_dump(mode='json'))})
+    return spec, references
+
+
 def validate_frame_reference_limit(snapshot):
     items = {item.id: item for item in snapshot.canvasItems}
+    visible = visible_item_ids(snapshot)
     for spec in snapshot.generationSpecs:
         if spec.kind != 'video' or spec.parameters.videoMode != 'first_frame':
             continue
         images = set()
         for ref in snapshot.references:
-            if not ref.active or ref.targetSpecId != spec.id:
+            if not ref.active or ref.targetSpecId != spec.id or not reference_source_visible(ref, visible):
                 continue
             if ref.binding == 'pinned' and ref.source.kind == 'image' and ref.subjectRole is None:
                 images.add(('asset', ref.source.assetId))
@@ -699,7 +722,7 @@ class CreationCanvas:
                         config = models.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
                         public_models[key] = ModelConfigPublic.model_validate({k: v for k, v in config.items() if k != 'apiKey'} | {'inputRules': input_rules(config)})
                     model = public_models[key]
-                    references = resolved_inputs(snapshot, spec.id, model.inputRules)
+                    spec, references = current_generation_inputs(snapshot, spec, model.inputRules, visible)
                     for reference in references:
                         if reference.transmission != 'context_only':
                             check_asset(next(asset for asset in snapshot.assets if asset.id == reference.asset.assetId))

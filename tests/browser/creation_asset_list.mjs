@@ -444,10 +444,10 @@ try {
       )
       .allTextContents(),
     [
-      "未显示 · 显示到画布",
-      "已显示 · 定位节点",
-      "已显示 · 定位节点",
-      "已显示 · 定位节点",
+      "未在画布中显示·点击添加节点",
+      "已在画布中显示·点击定位节点",
+      "已在画布中显示·点击定位节点",
+      "已在画布中显示·点击定位节点",
     ],
   );
   await visibility.selectOption("visible");
@@ -502,11 +502,11 @@ try {
     );
     assert.equal(
       palette.background,
-      theme === "dark" ? "rgb(38, 38, 38)" : "rgb(255, 255, 255)",
+      theme === "dark" ? "rgb(53, 48, 61)" : "rgb(227, 238, 255)",
     );
     assert.equal(
       palette.color,
-      theme === "dark" ? "rgb(238, 238, 238)" : "rgb(38, 55, 80)",
+      theme === "dark" ? "rgb(245, 237, 255)" : "rgb(36, 86, 185)",
     );
     if (process.env.ASSET_LIST_SCREENSHOT_DIR) {
       await page.waitForTimeout(350);
@@ -582,7 +582,8 @@ try {
   const restore = dialog
     .locator(".cw-creation-asset-open")
     .filter({ hasText: "主体_霜烟" });
-  await restore.getByText("未显示 · 显示到画布", { exact: true }).waitFor();
+  await restore.getByText("已从画布中删除·点击恢复节点", { exact: true }).waitFor();
+  assert.equal(await restore.locator(".is-removed").textContent(), "主体_霜烟");
   await restore.click();
   await page
     .locator(`.react-flow__node[data-id="${subjectId}"].selected`)

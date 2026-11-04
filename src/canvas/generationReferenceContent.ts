@@ -57,13 +57,8 @@ export function incomingReferenceNodes(
   document: CanvasDocument,
   targetId: string | null | undefined,
 ) {
-  const logical = new Map(
-    [...document.nodes, ...(document.hiddenNodes ?? [])].map((node) => [
-      node.id,
-      node,
-    ]),
-  );
-  const target = targetId && logical.get(targetId);
+  const visible = new Map(document.nodes.map((node) => [node.id, node]));
+  const target = targetId && visible.get(targetId);
   const edges = document.edges.filter(
     (edge) =>
       edge.intent !== "post_edit_result" &&
@@ -82,7 +77,7 @@ export function incomingReferenceNodes(
     : [];
   return [...new Set([...mentioned, ...edges.map((edge) => edge.source)])]
     .filter((id) => connected.has(id))
-    .flatMap((id) => logical.get(id) ?? []);
+    .flatMap((id) => visible.get(id) ?? []);
 }
 
 /** Editor identities follow logical sources, independent of a file's current URL. */

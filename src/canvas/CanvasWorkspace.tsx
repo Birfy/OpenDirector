@@ -786,7 +786,13 @@ function Workspace() {
       const snapshot = creationClient(doc.id).snapshot;
       const item = snapshot?.canvasItems.find((item) => item.id === target.id);
       const spec = item && itemSpec(snapshot, item);
-      return snapshot && spec ? pinnedReferenceAssets(snapshot, spec.id) : [];
+      return snapshot && spec
+        ? pinnedReferenceAssets(
+            snapshot,
+            spec.id,
+            new Set(doc.nodes.map((node) => node.id)),
+          )
+        : [];
     })(),
     referenceId: (source) =>
       doc.edges.find(

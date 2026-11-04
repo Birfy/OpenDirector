@@ -141,7 +141,7 @@ def test_concurrent_move_and_locked_parent_do_not_overwrite_newer_state(project)
 
 
 @pytest.mark.parametrize('binding', ['follow_current', 'pinned'])
-def test_frame_mode_limits_image_sources_even_when_hidden_and_rejects_over_limit_mode_switch(project, binding):
+def test_frame_mode_limits_current_image_sources_and_rejects_over_limit_mode_switch(project, binding):
     from io import BytesIO
     from PIL import Image
     from opendirector.application.creation_assets import CreationAssets
@@ -170,16 +170,20 @@ def test_frame_mode_limits_image_sources_even_when_hidden_and_rejects_over_limit
             versions=[ver('generation_spec', current.generationSpecs[-1]), ver('canvas_item', current.canvasItems[-1])])
     assert connect(0).status == 'applied'
     assert connect(1).status == 'applied'
-    source = store.snapshot(pid).canvasItems[0]
-    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
     before = store.snapshot(pid)
     rejected = connect(2)
     assert rejected.status == 'rejected' and '最多连接 2' in rejected.issues[0].message
     assert store.snapshot(pid) == before
-    spec = before.generationSpecs[-1]
+    source = before.canvasItems[0]
+    assert send(store, pid, 'canvas.hide', session=session, versions=[ver('canvas_item', source)], itemId=source.id).status == 'applied'
+    assert connect(2).status == ('applied' if binding == 'follow_current' else 'rejected')
+    spec = store.snapshot(pid).generationSpecs[-1]
     reference_spec = spec.model_copy(update={'parameters': spec.parameters.model_copy(update={'videoMode': 'reference'})})
     assert send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', spec)], spec=reference_spec).status == 'applied'
-    assert connect(2).status == 'applied'
+    if binding == 'pinned':
+        assert connect(2).status == 'applied'
+    hidden = store.snapshot(pid).canvasItems[0]
+    assert send(store, pid, 'canvas.show', session=session, versions=[ver('canvas_item', hidden)], item=hidden).status == 'applied'
     current = store.snapshot(pid).generationSpecs[-1]
     rejected = send(store, pid, 'generationSpec.update', session=session, versions=[ver('generation_spec', current)],
         spec=current.model_copy(update={'parameters': current.parameters.model_copy(update={'videoMode': 'first_frame'})}))

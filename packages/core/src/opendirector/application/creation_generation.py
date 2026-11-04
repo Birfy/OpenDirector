@@ -13,7 +13,7 @@ from uuid import uuid4, uuid5
 from filelock import FileLock, Timeout
 
 from opendirector.application.creation_assets import CreationAssets
-from opendirector.application.creation_canvas import CreationCanvas, asset_ref, resolved_inputs, visible_item_ids
+from opendirector.application.creation_canvas import CreationCanvas, asset_ref, current_generation_inputs, visible_item_ids
 from opendirector.application.generation_runtime import GenerationRuntime, _self_hosted_video
 from opendirector.infrastructure.app_settings import AppSettings
 from opendirector.domain.creation.assets import AssetProvenance
@@ -302,7 +302,7 @@ class CreationGeneration(GenerationRuntime):
             spec = next(s for s in intermediate.generationSpecs if s.id == old.id)
             config = self.configs.resolve(str(spec.modelConfigId), 'agent' if spec.kind == 'text' else spec.kind)
             public = ModelConfigPublic.model_validate({key: value for key, value in config.items() if key != 'apiKey'} | {'inputRules': input_rules(config)})
-            resolved = resolved_inputs(intermediate, spec.id, public.inputRules)
+            spec, resolved = current_generation_inputs(intermediate, spec, public.inputRules)
             spec = execution_spec(spec, resolved, public.inputRules)
             try:
                 validate_generation(spec, public, resolved)
@@ -443,7 +443,7 @@ class CreationGeneration(GenerationRuntime):
             eligible = not current_job.cancelRequested
             same_selection = current_spec.currentResultId == current_job.adoptionResultId
             try:
-                references = resolved_inputs(current, spec.id, current_job.inputSnapshot.model.inputRules)
+                current_spec, references = current_generation_inputs(current, current_spec, current_job.inputSnapshot.model.inputRules)
                 effective = execution_spec(current_spec, references, current_job.inputSnapshot.model.inputRules)
                 now = InputSnapshot(spec=effective.model_copy(update={'purpose': 'generation', 'currentResultId': None}),
                     model=current_job.inputSnapshot.model, references=references)

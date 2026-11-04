@@ -639,8 +639,8 @@ test("reference replacement and hiding preserve the intended project relationshi
     ["canvas.hide"],
   );
   assert.equal(client.snapshot.references[0]!.id, ref.id);
-  // Hidden following sources and pinned history references have no rendered
-  // edge. Editing the surrounding text must retain their business identity.
+  // A hidden node source drops out of the current prompt. A reference pinned
+  // directly to an asset remains editable with its original identity.
   for (const binding of ["follow_current", "pinned"] as const) {
     const reference: Reference =
       binding === "follow_current"
@@ -666,7 +666,10 @@ test("reference replacement and hiding preserve the intended project relationshi
     assert.equal(rendered.edges.length, binding === "follow_current" ? 1 : 0);
     assert.equal(rendered.hiddenNodes?.[0]?.id, source.id);
     const current = rendered.nodes[0]!;
-    assert.equal(current.data.promptMentions?.[0]?.referenceId, ref.id);
+    assert.equal(
+      current.data.promptMentions?.[0]?.referenceId,
+      binding === "pinned" ? ref.id : undefined,
+    );
     projection.baseline = rendered;
     projection.basis = hidden;
     client.batches = [];
@@ -727,10 +730,12 @@ test("reference replacement and hiding preserve the intended project relationshi
     );
     assert.equal(update?.type, "generationSpec.setPrompt");
     if (update?.type === "generationSpec.setPrompt")
-      assert.deepEqual(update.payload.promptContent?.[0], {
-        type: "reference",
-        referenceId: ref.id,
-      });
+      assert.equal(
+        update.payload.promptContent?.some(
+          (part) => part.type === "reference" && part.referenceId === ref.id,
+        ),
+        binding === "pinned",
+      );
     const inactive = { ...reference, active: false, revision: 2 };
     const removed = {
       ...hidden,
@@ -768,12 +773,13 @@ test("reference replacement and hiding preserve the intended project relationshi
     const prompt = restored.operations.find(
       (op) => op.type === "generationSpec.setPrompt",
     );
-    assert.ok(
-      prompt?.type === "generationSpec.setPrompt" &&
-        prompt.payload.promptContent?.some(
-          (part) => part.type === "reference" && part.referenceId === ref.id,
-        ),
-    );
+    if (binding === "pinned")
+      assert.ok(
+        prompt?.type === "generationSpec.setPrompt" &&
+          prompt.payload.promptContent?.some(
+            (part) => part.type === "reference" && part.referenceId === ref.id,
+          ),
+      );
     if (binding === "pinned") {
       const unpositioned = {
         ...hidden,

@@ -36,6 +36,7 @@ import {
   assetReference,
   CreationClient,
   currentAsset,
+  isCurrentCanvasReference,
   itemSpec,
   objectVersion,
   visibleItems,
@@ -364,6 +365,18 @@ export class CreationProjection {
       ),
     );
     const visible = visibleItems(snapshot);
+    const previouslyVisible = new Set(
+      cached.document.nodes.map((node) => node.id),
+    );
+    // A source's visibility can change the content of another node's prompt.
+    if (
+      snapshot.references.some(
+        (ref) =>
+          isCurrentCanvasReference(ref, visible) !==
+          isCurrentCanvasReference(ref, previouslyVisible),
+      )
+    )
+      return;
     const ordered: CanvasNode[] = [];
     for (const item of snapshot.canvasItems) {
       const node = nodes.get(item.id);
@@ -409,6 +422,12 @@ export class CreationProjection {
     document.viewport = view.viewport;
     document.viewPersisted = this.client.hasPersistedView();
     const visible = visibleItems(snapshot);
+    const currentReferences = snapshot.references.filter((ref) =>
+      isCurrentCanvasReference(ref, visible),
+    );
+    const currentReferenceById = new Map(
+      currentReferences.map((ref) => [ref.id, ref]),
+    );
     document.nodes = await Promise.all(
       snapshot.canvasItems.map(async (item) => {
         const node = {
@@ -459,9 +478,7 @@ export class CreationProjection {
                 prompt += part.text;
                 node.data.promptContent.push({ type: "text", text: part.text });
               } else {
-                const ref = snapshot.references.find(
-                  (r) => r.id === part.referenceId,
-                );
+                const ref = currentReferenceById.get(part.referenceId);
                 if (!ref) continue;
                 const source =
                   ref.binding === "follow_current"
@@ -504,9 +521,8 @@ export class CreationProjection {
                 : [],
             ) ?? [],
           );
-          const pins = snapshot.references.flatMap((ref) => {
+          const pins = currentReferences.flatMap((ref) => {
             if (
-              !ref.active ||
               ref.targetSpecId !== spec.id ||
               ref.binding !== "pinned" ||
               located.has(ref.id)
@@ -607,9 +623,8 @@ export class CreationProjection {
                 : {}),
             };
           if (spec.kind === "video" && node.data.settings) {
-            const frames = snapshot.references.filter(
+            const frames = currentReferences.filter(
               (ref) =>
-                ref.active &&
                 ref.targetSpecId === spec.id &&
                 (ref.role === "first_frame" || ref.role === "last_frame") &&
                 ref.binding === "follow_current",
@@ -1046,6 +1061,7 @@ export class CreationProjection {
     if (!this.baseline || document.id !== this.client.id)
       throw new Error(tNow("errors.backend.openUnifiedProject"));
     const basis = this.basis;
+    const visible = visibleItems(basis);
     const oldNodes = new Map(
       [...this.baseline.nodes, ...(this.baseline.hiddenNodes ?? [])].map(
         (n) => [n.id, n],
@@ -1597,7 +1613,7 @@ export class CreationProjection {
       // from the prompt and must also precede any replacement additions.
       for (const ref of basis.references.filter(
         (ref) =>
-          ref.active &&
+          isCurrentCanvasReference(ref, visible) &&
           ref.targetSpecId === specId &&
           node.data.promptContent !== undefined &&
           (ref.binding === "pinned" || previousMentions.has(ref.id)) &&
