@@ -51,12 +51,34 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 
 | 依赖 | 要求 |
 | --- | --- |
+| Git | 用于克隆源码；也可下载仓库 ZIP 并解压 |
 | Node.js 与 npm | Node.js `24.22.1` 或更新版本，附带 npm |
 | Python | `3.11` 或更新版本 |
 | FFmpeg | 用于媒体处理；终端中需可运行包含 `libx264` 编码器的 `ffmpeg` 和 `ffprobe` |
-| 模型服务 | 准备可用的服务地址、Model ID，以及服务要求的 API Key 或其他鉴权信息 |
+| 模型服务（AI 功能需要） | 准备可用的服务地址、Model ID，以及服务要求的 API Key 或其他鉴权信息 |
 
 安装依赖和调用远程模型需要网络。自部署模型服务需另外准备，启动本应用不会自动安装或部署模型。
+
+尚未接入模型也可以安装、打开应用、上传本地素材和编辑工程。AI 对话和生成需要配置模型服务；使用远程服务时，运行本应用的 Mac 无需本地 GPU 推理环境。
+
+#### macOS 环境准备
+
+打开“终端”。没有 Homebrew 时，先按[官方安装说明](https://docs.brew.sh/Installation)安装，并执行安装结束显示的 **Next steps**，将 `brew` 加入 PATH。如果 `git --version` 提示安装 Apple 命令行工具，请先完成安装。
+
+安装运行时和媒体工具：
+
+```sh
+brew install node@24 python@3.12 ffmpeg
+export PATH="$(brew --prefix node@24)/bin:$PATH"
+node --version
+npm --version
+python3.12 --version
+ffmpeg -version
+ffprobe -version
+ffmpeg -hide_banner -encoders 2>/dev/null | grep libx264
+```
+
+确认 Node.js 不低于 `24.22.1`、Python 为 `3.12.x`，最后一条命令列出 `libx264`。Homebrew 的 [Node.js 24](https://formulae.brew.sh/formula/node@24) 需要上面的 PATH 设置；新开终端后，构建前端或使用依赖 Node.js 的助手引擎前应再次执行。下文明确使用 `python3.12`，因为 Mac 默认的 `python3` 可能仍是 Apple 提供的旧版本。已经通过其他方式安装合适运行时的用户，可直接使用现有版本并核对版本号。
 
 合成 MP4 需要浏览器提供 H.264 的 WebCodecs 编码器。Chrome 与 Edge 具备该能力，
 Firefox 不具备：Firefox 可用于画布、生成与编辑，但最终导出需在 Chrome 或 Edge 中完成。
@@ -79,7 +101,20 @@ cd OpenDirector
 
 ### 3. 安装并启动
 
-#### macOS、Linux 和 WSL
+#### macOS
+
+```sh
+npm ci
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip check
+npm run build
+.venv/bin/python scripts/opendirector.py serve
+```
+
+这些命令将应用的 Python 环境建在 `.venv/` 内，无需激活，也无需使用 `sudo pip`。若采用其他 Python 安装方式，创建虚拟环境时将 `python3.12` 替换为对应的 Python 3.11+ 命令。
+
+#### Linux 和 WSL
 
 ```sh
 npm ci
@@ -107,6 +142,14 @@ npm.cmd run build
 如果系统没有 `py` 命令，但已将 Python 加入 PATH，创建虚拟环境时使用 `python -m venv .venv`。
 
 在浏览器打开终端显示的地址，默认是 <http://127.0.0.1:8000>。使用期间保持终端运行，按 `Ctrl+C` 退出。
+
+可以在另一个终端检查后端（Windows PowerShell 使用 `curl.exe`）：
+
+```sh
+curl --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8000/api/health
+```
+
+应返回 `{"status":"ok"}`。随后打开页面，新建或打开画布，上传一张本地图片，确认状态变为“已保存到本机”；刷新页面后应能恢复工程。若启动时改了端口，检查命令也要使用对应端口。
 
 - **再次启动**：在仓库根目录运行对应系统的最后一条 `serve` 命令。
 - **更新源码**：先停止应用并备份项目，更新后重新安装依赖、构建前端并启动。
@@ -261,6 +304,8 @@ HTTP 400。
 
 | 现象 | 优先检查 |
 | --- | --- |
+| 找不到 `node` / `npm`，或 npm 报 `EBADENGINE` | 用 `node --version` 对照 `.nvmrc`；Mac 通过 Homebrew 安装时，在启动终端执行 `export PATH="$(brew --prefix node@24)/bin:$PATH"` |
+| Python 安装提示版本不支持 | 检查 `.venv/bin/python --version`；Mac 应使用 `python3.12` 创建环境，避免误用旧版系统 `python3`。如果 `.venv` 已用错误版本创建，将其重命名保留后，用支持的解释器重新创建并安装依赖 |
 | 页面无法打开或提示服务不可用 | 确认启动终端仍在运行，使用终端显示的地址，并检查启动错误和端口冲突；只运行 `npm run dev` 不能提供完整应用服务 |
 | 提示先构建前端 | 在仓库根目录运行 `npm run build`，Windows 使用 `npm.cmd run build`，然后重新启动 |
 | 模型无法生成或工具置灰 | 检查模型是否已保存并在面板选中，以及服务地址、协议、Model ID、鉴权和所需能力是否匹配 |

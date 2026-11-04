@@ -19,6 +19,8 @@ npm run build
 
 Windows 使用对应虚拟环境的 Python 路径。涉及真实媒体探测、工具处理或对应测试时，需要 PATH 中的 `ffmpeg` 和 `ffprobe`；视频处理使用 `libx264` 编码器，可通过 `ffmpeg -encoders` 检查是否包含它。不因纯文档修改而运行全部生成或媒体测试。
 
+macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统旧版 `python3`。安装验证需使用全新源码目录、新建 `.venv` 和 `npm ci`，然后构建并通过正式 `serve` 入口检查页面、上传、刷新与服务重启恢复。实测边界见 [macOS 安装验证记录](macos-install-validation.md)。
+
 前端测试、Python 测试、契约生成检查和构建分别验证不同边界，任意一项不能替代其他相关检查。修改契约时同步更新自动生成文件，再执行一致性检查，不手工维护第二份契约。
 
 ## 按风险选择验证
@@ -101,7 +103,7 @@ node tests/browser/mp4_export.mjs              # 合成 MP4（WebCodecs + 软件
   640x360 的 H.264 编码能力（`VideoEncoder.isConfigSupported` 在 1280x720 与
   1920x1080 均为 false），自动化检查因此固定为 640x360。
 - **真实模型端到端验收未执行**：需要可访问的模型端点或 GPU 授权，当前环境不具备。
-- **Windows / macOS 与 Firefox / Safari 未验证**：上述结论仅覆盖 Linux + Chromium/Chrome。
+- **本节历史验收仅覆盖 Linux + Chromium/Chrome**；后续 Apple Silicon macOS 的安装与基础使用验证见 [独立记录](macos-install-validation.md)，不能据此推断 Intel Mac、Firefox 或 Safari 已验证。
 - **故障注入未覆盖**：进程级重启打断进行中的生成、浏览器写盘失败，仅有测试替身级别的覆盖。
 - 模型密钥以明文保存在本地 `models.json`（POSIX 下目录 `0700`、文件 `0600`），
   接口响应不返回密钥；这是本地优先的取舍，不是加密存储。

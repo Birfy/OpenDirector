@@ -4,6 +4,7 @@ import io
 import json
 import subprocess
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageOps
@@ -219,10 +220,22 @@ def conform(source: Path, out: Path, *, width: int, height: int, fps: float, sta
     return out
 
 
+@lru_cache(maxsize=1)
+def _frame_sync_option() -> str:
+    """Probe once per server process: FFmpeg 9 removed vsync; 4 lacks fps_mode."""
+    help_text = _run(['ffmpeg', '-hide_banner', '-h', 'full'], timeout=10).decode(errors='replace')
+    options = {line.split()[0].split('[', 1)[0].split(':', 1)[0]
+               for line in help_text.splitlines() if line.startswith('-')}
+    for option in ('-fps_mode', '-vsync'):
+        if option in options:
+            return option
+    raise ProjectError('当前 ffmpeg 不支持保留视频帧时序，请安装完整版本并重启应用。', 503)
+
+
 def picture(source: Path, out: Path, *, width: int, height: int) -> Path:
     """The silent picture resized to width x height, keeping every decoded frame and its timing."""
     _run(['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-vf', f'scale={width}:{height},setsar=1,format=yuv420p', '-an',
-          '-vsync', 'passthrough', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', str(out)])
+          _frame_sync_option(), 'passthrough', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', str(out)])
     return out
 
 

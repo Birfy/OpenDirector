@@ -51,12 +51,34 @@ https://github.com/user-attachments/assets/11babc03-e35c-40e7-b5f6-7d476b6bf11a
 
 | Dependency | Requirement |
 | --- | --- |
+| Git | For cloning the source; alternatively, download and extract the repository ZIP |
 | Node.js and npm | Node.js `24.22.1` or later, with npm |
 | Python | `3.11` or later |
 | FFmpeg | `ffmpeg` with the `libx264` encoder and `ffprobe` must be available in your terminal for media processing |
-| Model service | A working service URL, Model ID, and any API key or other authentication information required by the service |
+| Model service (for AI features) | A working service URL, Model ID, and any API key or other authentication information required by the service |
 
 Installing dependencies and calling remote models require a network connection. Prepare self-hosted model services separately; starting this application does not install or deploy models.
+
+You can install and open the application, upload local media, and edit projects before connecting a model. AI chat and generation require a configured service; running the application does not require a local GPU when using a remote service.
+
+#### macOS prerequisites
+
+Open Terminal. If you do not have Homebrew, follow the [official installation instructions](https://docs.brew.sh/Installation), including the printed **Next steps** for adding `brew` to your PATH. If `git --version` asks for Apple's Command Line Tools, finish that installation first.
+
+Install the runtimes and media tools:
+
+```sh
+brew install node@24 python@3.12 ffmpeg
+export PATH="$(brew --prefix node@24)/bin:$PATH"
+node --version
+npm --version
+python3.12 --version
+ffmpeg -version
+ffprobe -version
+ffmpeg -hide_banner -encoders 2>/dev/null | grep libx264
+```
+
+Check that Node.js is at least `24.22.1`, Python is `3.12.x`, and the last command lists `libx264`. Homebrew's [Node.js 24](https://formulae.brew.sh/formula/node@24) needs the PATH line above; repeat it in a new terminal when building or using Node-based assistant engines. Use `python3.12` explicitly below: macOS's default `python3` may still be an older Apple-provided version. If you already have compatible runtimes from another installer, use those instead and verify their versions.
 
 MP4 export needs a browser with an H.264 WebCodecs encoder. Chrome and Edge
 provide one; Firefox does not, so Firefox can be used for the canvas, generation
@@ -80,7 +102,20 @@ You can also download and extract the source. Run all the following commands fro
 
 ### 3. Install and start
 
-#### macOS, Linux, and WSL
+#### macOS
+
+```sh
+npm ci
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip check
+npm run build
+.venv/bin/python scripts/opendirector.py serve
+```
+
+These commands create the application's Python environment in `.venv/`; no activation or `sudo pip` is needed. If you use a different Python installation, replace `python3.12` with its Python 3.11+ command when creating the environment.
+
+#### Linux and WSL
 
 ```sh
 npm ci
@@ -110,6 +145,14 @@ links.
 If the `py` command is unavailable but Python is on your PATH, create the virtual environment with `python -m venv .venv`.
 
 Open the address shown in the terminal in your browser. The default is <http://127.0.0.1:8000>. Keep the terminal running while using the application; press `Ctrl+C` to stop it.
+
+To check the backend from another terminal, run (use `curl.exe` in Windows PowerShell):
+
+```sh
+curl --fail -H 'X-OpenDirector-Request: 1' http://127.0.0.1:8000/api/health
+```
+
+It should return `{"status":"ok"}`. Then open the page, create or open a canvas, upload a local image, and check that the status becomes **Saved locally (已保存到本机)**. Reload the page to confirm the project reopens. Change the port in the check if you started on a different one.
 
 - **Start again**: Run the final `serve` command for your operating system from the repository root.
 - **Update the source**: Stop the application and back up your projects first. After updating, reinstall dependencies, rebuild the frontend, and start the application.
@@ -264,6 +307,8 @@ Saving projects locally does not imply offline inference. Generation prompts and
 
 | Symptom | What to check first |
 | --- | --- |
+| `node` / `npm` is missing, or npm reports `EBADENGINE` | Check `node --version` against `.nvmrc`. On macOS with Homebrew, run `export PATH="$(brew --prefix node@24)/bin:$PATH"` in the startup terminal |
+| Python installation reports an unsupported version | Check `.venv/bin/python --version`. On macOS, create the environment with `python3.12`, not an older system `python3`. If `.venv` was created with the wrong version, rename it and recreate it with the supported interpreter, then reinstall the requirements |
 | The page will not open, or the service is unavailable | Check that the startup terminal is still running, use the address it displays, and check for startup errors or port conflicts. Running only `npm run dev` does not start the complete application service |
 | A message asks you to build the frontend first | Run `npm run build` from the repository root, or `npm.cmd run build` on Windows, then restart |
 | A model cannot generate content, or a tool is disabled | Check that the model is saved and selected in the panel, and that the service URL, protocol, Model ID, authentication, and required capabilities match |
