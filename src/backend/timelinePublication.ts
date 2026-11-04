@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from "../contracts/generated.ts";
 import type { LinkedMediaResult } from "../canvas/linkedResults.ts";
 import { CreationClient, objectVersion } from "./creationClient.ts";
 import { CreationProjection } from "./creationProjection.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Captured when rendering starts, independent of subsequent editor changes. */
 export function timelinePublication(
@@ -10,7 +11,8 @@ export function timelinePublication(
   itemId: string,
 ) {
   const item = snapshot.canvasItems.find((item) => item.id === itemId)!;
-  if (item.binding.role !== "editor") throw new Error("时间线来源不存在。");
+  if (item.binding.role !== "editor")
+    throw new Error(tNow("errors.backend.timelineSourceMissing"));
   const editorId = item.binding.objectRef.id;
   const editor = snapshot.editorDocuments.find((doc) => doc.id === editorId)!;
   const projection = new CreationProjection(client);

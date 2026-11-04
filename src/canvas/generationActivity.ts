@@ -46,12 +46,14 @@ export type GenerationPhase =
   | "generating"
   | "finishing";
 
-export const GENERATION_LABELS: Record<GenerationPhase, string> = {
-  preparing: "正在准备参考",
-  submitting: "正在提交到模型服务",
-  queued: "排队中",
-  generating: "模型服务生成中",
-  finishing: "正在读取并保存结果",
+import type { MessageKey } from "../i18n/types.ts";
+
+export const GENERATION_LABELS: Record<GenerationPhase, MessageKey> = {
+  preparing: "generation.activity.preparing",
+  submitting: "generation.activity.submitting",
+  queued: "generation.activity.queued",
+  generating: "generation.activity.generating",
+  finishing: "generation.activity.finishing",
 };
 
 export interface ActiveGeneration {

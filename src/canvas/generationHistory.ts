@@ -6,6 +6,7 @@ import {
   type ResultSource,
   type ServiceResult,
 } from "./linkedResults.ts";
+import { tNow } from "../i18n/messages.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
@@ -114,7 +115,7 @@ export function toolProvenanceEdges(
 
 export function parseGenerationJob(value: unknown): GenerationJob {
   if (!value || typeof value !== "object")
-    throw new Error("生成历史格式无效。");
+    throw new Error(tNow("errors.history.invalidFormat"));
   const raw = value as GenerationJob;
   if (
     ![raw.id, raw.nodeId, raw.title, raw.time].every(
@@ -134,7 +135,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
       (v) => v !== undefined && typeof v !== "string",
     )
   )
-    throw new Error("生成历史字段无效。");
+    throw new Error(tNow("errors.history.invalidField"));
   if (
     raw.serviceTask !== undefined &&
     (!raw.serviceTask ||
@@ -147,7 +148,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
       (raw.serviceTask.resumeAllowed !== undefined &&
         typeof raw.serviceTask.resumeAllowed !== "boolean"))
   )
-    throw new Error("历史任务恢复信息无效。");
+    throw new Error(tNow("errors.history.invalidResume"));
   if (
     (raw.resultMode !== undefined &&
       !["replace", "additional"].includes(raw.resultMode)) ||
@@ -168,7 +169,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
               ([id, value]) => id.length > 0 && typeof value === "string",
             )))))
   )
-    throw new Error("生成历史的结果归属无效。");
+    throw new Error(tNow("errors.history.invalidOwner"));
   if (
     raw.request &&
     (!isGenerationSettings(raw.request.settings) ||
@@ -176,7 +177,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
       typeof raw.request.title !== "string" ||
       typeof raw.request.prompt !== "string")
   )
-    throw new Error("历史请求无效。");
+    throw new Error(tNow("errors.history.invalidRequest"));
   if (
     raw.outputs &&
     (!Array.isArray(raw.outputs) ||
@@ -191,7 +192,7 @@ export function parseGenerationJob(value: unknown): GenerationJob {
               item.src.startsWith("blob:")),
       ))
   )
-    throw new Error("历史结果缺少可保存的素材。");
+    throw new Error(tNow("errors.history.noMedia"));
   return structuredClone(raw);
 }
 
@@ -225,8 +226,8 @@ export function reconcileGenerationJobs(
     ) {
       const message =
         task.status === "queued"
-          ? "等待同一服务的前序任务完成。"
-          : "正在查询原任务进度。";
+          ? tNow("errors.history.waiting")
+          : tNow("errors.history.querying");
       return { ...updated, status: "running", message };
     }
     if (!["failed", "cancelled", "interrupted"].includes(task.status))
@@ -235,10 +236,10 @@ export function reconcileGenerationJobs(
     const message =
       task.error ||
       (status === "cancelled"
-        ? "任务已取消。"
+        ? tNow("errors.history.cancelled")
         : status === "interrupted"
-          ? "服务任务已中断。"
-          : "生成失败，请检查服务日志。");
+          ? tNow("errors.history.interrupted")
+          : tNow("errors.history.failed"));
     return job.status === status && job.message === message
       ? updated
       : { ...updated, status, message };

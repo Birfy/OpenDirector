@@ -5,6 +5,7 @@ import { generationContentPatch } from "./generationReferenceContent.ts";
 import { absolutePosition, boundsOfNodes } from "./geometry.ts";
 import { applyCommand, createNode } from "./model.ts";
 import { derivedNodeTitle, takenNodeTitles } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 import type {
   CanvasDocument,
   CanvasEdge,
@@ -271,18 +272,18 @@ export function pasteFragment(
   offset: Point = { x: 40, y: 40 },
 ): { document: CanvasDocument; ids: string[] } {
   if (!Number.isFinite(offset.x) || !Number.isFinite(offset.y))
-    throw new Error("粘贴偏移必须是有限数字。");
+    throw new Error(tNow("errors.operations.pasteOffset"));
   const byId = indexNodes(fragment.nodes);
   for (const node of fragment.nodes) ancestors(node, byId);
   for (const node of fragment.nodes)
     if (node.data.stack?.nodeIds.some((id) => !byId.has(id)))
-      throw new Error("复制的堆叠必须包含其引用的节点。");
+      throw new Error(tNow("errors.operations.stackCopy"));
   const edgeIds = new Set<string>();
   for (const edge of fragment.edges) {
-    if (edgeIds.has(edge.id)) throw new Error("连线 ID 重复。");
+    if (edgeIds.has(edge.id)) throw new Error(tNow("errors.operations.duplicateEdge"));
     edgeIds.add(edge.id);
     if (!byId.has(edge.source) || !byId.has(edge.target))
-      throw new Error("复制内容的连线两端必须属于复制的节点。");
+      throw new Error(tNow("errors.operations.copyEdge"));
   }
   if (!fragment.nodes.length) return { document, ids: [] };
 
@@ -493,7 +494,7 @@ export function stackSelection(
 ): CanvasDocument {
   const selected = [...new Set(ids)];
   if (selected.length < 2 || selected.length > 50)
-    throw new Error("创建堆叠需要选择 2–50 个节点。");
+    throw new Error(tNow("errors.operations.stackSelection"));
   const existing = new Set(
     document.nodes.flatMap((node) => node.data.stack?.nodeIds ?? []),
   );
@@ -513,7 +514,7 @@ export function stackSelection(
     )
   )
     throw new Error(
-      "堆叠成员必须是未锁定、未分组、且不属于其他堆叠的可引用节点。",
+      tNow("errors.operations.stackMembers"),
     );
   const first = members[0]!;
   const stack = createNode(
@@ -559,7 +560,7 @@ export function updateStack(
       );
     })
   )
-    throw new Error("堆叠引用无效，或成员已属于其他堆叠。");
+    throw new Error(tNow("errors.operations.stackInvalid"));
   const oldIds = target.data.stack?.nodeIds ?? [];
   const index = indexNodes(document.nodes);
   if (
@@ -567,7 +568,7 @@ export function updateStack(
       (id) => !oldIds.includes(id) && isNodeLocked(index.get(id)!, index),
     )
   )
-    throw new Error("锁定节点不能加入堆叠。");
+    throw new Error(tNow("errors.operations.stackLocked"));
   if (stack.nodeIds.length < 2) return unstackSelection(document, [id]);
   const removed = oldIds.filter((id) => !stack.nodeIds.includes(id));
   if (
@@ -576,7 +577,7 @@ export function updateStack(
       return node && isNodeLocked(node, index);
     })
   )
-    throw new Error("请先解锁要移出的节点。");
+    throw new Error(tNow("errors.operations.stackUnlock"));
   const released = releaseStackMembers(document.nodes, target, removed);
   return {
     ...document,

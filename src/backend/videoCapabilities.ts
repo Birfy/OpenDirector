@@ -1,4 +1,5 @@
 import type { VideoAdapter, VideoCapabilities } from "./rules.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface VideoOutputDraft {
   resolution: string;
@@ -11,11 +12,12 @@ export function parseVideoSeconds(value: string): number[] {
   const result = new Set<number>();
   for (const token of value.trim().split(/[,，\s]+/)) {
     const match = /^(\d+)(?:-(\d+))?$/.exec(token);
-    if (!match) throw new Error("时长请填写整数或范围，例如 4-10,15。");
+    if (!match)
+      throw new Error(tNow("errors.videoCapabilities.durationFormat"));
     const start = Number(match[1]),
       end = Number(match[2] ?? match[1]);
     if (start < 1 || end > 60 || end < start)
-      throw new Error("时长须在 1–60 秒内，范围起点不能大于终点。");
+      throw new Error(tNow("errors.videoCapabilities.durationRange"));
     for (let second = start; second <= end; second++) result.add(second);
   }
   return [...result].sort((a, b) => a - b);
@@ -42,17 +44,17 @@ export function createVideoCapabilities(
   adapter: VideoAdapter = "auto",
 ): VideoCapabilities {
   if (!rows.length || rows.length > 20)
-    throw new Error("请配置 1–20 个输出规格。");
+    throw new Error(tNow("errors.videoCapabilities.outputCount"));
   const outputs = rows.map((row) => {
     const resolution = row.resolution.trim().toUpperCase();
     if (
       !/^[A-Z0-9][A-Z0-9_.-]{0,23}$/.test(resolution) ||
       resolution === "AUTO"
     )
-      throw new Error("分辨率名称无效，例如 480P、720P、4K。");
+      throw new Error(tNow("errors.videoCapabilities.resolutionName"));
     const durations = parseVideoSeconds(row.seconds);
     if (Boolean(row.width.trim()) !== Boolean(row.height.trim()))
-      throw new Error("像素宽高须同时填写或留空。");
+      throw new Error(tNow("errors.videoCapabilities.pixelPair"));
     if (!row.width.trim()) {
       // The /videos resolver needs pixels except for the two H3 buckets it
       // derives itself; saving anything else would only fail at generation.
@@ -61,7 +63,7 @@ export function createVideoCapabilities(
         (resolution === "480P" || resolution === "768P");
       if (!derived)
         throw new Error(
-          "该适配方式需要填写像素宽高（仅 H3 的 480P、768P 可按档位推算）。",
+          tNow("errors.videoCapabilities.pixelRequired"),
         );
       return { resolution, durations };
     }
@@ -78,12 +80,12 @@ export function createVideoCapabilities(
       width < height
     )
       throw new Error(
-        "横屏宽高须为 64–8192 的整数，宽不小于高，并符合像素对齐步长。",
+        tNow("errors.videoCapabilities.pixelBounds"),
       );
     return { resolution, durations, width, height };
   });
   if (new Set(outputs.map((item) => item.resolution)).size !== outputs.length)
-    throw new Error("分辨率不能重复。");
+    throw new Error(tNow("errors.videoCapabilities.duplicateResolution"));
   if (
     !outputs.some(
       (item) =>
@@ -92,6 +94,6 @@ export function createVideoCapabilities(
         item.durations.includes(defaultDuration),
     )
   )
-    throw new Error("默认分辨率和时长必须属于已声明的输出规格。");
+    throw new Error(tNow("errors.videoCapabilities.defaultOutput"));
   return { outputs, defaultResolution, defaultDuration, dimensionStep };
 }

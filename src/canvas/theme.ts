@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { tNow } from "../i18n/messages.ts";
 
 export type Theme = "dark" | "light";
 export const THEME_KEY = "opendirector.theme.v1";
@@ -22,7 +23,7 @@ export function useTheme() {
       localStorage.setItem(THEME_KEY, next);
       setError("");
     } catch {
-      setError("主题已应用，但无法保存偏好，刷新后可能无法保留本次选择。");
+      setError(tNow("settings.themeSaveFailed"));
     }
   };
   return { theme, setTheme, error, clearError: () => setError("") };

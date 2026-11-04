@@ -1,10 +1,13 @@
 /** Original articulated mannequin motions, sampled in seconds independently of frame rate. */
+import type { MessageKey } from "../i18n/types.ts";
+import { tNow } from "../i18n/messages.ts";
+
 export const STAGE_MOTIONS = {
-  idle: "站立",
-  walk: "行走",
-  run: "跑步",
-  wave: "挥手",
-} as const;
+  idle: "errors.stage.motionIdle",
+  walk: "errors.stage.motionWalk",
+  run: "errors.stage.motionRun",
+  wave: "errors.stage.motionWave",
+} as const satisfies Record<string, MessageKey>;
 export interface StageMotion {
   preset: keyof typeof STAGE_MOTIONS;
   speed: number;
@@ -24,7 +27,7 @@ export interface JointPose {
 }
 export function parseStageMotion(value: unknown): StageMotion {
   if (!value || typeof value !== "object")
-    throw new Error("人物动作设置无效。");
+    throw new Error(tNow("errors.stage.invalidMotion"));
   const raw = value as Record<string, unknown>;
   if (
     typeof raw.preset !== "string" ||
@@ -37,7 +40,7 @@ export function parseStageMotion(value: unknown): StageMotion {
     raw.amount < 0 ||
     raw.amount > 1
   )
-    throw new Error("人物动作、速度或幅度无效。");
+    throw new Error(tNow("errors.stage.invalidMotionValue"));
   return {
     preset: raw.preset as StageMotion["preset"],
     speed: raw.speed,

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TooltipButton } from "./TooltipButton";
+import { useT } from "../i18n/I18nProvider";
 
 /** A selection menu lives outside the toolbar's horizontal scroll container. */
 export function SelectionToolbarMenu({
@@ -177,22 +178,26 @@ export function GridSplitOptions({
   onConfirm: (rows: number, columns: number) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [size, setSize] = useState({ rows: 3, columns: 3 });
   const grid = useRef<HTMLDivElement>(null);
   const dimensions = Array.from({ length: 7 }, (_, index) => index + 1);
   return (
     <div className="cw-grid-split-options">
       <header>
-        <strong>网格切分</strong>
+        <strong>{t("canvas.selection.gridSplit")}</strong>
         <span aria-live="polite">
-          {size.rows} 行 × {size.columns} 列
+          {t("canvas.selection.gridSize", {
+            rows: size.rows,
+            columns: size.columns,
+          })}
         </span>
       </header>
-      <p>选择行列数，将图片等分为独立图片。</p>
+      <p>{t("canvas.selection.gridSplitHint")}</p>
       <div
         ref={grid}
         role="group"
-        aria-label="选择网格尺寸，使用方向键调整，最多 7 行 7 列"
+        aria-label={t("canvas.selection.gridSizeLabel")}
         className="cw-grid-split-cells"
         onKeyDown={(event) => {
           const movement: Record<string, [number, number]> = {
@@ -219,7 +224,7 @@ export function GridSplitOptions({
             <TooltipButton
               key={`${rows}-${columns}`}
               data-size={`${rows}-${columns}`}
-              label={`${rows} 行 × ${columns} 列`}
+              label={t("canvas.selection.gridSize", { rows, columns })}
               tooltipSide="right"
               aria-pressed={size.rows === rows && size.columns === columns}
               tabIndex={size.rows === rows && size.columns === columns ? 0 : -1}
@@ -237,7 +242,7 @@ export function GridSplitOptions({
       </div>
       <footer>
         <button type="button" onClick={onCancel}>
-          取消
+          {t("common.cancel")}
         </button>
         <button
           type="button"
@@ -245,7 +250,9 @@ export function GridSplitOptions({
           disabled={size.rows * size.columns < 2}
           onClick={() => onConfirm(size.rows, size.columns)}
         >
-          切分为 {size.rows * size.columns} 张
+          {t("canvas.selection.gridSplitConfirm", {
+            count: size.rows * size.columns,
+          })}
         </button>
       </footer>
     </div>

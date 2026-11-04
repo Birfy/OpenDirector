@@ -1,4 +1,5 @@
 import type { VideoAdapter, VideoCapabilities } from "../backend/rules.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
 import {
   videoOutputDrafts,
   type VideoOutputDraft,
@@ -34,6 +35,7 @@ export function VideoCapabilitiesEditor({
   adapter?: VideoAdapter;
   onChange: (value: VideoCapabilityDraft) => void;
 }) {
+  const t = useT();
   const h3 = adapter === "fasth3" || adapter === "minimax_h3";
   const update = (patch: Partial<VideoCapabilityDraft>) =>
     onChange({ ...value, ...patch });
@@ -51,18 +53,22 @@ export function VideoCapabilitiesEditor({
           checked={value.custom}
           onChange={(event) => update({ custom: event.target.checked })}
         />
-        自定义输出规格（关闭时跟随适配预设）
+        {t("tools.videoCapabilities.custom")}
       </label>
       <p className="cw-capability-help">
         {h3
-          ? "H3 适配固定 4–15 秒、32 像素对齐；仅 480P、768P 可留空宽高，其余档位需填写。像素尺寸按横屏填写，竖屏交换宽高。"
-          : "填写服务实际支持的规格；时长可写 4-10,15。像素尺寸按横屏填写，竖屏交换宽高，且须按像素对齐步长填写。"}
+          ? t("tools.videoCapabilities.helpH3")
+          : t("tools.videoCapabilities.helpDefault")}
       </p>
       <fieldset disabled={!value.custom}>
         {value.outputs.map((row, index) => (
           <div className="cw-output-spec" key={index}>
             <div className="cw-output-spec-heading">
-              <strong>输出规格 {index + 1}</strong>
+              <strong>
+                {t("tools.videoCapabilities.output.heading", {
+                  index: index + 1,
+                })}
+              </strong>
               <button
                 className="cw-settings-button"
                 type="button"
@@ -73,57 +79,75 @@ export function VideoCapabilitiesEditor({
                   })
                 }
               >
-                移除规格 {index + 1}
+                {t("tools.videoCapabilities.output.remove", {
+                  index: index + 1,
+                })}
               </button>
             </div>
             <div className="cw-capability-grid">
               <label className="cw-domain-field">
-                分辨率名称
+                {t("tools.videoCapabilities.output.resolution")}
                 <input
-                  aria-label={`规格 ${index + 1} 分辨率`}
+                  aria-label={t("tools.videoCapabilities.output.resolutionAria", {
+                    index: index + 1,
+                  })}
                   maxLength={24}
                   value={row.resolution}
-                  placeholder="例如 720P"
+                  placeholder={t(
+                    "tools.videoCapabilities.output.resolutionPlaceholder",
+                  )}
                   onChange={(event) =>
                     rowChange(index, { resolution: event.target.value })
                   }
                 />
               </label>
               <label className="cw-domain-field">
-                支持时长（秒）
+                {t("tools.videoCapabilities.output.seconds")}
                 <input
-                  aria-label={`规格 ${index + 1} 时长`}
+                  aria-label={t("tools.videoCapabilities.output.secondsAria", {
+                    index: index + 1,
+                  })}
                   maxLength={200}
                   value={row.seconds}
-                  placeholder="例如 4-10,15"
+                  placeholder={t(
+                    "tools.videoCapabilities.output.secondsPlaceholder",
+                  )}
                   onChange={(event) =>
                     rowChange(index, { seconds: event.target.value })
                   }
                 />
               </label>
               <label className="cw-domain-field">
-                横屏宽（像素）
+                {t("tools.videoCapabilities.output.width")}
                 <input
-                  aria-label={`规格 ${index + 1} 宽`}
+                  aria-label={t("tools.videoCapabilities.output.widthAria", {
+                    index: index + 1,
+                  })}
                   type="number"
                   min={64}
                   max={8192}
                   value={row.width}
-                  placeholder="例如 1280"
+                  placeholder={t(
+                    "tools.videoCapabilities.output.widthPlaceholder",
+                  )}
                   onChange={(event) =>
                     rowChange(index, { width: event.target.value })
                   }
                 />
               </label>
               <label className="cw-domain-field">
-                横屏高（像素）
+                {t("tools.videoCapabilities.output.height")}
                 <input
-                  aria-label={`规格 ${index + 1} 高`}
+                  aria-label={t("tools.videoCapabilities.output.heightAria", {
+                    index: index + 1,
+                  })}
                   type="number"
                   min={64}
                   max={8192}
                   value={row.height}
-                  placeholder="例如 720"
+                  placeholder={t(
+                    "tools.videoCapabilities.output.heightPlaceholder",
+                  )}
                   onChange={(event) =>
                     rowChange(index, { height: event.target.value })
                   }
@@ -145,19 +169,19 @@ export function VideoCapabilitiesEditor({
             })
           }
         >
-          添加输出规格
+          {t("tools.videoCapabilities.output.add")}
         </button>
         <div className="cw-capability-grid">
           <label className="cw-domain-field">
-            默认分辨率
+            {t("tools.videoCapabilities.defaults.resolution")}
             <select
-              aria-label="默认分辨率"
+              aria-label={t("tools.videoCapabilities.defaults.resolution")}
               value={value.defaultResolution}
               onChange={(event) =>
                 update({ defaultResolution: event.target.value })
               }
             >
-              <option value="auto">自动</option>
+              <option value="auto">{t("common.auto")}</option>
               {[
                 ...new Set(
                   value.outputs
@@ -172,9 +196,9 @@ export function VideoCapabilitiesEditor({
             </select>
           </label>
           <label className="cw-domain-field">
-            默认时长（秒）
+            {t("tools.videoCapabilities.defaults.duration")}
             <input
-              aria-label="默认时长"
+              aria-label={t("tools.videoCapabilities.defaults.durationAria")}
               type="number"
               min={1}
               max={60}
@@ -185,9 +209,9 @@ export function VideoCapabilitiesEditor({
             />
           </label>
           <label className="cw-domain-field">
-            像素对齐步长
+            {t("tools.videoCapabilities.defaults.alignment")}
             <select
-              aria-label="像素对齐步长"
+              aria-label={t("tools.videoCapabilities.defaults.alignment")}
               value={value.dimensionStep}
               onChange={(event) =>
                 update({

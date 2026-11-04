@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { uploadReferenceFile } from "../backend/referenceUploads.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 
 export function useReferenceUploads(projectId: string) {
+  const { t } = useI18n();
   const [choice, setChoice] = useState<{
     matches: ReferenceAsset[];
     select: (asset: ReferenceAsset | null) => void;
@@ -17,7 +19,7 @@ export function useReferenceUploads(projectId: string) {
         cancel.current = null;
         setChoice(null);
         if (asset) resolve(asset);
-        else reject(new DOMException("来源选择已取消。", "AbortError"));
+        else reject(new DOMException(t("errors.refs.cancelled"), "AbortError"));
       };
       const abort = () => select(null);
       cancel.current = abort;
@@ -47,13 +49,23 @@ export function useReferenceUploads(projectId: string) {
       if (error instanceof DOMException && error.name === "AbortError") {
         if (saved.length)
           throw new DOMException(
-            `来源选择已取消。已登记 ${saved.length} 份素材并保留在项目素材，本批引用未插入。`,
+            t("errors.refs.cancelledWithSaved", { count: saved.length }),
             "AbortError",
           );
         throw error;
       }
       throw new Error(
-        `${error instanceof Error ? error.message : "上传失败"}${saved.length ? ` 已登记 ${saved.length} 份素材，可从项目素材选择；本批引用未插入。` : ""}`,
+        saved.length
+          ? t("errors.refs.uploadFailedWithSaved", {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : t("errors.refs.uploadFailed"),
+              count: saved.length,
+            })
+          : error instanceof Error
+            ? error.message
+            : t("errors.refs.uploadFailed"),
       );
     }
   };
@@ -64,7 +76,7 @@ export function useReferenceUploads(projectId: string) {
         className="cw-modal-backdrop cw-reference-source-choice"
         role="dialog"
         aria-modal="true"
-        aria-label="选择已有参考来源"
+        aria-label={t("errors.refs.pickerAria")}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -74,8 +86,8 @@ export function useReferenceUploads(projectId: string) {
         }}
       >
         <div className="cw-modal">
-          <h2>选择已有参考来源</h2>
-          <p>多个来源的文件内容相同，请选择需要跟随的来源。</p>
+          <h2>{t("errors.refs.pickerTitle")}</h2>
+          <p>{t("errors.refs.pickerHint")}</p>
           {choice.matches.map((asset, index) => (
             <button
               key={`${asset.nodeId}:${asset.id}:${index}`}
@@ -86,12 +98,15 @@ export function useReferenceUploads(projectId: string) {
               {asset.nodeTitle || asset.name}
               <small>
                 {" "}
-                · {asset.kind} · {asset.nodeId ? "已有来源" : "项目素材"}
+                · {asset.kind} ·{" "}
+                {asset.nodeId
+                  ? t("errors.refs.existing")
+                  : t("errors.refs.projectAsset")}
               </small>
             </button>
           ))}
           <button type="button" onClick={() => choice.select(null)}>
-            取消
+            {t("errors.refs.cancel")}
           </button>
         </div>
       </div>,

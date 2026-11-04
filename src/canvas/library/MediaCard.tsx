@@ -1,6 +1,7 @@
 /** Shared card for every library panel: square media, wide canvas, or subject. */
 import { useState } from "react";
 import { CanvasIcon } from "../CanvasIcon";
+import { useT } from "../../i18n/I18nProvider";
 import {
   itemContentUrl,
   useItemContentUrl,
@@ -11,7 +12,8 @@ export type CardShape = "square" | "wide";
 
 /** Loads library media through the authenticated client, as a blob: URL. */
 function LibraryThumb({ item }: { item: LibraryItem }) {
-  const url = useItemContentUrl(item);
+  const t = useT();
+  const url = useItemContentUrl(item, t);
   if (!url) return null;
   return item.mediaKind === "video" || item.mediaKind === "audio" ? (
     <MediaThumb src={url} kind={item.mediaKind} />
@@ -98,6 +100,7 @@ export function MediaCard({
   onOpen?: () => void;
   action?: React.ReactNode;
 }) {
+  const t = useT();
   const className = [
     "cw-lib-card",
     shape === "wide" ? "cw-lib-card-wide" : "",
@@ -147,7 +150,7 @@ export function MediaCard({
             }
             role="checkbox"
             aria-checked={Boolean(selected)}
-            aria-label={`选择：${title}`}
+            aria-label={t("library.card.select", { title })}
             onClick={(event) => {
               event.stopPropagation();
               onSelect?.();
@@ -155,7 +158,7 @@ export function MediaCard({
           />
         )}
         {starred && (
-          <span className="cw-lib-star" aria-label="已标记">
+          <span className="cw-lib-star" aria-label={t("library.card.starred")}>
             ★
           </span>
         )}

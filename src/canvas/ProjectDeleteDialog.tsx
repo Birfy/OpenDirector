@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../backend/api";
+import { useT } from "../i18n/I18nProvider";
 
 /** Confirms removing a project from the list and says what happens to its files. */
 export function ProjectDeleteDialog({
@@ -7,10 +8,10 @@ export function ProjectDeleteDialog({
   recycleBin,
   onClose,
   onSubmit,
-  title = "删除项目",
+  title,
   description,
-  submitLabel = "删除项目",
-  busyLabel = "正在删除…",
+  submitLabel,
+  busyLabel,
 }: {
   name: string;
   recycleBin: boolean;
@@ -21,6 +22,10 @@ export function ProjectDeleteDialog({
   submitLabel?: string;
   busyLabel?: string;
 }) {
+  const t = useT();
+  const dialogTitle = title ?? t("canvas.project.deleteTitle");
+  const submitText = submitLabel ?? t("canvas.project.deleteSubmit");
+  const busyText = busyLabel ?? t("canvas.project.deleting");
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,15 +63,12 @@ export function ProjectDeleteDialog({
           }
         }}
       >
-        <h2 id="project-delete-title">{title}</h2>
-        <p>
-          {description ??
-            `“${name}”将从项目列表移除，正在生成的素材和工具任务需要先取消。`}
-        </p>
+        <h2 id="project-delete-title">{dialogTitle}</h2>
+        <p>{description ?? t("canvas.project.deleteDescription", { name })}</p>
         <p role="note">
           {recycleBin
-            ? "删除后项目文件夹会放入本机回收站，需要时可以从回收站恢复。"
-            : "删除后不可恢复，项目文件和素材会被永久删除。"}
+            ? t("canvas.project.deleteRecycleNote")
+            : t("canvas.project.deletePermanentNote")}
         </p>
         {error && (
           <p className="cw-project-error" role="alert">
@@ -75,10 +77,10 @@ export function ProjectDeleteDialog({
         )}
         <div className="cw-project-dialog-actions">
           <button type="button" disabled={busy} onClick={onClose}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="cw-danger-button" disabled={busy} type="submit">
-            {busy ? busyLabel : submitLabel}
+            {busy ? busyText : submitText}
           </button>
         </div>
       </form>

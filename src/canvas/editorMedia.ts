@@ -1,6 +1,9 @@
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 import type { CanvasResource } from "./model";
 
-const aborted = () => new DOMException("素材读取已取消。", "AbortError");
+const aborted = (t: Translate) =>
+  new DOMException(t("editors.media.error.aborted"), "AbortError");
 
 const mediaExtensions: Readonly<Record<string, string>> = {
   txt: "text/plain",
@@ -56,17 +59,19 @@ export function classifyImportFile(file: Pick<File, "name" | "type">): {
 export async function readEditorResource(
   file: File,
   signal?: AbortSignal,
+  t: Translate = defaultTranslate,
 ): Promise<CanvasResource> {
   const { kind, mimeType } = classifyImportFile(file);
   if (kind === "text") {
-    if (file.size > 1024 * 1024) throw new Error("文本文件应不超过 1 MiB。");
+    if (file.size > 1024 * 1024)
+      throw new Error(t("editors.media.error.textTooLarge"));
     const bytes = await file.arrayBuffer();
     signal?.throwIfAborted();
     const text = new TextDecoder("utf-8", { fatal: true })
       .decode(bytes)
       .replace(/^\uFEFF/, "");
     if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(text))
-      throw new Error("文本文件包含无效的二进制内容。");
+      throw new Error(t("editors.media.error.textBinary"));
     return {
       id: crypto.randomUUID(),
       kind,
@@ -78,7 +83,7 @@ export async function readEditorResource(
   }
   const src = await new Promise<string>((resolve, reject) => {
     if (signal?.aborted) {
-      reject(aborted());
+      reject(aborted(t));
       return;
     }
     const reader = new FileReader();
@@ -89,7 +94,7 @@ export async function readEditorResource(
     const cancel = () => {
       cleanup();
       reader.abort();
-      reject(aborted());
+      reject(aborted(t));
     };
     reader.onload = () => {
       cleanup();
@@ -97,11 +102,11 @@ export async function readEditorResource(
     };
     reader.onerror = () => {
       cleanup();
-      reject(new Error(`无法读取 ${file.name}`));
+      reject(new Error(t("editors.media.error.readFile", { name: file.name })));
     };
     reader.onabort = () => {
       cleanup();
-      reject(aborted());
+      reject(aborted(t));
     };
     signal?.addEventListener("abort", cancel, { once: true });
     reader.readAsDataURL(
@@ -118,6 +123,7 @@ export async function readEditorResource(
       byteSize: file.size,
     },
     signal,
+    t,
   );
 }
 
@@ -125,8 +131,9 @@ export async function readEditorResource(
 export async function withMediaDuration(
   resource: CanvasResource,
   signal?: AbortSignal,
+  t: Translate = defaultTranslate,
 ): Promise<CanvasResource> {
-  if (signal?.aborted) throw aborted();
+  if (signal?.aborted) throw aborted(t);
   if (resource.kind === "file" || resource.kind === "text") return resource;
   if (resource.kind === "image" && resource.width && resource.height)
     return resource;
@@ -143,7 +150,7 @@ export async function withMediaDuration(
   )
     return resource;
   if (!resource.src)
-    throw new Error("素材缺少可读取的来源，无法读取媒体元数据。");
+    throw new Error(t("editors.media.error.missingSource"));
   return new Promise<CanvasResource>((resolve, reject) => {
     const element =
       resource.kind === "image"
@@ -189,11 +196,11 @@ export async function withMediaDuration(
         durationSeconds !== undefined &&
         (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
       ) {
-        reject(new Error("无法读取有效媒体时长。"));
+        reject(new Error(t("editors.media.error.invalidDuration")));
         return;
       }
       if (resource.kind !== "audio" && (!width || !height)) {
-        reject(new Error("无法读取有效素材像素尺寸。"));
+        reject(new Error(t("editors.media.error.invalidSize")));
         return;
       }
       resolve({
@@ -202,9 +209,9 @@ export async function withMediaDuration(
         ...(width && height ? { width, height } : {}),
       });
     };
-    const cancel = () => finish(aborted());
+    const cancel = () => finish(aborted(t));
     const timer = setTimeout(
-      () => finish(new Error("媒体元数据读取超时，请检查格式或重新导入。")),
+      () => finish(new Error(t("editors.media.error.timeout"))),
       20000,
     );
     signal?.addEventListener("abort", cancel, { once: true });
@@ -226,7 +233,7 @@ export async function withMediaDuration(
           try {
             element.currentTime = Number.MAX_SAFE_INTEGER;
           } catch {
-            finish(new Error("无法定位媒体尾部以读取实际时长。"));
+            finish(new Error(t("editors.media.error.seekEnd")));
           }
         }
       };
@@ -238,7 +245,11 @@ export async function withMediaDuration(
       };
     } else element.onload = () => finish();
     element.onerror = () =>
-      finish(new Error(`无法读取「${resource.title}」的媒体元数据。`));
+      finish(
+        new Error(
+          t("editors.media.error.metadata", { title: resource.title }),
+        ),
+      );
     element.src = resource.src!;
   });
 }

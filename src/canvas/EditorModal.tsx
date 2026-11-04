@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n/I18nProvider.tsx";
 import type { CanvasResource } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import "./node-editors.css";
@@ -10,7 +11,7 @@ export function EditorModal({
   children,
   onClose,
   onApply,
-  applyLabel = "应用编辑",
+  applyLabel,
   disabled = false,
   error,
   className = "",
@@ -27,6 +28,7 @@ export function EditorModal({
   className?: string;
   actions?: ReactNode;
 }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null),
     closeRef = useRef(onClose),
     id = useId();
@@ -100,7 +102,7 @@ export function EditorModal({
             <h2 id={id}>{title}</h2>
             <p>{subtitle}</p>
           </div>
-          <button onClick={onClose} aria-label="关闭编辑器">
+          <button onClick={onClose} aria-label={t("editors.modal.closeAria")}>
             <CanvasIcon name="close" />
           </button>
         </header>
@@ -113,14 +115,14 @@ export function EditorModal({
         <footer className="cw-domain-footer">
           <div>{actions}</div>
           <div>
-            <button onClick={onClose}>取消</button>
+            <button onClick={onClose}>{t("common.cancel")}</button>
             {onApply && (
               <button
                 className="cw-domain-primary"
                 disabled={disabled}
                 onClick={onApply}
               >
-                {applyLabel}
+                {applyLabel ?? t("editors.modal.apply")}
               </button>
             )}
           </div>
@@ -137,11 +139,16 @@ export function ResourcePreview({
   resource?: CanvasResource;
   controls?: boolean;
 }) {
+  const t = useT();
   if (!resource?.src)
     return (
       <div className="cw-resource-empty">
         <CanvasIcon name={resource?.kind ?? "image"} size={28} />
-        <span>{resource ? "素材来源不可用" : "添加素材"}</span>
+        <span>
+          {resource
+            ? t("editors.modal.resourceUnavailable")
+            : t("editors.modal.addResource")}
+        </span>
       </div>
     );
   if (resource.kind === "image")

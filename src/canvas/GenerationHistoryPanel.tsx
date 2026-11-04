@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { generationTaskActions, type GenerationJob } from "./generationHistory";
 import { CanvasIcon } from "./CanvasIcon";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 
 export function GenerationHistoryPanel({
   jobs,
@@ -25,6 +26,7 @@ export function GenerationHistoryPanel({
   ) => Promise<void>;
   authoritative?: boolean;
 }) {
+  const { t, locale } = useI18n();
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [pending, setPending] = useState<string[]>([]);
@@ -58,13 +60,13 @@ export function GenerationHistoryPanel({
       job.outputs?.some((item) => item.kind === filter),
   );
   const labels = {
-    draft: "请求草稿",
-    imported: "已导入结果",
-    running: "生成中",
-    succeeded: "生成完成",
-    failed: "失败",
-    cancelled: "已取消",
-    interrupted: "等待恢复",
+    draft: t("generation.history.draft"),
+    imported: t("generation.history.imported"),
+    running: t("generation.history.running"),
+    succeeded: t("generation.history.succeeded"),
+    failed: t("generation.history.failed"),
+    cancelled: t("generation.history.cancelled"),
+    interrupted: t("generation.history.interrupted"),
   };
   const taskActions = (job: GenerationJob) =>
     authoritative && !job.tool
@@ -91,19 +93,19 @@ export function GenerationHistoryPanel({
   return (
     <>
       <p className="cw-panel-note">
-        历史与结果保存在本机，切换项目或刷新后可继续使用。
+        {t("generation.history.note")}
       </p>
       {onSync && (
         <button className="cw-wide-button" onClick={onSync}>
-          同步本地服务结果
+          {t("generation.history.sync")}
         </button>
       )}
-      <div className="cw-search-categories" role="group" aria-label="历史类型">
+      <div className="cw-search-categories" role="group" aria-label={t("generation.history.type")}>
         {[
-          ["all", "全部"],
-          ["image", "图片"],
-          ["video", "视频"],
-          ["audio", "音频"],
+          ["all", t("generation.history.all")],
+          ["image", t("generation.history.image")],
+          ["video", t("generation.history.video")],
+          ["audio", t("generation.history.audio")],
         ].map(([value, title]) => (
           <button
             key={value}
@@ -121,17 +123,19 @@ export function GenerationHistoryPanel({
             onRestore(jobs.filter((job) => selected.includes(job.id)))
           }
         >
-          {authoritative ? "选用所选结果" : "重新放置所选结果"}（
-          {selected.length}）
+          {authoritative ? t("generation.history.useSelected") : t("generation.history.placeSelected")}{" "}
+          ({selected.length})
         </button>
       )}
-      {!rows.length && <p className="cw-panel-note">暂无此类型的生成历史。</p>}
+      {!rows.length && <p className="cw-panel-note">{t("generation.history.empty")}</p>}
       {rows.map((job) => (
         <div className="cw-history-entry" key={job.id}>
           <label>
             <input
               type="checkbox"
-              aria-label={`选择历史${job.title}`}
+              aria-label={t("generation.history.selectJob", {
+                title: job.title,
+              })}
               checked={selected.includes(job.id)}
               disabled={!job.outputs?.length}
               onChange={(e) =>
@@ -146,19 +150,19 @@ export function GenerationHistoryPanel({
           </label>
           <small>
             {job.createdAt
-              ? new Date(job.createdAt).toLocaleString("zh-CN")
+              ? new Date(job.createdAt).toLocaleString(locale)
               : job.time}{" "}
             ·{" "}
             {job.toolTask?.localState === "stopping"
-              ? "停止处理中"
+              ? t("generation.history.stopping")
               : job.tool && job.status === "cancelled"
-                ? "本地已停止"
+                ? t("generation.history.localStopped")
                 : job.tool && job.status === "interrupted"
-                  ? "执行中断"
+                  ? t("generation.history.toolInterrupted")
                   : labels[job.status]}
           </small>
           {job.message && <small>{job.message}</small>}
-          {job.preview?.state === "pending" && <small>正在读取结果预览…</small>}
+          {job.preview?.state === "pending" && <small>{t("generation.history.readingPreview")}</small>}
           <div className="cw-history-thumbnails">
             {job.outputs?.map((output, i) =>
               output.kind === "image" ? (
@@ -182,7 +186,7 @@ export function GenerationHistoryPanel({
                 disabled={pending.includes(job.id)}
                 onClick={() => void taskAction(job, "recover")}
               >
-                继续查询原任务
+                {t("generation.history.query")}
               </button>
             )}
             {onTaskAction && taskActions(job).cancel && (
@@ -190,18 +194,20 @@ export function GenerationHistoryPanel({
                 disabled={pending.includes(job.id)}
                 onClick={() => void taskAction(job, "cancel")}
               >
-                {job.tool ? "停止工具任务" : "取消云端任务"}
+                {job.tool
+                  ? t("generation.history.cancelTool")
+                  : t("generation.history.cancelCloud")}
               </button>
             )}
-            <button onClick={() => onLocate(job.nodeId)}>定位来源</button>
+            <button onClick={() => onLocate(job.nodeId)}>{t("generation.history.locate")}</button>
             {!!job.outputs?.length && (
               <button onClick={() => onRestore([job])}>
-                {authoritative && !job.tool ? "选用结果" : "重新放置结果"}
+                {authoritative && !job.tool ? t("generation.history.use") : t("generation.history.place")}
               </button>
             )}
             {job.request && (
               <button onClick={() => onRestore([job], true)}>
-                恢复请求节点
+                {t("generation.history.restoreNode")}
               </button>
             )}
             {onRestoreConfiguration && !job.tool && (
@@ -212,13 +218,13 @@ export function GenerationHistoryPanel({
                     void restoreConfiguration(job, "follow_current")
                   }
                 >
-                  恢复生成配置
+                  {t("generation.history.restoreConfig")}
                 </button>
                 <button
                   disabled={pending.includes(job.id)}
                   onClick={() => void restoreConfiguration(job, "pinned")}
                 >
-                  按历史素材恢复配置
+                  {t("generation.history.restoreFromAssets")}
                 </button>
               </>
             )}

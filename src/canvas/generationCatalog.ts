@@ -1,6 +1,8 @@
 import type { CanvasNode, GenerationSettings } from "./model.ts";
 import { subjectReferenceNodes } from "./subjectReferences.ts";
 import { frameImageLimitIssue } from "./frameReferences.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
 /** Authored capability catalog, based on the 2026-10-26 original-site session.
  * Menu visibility is separate from a verified parameter combination. This is
@@ -148,7 +150,7 @@ export function generationDefaults(
           : "SeedAudio 1.0",
     aspectRatio: mode === "video" ? "16:9" : "1:1",
     durationSeconds: mode === "video" ? 4 : 5,
-    resolution: mode === "audio" ? "自动" : mode === "image" ? "2K" : "720P",
+    resolution: mode === "audio" ? "auto" : mode === "image" ? "2K" : "720P",
     prompt: "",
     count: 1,
     audioEnabled: true,
@@ -171,7 +173,7 @@ export function changeGenerationSettings(
       patch.audioCreationType === "music"
         ? "SeedMusic 1.0 Preview"
         : "SeedAudio 1.0";
-    next.resolution = "自动";
+    next.resolution = "auto";
     next.durationSeconds = patch.audioCreationType === "music" ? 30 : 5;
     next.count = 1;
   }
@@ -184,7 +186,7 @@ export function changeGenerationSettings(
     )
       next.resolution = model.resolutions[0]!;
     else if (!next.modelConfigId && !model?.resolutions.length)
-      next.resolution = "自动";
+      next.resolution = "auto";
     if (!next.modelConfigId && model?.duration)
       next.durationSeconds = Math.max(
         model.duration.min,
@@ -207,52 +209,55 @@ export function changeGenerationSettings(
   return next;
 }
 
-export function generationReferenceRole(node: CanvasNode): string {
-  return (
-    (
-      {
-        image: "图片参考",
-        video: "视频参考",
-        audio: "声音参考",
-        subject: "主体参考",
-        tool: "工具参数上下文",
-      } as Record<string, string>
-    )[node.data.kind] ?? "不支持的参考"
-  );
+export function generationReferenceRole(
+  node: CanvasNode,
+  t: Translate = defaultTranslate,
+): string {
+  const key = (
+    {
+      image: "generation.role.image",
+      video: "generation.role.video",
+      audio: "generation.role.audio",
+      subject: "generation.role.subject",
+      tool: "generation.role.tool",
+    } as const
+  )[node.data.kind as "image" | "video" | "audio" | "subject" | "tool"];
+  return key ? t(key) : t("generation.role.unsupported");
 }
 
 export function generationReferenceIssue(
   node: CanvasNode,
   settings: GenerationSettings,
+  t: Translate = defaultTranslate,
 ): string | null {
   if (
     settings.mode === "audio" &&
     (settings.audioCreationType === "music" || settings.audioMode === "tts")
   )
-    return "此模式使用提示词或朗读文本，不使用该参考";
+    return t("generation.issue.audioModeReference");
   if (
     settings.mode === "video" &&
     settings.videoMode === "first-last" &&
     !["image", "text", "tool"].includes(node.data.kind)
   )
-    return "首尾帧模式请使用图片节点选择帧素材";
+    return t("generation.issue.firstLastImage");
   if (node.data.kind === "tool" && settings.mode !== "audio") {
     if (settings.mode === "image" && node.data.tool?.kind === "camera_motion")
-      return "运镜工具只用于视频创作";
+      return t("generation.issue.cameraMotionVideo");
     return node.data.tool?.fields.some((field) =>
       field.values.some((value) => value.trim()),
     )
       ? null
-      : "工具尚未配置参数";
+      : t("generation.issue.toolParams");
   }
   if (node.data.kind === "subject") {
     const resources = subjectReferenceNodes(node);
-    if (!resources.length) return "主体尚未添加可用主素材";
+    if (!resources.length) return t("generation.issue.subjectEmpty");
     return resources.some(
-      (resource) => !generationReferenceIssue(resource, settings),
+      (resource) => !generationReferenceIssue(resource, settings, t),
     )
       ? null
-      : "当前模式不接收主体中的素材";
+      : t("generation.issue.subjectResource");
   }
   const allowed =
     settings.mode === "image"
@@ -260,30 +265,31 @@ export function generationReferenceIssue(
       : settings.mode === "video"
         ? ["image", "video", "audio", "text"]
         : ["audio"];
-  if (!allowed.includes(node.data.kind)) return "此模式未核实支持该素材类型";
+  if (!allowed.includes(node.data.kind))
+    return t("generation.issue.unsupportedKind");
   if (node.type === "text")
-    return node.data.text?.trim() ? null : "文本节点为空";
+    return node.data.text?.trim() ? null : t("generation.issue.textEmpty");
   return node.data.src && node.data.assetState !== "missing"
     ? null
-    : "素材尚未导入或已丢失";
+    : t("generation.issue.assetMissing");
 }
 
 /** Only the explicitly chosen frame slots are submitted in first/last mode. */
 export function generationBlocker(
   settings: GenerationSettings,
   incomingNodes: readonly CanvasNode[],
+  t: Translate = defaultTranslate,
 ): string | null {
   const frameLimit = frameImageLimitIssue(settings, incomingNodes);
   if (frameLimit) return frameLimit;
   const model = generationModel(settings);
-  if (!model) return "此模型不在已观察目录中，请重新选择模型。";
+  if (!model) return t("generation.issue.unknownModel");
   if (
     settings.mode === "audio" &&
     !generationModelsFor(settings).some((item) => item.name === settings.model)
   )
-    return "创作类型与模型不匹配，请重新选择创作类型。";
-  if (!model.verifiedParameters)
-    return "仅确认了模型菜单入口；参数范围待核实，暂不能提交本地任务。";
+    return t("generation.issue.audioTypeMismatch");
+  if (!model.verifiedParameters) return t("generation.issue.unverified");
   if (
     settings.imagePreset === "product-views" &&
     (settings.mode !== "image" ||
@@ -292,31 +298,31 @@ export function generationBlocker(
       settings.resolution !== "2K" ||
       (settings.count ?? 1) !== 1)
   )
-    return "产品三视图仅支持 Seedream 5.0 Pro、16:9、2K、1 张。";
+    return t("generation.issue.productViews");
   if (
     model.resolutions.length &&
     !model.resolutions.includes(settings.resolution)
   )
-    return "当前清晰度尚未核实，请选择面板中已核实的参数。";
+    return t("generation.issue.resolution");
   if (
     model.duration &&
     (!Number.isInteger(settings.durationSeconds) ||
       settings.durationSeconds < model.duration.min ||
       settings.durationSeconds > model.duration.max)
   )
-    return "时长超出当前模型已核实范围。";
+    return t("generation.issue.duration");
   if (settings.mode === "video") {
     if (
       model.videoModes &&
       !model.videoModes.includes(settings.videoMode ?? "reference")
     )
-      return "当前模型不支持所选视频模式。";
+      return t("generation.issue.videoMode");
     if (settings.videoMode === "first-last") {
       if (settings.lastFrameNodeId && !settings.firstFrameNodeId)
-        return "使用尾帧前，请先选择首帧。";
+        return t("generation.issue.lastNeedsFirst");
       for (const [id, label] of [
-        [settings.firstFrameNodeId, "首帧"],
-        [settings.lastFrameNodeId, "尾帧"],
+        [settings.firstFrameNodeId, t("generation.frame.first")],
+        [settings.lastFrameNodeId, t("generation.frame.last")],
       ] as const) {
         if (!id) continue;
         const node = incomingNodes.find((item) => item.id === id);
@@ -326,10 +332,10 @@ export function generationBlocker(
           !node.data.src ||
           node.data.assetState === "missing"
         )
-          return `${label}素材未连接或已丢失，请重新选择。`;
+          return t("generation.issue.frameMissing", { label });
       }
       if (!settings.prompt.trim() && !settings.firstFrameNodeId)
-        return "填写提示词或选择首帧。";
+        return t("generation.issue.promptOrFirst");
       return null;
     }
   }
@@ -339,17 +345,18 @@ export function generationBlocker(
     settings.audioMode === "tts" &&
     !settings.voiceName?.trim()
   )
-    return "请选择朗读音色。";
+    return t("generation.issue.voice");
   if (
     !settings.prompt.trim() &&
     !incomingNodes.some(
       (node) =>
-        node.data.kind !== "tool" && !generationReferenceIssue(node, settings),
+        node.data.kind !== "tool" &&
+        !generationReferenceIssue(node, settings, t),
     )
   )
     return settings.mode === "audio"
-      ? "请填写朗读文本或声音创作提示词。"
-      : "请填写提示词或连接可用参考素材。";
+      ? t("generation.issue.audioPrompt")
+      : t("generation.issue.promptOrReference");
   return null;
 }
 
@@ -362,6 +369,7 @@ export interface GenerationReference {
 export function generationActiveReferences(
   settings: GenerationSettings,
   incomingNodes: readonly CanvasNode[],
+  t: Translate = defaultTranslate,
 ): GenerationReference[] {
   if (settings.mode === "video" && settings.videoMode === "first-last") {
     const result: GenerationReference[] = [];
@@ -383,20 +391,21 @@ export function generationActiveReferences(
       ...incomingNodes
         .filter(
           (node) =>
-            node.type === "text" && !generationReferenceIssue(node, settings),
+            node.type === "text" &&
+            !generationReferenceIssue(node, settings, t),
         )
         .map((node) => ({ node, role: "reference" as const })),
       ...incomingNodes
         .filter(
           (node) =>
             node.data.kind === "tool" &&
-            !generationReferenceIssue(node, settings),
+            !generationReferenceIssue(node, settings, t),
         )
         .map((node) => ({ node, role: "tool" as const })),
     ];
   }
   return incomingNodes
-    .filter((node) => !generationReferenceIssue(node, settings))
+    .filter((node) => !generationReferenceIssue(node, settings, t))
     .map((node) => ({
       node,
       role: node.data.kind === "tool" ? "tool" : "reference",

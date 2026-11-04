@@ -9,6 +9,7 @@ import {
 } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { ModelLogo } from "./ModelLogo";
+import { useT } from "../i18n/I18nProvider.tsx";
 import "./provider-picker.css";
 
 export interface PickerOption {
@@ -36,6 +37,7 @@ export function SearchableSelect({
   label: string;
   compact?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
@@ -61,9 +63,7 @@ export function SearchableSelect({
         trigger.current?.focus();
       }}
     >
-      {(item.logoOrganization ||
-        item.modelId ||
-        item.group === "自定义 API") && (
+      {(item.logoOrganization || item.modelId) && (
         <ModelLogo
           organization={item.logoOrganization}
           modelId={item.modelId}
@@ -124,8 +124,8 @@ export function SearchableSelect({
           <CanvasIcon name="search" size={16} />
           <input
             autoFocus
-            aria-label={`搜索${label}`}
-            placeholder={`搜索${label}`}
+            aria-label={t("common.searchNamed", { name: label })}
+            placeholder={t("common.searchNamed", { name: label })}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -155,7 +155,7 @@ export function SearchableSelect({
             </div>
           ))}
           {!filtered.length && (
-            <p className="cw-provider-empty">未找到匹配项</p>
+            <p className="cw-provider-empty">{t("common.noMatches")}</p>
           )}
         </div>
       </div>
@@ -218,7 +218,9 @@ export function SearchableSelect({
             modelId={selected?.modelId}
           />
         )}
-        <span>{selected?.name ?? `选择${label}`}</span>
+        <span>
+          {selected?.name ?? t("common.chooseNamed", { name: label })}
+        </span>
         <CanvasIcon name="chevron" size={16} />
       </button>
       {compact && popup

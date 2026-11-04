@@ -7,11 +7,27 @@ import {
   peekCached,
   prefetchRequest,
 } from "../../backend/requestCache.ts";
+import { tNow } from "../../i18n/messages.ts";
+import type { Translate } from "../../i18n/I18nProvider";
+import type {
+  MessageDescriptor,
+  MessageKey,
+  MessageParams,
+} from "../../i18n/types";
 import type { CanvasResource } from "../model";
 
 export type LibraryKind = "asset" | "subject";
 export type LibraryState = "active" | "trashed";
 export type LibraryMediaKind = "image" | "video" | "audio" | "file";
+
+/** Module-level fallback for helpers that cannot call React hooks. */
+const nowTranslate: Translate = (
+  input: MessageKey | MessageDescriptor,
+  params?: MessageParams,
+) =>
+  typeof input === "string"
+    ? tNow(input, params)
+    : tNow(input.key, input.params);
 
 export type LibraryItem = {
   id: string;
@@ -52,20 +68,20 @@ export type LibraryItem = {
  * text/subject/timeline nodes that are not media files at all.
  */
 export const ASSET_CATEGORIES = [
-  { key: "image", label: "图片" },
-  { key: "video", label: "视频" },
-  { key: "audio", label: "音频" },
-  { key: "file", label: "文档" },
-] as const;
+  { key: "image", labelKey: "library.category.image" },
+  { key: "video", labelKey: "library.category.video" },
+  { key: "audio", labelKey: "library.category.audio" },
+  { key: "file", labelKey: "library.category.file" },
+] as const satisfies readonly { key: string; labelKey: MessageKey }[];
 
 export const CANVAS_CATEGORIES = [
-  { key: "image", label: "图片" },
-  { key: "video", label: "视频" },
-  { key: "audio", label: "音频" },
-  { key: "text", label: "文本" },
-  { key: "subject", label: "主体" },
-  { key: "timeline", label: "时间线" },
-] as const;
+  { key: "image", labelKey: "library.category.image" },
+  { key: "video", labelKey: "library.category.video" },
+  { key: "audio", labelKey: "library.category.audio" },
+  { key: "text", labelKey: "library.category.text" },
+  { key: "subject", labelKey: "library.category.subject" },
+  { key: "timeline", labelKey: "library.category.timeline" },
+] as const satisfies readonly { key: string; labelKey: MessageKey }[];
 
 export function itemContentUrl(item: LibraryItem): string {
   // Direct <img src> would omit X-OpenDirector-Request and get a 403, so media is
@@ -104,7 +120,10 @@ export function itemToResource(item: LibraryItem): CanvasResource {
   };
 }
 
-export function useItemContentUrl(item: LibraryItem | null): string | undefined {
+export function useItemContentUrl(
+  item: LibraryItem | null,
+  t: Translate = nowTranslate,
+): string | undefined {
   const [url, setUrl] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (!item) {
@@ -115,7 +134,7 @@ export function useItemContentUrl(item: LibraryItem | null): string | undefined 
     let objectUrl: string | undefined;
     fetch(itemContentUrl(item), { headers })
       .then((response) => {
-        if (!response.ok) throw new Error("素材读取失败。");
+        if (!response.ok) throw new Error(t("library.media.readFailed"));
         return response.blob();
       })
       .then((blob) => {
@@ -271,9 +290,10 @@ export async function addInlineFromCanvas(
   src: string,
   name: string,
   options: { projectId?: string; assetId?: string; mimeType?: string } = {},
+  t: Translate = nowTranslate,
 ): Promise<LibraryItem> {
   const response = await fetch(src);
-  if (!response.ok) throw new Error("无法读取画布素材内容。");
+  if (!response.ok) throw new Error(t("library.media.inlineReadFailed"));
   const blob = await response.blob();
   const mime =
     options.mimeType || blob.type || "application/octet-stream";

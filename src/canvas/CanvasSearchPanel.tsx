@@ -1,11 +1,26 @@
 import { useId, useMemo, useRef, useState } from "react";
 import type { CanvasNode } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
+import { useT } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages";
 import {
   SEARCH_CATEGORIES,
   searchNodes,
   type SearchCategory,
 } from "./nodeSearch";
+
+const CATEGORY_LABELS: Record<SearchCategory, MessageKey> = {
+  all: "canvas.search.category.all",
+  image: "canvas.search.category.image",
+  video: "canvas.search.category.video",
+  audio: "canvas.search.category.audio",
+  text: "canvas.search.category.text",
+  subject: "canvas.search.category.subject",
+  timeline: "canvas.search.category.timeline",
+  tool: "canvas.search.category.tool",
+  group: "canvas.search.category.group",
+  other: "canvas.search.category.other",
+};
 
 export function CanvasSearchPanel({
   nodes,
@@ -14,6 +29,7 @@ export function CanvasSearchPanel({
   nodes: CanvasNode[];
   onSelect: (node: CanvasNode) => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<SearchCategory>("all");
   const input = useRef<HTMLInputElement>(null);
@@ -28,16 +44,16 @@ export function CanvasSearchPanel({
       <div className="cw-search-field">
         <input
           ref={input}
-          aria-label="搜索节点"
+          aria-label={t("canvas.search.label")}
           className="cw-search-input"
-          placeholder="搜索名称、提示词或文本"
+          placeholder={t("canvas.search.placeholder")}
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         {query && (
           <button
-            aria-label="清空搜索"
+            aria-label={t("canvas.search.clear")}
             onClick={() => {
               setQuery("");
               input.current?.focus();
@@ -50,9 +66,9 @@ export function CanvasSearchPanel({
       <div
         className="cw-search-categories"
         role="tablist"
-        aria-label="搜索结果类型"
+        aria-label={t("canvas.search.categories")}
       >
-        {SEARCH_CATEGORIES.map(([key, label], index) => (
+        {SEARCH_CATEGORIES.map(([key], index) => (
           <button
             key={key}
             ref={(element) => {
@@ -83,7 +99,7 @@ export function CanvasSearchPanel({
               tabs.current[next]?.focus();
             }}
           >
-            {label}
+            {t(CATEGORY_LABELS[key])}
             <span>{results.counts[key]}</span>
           </button>
         ))}
@@ -94,7 +110,7 @@ export function CanvasSearchPanel({
         aria-labelledby={`${id}-${category}`}
       >
         <p className="cw-search-count" role="status">
-          {results.nodes.length} 个结果
+          {t("common.count.results", { count: results.nodes.length })}
         </p>
         {results.nodes.length ? (
           <div className="cw-node-list">
@@ -104,16 +120,16 @@ export function CanvasSearchPanel({
                 <span>
                   {node.data.title}
                   <small>
-                    {node.data.prompt || node.data.text || "未添加内容"}
+                    {node.data.prompt ||
+                      node.data.text ||
+                      t("canvas.search.noContent")}
                   </small>
                 </span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="cw-panel-note">
-            没有匹配的节点，试试其他关键词或类型。
-          </p>
+          <p className="cw-panel-note">{t("canvas.search.empty")}</p>
         )}
       </div>
     </>

@@ -36,6 +36,7 @@ import {
   type TimelineLibrarySource,
 } from "./timeline";
 import { assertUpload } from "./uploadPolicy.ts";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 import {
   classifyImportFile,
   readEditorResource,
@@ -86,6 +87,7 @@ export function TimelineEditor({
   onPrepareRender,
   onClose,
 }: TimelineEditorProps) {
+  const { t } = useI18n();
   const [timeline, setTimeline] = useState(() =>
     copyTimeline(
       node.data.timeline ?? {
@@ -96,7 +98,7 @@ export function TimelineEditor({
           {
             id: "visual",
             kind: "visual",
-            title: "画面轨",
+            title: "",
             muted: false,
             clips: [],
           },
@@ -341,7 +343,10 @@ export function TimelineEditor({
             ) {
               setPlaying(false);
               setError(
-                `播放未启动：${reason instanceof Error ? reason.message : String(reason)}`,
+                t("timeline.error.playFailed", {
+                  reason:
+                    reason instanceof Error ? reason.message : String(reason),
+                }),
               );
             }
           })
@@ -381,7 +386,9 @@ export function TimelineEditor({
       setError("");
       refreshHistory((value) => value + 1);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "时间线编辑失败。");
+      setError(
+        error instanceof Error ? error.message : t("timeline.error.editFailed"),
+      );
     }
   };
   const cancelDrag = () => {
@@ -419,8 +426,8 @@ export function TimelineEditor({
     drag.next = null;
     setDragPreview(null);
     if (!lane) {
-      drag.error = "拖放已取消：请将片段放在目标轨道内。";
-      setDragMessage("拖到目标轨道后松开；按 Esc 取消拖动。");
+      drag.error = t("timeline.error.dragCancelled");
+      setDragMessage(t("timeline.error.dragHint"));
       return;
     }
     const viewport = scrollRef.current;
@@ -451,9 +458,10 @@ export function TimelineEditor({
       );
       setDragPreview(drag.next);
       drag.error = "";
-      setDragMessage("松开应用位置；按 Esc 取消拖动。");
+      setDragMessage(t("timeline.error.dropHint"));
     } catch (error) {
-      drag.error = error instanceof Error ? error.message : "无法放置片段。";
+      drag.error =
+        error instanceof Error ? error.message : t("timeline.error.placeFailed");
       setDragMessage(drag.error);
     }
   };
@@ -498,7 +506,11 @@ export function TimelineEditor({
         );
     } catch (error) {
       if (ownsLoad(controller))
-        setError(error instanceof Error ? error.message : "素材读取失败。");
+        setError(
+          error instanceof Error
+            ? error.message
+            : t("timeline.error.assetReadFailed"),
+        );
     } finally {
       if (ownsLoad(controller)) setBusy(false);
     }
@@ -517,7 +529,13 @@ export function TimelineEditor({
         } catch (error) {
           if (!ownsLoad(controller)) return;
           failures.push(
-            `${file.name}：${error instanceof Error ? error.message : "读取失败"}`,
+            t("timeline.error.fileReadFailed", {
+            name: file.name,
+            error:
+              error instanceof Error
+                ? error.message
+                : t("timeline.error.readFailed"),
+          }),
           );
         }
         if (!ownsLoad(controller)) return;
@@ -533,7 +551,13 @@ export function TimelineEditor({
             );
           } catch (error) {
             failures.push(
-              `${resource.title}：${error instanceof Error ? error.message : "无法添加片段"}`,
+            t("timeline.error.addClipFailed", {
+              title: resource.title,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : t("timeline.error.cannotAddClip"),
+            }),
             );
           }
         }
@@ -541,7 +565,10 @@ export function TimelineEditor({
       });
       if (failures.length)
         setError(
-          `部分素材未导入（${failures.length}）：${failures.join("；")}`,
+          t("timeline.error.partialImport", {
+            count: failures.length,
+            items: failures.join(t("canvas.workspace.list.separator")),
+          }),
         );
     } finally {
       if (ownsLoad(controller)) setBusy(false);
@@ -560,7 +587,11 @@ export function TimelineEditor({
       );
       setError("");
     } catch (error) {
-      setError(error instanceof Error ? error.message : "XML 导出失败。");
+      setError(
+        error instanceof Error
+          ? error.message
+          : t("timeline.error.xmlExportFailed"),
+      );
     }
   };
   const exportPackage = async () => {
@@ -581,7 +612,11 @@ export function TimelineEditor({
         downloadFile(blob, `${node.data.title || "timeline"}.fcpxml.zip`);
     } catch (error) {
       if (ownsLoad(controller))
-        setError(error instanceof Error ? error.message : "素材打包失败。");
+        setError(
+          error instanceof Error
+            ? error.message
+            : t("timeline.error.packFailed"),
+        );
     } finally {
       if (active.current && loading.current === controller) {
         setBusy(false);
@@ -601,7 +636,11 @@ export function TimelineEditor({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "时间线导出失败。");
+      setError(
+        error instanceof Error
+          ? error.message
+          : t("timeline.error.exportFailed"),
+      );
     }
   };
   const bindMedia = (clip: TimelineClip) => {
@@ -646,14 +685,18 @@ export function TimelineEditor({
       setPosition(0);
     } catch (reason) {
       if (ownsLoad(controller))
-        setError(reason instanceof Error ? reason.message : "导入时间线失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.error.importFailed"),
+        );
     } finally {
       if (ownsLoad(controller)) setBusy(false);
     }
   };
   const saveTimeline = async (snapshot: TimelineData) => {
     if ((await onApply(snapshot)) === false)
-      throw new Error("时间线未应用，草稿已保留，请核对来源与锁定状态。");
+      throw new Error(t("timeline.error.notApplied"));
   };
   const applyTimeline = async () => {
     if (busy) return;
@@ -666,7 +709,7 @@ export function TimelineEditor({
       setError(
         reason instanceof Error
           ? reason.message
-          : "保存失败，时间线草稿已保留。",
+          : t("timeline.error.saveFailed"),
       );
     } finally {
       setBusy(false);
@@ -702,7 +745,11 @@ export function TimelineEditor({
       }
     } catch (reason) {
       if (ownsLoad(controller))
-        setError(reason instanceof Error ? reason.message : "视频导出失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.error.videoExportFailed"),
+        );
     } finally {
       if (active.current && loading.current === controller) {
         setBusy(false);
@@ -725,7 +772,9 @@ export function TimelineEditor({
             kind: "video",
             src,
             mimeType: "video/mp4",
-            title: `${node.data.title} · 合成`,
+            title: t("timeline.action.renderTitle", {
+              title: node.data.title,
+            }),
             media: {
               width: media.width,
               height: media.height,
@@ -736,7 +785,11 @@ export function TimelineEditor({
       }
     } catch (reason) {
       if (ownsLoad(controller))
-        setError(reason instanceof Error ? reason.message : "加入画布失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("timeline.error.addCanvasFailed"),
+        );
     } finally {
       if (ownsLoad(controller)) setBusy(false);
     }
@@ -776,10 +829,18 @@ export function TimelineEditor({
     );
   };
 
+  const trackTitle = (track: (typeof timeline.tracks)[number]) =>
+    track.title ||
+    t(
+      track.kind === "audio"
+        ? "timeline.track.audio"
+        : "timeline.track.video",
+    );
+
   return (
     <EditorModal
-      title={`时间线 · ${node.data.title}`}
-      subtitle="本地视觉轨顺序编排、多音轨播放与源片段入出点编辑"
+      title={t("timeline.header.title", { title: node.data.title })}
+      subtitle={t("timeline.header.subtitle")}
       className="cw-timeline-dialog"
       onClose={onClose}
       onApply={() => void applyTimeline()}
@@ -788,26 +849,26 @@ export function TimelineEditor({
       actions={
         <>
           <button disabled={busy} onClick={() => jsonInput.current?.click()}>
-            导入 JSON
+            {t("timeline.action.importJson")}
           </button>
           <button disabled={busy} onClick={exportJson}>
             <CanvasIcon name="download" size={16} />
-            导出可编辑 JSON
+            {t("timeline.action.exportJson")}
           </button>
           <button disabled={busy || !duration} onClick={exportXml}>
-            导出 FCPXML
+            {t("timeline.action.exportFcpXml")}
           </button>
           <button
             disabled={busy || !duration}
             onClick={() => void exportPackage()}
           >
-            XML + 素材 ZIP
+            {t("timeline.action.exportZip")}
           </button>
           <button
             disabled={busy || !duration}
             onClick={() => void renderVideo()}
           >
-            合成 MP4
+            {t("timeline.action.renderMp4")}
           </button>
         </>
       }
@@ -815,22 +876,35 @@ export function TimelineEditor({
       {packageProgress !== null && (
         <div className="cw-render-status" role="status">
           <progress value={packageProgress} max={1} />
-          <span>素材打包 {Math.round(packageProgress * 100)}%</span>
-          <button onClick={() => loading.current?.abort()}>取消打包</button>
+          <span>
+            {t("timeline.pack.progress", {
+              percent: Math.round(packageProgress * 100),
+            })}
+          </span>
+          <button onClick={() => loading.current?.abort()}>
+            {t("timeline.action.cancelPack")}
+          </button>
         </div>
       )}
       {renderProgress !== null && (
         <div className="cw-render-status" role="status">
           <progress value={renderProgress} max={1} />
-          <span>正在合成 {Math.round(renderProgress * 100)}%</span>
-          <button onClick={() => loading.current?.abort()}>取消合成</button>
+          <span>
+            {t("timeline.render.progress", {
+              percent: Math.round(renderProgress * 100),
+            })}
+          </span>
+          <button onClick={() => loading.current?.abort()}>
+            {t("timeline.action.cancelRender")}
+          </button>
         </div>
       )}
       {rendered && (
         <div className="cw-render-status" role="status">
           <span>
-            MP4 已完成 · {(rendered.size / 1024 / 1024).toFixed(2)}{" "}
-            MB（合成时的时间线）
+            {t("timeline.render.done", {
+              size: (rendered.size / 1024 / 1024).toFixed(2),
+            })}
           </span>
           <button
             disabled={busy}
@@ -841,13 +915,15 @@ export function TimelineEditor({
               )
             }
           >
-            下载 MP4
+            {t("timeline.action.downloadMp4")}
           </button>
           <button
             disabled={busy || node.locked || inserted}
             onClick={() => void insertRender()}
           >
-            {inserted ? "已加入画布" : "将合成视频加入画布"}
+            {inserted
+              ? t("timeline.action.addedToCanvas")
+              : t("timeline.action.addToCanvas")}
           </button>
         </div>
       )}
@@ -895,33 +971,33 @@ export function TimelineEditor({
           {libraryShown && (
             <aside className="cw-timeline-library">
               <div className="cw-domain-section-heading">
-                <h3>素材库</h3>
+                <h3>{t("timeline.library.title")}</h3>
                 <button
                   disabled={busy}
                   onClick={() => fileInput.current?.click()}
                 >
                   <CanvasIcon name="upload" size={14} />
-                  导入
+                  {t("timeline.library.import")}
                 </button>
               </div>
               <p className="cw-domain-note">
-                图片、视频与音频。视频和音频会先读取实际时长。
+                {t("timeline.library.hint")}
               </p>
               <div className="cw-domain-row">
                 <select
-                  aria-label="素材类型筛选"
+                  aria-label={t("timeline.library.typeFilter")}
                   value={libraryKind}
                   onChange={(event) =>
                     setLibraryKind(event.target.value as TimelineLibraryKind)
                   }
                 >
-                  <option value="all">全部类型</option>
-                  <option value="image">图片</option>
-                  <option value="video">视频</option>
-                  <option value="audio">音频</option>
+                  <option value="all">{t("timeline.library.allTypes")}</option>
+                  <option value="image">{t("timeline.library.image")}</option>
+                  <option value="video">{t("timeline.library.video")}</option>
+                  <option value="audio">{t("timeline.library.audio")}</option>
                 </select>
                 <select
-                  aria-label="素材来源筛选"
+                  aria-label={t("timeline.library.sourceFilter")}
                   value={librarySource}
                   onChange={(event) =>
                     setLibrarySource(
@@ -929,9 +1005,9 @@ export function TimelineEditor({
                     )
                   }
                 >
-                  <option value="all">全部来源</option>
-                  <option value="canvas">画布素材</option>
-                  <option value="imported">已导入</option>
+                  <option value="all">{t("timeline.library.allSources")}</option>
+                  <option value="canvas">{t("timeline.library.canvasAssets")}</option>
+                  <option value="imported">{t("timeline.library.imported")}</option>
                 </select>
               </div>
               <div className="cw-domain-resource-list">
@@ -952,8 +1028,10 @@ export function TimelineEditor({
                     </button>
                     {librarySource === "imported" && (
                       <button
-                        aria-label={`从素材库移除 ${resource.title}`}
-                        title="仅移出素材库，保留已有片段"
+                        aria-label={t("timeline.library.remove", {
+                          title: resource.title,
+                        })}
+                        title={t("timeline.library.removeHint")}
                         onClick={() =>
                           change((current) =>
                             removeTimelineAsset(current, resource.id),
@@ -966,16 +1044,18 @@ export function TimelineEditor({
                   </div>
                 ))}
                 {!libraryResources.length && (
-                  <p>可从本地导入，也可引用画布上的媒体节点。</p>
+                  <p>{t("timeline.library.empty")}</p>
                 )}
               </div>
               <label className="cw-domain-field">
-                音频加入轨道
+                {t("timeline.library.addAudio")}
                 <select
                   value={audioTrack}
                   onChange={(event) => setAudioTrack(event.target.value)}
                 >
-                  <option value="">首条音轨 / 自动新建</option>
+                  <option value="">
+                    {t("timeline.library.firstAudioTrack")}
+                  </option>
                   {timeline.tracks
                     .filter((track) => track.kind === "audio")
                     .map((track) => (
@@ -987,10 +1067,10 @@ export function TimelineEditor({
               </label>
               <button onClick={() => change(addAudioTrack)}>
                 <CanvasIcon name="plus" size={14} />
-                添加音轨
+                {t("timeline.library.addTrack")}
               </button>
               <p className="cw-domain-status" role="status">
-                {busy ? "正在读取素材…" : ""}
+                {busy ? t("timeline.library.reading") : ""}
               </p>
             </aside>
           )}
@@ -998,7 +1078,7 @@ export function TimelineEditor({
             <div
               className="cw-timeline-library-resizer"
               role="separator"
-              aria-label="调整素材库宽度"
+              aria-label={t("timeline.library.resize")}
               aria-orientation="vertical"
               aria-valuenow={libraryWidth}
               aria-valuemin={150}
@@ -1052,7 +1132,7 @@ export function TimelineEditor({
                     }
                     onError={() => {
                       setPlaying(false);
-                      setError("当前视频无法播放，请检查素材或重新导入。");
+                      setError(t("timeline.player.videoError"));
                     }}
                   />
                 )
@@ -1060,7 +1140,9 @@ export function TimelineEditor({
                 <div className="cw-timeline-monitor-empty">
                   <CanvasIcon name="video" size={38} />
                   <span>
-                    {duration ? "当前时间没有画面" : "添加素材开始编排"}
+                    {duration
+                      ? t("timeline.player.noVideo")
+                      : t("timeline.player.empty")}
                   </span>
                 </div>
               )}
@@ -1075,14 +1157,14 @@ export function TimelineEditor({
                   }
                   onError={() => {
                     setPlaying(false);
-                    setError("音频素材无法播放，请重新导入。");
+                    setError(t("timeline.player.audioError"));
                   }}
                 />
               ))}
             </div>
             <div className="cw-timeline-transport">
               <button
-                aria-label="回到时间线开始"
+                aria-label={t("timeline.player.start")}
                 onClick={() => seek(0)}
                 disabled={!duration}
               >
@@ -1090,7 +1172,9 @@ export function TimelineEditor({
               </button>
               <button
                 className="cw-timeline-play"
-                aria-label={playing ? "暂停时间线" : "播放时间线"}
+                aria-label={
+                  playing ? t("timeline.player.pause") : t("timeline.player.play")
+                }
                 disabled={!duration || busy}
                 onClick={() => {
                   if (position >= duration) setPosition(0);
@@ -1103,7 +1187,7 @@ export function TimelineEditor({
                 {timeLabel(position)} <span>/ {timeLabel(duration)}</span>
               </output>
               <label>
-                帧率
+                {t("timeline.player.fps")}
                 <select
                   value={timeline.fps}
                   onChange={(event) =>
@@ -1123,7 +1207,7 @@ export function TimelineEditor({
             </div>
             <ControlSlider
               className="cw-timeline-seek"
-              aria-label="时间线播放位置"
+              aria-label={t("timeline.player.seek")}
               min={0}
               max={Math.max(0.01, duration)}
               step={1 / timeline.fps}
@@ -1134,18 +1218,24 @@ export function TimelineEditor({
           </div>
           <aside className="cw-timeline-inspector">
             <div className="cw-domain-section-heading">
-              <h3>{selected ? "片段属性" : "项目设置"}</h3>
+              <h3>
+                {selected
+                  ? t("timeline.properties.title")
+                  : t("timeline.properties.project")}
+              </h3>
             </div>
             {selected ? (
               <>
                 <strong>{selected.clip.resource.title}</strong>
                 <p className="cw-domain-note">
-                  {selected.track.title} · 播放{" "}
-                  {clipDuration(selected.clip).toFixed(2)} 秒
+                  {t("timeline.properties.playback", {
+                    track: trackTitle(selected.track),
+                    seconds: clipDuration(selected.clip).toFixed(2),
+                  })}
                 </p>
                 {selected.clip.resource.kind !== "image" && (
                   <label className="cw-domain-field">
-                    源入点（秒）
+                    {t("timeline.properties.inPoint")}
                     <input
                       type="number"
                       min={0}
@@ -1159,8 +1249,8 @@ export function TimelineEditor({
                 )}
                 <label className="cw-domain-field">
                   {selected.clip.resource.kind === "image"
-                    ? "展示时长（秒）"
-                    : "源出点（秒）"}
+                    ? t("timeline.properties.duration")
+                    : t("timeline.properties.outPoint")}
                   <input
                     type="number"
                     min={0.01}
@@ -1173,7 +1263,7 @@ export function TimelineEditor({
                 </label>
                 {selected.clip.resource.kind !== "image" && (
                   <label className="cw-domain-field">
-                    播放速度
+                    {t("timeline.properties.speed")}
                     <select
                       value={selected.clip.speed}
                       onChange={(event) =>
@@ -1190,7 +1280,7 @@ export function TimelineEditor({
                 )}
                 {selected.track.kind === "audio" && (
                   <label className="cw-domain-field">
-                    时间线起点（秒）
+                    {t("timeline.properties.start")}
                     <input
                       type="number"
                       min={0}
@@ -1205,7 +1295,9 @@ export function TimelineEditor({
                 {selected.clip.resource.kind !== "image" && (
                   <>
                     <label className="cw-domain-field">
-                      片段音量 {Math.round(selected.clip.volume * 100)}%
+                      {t("timeline.properties.volume", {
+                        percent: Math.round(selected.clip.volume * 100),
+                      })}
                       <input
                         type="range"
                         min={0}
@@ -1228,7 +1320,7 @@ export function TimelineEditor({
                           patchSelected({ muted: event.target.checked })
                         }
                       />
-                      片段静音
+                      {t("timeline.properties.mute")}
                     </label>
                   </>
                 )}
@@ -1248,8 +1340,8 @@ export function TimelineEditor({
                     }
                     aria-label={
                       selected.track.kind === "audio"
-                        ? "音频前移一帧"
-                        : "片段前移"
+                        ? t("timeline.properties.nudgeAudioBack")
+                        : t("timeline.properties.nudgeClipBack")
                     }
                   >
                     ←
@@ -1269,8 +1361,8 @@ export function TimelineEditor({
                     }
                     aria-label={
                       selected.track.kind === "audio"
-                        ? "音频后移一帧"
-                        : "片段后移"
+                        ? t("timeline.properties.nudgeAudioForward")
+                        : t("timeline.properties.nudgeClipForward")
                     }
                   >
                     →
@@ -1283,14 +1375,14 @@ export function TimelineEditor({
                       setSelectedId(null);
                     }}
                   >
-                    删除片段
+                    {t("timeline.properties.delete")}
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <label className="cw-domain-field">
-                  画面比例
+                  {t("timeline.properties.aspect")}
                   <select
                     value={`${timeline.width}:${timeline.height}`}
                     onChange={(event) => {
@@ -1312,7 +1404,10 @@ export function TimelineEditor({
                       "1080:1080",
                     ].includes(`${timeline.width}:${timeline.height}`) && (
                       <option value={`${timeline.width}:${timeline.height}`}>
-                        导入尺寸 · {timeline.width}×{timeline.height}
+                        {t("timeline.properties.importSize", {
+                          width: timeline.width,
+                          height: timeline.height,
+                        })}
                       </option>
                     )}
                     <option value="1280:720">16:9 · 1280×720</option>
@@ -1323,7 +1418,7 @@ export function TimelineEditor({
                   </select>
                 </label>
                 <p className="cw-domain-note">
-                  点击轨道片段编辑源入点、出点、播放速度与音量。视觉片段自动顺序衔接；音轨保留显式起点，同轨不能重叠。
+                  {t("timeline.properties.hint")}
                 </p>
               </>
             )}
@@ -1334,19 +1429,21 @@ export function TimelineEditor({
             aria-pressed={libraryShown}
             onClick={() => setLibraryShown((shown) => !shown)}
           >
-            {libraryShown ? "隐藏素材库" : "显示素材库"}
+            {libraryShown
+              ? t("timeline.toolbar.hideLibrary")
+              : t("timeline.toolbar.showLibrary")}
           </button>
           <button
             disabled={!history.current.past.length || busy}
             onClick={() => historyStep("undo")}
           >
-            撤销
+            {t("timeline.toolbar.undo")}
           </button>
           <button
             disabled={!history.current.future.length || busy}
             onClick={() => historyStep("redo")}
           >
-            重做
+            {t("timeline.toolbar.redo")}
           </button>
           <button
             disabled={!editableAtPlayhead}
@@ -1357,7 +1454,7 @@ export function TimelineEditor({
                 );
             }}
           >
-            在播放头分割
+            {t("timeline.toolbar.split")}
           </button>
           <button
             disabled={!editableAtPlayhead}
@@ -1368,7 +1465,7 @@ export function TimelineEditor({
                 );
             }}
           >
-            剪掉播放头左侧
+            {t("timeline.toolbar.trimLeft")}
           </button>
           <button
             disabled={!editableAtPlayhead}
@@ -1384,7 +1481,7 @@ export function TimelineEditor({
                 );
             }}
           >
-            剪掉播放头右侧
+            {t("timeline.toolbar.trimRight")}
           </button>
           <label className="cw-timeline-snap">
             <input
@@ -1392,12 +1489,12 @@ export function TimelineEditor({
               checked={snapping}
               onChange={(event) => setSnapping(event.target.checked)}
             />
-            自动吸附
+            {t("timeline.toolbar.snap")}
           </label>
           <label className="cw-timeline-zoom">
-            时间轴缩放
+            {t("timeline.toolbar.zoom")}
             <input
-              aria-label="时间轴缩放"
+              aria-label={t("timeline.toolbar.zoom")}
               type="range"
               min={Math.log2(0.01)}
               max={Math.log2(800)}
@@ -1417,7 +1514,7 @@ export function TimelineEditor({
               zoomTo((viewportWidth - 191) / Math.max(1, duration + 2))
             }
           >
-            适应全部
+            {t("timeline.toolbar.fit")}
           </button>
         </div>
         <div className="cw-timeline-drag-status" role="status">
@@ -1426,7 +1523,7 @@ export function TimelineEditor({
         <div
           className="cw-timeline-height-resizer"
           role="separator"
-          aria-label="调整轨道区高度"
+          aria-label={t("timeline.toolbar.resize")}
           aria-orientation="horizontal"
           aria-valuenow={trackHeight}
           aria-valuemin={140}
@@ -1465,7 +1562,7 @@ export function TimelineEditor({
             }
             ref={tracksRef}
             tabIndex={0}
-            aria-label="时间线轨道"
+            aria-label={t("timeline.track.region")}
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
             onPointerCancel={cancelDrag}
@@ -1480,7 +1577,7 @@ export function TimelineEditor({
             }}
           >
             <div className="cw-timeline-ruler">
-              <span>轨道 / 秒</span>
+              <span>{t("timeline.track.header")}</span>
               <div
                 onClick={(event) => {
                   const rect = event.currentTarget.getBoundingClientRect();
@@ -1512,7 +1609,7 @@ export function TimelineEditor({
             {timeline.tracks.map((track) => (
               <div className="cw-timeline-track" key={track.id}>
                 <div className="cw-timeline-track-label">
-                  <span>{track.title}</span>
+                  <span>{trackTitle(track)}</span>
                   <button
                     onClick={() =>
                       change((current) => ({
@@ -1524,13 +1621,20 @@ export function TimelineEditor({
                         ),
                       }))
                     }
-                    aria-label={`${track.muted ? "取消静音" : "静音"}${track.title}`}
+                    aria-label={t(
+                      track.muted ? "timeline.track.unmute" : "timeline.track.mute",
+                      { title: trackTitle(track) },
+                    )}
                   >
-                    {track.muted ? "静音" : "有声"}
+                    {track.muted
+                      ? t("timeline.track.muted")
+                      : t("timeline.track.audible")}
                   </button>
                   {track.kind === "audio" && (
                     <button
-                      aria-label={`删除${track.title}`}
+                      aria-label={t("timeline.track.delete", {
+                        title: trackTitle(track),
+                      })}
                       onClick={() => {
                         setPlaying(false);
                         if (audioTrack === track.id) setAudioTrack("");
@@ -1631,21 +1735,14 @@ export function TimelineEditor({
           </div>
         </div>
         <p className="cw-domain-note cw-timeline-footnote">
-          拖动画面片段调整顺序；拖动音频调整起点或移至其他音轨。按 Esc
-          取消，⌘/Ctrl + Z 撤销。 MP4
-          在浏览器内合成，保留顺序、裁剪、倍速、音量和多轨混音；画面等比适配并补黑边。
-          倍速会同时改变音调。⌘/Ctrl +
-          滚轮以指针位置缩放时间轴；自动吸附对齐片段边缘与播放头。 FCPXML
-          为标准剪辑交换格式，ZIP 含原媒体；解压后保持 media
-          目录相对位置。并非原生剪映工程，也不承诺所有剪辑软件版本兼容。JSON
-          可在本工程继续编辑。
+          {t("timeline.track.dragHint")}
         </p>
         <input
           className="cw-domain-file-input"
           ref={jsonInput}
           type="file"
           accept="application/json,.json"
-          aria-label="导入时间线 JSON"
+          aria-label={t("timeline.action.importJsonAria")}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void importJson(file);
@@ -1658,7 +1755,7 @@ export function TimelineEditor({
           type="file"
           accept="image/*,video/*,audio/*"
           multiple
-          aria-label="导入时间线素材"
+          aria-label={t("timeline.action.importMediaAria")}
           onChange={(event) => {
             if (event.target.files) void importFiles(event.target.files);
             event.target.value = "";

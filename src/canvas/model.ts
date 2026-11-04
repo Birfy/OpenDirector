@@ -5,6 +5,8 @@ import type { LocalStageDocument } from "./stageDocument.ts";
 import type { LayerDocument } from "./layerDocument.ts";
 import { referenceIssue } from "./connectionPolicy.ts";
 import { SUBJECT_BASE_HEIGHT } from "./subjectLayout.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 import {
   assembleNode,
   assemblyResource,
@@ -227,16 +229,17 @@ export interface CanvasDocument {
 
 export const MIN_ZOOM = 0.08;
 export const MAX_ZOOM = 8;
+export const LOCAL_DEMO_MODEL = "本地交互演示";
 export const DEFAULT_SETTINGS: Readonly<GenerationSettings> = {
   mode: "image",
-  model: "本地交互演示",
+  model: LOCAL_DEMO_MODEL,
   aspectRatio: "1:1",
   durationSeconds: 5,
   resolution: "1024",
   prompt: "",
 };
 
-export function createDocument(title = "未命名画布"): CanvasDocument {
+export function createDocument(title = tNow("errors.model.untitled")): CanvasDocument {
   return {
     version: 1,
     id: crypto.randomUUID(),
@@ -336,18 +339,18 @@ export function createNode(
     tool: [300, 180],
     external: [340, 180],
   };
-  const titles: Record<CanvasNodeKind, string> = {
-    image: "图片",
-    video: "视频",
-    audio: "音频",
-    file: "文件",
-    text: "文本",
-    group: "分组",
-    timeline: "时间线",
-    subject: "主体",
-    stack: "资源堆叠",
-    tool: "工具",
-    external: "导演预演",
+  const titles: Record<CanvasNodeKind, MessageKey> = {
+    image: "canvasNodes.kind.image",
+    video: "canvasNodes.kind.video",
+    audio: "canvasNodes.kind.audio",
+    file: "canvasNodes.kind.file",
+    text: "canvasNodes.kind.text",
+    group: "canvasNodes.kind.group",
+    timeline: "canvasNodes.kind.timeline",
+    subject: "canvasNodes.kind.subject",
+    stack: "canvasNodes.kind.stack",
+    tool: "canvasNodes.kind.tool",
+    external: "canvasNodes.kind.external",
   };
   const { width, height } = MEDIA_KINDS.includes(kind)
     ? mediaNodeSize(
@@ -362,7 +365,7 @@ export function createNode(
     width,
     height,
     data: {
-      title: titles[kind],
+      title: tNow(titles[kind]),
       prompt: "",
       ...(["image", "video", "audio"].includes(kind) && !data.src
         ? { mediaRole: "generation" as const }
@@ -374,7 +377,7 @@ export function createNode(
                 {
                   id: "visual",
                   kind: "visual",
-                  title: "画面轨",
+                  title: tNow("timeline.track.video"),
                   muted: false,
                   clips: [],
                 },
@@ -625,7 +628,8 @@ function applyCanvasCommand(
     }
     const ids = new Set(document.nodes.map((node) => node.id));
     for (const node of command.nodes) {
-      if (ids.has(node.id)) throw new Error(`节点 ID 重复：${node.id}`);
+      if (ids.has(node.id))
+        throw new Error(tNow("errors.model.duplicateNode", { id: node.id }));
       ids.add(node.id);
     }
     return command.nodes.length
@@ -657,7 +661,7 @@ function applyCanvasCommand(
       command.width <= 0 ||
       command.height <= 0
     )
-      throw new Error("节点尺寸必须为正数，坐标必须是有限数字。");
+      throw new Error(tNow("errors.model.nodeSize"));
     const dx = source.position.x - position.x,
       dy = source.position.y - position.y;
     if (
@@ -791,7 +795,7 @@ function applyCanvasCommand(
   }
   if (command.type === "move-nodes") {
     if (!Number.isFinite(command.delta.x) || !Number.isFinite(command.delta.y))
-      throw new Error("移动坐标必须是有限数字。");
+      throw new Error(tNow("errors.model.move"));
     if (!command.delta.x && !command.delta.y) return document;
     const selected = new Set(command.ids);
     let changed = false;
@@ -950,11 +954,11 @@ function applyCanvasCommand(
   }
   if (command.type === "add-edge") {
     if (document.edges.some((edge) => edge.id === command.edge.id))
-      throw new Error(`连线 ID 重复：${command.edge.id}`);
+      throw new Error(tNow("errors.model.duplicateEdge", { id: command.edge.id }));
     const logicalNodes = [...document.nodes, ...(document.hiddenNodes ?? [])];
     const ids = new Set(logicalNodes.map((node) => node.id));
     if (!ids.has(command.edge.source) || !ids.has(command.edge.target))
-      throw new Error("连线两端必须是当前画布中的节点。");
+      throw new Error(tNow("errors.model.edgeEnds"));
     if (
       !canAddReference(
         document,

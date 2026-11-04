@@ -1,4 +1,5 @@
 import { ApiError } from "./api.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface ReadOptions {
   signal?: AbortSignal;
@@ -71,7 +72,9 @@ export async function resilientRead<T>(
       : deadline.signal;
     const timer = setTimeout(
       () =>
-        deadline.abort(new DOMException("读取超时，请重试。", "TimeoutError")),
+        deadline.abort(
+          new DOMException(tNow("errors.backend.readTimeout"), "TimeoutError"),
+        ),
       timeoutMs,
     );
     try {

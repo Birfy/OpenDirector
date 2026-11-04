@@ -6,6 +6,7 @@ import {
   type ImagePoint,
   type ImageSize,
 } from "./imageActionGeometry";
+import { tNow } from "../i18n/messages.ts";
 
 export interface SelectionQuery {
   prompt?: string;
@@ -112,7 +113,7 @@ export function useImageMask({
     try {
       const result = await provider.current(query, run.signal);
       if (result.width !== size.width || result.height !== size.height)
-        throw new Error("识别蒙版尺寸与原图不一致，请重试。");
+        throw new Error(tNow("errors.mask.size"));
       const decoded = await Promise.all(
         result.instances.map(async (item) => {
           const image = await loadLayerImage(item.maskDataUrl);
@@ -120,23 +121,21 @@ export function useImageMask({
             image.naturalWidth !== size.width ||
             image.naturalHeight !== size.height
           )
-            throw new Error("识别蒙版尺寸与原图不一致。");
+            throw new Error(tNow("errors.mask.sizeShort"));
           return { id: item.id, image };
         }),
       );
       if (run.signal.aborted || controller.current !== run) return;
       if (decoded.length) {
         commit({ kind: "replace", instances: decoded });
-        setMessage(
-          `已识别 ${decoded.length} 个对象，可用快速选择、画笔或橡皮调整。`,
-        );
-      } else setMessage("未识别到对象，请框选主体或输入更具体的描述。");
+        setMessage(tNow("errors.mask.recognized", { count: decoded.length }));
+      } else setMessage(tNow("errors.mask.none"));
     } catch (failure) {
       if (!run.signal.aborted && controller.current === run)
         setMessage(
           failure instanceof Error
             ? failure.message
-            : "主体识别失败，请重试或手工涂抹。",
+            : tNow("errors.mask.failed"),
         );
     } finally {
       if (controller.current === run) {
@@ -160,7 +159,7 @@ export function useImageMask({
   }, [history]);
   const toggleAt = (point: ImagePoint) => {
     if (!mask || !instances.length) {
-      setMessage("先自动识别或框选主体，再点击对象调整选区。");
+      setMessage(tNow("errors.mask.selectFirst"));
       return;
     }
     const x = Math.min(mask.width - 1, Math.max(0, Math.floor(point.x)));
@@ -175,13 +174,13 @@ export function useImageMask({
       return ctx.getImageData(0, 0, 1, 1).data[3]! > 127;
     });
     if (!hit) {
-      setMessage("此处没有已识别的对象，可框选或涂抹补充。");
+      setMessage(tNow("errors.mask.noObject"));
       return;
     }
     const remove =
       mask.getContext("2d")!.getImageData(x, y, 1, 1).data[3]! > 127;
     commit({ kind: "instance", image: hit.image, remove });
-    setMessage(remove ? "已移除此对象。" : "已加入此对象。");
+    setMessage(remove ? tNow("errors.mask.removed") : tNow("errors.mask.added"));
   };
   return {
     mask,

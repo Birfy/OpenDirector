@@ -20,6 +20,7 @@ import { edgePath } from "./edgeGeometry";
 import type { Point, Rect } from "./model";
 import type { SnapGuide } from "./snapping";
 import { CanvasActionsContext } from "./CanvasActionsContext";
+import { useT } from "../i18n/I18nProvider.tsx";
 import "./edge-selection.css";
 
 export type ReferenceEdge = Edge<{
@@ -72,6 +73,7 @@ export function CanvasConnectionPreview({
 }
 
 export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
+  const t = useT();
   const actions = useContext(CanvasActionsContext);
   const { zoom } = useViewport();
   const group = useRef<SVGGElement>(null);
@@ -144,7 +146,7 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
         setDeleteAt(null);
       }}
     >
-      <title>{props.data?.description ?? "参考连线"}</title>
+      <title>{props.data?.description ?? t("errors.connections.reference")}</title>
       {ends && (
         <defs>
           <linearGradient
@@ -178,8 +180,8 @@ export function CanvasReferenceEdge(props: EdgeProps<ReferenceEdge>) {
           <button
             type="button"
             className="cw-edge-delete nodrag nopan nokey"
-            aria-label="删除此连线"
-            title="删除此连线"
+            aria-label={t("errors.connections.delete")}
+            title={t("errors.connections.delete")}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();

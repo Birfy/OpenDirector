@@ -1,6 +1,7 @@
 import { useRef, useState, type ButtonHTMLAttributes } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
+import { useT } from "../i18n/I18nProvider";
 
 export type CanvasToolRailItem = {
   name: string;
@@ -23,6 +24,7 @@ export function CanvasToolRail({
   items: CanvasToolRailItem[];
   holdCollapsed: boolean;
 }) {
+  const t = useT();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -57,7 +59,7 @@ export function CanvasToolRail({
         <nav
           className="cw-rail"
           role="toolbar"
-          aria-label="画布创作工具"
+          aria-label={t("canvas.rail.tools")}
           aria-orientation="vertical"
           onFocusCapture={(event) => {
             setFocused(true);
@@ -148,7 +150,7 @@ export function CanvasToolRail({
                 {item.unavailable ? (
                   <TooltipButton
                     {...props}
-                    label="暂未开放"
+                    label={t("canvas.menu.unavailable")}
                     tooltipSide="bottom-right"
                     tooltipAnchorSelector=".cw-rail-icon svg"
                     tooltipCompact

@@ -1,6 +1,7 @@
 /** Read-only node browsing; opening another project never acquires its edit lease. */
 import { useEffect, useState } from "react";
 import { errorMessage, headers, responseError } from "../../backend/api";
+import { useT } from "../../i18n/I18nProvider";
 import {
   listWorkspaceProjects,
   peekWorkspaceProjects,
@@ -53,6 +54,7 @@ export function CanvasesPanel({
   onState: (projectId: string, items: CanvasSource[], loading: boolean) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const liveId = live?.projectId ?? "",
     liveSources = live?.sources;
   const [projects, setProjects] = useState<WorkspaceProject[]>([]),
@@ -166,12 +168,13 @@ export function CanvasesPanel({
             src,
             withMediaSuffix(chosen.title, blob.type),
             { projectId: openId, mimeType: blob.type },
+            t,
           );
         } finally {
           URL.revokeObjectURL(src);
         }
       }
-      onNotice("已将独立副本加入资产库。");
+      onNotice(t("library.canvases.copied"));
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -188,7 +191,11 @@ export function CanvasesPanel({
               key={project.id}
               shape="wide"
               title={project.name}
-              subtitle={project.id === currentId ? "当前画布" : undefined}
+              subtitle={
+                project.id === currentId
+                  ? t("library.canvases.current")
+                  : undefined
+              }
               icon="layers"
               selectable={false}
               onOpen={() => {
@@ -215,7 +222,7 @@ export function CanvasesPanel({
             setCategory("");
           }}
         >
-          ‹ 返回
+          {t("library.canvases.back")}
         </button>
         <button
           type="button"
@@ -226,7 +233,7 @@ export function CanvasesPanel({
             setCategory("");
           }}
         >
-          全部
+          {t("library.all")}
         </button>
         {CANVAS_CATEGORIES.map((entry) => (
           <button
@@ -241,7 +248,7 @@ export function CanvasesPanel({
               setCategory(entry.key);
             }}
           >
-            {entry.label}
+            {t(entry.labelKey)}
           </button>
         ))}
         <div className="cw-lib-tab-actions">
@@ -250,19 +257,23 @@ export function CanvasesPanel({
             disabled={disabled || busy || !chosen}
             onClick={() => void backup()}
           >
-            加入资产
+            {t("library.canvases.addToAssets")}
           </button>
         </div>
       </div>
       <p className="cw-lib-note">
         {liveId === openId
-          ? `当前画布 · ${items.length} 个有内容的节点 · 只读`
-          : `${projects.find((project) => project.id === openId)?.name ?? ""} · ${items.length} 个有内容的节点 · 只读`}
+          ? t("library.canvases.noteCurrent", { count: items.length })
+          : t("library.canvases.note", {
+              name:
+                projects.find((project) => project.id === openId)?.name ?? "",
+              count: items.length,
+            })}
       </p>
       {error && <p role="alert">{error}</p>}
-      {busy && <p role="status">正在读取素材…</p>}
+      {busy && <p role="status">{t("library.reading")}</p>}
       {!busy && !visible.length && (
-        <p className="cw-lib-empty">该画布暂无此类素材。</p>
+        <p className="cw-lib-empty">{t("library.canvases.empty")}</p>
       )}
       <div className="cw-lib-grid">
         {visible.map((item) => (

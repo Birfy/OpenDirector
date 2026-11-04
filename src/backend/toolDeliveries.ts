@@ -1,4 +1,5 @@
 import { ApiError, json, request } from "./api.ts";
+import { tNow } from "../i18n/messages.ts";
 
 type Delivery = { id: string; [key: string]: unknown };
 const deliveries = new Map<string, Delivery>();
@@ -38,7 +39,7 @@ export async function deliverTool<T extends { id: string }>(
 ): Promise<T> {
   const pending = pendingToolDelivery(projectId, itemId);
   if (pending && pending.id !== body.id)
-    throw new Error("上一次工具提交尚未确认，请先查询原任务。");
+    throw new Error(tNow("errors.backend.priorToolUnconfirmed"));
   const original = pending ?? body;
   remember(projectId, itemId, original);
   const path = `/creation/projects/${projectId}/tool-tasks`;

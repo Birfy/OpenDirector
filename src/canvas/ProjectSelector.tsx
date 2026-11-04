@@ -10,8 +10,8 @@ import {
   type WorkspaceProject,
 } from "../backend/workspace";
 import { errorMessage } from "../backend/api";
+import { useT } from "../i18n/I18nProvider";
 
-const NAME_PLACEHOLDER = "输入项目名称";
 const ACTION_MENU_HEIGHT = 92;
 
 export function ProjectSelector({
@@ -33,6 +33,7 @@ export function ProjectSelector({
   onRenameProject: (project: WorkspaceProject, name: string) => Promise<void>;
   onDeleteProject: (project: WorkspaceProject) => Promise<void>;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<WorkspaceProject[]>([]);
   const [unreadable, setUnreadable] = useState<UnreadableWorkspaceProject[]>(
@@ -124,7 +125,7 @@ export function ProjectSelector({
       return true;
     }
     if (!nextName) {
-      setRenameError("项目名称不能为空。");
+      setRenameError(t("canvas.project.nameRequired"));
       return false;
     }
     renamePending.current = true;
@@ -240,12 +241,12 @@ export function ProjectSelector({
         {editing ? (
           <div className="cw-project-name-field">
             <span className="cw-project-name-measure" aria-hidden="true">
-              {draftName || NAME_PLACEHOLDER}
+              {draftName || t("canvas.project.namePlaceholder")}
             </span>
             <input
               ref={nameInput}
-              aria-label="项目名称"
-              placeholder={NAME_PLACEHOLDER}
+              aria-label={t("canvas.project.nameLabel")}
+              placeholder={t("canvas.project.namePlaceholder")}
               value={draftName}
               maxLength={100}
               readOnly={busy}
@@ -277,7 +278,7 @@ export function ProjectSelector({
             className="cw-project-name"
             ref={nameButton}
             disabled={disabled || busy}
-            title="单击编辑项目名称"
+            title={t("canvas.project.editNameHint")}
             onClick={() => {
               setOpen(false);
               setDraftName(name);
@@ -294,8 +295,8 @@ export function ProjectSelector({
           className="cw-project-chevron"
           ref={trigger}
           disabled={disabled || busy}
-          aria-label="切换项目"
-          title="切换项目"
+          aria-label={t("canvas.project.switch")}
+          title={t("canvas.project.switch")}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
@@ -321,9 +322,11 @@ export function ProjectSelector({
           className="cw-project-dropdown"
           role="menu"
           id={menuId}
-          aria-label="画布项目"
+          aria-label={t("canvas.project.menuLabel")}
         >
-          <div className="cw-project-caption">项目</div>
+          <div className="cw-project-caption">
+            {t("canvas.project.caption")}
+          </div>
           {error && (
             <p className="cw-project-error" role="alert">
               {error}
@@ -341,7 +344,7 @@ export function ProjectSelector({
           >
             {loading ? (
               <p className="cw-project-placeholder" role="status">
-                正在读取项目…
+                {t("canvas.project.loading")}
               </p>
             ) : (
               projects.map((project) => (
@@ -390,8 +393,10 @@ export function ProjectSelector({
                       else actionButtons.current.delete(project.id);
                     }}
                     disabled={disabled || busy}
-                    aria-label={`项目操作：${project.name}`}
-                    title="项目操作"
+                    aria-label={t("canvas.project.actionsFor", {
+                      name: project.name,
+                    })}
+                    title={t("canvas.project.actions")}
                     aria-haspopup="menu"
                     aria-expanded={actions?.id === project.id}
                     onClick={(event) => {
@@ -412,7 +417,9 @@ export function ProjectSelector({
               disabled={busy || loading || disabled}
               onClick={() => setCleanupOpen(true)}
             >
-              <span>清除不可读项目（{unreadable.length}）</span>
+              <span>
+                {t("canvas.project.cleanup", { count: unreadable.length })}
+              </span>
               <CanvasIcon name="trash" size={18} />
             </button>
           )}
@@ -425,14 +432,14 @@ export function ProjectSelector({
               onCreate();
             }}
           >
-            <span>新建画布项目</span>
+            <span>{t("canvas.project.create")}</span>
             <CanvasIcon name="plus" size={20} />
           </button>
           {actions && (
             <div
               className="cw-project-actions"
               role="menu"
-              aria-label="项目操作"
+              aria-label={t("canvas.project.actions")}
               style={{ top: actions.top }}
             >
               <button
@@ -447,7 +454,7 @@ export function ProjectSelector({
                 }}
               >
                 <CanvasIcon name="pencil" size={18} />
-                <span>重命名</span>
+                <span>{t("common.rename")}</span>
               </button>
               <button
                 className="cw-danger"
@@ -462,7 +469,7 @@ export function ProjectSelector({
                 }}
               >
                 <CanvasIcon name="trash" size={18} />
-                <span>删除项目</span>
+                <span>{t("canvas.project.deleteAction")}</span>
               </button>
             </div>
           )}
@@ -471,9 +478,9 @@ export function ProjectSelector({
       {renameTarget && (
         <ProjectNameDialog
           initialName={renameTarget.name}
-          title="重命名项目"
-          submitLabel="保存名称"
-          hint="项目文件夹会随名称一起更新，已打开的其他窗口需要重新进入。"
+          title={t("canvas.project.renameTitle")}
+          submitLabel={t("canvas.project.saveName")}
+          hint={t("canvas.project.renameHint")}
           onClose={() => setRenameTarget(null)}
           onSubmit={async (nextName) => {
             await onRenameProject(renameTarget, nextName);
@@ -494,11 +501,15 @@ export function ProjectSelector({
       )}
       {cleanupOpen && (
         <ProjectDeleteDialog
-          name={unreadable.map((project) => project.name).join("、")}
-          title="清除不可读项目"
-          description={`将清除 ${unreadable.length} 个无法读取的项目，正常项目不受影响。仍打开或存在运行中工具任务的项目会保留。`}
-          submitLabel="清除项目"
-          busyLabel="正在清除…"
+          name={unreadable
+            .map((project) => project.name)
+            .join(t("canvas.project.nameSeparator"))}
+          title={t("canvas.project.cleanupTitle")}
+          description={t("canvas.project.cleanupDescription", {
+            count: unreadable.length,
+          })}
+          submitLabel={t("canvas.project.cleanupSubmit")}
+          busyLabel={t("canvas.project.cleaningUp")}
           recycleBin={recycleBin}
           onClose={() => setCleanupOpen(false)}
           onSubmit={async () => {
@@ -506,16 +517,23 @@ export function ProjectSelector({
             await loadProjects();
             if (result.failed.length) {
               const failures = result.failed
-                .map((item) => `${item.name}：${item.message}`)
+                .map((item) =>
+                  t("canvas.project.cleanupFailure", {
+                    name: item.name,
+                    message: item.message,
+                  }),
+                )
                 .join("\n");
               throw new Error(
-                `${result.removed.length ? `已清除 ${result.removed.length} 个项目。\n` : ""}${failures}`,
+                `${result.removed.length ? `${t("canvas.project.cleanupRemoved", { count: result.removed.length })}\n` : ""}${failures}`,
               );
             }
             setNotice(
               result.removed.length
-                ? `已清除 ${result.removed.length} 个不可读项目。`
-                : "没有需要清理的不可读项目。",
+                ? t("canvas.project.cleanupNotice", {
+                    count: result.removed.length,
+                  })
+                : t("canvas.project.cleanupNone"),
             );
           }}
         />

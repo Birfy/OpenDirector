@@ -1,6 +1,7 @@
 import { validateVideoCrop, type VideoCrop } from "./videoCrop.ts";
+import { tNow } from "../i18n/messages.ts";
 
-const cancelled = () => new DOMException("媒体处理已取消。", "AbortError");
+const cancelled = () => new DOMException(tNow("errors.media.cancelled"), "AbortError");
 const checkAbort = (signal: AbortSignal) => {
   if (signal.aborted) throw cancelled();
 };
@@ -24,7 +25,7 @@ export function mediaBlobDataUrl(
       reader.onload = reader.onerror = reader.onabort = null;
       if (error) reject(error);
       else if (typeof reader.result !== "string")
-        reject(new Error("结果文件读取失败。"));
+        reject(new Error(tNow("errors.media.readFailed")));
       else resolve(reader.result);
     };
     const cancel = () => {
@@ -32,13 +33,15 @@ export function mediaBlobDataUrl(
       reader.abort();
     };
     reader.onload = () => (signal.aborted ? cancel() : finish());
-    reader.onerror = () => finish(new Error("结果文件读取失败。"));
+    reader.onerror = () => finish(new Error(tNow("errors.media.readFailed")));
     reader.onabort = () => finish(cancelled());
     signal.addEventListener("abort", cancel, { once: true });
     try {
       reader.readAsDataURL(blob);
     } catch (error) {
-      finish(error instanceof Error ? error : new Error("结果文件读取失败。"));
+      finish(
+        error instanceof Error ? error : new Error(tNow("errors.media.readFailed")),
+      );
     }
   });
 }
@@ -62,16 +65,19 @@ async function seekVideo(
       error ? reject(error) : resolve();
     };
     const done = () => finish(),
-      failed = () => finish(new Error("视频定位失败。")),
+      failed = () => finish(new Error(tNow("errors.media.seekFailed"))),
       cancel = () => finish(cancelled());
-    const timer = setTimeout(() => finish(new Error("视频定位超时。")), 15000);
+    const timer = setTimeout(
+      () => finish(new Error(tNow("errors.media.seekTimeout"))),
+      15000,
+    );
     video.addEventListener("seeked", done);
     video.addEventListener("error", failed);
     signal.addEventListener("abort", cancel, { once: true });
     try {
       if (Math.abs(video.currentTime - time) > 0.001) video.currentTime = time;
     } catch (error) {
-      finish(error instanceof Error ? error : new Error("视频定位失败。"));
+      finish(error instanceof Error ? error : new Error(tNow("errors.media.seekFailed")));
     }
   });
 }
@@ -90,7 +96,7 @@ export async function recordLocalVideoRange(
   ).captureStream;
   if (!capture || typeof MediaRecorder === "undefined")
     throw new Error(
-      "当前浏览器不支持本地视频重编码；需要 captureStream 与 MediaRecorder。",
+      tNow("errors.media.noRecorder"),
     );
   if (
     !Number.isFinite(start) ||
@@ -98,7 +104,7 @@ export async function recordLocalVideoRange(
     start < 0 ||
     end <= start
   )
-    throw new Error("视频裁剪范围无效。");
+    throw new Error(tNow("errors.media.cropRange"));
   const crop = options.crop
     ? validateVideoCrop(options.crop, video.videoWidth, video.videoHeight)
     : undefined;
@@ -141,7 +147,7 @@ export async function recordLocalVideoRange(
       const context = canvas.getContext("2d");
       if (!context || typeof canvas.captureStream !== "function")
         throw new Error(
-          "当前浏览器不支持视频画幅裁剪所需的 Canvas captureStream。",
+          tNow("errors.media.noCaptureStream"),
         );
       drawFrame = () =>
         context.drawImage(
@@ -164,7 +170,7 @@ export async function recordLocalVideoRange(
       "video/webm;codecs=vp8,opus",
       "video/webm",
     ].find((type) => MediaRecorder.isTypeSupported(type));
-    if (!mimeType) throw new Error("当前浏览器没有可用的 WebM 编码器。");
+    if (!mimeType) throw new Error(tNow("errors.media.noEncoder"));
     recorder = new MediaRecorder(stream, { mimeType });
     const ownedRecorder = recorder;
     return await new Promise<Blob>((resolve, reject) => {
@@ -176,7 +182,7 @@ export async function recordLocalVideoRange(
         if (settled) return;
         settled = true;
         if (failure) reject(failure);
-        else if (!chunks.length) reject(new Error("视频编码没有产生数据。"));
+        else if (!chunks.length) reject(new Error(tNow("errors.media.noData")));
         // Codec parameters configure the recorder; the exported container uses
         // its base MIME so FileReader's data URL has no comma in its metadata.
         else resolve(new Blob(chunks, { type: "video/webm" }));
@@ -192,7 +198,7 @@ export async function recordLocalVideoRange(
             ownedRecorder.stop();
           } catch (error) {
             failure =
-              error instanceof Error ? error : new Error("视频编码停止失败。");
+              error instanceof Error ? error : new Error(tNow("errors.media.stopFailed")),
             finish();
           }
         } else finish();
@@ -201,13 +207,13 @@ export async function recordLocalVideoRange(
       };
       const cancel = () => stop(cancelled());
       const ended = () => stop();
-      const failed = () => stop(new Error("视频播放中断，未生成裁剪结果。"));
+      const failed = () => stop(new Error(tNow("errors.media.playbackInterrupted")));
       const paused = () => {
         if (video.paused && !stopping)
           stop(
             video.ended
               ? undefined
-              : new Error("录制期间播放已暂停，处理已停止。"),
+              : new Error(tNow("errors.media.paused")),
           );
       };
       const progress = () => {
@@ -222,7 +228,7 @@ export async function recordLocalVideoRange(
           try {
             drawFrame();
           } catch {
-            stop(new Error("视频画幅绘制失败，未生成裁剪结果。"));
+            stop(new Error(tNow("errors.media.drawFailed")));
           }
         }
       };
@@ -237,7 +243,7 @@ export async function recordLocalVideoRange(
       };
       // A stalled local decoder must not leave an indefinitely running recording.
       const deadline = setTimeout(
-        () => stop(new Error("视频播放或录制超时，请检查素材后重试。")),
+        () => stop(new Error(tNow("errors.media.timeout"))),
         (end - start) * 1000 + 20000,
       );
       releaseListeners = () => {
@@ -251,7 +257,7 @@ export async function recordLocalVideoRange(
       ownedRecorder.ondataavailable = (event) => {
         if (event.data.size) chunks.push(event.data);
       };
-      ownedRecorder.onerror = () => stop(new Error("视频重编码失败。"));
+      ownedRecorder.onerror = () => stop(new Error(tNow("errors.media.reencodeFailed")));
       ownedRecorder.onstop = finish;
       signal.addEventListener("abort", cancel, { once: true });
       video.addEventListener("ended", ended);

@@ -8,6 +8,7 @@ import {
 } from "../canvas/editorMedia.ts";
 import { assertReferenceSize, assertUpload } from "../canvas/uploadPolicy.ts";
 import { creationClient } from "./creationClient.ts";
+import { tNow } from "../i18n/messages.ts";
 import { fingerprint } from "./generation.ts";
 import { loadReferenceCatalog } from "./referenceCatalog.ts";
 
@@ -25,7 +26,7 @@ export async function uploadReferenceFile(
   assertUpload(kind, "reference");
   assertReferenceSize(kind, file.size);
   if (kind === "text" && !(await readEditorResource(file, signal)).text?.trim())
-    throw new Error("空白文本不能作为参考。");
+    throw new Error(tNow("errors.backend.blankReference"));
   signal.throwIfAborted();
   const digest = await fingerprint(file);
   const matches = (await loadReferenceCatalog(projectId, signal)).filter(
@@ -48,7 +49,7 @@ export async function uploadReferenceFile(
     );
     const blob = await creationClient(projectId).blob(selected.id);
     if (!latest || !fingerprintMatches(latest, await fingerprint(blob)))
-      throw new Error("所选来源已变化，请重新选择。");
+      throw new Error(tNow("errors.backend.sourceChanged"));
     return latest;
   }
   {

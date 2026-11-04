@@ -7,6 +7,7 @@ import type { CanvasResource, SubjectData } from "../canvas/model.ts";
 import type { SubjectMediaSlot } from "../canvas/subjectMedia.ts";
 import { headers, json, request, responseError } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
+import { tNow } from "../i18n/messages.ts";
 import {
   cachedRequest,
   peekCached,
@@ -84,7 +85,8 @@ export async function copyOwnedSourceMedia(
     ),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
-  if (digest !== facts.sha) throw new Error("来源素材已变化，请重新选择。");
+  if (digest !== facts.sha)
+    throw new Error(tNow("errors.backend.sourceMediaChanged"));
   const name = withMediaSuffix(facts.name, facts.metadata.mimeType);
   let assetId: string, src: string;
   {

@@ -26,6 +26,7 @@ import type {
   ReferenceContent,
 } from "./chatReferenceContent.ts";
 import { normalizeContent, referencePart } from "./chatReferenceContent.ts";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 
 export interface GenerationReferenceControls {
   projectId: string;
@@ -76,6 +77,7 @@ export function GenerationReferenceEditor({
   onRun: () => void;
   validate?: (sources: CanvasNode[]) => string | null;
 }) {
+  const { t } = useI18n();
   const uploads = useReferenceUploads(controls?.projectId ?? "");
   const editor = useRef<ChatReferenceEditorHandle>(null);
   const file = useRef<HTMLInputElement>(null);
@@ -319,7 +321,7 @@ export function GenerationReferenceEditor({
   ): Promise<ReferenceAsset[] | null> => {
     if (option.id.startsWith("node:")) {
       const source = nodes.find((source) => `node:${source.id}` === option.id);
-      if (!source) throw new Error("参考源已不存在。");
+      if (!source) throw new Error(t("generation.error.sourceMissing"));
       const reason = check(source);
       if (reason) throw new Error(reason);
       return [
@@ -443,7 +445,7 @@ export function GenerationReferenceEditor({
         startingData
       )
         throw new Error(
-          "节点内容或参数已变化，素材保留在项目素材，本批引用未插入。",
+          t("generation.error.batchNotInserted"),
         );
       for (const source of sources) prepared.current.set(source.id, source);
       setUploading(false);
@@ -456,12 +458,12 @@ export function GenerationReferenceEditor({
           nodeReferenceAsset(source, crypto.randomUUID()),
         ),
       );
-      if (!inserted) throw new Error("本批引用未插入，请检查输入限制。");
+      if (!inserted) throw new Error(t("generation.error.batchRejected"));
     } catch (error) {
       if (!abort.signal.aborted)
         setNotice(
-          (error instanceof Error ? error.message : "参考上传失败") +
-            (registered ? " 素材已保留在项目素材。" : ""),
+          (error instanceof Error ? error.message : t("generation.error.uploadFailed")) +
+            (registered ? t("generation.error.assetRetained") : ""),
         );
     } finally {
       if (!abort.signal.aborted) setUploading(false);
@@ -489,7 +491,7 @@ export function GenerationReferenceEditor({
         hidden
         multiple
         accept="image/*,video/*,audio/*,.txt,.md"
-        aria-label="上传节点参考"
+        aria-label={t("generation.reference.upload")}
         onChange={(event) => {
           void uploadFiles([...(event.target.files ?? [])]);
           event.target.value = "";
@@ -569,7 +571,7 @@ export function GenerationReferenceEditor({
               !part.fingerprint ||
               !fingerprintMatches(asset, part.fingerprint)
             )
-              throw new Error("固定参考素材已缺失或内容已改变，整批未插入。");
+              throw new Error(t("generation.error.fixedReferenceMissing"));
             const data = await controls.prepareAsset(asset, signal);
             const source = createNode(
               assetKind(asset) as CanvasNode["type"],
@@ -635,7 +637,7 @@ export function GenerationReferenceEditor({
           }
           if (!option || option.disabledReason)
             throw new Error(
-              option?.disabledReason || "参考来源已不可用，整批未插入。",
+              option?.disabledReason || t("generation.error.referenceUnavailable"),
             );
           const source = nodes.find((source) => source.id === part.nodeId);
           if (
@@ -643,7 +645,7 @@ export function GenerationReferenceEditor({
             part.fingerprint?.startsWith("source:") &&
             part.fingerprint !== nodeReferenceAsset(source).fingerprint
           )
-            throw new Error("参考内容已变化，请重新复制。");
+            throw new Error(t("generation.error.contentChanged"));
           return (await choose(option, signal)) ?? [];
         }}
         label={label}

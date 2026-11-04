@@ -2,6 +2,8 @@
  * deflated entries, no ZIP64. Media bytes are already compressed by their
  * codec, so only text entries ask for deflate. */
 
+import { tNow } from "../i18n/messages.ts";
+
 export interface ZipEntry {
   /** Forward-slash path inside the archive. */
   path: string;
@@ -69,7 +71,7 @@ export async function createZip(
   for (const entry of entries) {
     const name = new TextEncoder().encode(entry.path);
     if (!entry.path || entry.path.startsWith("/") || entry.path.includes("\\"))
-      throw new Error(`压缩包内的路径无效：${entry.path}`);
+      throw new Error(tNow("errors.zip.path", { path: entry.path }));
     const compressed = entry.compress
       ? await deflateRaw(entry.data)
       : undefined;
@@ -111,7 +113,7 @@ export async function createZip(
     directory.push(central);
     offset += local.length + payload.length;
     if (offset > MAX_ARCHIVE_BYTES)
-      throw new Error("导出内容超过单个压缩包大小上限，请拆分工程后重试。");
+      throw new Error(tNow("errors.zip.exportSize"));
   }
   const directorySize = directory.reduce((size, item) => size + item.length, 0);
   const end = new Uint8Array(22);
@@ -129,14 +131,14 @@ export async function createZip(
 /** Raw inflate. Archives are only read in browsers that can decompress. */
 async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === "undefined")
-    throw new Error("当前浏览器不支持解压 .canvas 文件。");
+    throw new Error(tNow("errors.zip.unsupportedExtract"));
   try {
     const stream = new Blob([data as BlobPart])
       .stream()
       .pipeThrough(new DecompressionStream("deflate-raw"));
     return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
-    throw new Error("压缩包内容已损坏，无法解压。");
+    throw new Error(tNow("errors.zip.damaged"));
   }
 }
 
@@ -156,7 +158,7 @@ export async function readZip(
             ? archive
             : await archive.arrayBuffer(),
         );
-  if (bytes.length < 22) throw new Error("文件不是有效的 .canvas 压缩包。");
+  if (bytes.length < 22) throw new Error(tNow("errors.zip.notCanvas"));
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let end = -1;
   // The end record sits after the central directory; its comment is at most 64 KB.
@@ -169,11 +171,11 @@ export async function readZip(
       end = index;
       break;
     }
-  if (end < 0) throw new Error("文件不是有效的 .canvas 压缩包。");
+  if (end < 0) throw new Error(tNow("errors.zip.notCanvas"));
   const count = view.getUint16(end + 10, true);
   const size = view.getUint32(end + 12, true);
   const start = view.getUint32(end + 16, true);
-  if (start + size > bytes.length) throw new Error("压缩包目录超出文件范围。");
+  if (start + size > bytes.length) throw new Error(tNow("errors.zip.directoryRange"));
   const files = new Map<string, Uint8Array>();
   let offset = start;
   for (let index = 0; index < count; index++) {
@@ -181,7 +183,7 @@ export async function readZip(
       offset + 46 > bytes.length ||
       view.getUint32(offset, true) !== CENTRAL_SIGNATURE
     )
-      throw new Error("压缩包目录已损坏，无法读取。");
+      throw new Error(tNow("errors.zip.directoryDamaged"));
     const flags = view.getUint16(offset + 8, true);
     const method = view.getUint16(offset + 10, true);
     const checksum = view.getUint32(offset + 16, true);
@@ -194,21 +196,21 @@ export async function readZip(
     const name = new TextDecoder().decode(
       bytes.subarray(offset + 46, offset + 46 + nameLength),
     );
-    if (flags & 0x0001) throw new Error(`压缩包内容已加密：${name}`);
+    if (flags & 0x0001) throw new Error(tNow("errors.zip.encrypted", { name }));
     if (compressedSize === MAX_ARCHIVE_BYTES || plainSize === MAX_ARCHIVE_BYTES)
-      throw new Error("暂不支持 ZIP64 压缩包。");
+      throw new Error(tNow("errors.zip.zip64"));
     if (
       local + 30 > bytes.length ||
       view.getUint32(local, true) !== LOCAL_SIGNATURE
     )
-      throw new Error("压缩包条目已损坏，无法读取。");
+      throw new Error(tNow("errors.zip.entryDamaged"));
     const dataStart =
       local +
       30 +
       view.getUint16(local + 26, true) +
       view.getUint16(local + 28, true);
     if (dataStart + compressedSize > bytes.length)
-      throw new Error("压缩包条目超出文件范围。");
+      throw new Error(tNow("errors.zip.entryRange"));
     const raw = bytes.subarray(dataStart, dataStart + compressedSize);
     const data =
       method === STORED
@@ -216,10 +218,10 @@ export async function readZip(
         : method === DEFLATED
           ? await inflateRaw(raw)
           : (() => {
-              throw new Error(`压缩包使用了不支持的压缩方式：${method}`);
+              throw new Error(tNow("errors.zip.unsupportedMethod", { method }));
             })();
     if (data.length !== plainSize || crc32(data) !== checksum)
-      throw new Error(`压缩包条目校验失败：${name}`);
+      throw new Error(tNow("errors.zip.checksum", { name }));
     files.set(name, data);
     offset += 46 + nameLength + extraLength + commentLength;
   }

@@ -1,4 +1,6 @@
 import type { ChatAsset } from "../backend/chat.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
 export type ContentPart =
   | { type: "text"; text: string }
@@ -105,7 +107,11 @@ export function referenceIds(content: ReferenceContent) {
     ),
   ];
 }
-export function contentText(content: ReferenceContent, speech = false) {
+export function contentText(
+  content: ReferenceContent,
+  speech = false,
+  t: Translate = defaultTranslate,
+) {
   const ids = referenceIds(content);
   let text = content
     .map((part) =>
@@ -114,7 +120,10 @@ export function contentText(content: ReferenceContent, speech = false) {
         : part.type === "skill" ? (speech ? "" : `/${part.name}`)
         : speech
           ? ""
-          : `［参考${ids.indexOf(part.assetId) + 1}：${part.name}］`,
+          : t("assistant.reference.token", {
+              index: ids.indexOf(part.assetId) + 1,
+              name: part.name,
+            }),
     )
     .join("");
   if (speech) {
@@ -143,6 +152,7 @@ export function referenceContent(
   ids: string[],
   assets: ReferenceAsset[],
   content?: ReferenceContent | null,
+  t: Translate = defaultTranslate,
 ): ReferenceContent {
   const body = content ?? (text ? [{ type: "text" as const, text }] : []);
   const located = new Set(referenceIds(body));
@@ -155,7 +165,7 @@ export function referenceContent(
       {
         type: "reference",
         assetId: id,
-        name: asset?.nodeTitle || asset?.name || "参考缺失",
+        name: asset?.nodeTitle || asset?.name || t("assistant.reference.missing"),
         fingerprint: asset?.fingerprint ?? null,
       },
     ];

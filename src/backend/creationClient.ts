@@ -20,6 +20,7 @@ import {
   responseError,
   storageRequest,
 } from "./api.ts";
+import { tNow } from "../i18n/messages.ts";
 import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
 
 export type CreationOperation = BatchPayloadInput["operations"][number];
@@ -132,7 +133,7 @@ export class CreationClient {
           attempt >= 7 ||
           !(error instanceof ApiError) ||
           error.status !== 409 ||
-          !error.message.includes("其他窗口")
+          error.code !== "storage_busy"
         )
           throw error;
         await new Promise((resolve) =>
@@ -146,7 +147,7 @@ export class CreationClient {
   }
   install(snapshot: ProjectSnapshot) {
     if (snapshot.project.id !== this.id)
-      throw new Error("工程快照身份不匹配。");
+      throw new Error(tNow("errors.backend.snapshotMismatch"));
     if (this.snapshot && snapshot.eventCursor < this.snapshot.eventCursor)
       return;
     this.snapshot = snapshot;
@@ -264,7 +265,8 @@ export class CreationClient {
             `/api${creationPath(this.id)}/subscribe?after=${this.snapshot.eventCursor}`,
             { headers, signal: controller.signal },
           );
-          if (!response.ok || !response.body) throw new Error("变更订阅失败。");
+          if (!response.ok || !response.body)
+            throw new Error(tNow("errors.backend.subscribeFailed"));
           const reader = response.body
             .pipeThrough(new TextDecoderStream())
             .getReader();
@@ -280,7 +282,7 @@ export class CreationClient {
               if (!line.trim()) continue;
               const event = JSON.parse(line) as ProjectEvent;
               if (event.projectId !== this.id)
-                throw new Error("工程事件身份不匹配。");
+                throw new Error(tNow("errors.backend.eventMismatch"));
               // A snapshot may already contain this or later events. Cursor
               // comparison makes repeated delivery and response races harmless.
               if (event.cursor > this.snapshot.eventCursor)
@@ -400,7 +402,8 @@ export class CreationClient {
         body: blob,
       },
     );
-    if (!response.ok) throw new Error("上传素材失败，请检查文件格式和大小。");
+    if (!response.ok)
+      throw new Error(tNow("errors.backend.uploadFailed"));
     return this.registerUpload(handle, name, kind);
   }
   /** Copies another project's asset on the server; no bytes pass through the page. */
@@ -429,7 +432,7 @@ export class CreationClient {
         (v) => v.objectType === "asset" && v.id === asset.id,
       ),
     );
-    if (!asset) throw new Error("素材登记未返回稳定身份。");
+    if (!asset) throw new Error(tNow("errors.backend.assetIdentity"));
     return assetReference(asset);
   }
   /** Previews an asset from bytes the page already holds instead of reading them back. */
@@ -469,11 +472,11 @@ export class CreationClient {
   async control(jobId: string, action: "cancel" | "recover") {
     await this.refresh();
     const original = this.snapshot.jobs.find((j) => j.id === jobId);
-    if (!original) throw new Error("任务不存在。");
+    if (!original) throw new Error(tNow("errors.backend.taskMissing"));
     for (let attempt = 0; ; attempt++) {
       const job = this.snapshot.jobs.find((j) => j.id === jobId);
       if (!job || job.inputFingerprint !== original.inputFingerprint)
-        throw new Error("任务执行依据已变化，请重新核对任务。");
+        throw new Error(tNow("errors.backend.taskBasisChanged"));
       try {
         return await this.command(
           action === "cancel" ? "job.cancel" : "job.recover",
@@ -535,13 +538,13 @@ export class CreationClient {
       !item ||
       !("draftSpec" in item.binding || item.binding.role === "generation")
     )
-      throw new Error("节点没有生成配置。");
+      throw new Error(tNow("errors.backend.noGenerationConfig"));
     const specId =
       item.binding.role === "generation"
         ? item.binding.objectRef.id
         : item.binding.draftSpec?.id;
     const spec = this.snapshot.generationSpecs.find((s) => s.id === specId);
-    if (!spec) throw new Error("节点没有生成配置。");
+    if (!spec) throw new Error(tNow("errors.backend.noGenerationConfig"));
     return this.command(
       "generation.submit",
       {

@@ -1,6 +1,7 @@
 import type { CanvasNode } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { assetDisplayName } from "./assetNames";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 /** Inserting a mention and removing its relation are separate sibling buttons. */
 export function ReferenceThumbnail({
@@ -18,13 +19,14 @@ export function ReferenceThumbnail({
   onInsert: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const name = assetDisplayName(node.data.title);
   return (
     <div className="cw-reference-thumbnail">
       <button
         type="button"
         className="cw-reference-chip"
-        aria-label={`引用素材：${name}`}
+        aria-label={t("canvasNodes.reference.aria", { name })}
         title={title ?? name}
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
@@ -42,8 +44,8 @@ export function ReferenceThumbnail({
       <button
         type="button"
         className="cw-reference-remove"
-        aria-label={`移除参考：${name}`}
-        title={`移除参考：${name}`}
+        aria-label={t("canvasNodes.reference.remove", { name })}
+        title={t("canvasNodes.reference.remove", { name })}
         disabled={removalDisabled}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onRemove}

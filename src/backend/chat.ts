@@ -1,4 +1,6 @@
 import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
+import { defaultTranslate } from "../canvas/assistantTranslate.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
 import { headers, json, request, responseError } from "./api.ts";
 
 export type AgentRuntime =
@@ -164,6 +166,7 @@ export async function streamChat(
   value: ChatRequest,
   signal: AbortSignal,
   onEvent: (event: ChatEvent) => void,
+  t: Translate = defaultTranslate,
 ) {
   const response = await fetch("/api" + path(id) + "/turns", {
     ...json("POST", value),
@@ -171,7 +174,7 @@ export async function streamChat(
     signal,
   });
   if (!response.ok) throw await responseError(response);
-  if (!response.body) throw new Error("回复流不可用。");
+  if (!response.body) throw new Error(t("assistant.stream.unavailable"));
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "",
@@ -192,7 +195,7 @@ export async function streamChat(
         }
       }
     }
-    if (!ended) throw new Error("回复流中断，请重新读取对话。");
+    if (!ended) throw new Error(t("assistant.stream.interrupted"));
   } finally {
     reader.releaseLock();
   }

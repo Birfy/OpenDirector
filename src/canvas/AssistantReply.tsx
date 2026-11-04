@@ -1,17 +1,21 @@
 import { memo, useState } from "react";
 import { Streamdown } from "streamdown";
 import type { ChatMessage, ChatTool } from "../backend/chat";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { activityProgress, replyParts, toolLabel } from "./assistantActivity.ts";
+import { assistantToolText } from "./assistantToolText.ts";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
-const STATUS = {
-  running: "进行中",
-  complete: "已完成",
-  failed: "失败",
-  interrupted: "已中断",
+const STATUS: Record<ChatTool["status"], MessageKey> = {
+  running: "assistant.reply.status.running",
+  complete: "assistant.reply.status.complete",
+  failed: "assistant.reply.status.failed",
+  interrupted: "assistant.reply.status.interrupted",
 };
 
-function ToolActivity({ tool }: { tool: ChatTool }) {
+function ToolActivity({ tool, t }: { tool: ChatTool; t: Translate }) {
   return (
     <details className={`cw-chat-activity is-${tool.status}`}>
       <summary>
@@ -19,24 +23,26 @@ function ToolActivity({ tool }: { tool: ChatTool }) {
           name="sparkle"
           size={15}
         />
-        <span>{toolLabel(tool)}</span>
-        <small>{STATUS[tool.status]}</small>
+        <span>{toolLabel(tool, t)}</span>
+        <small>{t(STATUS[tool.status])}</small>
         <CanvasIcon name="chevronRight" size={14} />
       </summary>
       <div className="cw-chat-activity-detail">
-        {(tool.error || tool.message) && <p>{tool.error || tool.message}</p>}
+        {(tool.error || tool.message) && (
+          <p>{assistantToolText(tool.error || tool.message!, t)}</p>
+        )}
         {tool.arguments && <details className="cw-chat-tool-data">
-          <summary><CanvasIcon name="chevronRight" size={12} />调用参数</summary>
+          <summary><CanvasIcon name="chevronRight" size={12} />{t("assistant.reply.arguments")}</summary>
           <pre>{JSON.stringify(tool.arguments, null, 2)}</pre>
         </details>}
         {tool.result !== undefined && <details className="cw-chat-tool-data">
-          <summary><CanvasIcon name="chevronRight" size={12} />返回结果{tool.resultTruncated ? "（已截断）" : ""}</summary>
+          <summary><CanvasIcon name="chevronRight" size={12} />{t("assistant.reply.result")}{tool.resultTruncated ? t("assistant.reply.truncated") : ""}</summary>
           <pre>{tool.result}</pre>
-          {tool.resultTruncated && <p>此处仅展示前 65,536 个字符，完整结果见本轮轨迹。</p>}
+          {tool.resultTruncated && <p>{t("assistant.reply.truncatedDetail")}</p>}
         </details>}
         {tool.taskId && (
           <p>
-            任务：<code>{tool.taskId}</code>
+            {t("assistant.reply.task")}<code>{tool.taskId}</code>
           </p>
         )}
       </div>
@@ -44,7 +50,7 @@ function ToolActivity({ tool }: { tool: ChatTool }) {
   );
 }
 
-function ToolGroup({ tools }: { tools: ChatTool[] }) {
+function ToolGroup({ tools, t }: { tools: ChatTool[]; t: Translate }) {
   const [open, setOpen] = useState(false);
   const [hiddenCount, setHiddenCount] = useState<number | null>(null);
   const hidden = hiddenCount ?? Math.max(0, tools.length - 50);
@@ -65,8 +71,8 @@ function ToolGroup({ tools }: { tools: ChatTool[] }) {
       >
         <summary>
           <CanvasIcon name="sparkle" size={15} />
-          <span>执行记录 · {tools.length} 次调用</span>
-          <small>{completed}/{tools.length} 已完成{failed.length > 0 && ` · ${failed.length} 失败`}{interrupted.length > 0 && ` · ${interrupted.length} 中断`}</small>
+          <span>{t("assistant.reply.tools", { count: tools.length })}</span>
+          <small>{t("assistant.reply.progress", { done: completed, total: tools.length })}{failed.length > 0 && ` · ${t("assistant.reply.failedCount", { count: failed.length })}`}{interrupted.length > 0 && ` · ${t("assistant.reply.interruptedCount", { count: interrupted.length })}`}</small>
           <CanvasIcon name="chevronRight" size={14} />
         </summary>
         {open && <div className="cw-chat-tool-group-items">
@@ -74,8 +80,8 @@ function ToolGroup({ tools }: { tools: ChatTool[] }) {
             type="button"
             className="cw-chat-show-earlier"
             onClick={() => setHiddenCount(Math.max(0, hidden - 50))}
-          >显示更早的 {Math.min(50, hidden)} 次调用</button>}
-          {tools.slice(hidden).map((tool) => <ToolActivity key={tool.id} tool={tool} />)}
+          >{t("assistant.reply.showEarlier", { count: Math.min(50, hidden) })}</button>}
+          {tools.slice(hidden).map((tool) => <ToolActivity key={tool.id} tool={tool} t={t} />)}
         </div>}
       </details>
     </div>
@@ -85,11 +91,20 @@ function ToolGroup({ tools }: { tools: ChatTool[] }) {
 export const AssistantReply = memo(function AssistantReply({
   message,
   thinking,
+  t = defaultTranslate,
 }: {
   message: ChatMessage;
   thinking: boolean;
+  /** Injected by the panel; standalone mounts fall back to the active locale. */
+  t?: Translate;
 }) {
-  const [copyState, setCopyState] = useState("复制回复");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyLabel =
+    copyState === "copied"
+      ? t("assistant.reply.copied")
+      : copyState === "failed"
+        ? t("assistant.reply.copyFailed")
+        : t("assistant.reply.copyReply");
   const markdown = (text: string, key: string) =>
     text && (
       <Streamdown
@@ -107,8 +122,8 @@ export const AssistantReply = memo(function AssistantReply({
       {!!message.plan?.length && <details className="cw-chat-plan cw-chat-activity">
         <summary>
           <CanvasIcon name="sparkle" size={15} />
-          <span>执行计划</span>
-          <small>{message.plan.filter((step) => step.status === "completed").length}/{message.plan.length} 已完成</small>
+          <span>{t("assistant.reply.plan")}</span>
+          <small>{t("assistant.reply.progress", { done: message.plan.filter((step) => step.status === "completed").length, total: message.plan.length })}</small>
           <CanvasIcon name="chevronRight" size={14} />
         </summary>
         <ol>{message.plan.map((step, index) => <li key={index} data-status={step.status}>
@@ -117,35 +132,35 @@ export const AssistantReply = memo(function AssistantReply({
       </details>}
       {replyParts(message).map((part) => part.type === "text"
         ? markdown(part.text, part.id)
-        : <ToolGroup key={part.id} tools={part.tools} />)}
+        : <ToolGroup key={part.id} tools={part.tools} t={t} />)}
       {message.status === "streaming" && (
         <div className="cw-chat-progress" role="status" aria-live="polite">
           <span className="cw-chat-waiting" aria-hidden="true"><i /><i /><i /></span>
-          {activityProgress(message, thinking)}
+          {activityProgress(message, thinking, t)}
         </div>
       )}
       {!message.text &&
         !message.tools?.length &&
         message.status !== "streaming" && (
-          <p className="cw-chat-progress">本次回复未生成内容。</p>
+          <p className="cw-chat-progress">{t("assistant.reply.empty")}</p>
         )}
       {!!message.text && message.status !== "streaming" && (
         <div className="cw-chat-message-actions">
           <button
             type="button"
-            aria-label={copyState}
-            title={copyState}
+            aria-label={copyLabel}
+            title={copyLabel}
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(message.text);
-                setCopyState("已复制");
+                setCopyState("copied");
               } catch {
-                setCopyState("复制失败，请选择正文复制");
+                setCopyState("failed");
               }
             }}
           >
             <CanvasIcon name="copy" size={15} />
-            <span>{copyState === "已复制" ? "已复制" : "复制"}</span>
+            <span>{copyState === "copied" ? t("assistant.reply.copied") : t("assistant.reply.copy")}</span>
           </button>
         </div>
       )}

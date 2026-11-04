@@ -1,4 +1,7 @@
 /** Requests to the local OpenDirector API started by scripts/opendirector.py. */
+import { detectLocale } from "../i18n/locale.ts";
+import type { Locale } from "../i18n/types.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export const sessionId = crypto.randomUUID();
 
@@ -12,17 +15,23 @@ export class ApiError extends Error {
   }
 }
 
-export const headers = {
+export const headers: Record<string, string> = {
   "X-OpenDirector-Request": "1",
   "X-OpenDirector-Session": sessionId,
+  "Accept-Language": detectLocale(),
 };
+
+/** Keep the request language aligned with the visible UI. */
+export function setRequestLocale(locale: Locale) {
+  headers["Accept-Language"] = locale;
+}
 
 export async function responseError(response: Response) {
   const error = await response.json().catch(() => null);
   return new ApiError(
     typeof error?.detail === "string"
       ? error.detail
-      : `本地服务请求失败（${response.status}），请检查启动终端。`,
+      : tNow("api.requestFailed", { status: response.status }),
     response.status,
     error?.code ?? "operation_rejected",
   );
@@ -40,11 +49,7 @@ export async function request<T>(
     });
   } catch (failure) {
     if (options.signal?.aborted) throw failure;
-    throw new ApiError(
-      "无法连接本地服务，请用 scripts/opendirector.py 启动 OpenDirector。",
-      null,
-      "network_error",
-    );
+    throw new ApiError(tNow("api.networkError"), null, "network_error");
   }
   if (!response.ok) throw await responseError(response);
   if (response.status === 204) return undefined as T;
@@ -99,5 +104,5 @@ export async function storageRequest<T>(
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "操作未完成，请重试。";
+  return error instanceof Error ? error.message : tNow("api.unknownError");
 }

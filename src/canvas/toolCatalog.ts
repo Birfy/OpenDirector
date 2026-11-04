@@ -1,6 +1,9 @@
 /** Authored local task contract. These descriptors are not a private API client.
  * Unverified dynamic model, price, distance, brightness and resolution options require capabilities.
  */
+import { getActiveLocale, tNow } from "../i18n/messages.ts";
+import { translateToolText } from "./toolText.ts";
+
 export type CanvasToolId =
   | "layers"
   | "crop"
@@ -563,14 +566,31 @@ export function toolFields(
 ): readonly ToolField[] {
   const fields = capability?.fields ?? [];
   const overridden = new Set(fields.map((field) => field.key));
+  const locale = getActiveLocale();
+  const display = (field: ToolField): ToolField => ({
+    ...field,
+    label: translateToolText(locale, field.label),
+    ...(field.hint
+      ? { hint: translateToolText(locale, field.hint) }
+      : {}),
+    ...(field.options
+      ? {
+          options: field.options.map((option) => ({
+            ...option,
+            label: translateToolText(locale, option.label),
+          })),
+        }
+      : {}),
+  });
   return [
     ...tool.fields.filter((field) => !overridden.has(field.key)),
     ...fields,
   ].map((field) => {
+    const shown = display(field);
     const models = capability?.models?.["image.edit"];
-    if (field.key !== "imageModelConfigId" || !models) return field;
+    if (shown.key !== "imageModelConfigId" || !models) return shown;
     return {
-      ...field,
+      ...shown,
       options: models.map((model) => ({ value: model.id, label: model.label })),
     };
   });
@@ -651,11 +671,11 @@ export function validateToolTask(
   capability?: ToolCapability,
 ): string[] {
   const definition = CANVAS_TOOLS.find((tool) => tool.id === task.tool);
-  if (!definition) return ["未知工具。"];
+  if (!definition) return [tNow("errors.tool.unknown")];
   const errors: string[] = [];
-  if (task.version !== 1) errors.push("任务参数版本不受支持。");
+  if (task.version !== 1) errors.push(tNow("errors.tool.version"));
   if (new Set(task.sourceNodeIds).size !== task.sourceNodeIds.length)
-    errors.push("来源节点不能重复。");
+    errors.push(tNow("errors.tool.duplicateSource"));
   const selected = task.sourceNodeIds.map((id) =>
     sources.find((source) => source.nodeId === id),
   );
@@ -664,7 +684,12 @@ export function validateToolTask(
     selected.length > definition.maxSources
   )
     errors.push(
-      `请选择 ${definition.minSources === definition.maxSources ? definition.minSources : `${definition.minSources}–${definition.maxSources}`} 个来源素材。`,
+      tNow("errors.tool.sources", {
+        range:
+          definition.minSources === definition.maxSources
+            ? definition.minSources
+            : `${definition.minSources}–${definition.maxSources}`,
+      }),
     );
   if (
     selected.some(
@@ -676,7 +701,7 @@ export function validateToolTask(
         !source.src,
     )
   )
-    errors.push("来源素材缺失，或媒体类型与工具不匹配。");
+    errors.push(tNow("errors.tool.sourceMissing"));
   for (const field of toolFields(definition, capability)) {
     // Ordinary upscaling does not submit Pro-only detail/resolution fields.
     if (
@@ -693,7 +718,8 @@ export function validateToolTask(
       continue;
     const value = task.parameters[field.key];
     if (value === undefined || value === "") {
-      if (field.required) errors.push(`请设置${field.label}。`);
+      if (field.required)
+        errors.push(tNow("errors.tool.fieldRequired", { label: field.label }));
       continue;
     }
     if (field.type === "number") {
@@ -705,18 +731,22 @@ export function validateToolTask(
         (field.step === 1 && !Number.isInteger(value))
       )
         errors.push(
-          `${field.label}必须是有效${field.step === 1 ? "整数" : "数字"}。`,
+          tNow("errors.tool.fieldNumber", {
+            label: field.label,
+            type:
+              field.step === 1 ? tNow("errors.tool.integer") : tNow("errors.tool.number"),
+          }),
         );
     } else if (field.type === "boolean") {
       if (typeof value !== "boolean")
-        errors.push(`${field.label}必须是开关值。`);
+        errors.push(tNow("errors.tool.fieldBoolean", { label: field.label }));
     } else if (field.type === "select") {
       if (!field.options?.some((option) => option.value === value))
-        errors.push(`${field.label}不在当前能力的可用选项中。`);
+        errors.push(tNow("errors.tool.fieldSelect", { label: field.label }));
     } else if (typeof value !== "string")
-      errors.push(`${field.label}格式不正确。`);
+      errors.push(tNow("errors.tool.fieldFormat", { label: field.label }));
     else if (field.type === "color" && !/^#[\da-f]{6}$/.test(value))
-      errors.push(`${field.label}必须为小写十六进制颜色。`);
+      errors.push(tNow("errors.tool.fieldColor", { label: field.label }));
   }
   const p = task.parameters;
   if (task.tool === "multi-size") {
@@ -727,7 +757,7 @@ export function validateToolTask(
       preset &&
       (p.outputWidth !== preset.width || p.outputHeight !== preset.height)
     )
-      errors.push("预设画幅的输出尺寸必须与实测尺寸一致。");
+      errors.push(tNow("errors.tool.multiPreset"));
     if (
       p.aspectRatio === "custom" &&
       ![p.outputWidth, p.outputHeight].every(
@@ -735,60 +765,60 @@ export function validateToolTask(
           typeof value === "number" && Number.isSafeInteger(value) && value > 0,
       )
     )
-      errors.push("自定义尺寸需要填写正整数宽度和高度；服务支持范围仍待确认。");
+      errors.push(tNow("errors.tool.multiCustom"));
   }
   if (task.tool === "video-edit") {
     const duration = selected[0]?.durationSeconds;
     if (duration === undefined || !Number.isFinite(duration))
-      errors.push("无法确认视频时长，请先读取来源素材的真实时长。");
+      errors.push(tNow("errors.tool.videoDurationUnknown"));
     else if (duration < 4 || duration > 30)
-      errors.push("视频编辑仅支持 4–30 秒素材。");
+      errors.push(tNow("errors.tool.videoDurationRange"));
     if (typeof p.prompt !== "string" || !p.prompt.trim())
-      errors.push("请填写视频编辑提示词。");
+      errors.push(tNow("errors.tool.videoPrompt"));
   }
   if (
     task.tool === "layer-decompose" &&
     p.mode === "description" &&
     (typeof p.prompt !== "string" || !p.prompt.trim())
   )
-    errors.push("按描述拆分需要填写拆分描述。");
+    errors.push(tNow("errors.tool.splitPrompt"));
   if (
     task.tool === "outpaint" &&
     [p.top, p.bottom, p.left, p.right].every((value) => value === 0)
   )
-    errors.push("请至少扩展一个方向。");
+    errors.push(tNow("errors.tool.outpaintDirection"));
   if (
     task.tool === "outpaint" &&
     (p.candidateCount !== 1 ||
       p.resolution !== "2K" ||
       p.maxSize !== Math.max(Number(p.outputWidth), Number(p.outputHeight)))
   )
-    errors.push("扩图固定生成 1 张 2K 图片，长边必须与输出尺寸一致。");
+    errors.push(tNow("errors.tool.outpaintFixed"));
   if (task.tool === "lighting" && !Number.isInteger(p.brightness))
-    errors.push("打光亮度必须是能力列表中的整数。");
+    errors.push(tNow("errors.tool.lightBrightness"));
   if (task.tool === "layer-decompose" && selected[0]) {
     const source = selected[0];
     if (
       source.mimeType &&
       !["image/png", "image/jpeg", "image/jpg"].includes(source.mimeType)
     )
-      errors.push("图层分解已知输入格式只支持 PNG / JPEG。");
+      errors.push(tNow("errors.tool.layerFormat"));
     if (
       source.width !== undefined &&
       source.height !== undefined &&
       source.width * source.height < 262144
     )
-      errors.push("图层分解图片至少需要 262,144 像素。");
+      errors.push(tNow("errors.tool.layerPixels"));
   }
   if (
     task.tool === "inpainting-remove" ||
     (task.tool === "cutout" && p.selectionMode === "manual")
   ) {
     if (!task.selection?.maskDataUrl?.startsWith("data:image/"))
-      errors.push("请先编辑并提供有效的选区蒙版。");
+      errors.push(tNow("errors.tool.maskRequired"));
   }
   if (task.selection && task.selection.sourceNodeId !== selected[0]?.nodeId)
-    errors.push("选区不属于当前来源节点，请重新编辑选区。");
+    errors.push(tNow("errors.tool.maskOwner"));
   if (
     task.selection &&
     (!Number.isSafeInteger(task.selection.width) ||
@@ -796,7 +826,7 @@ export function validateToolTask(
       task.selection.width < 1 ||
       task.selection.height < 1)
   )
-    errors.push("选区尺寸必须是正整数。");
+    errors.push(tNow("errors.tool.selectionSize"));
   if (
     task.selection &&
     selected[0]?.width !== undefined &&
@@ -804,7 +834,7 @@ export function validateToolTask(
     (task.selection.width !== selected[0].width ||
       task.selection.height !== selected[0].height)
   )
-    errors.push("蒙版尺寸必须与原图尺寸一致。");
+    errors.push(tNow("errors.tool.maskSize"));
   if (
     task.tool === "product-replacement" ||
     (task.tool === "layer-decompose" && p.mode === "boxes")
@@ -813,8 +843,8 @@ export function validateToolTask(
     if (!task.selection?.boxes?.length)
       errors.push(
         task.tool === "product-replacement"
-          ? "请选择原场景中的商品区域。"
-          : "框选拆分需要提供原图中的矩形选区。",
+          ? tNow("errors.tool.productRegion")
+          : tNow("errors.tool.boxesRequired"),
       );
     else if (
       task.selection.boxes.some(
@@ -830,25 +860,25 @@ export function validateToolTask(
     )
       errors.push(
         task.tool === "product-replacement"
-          ? "商品区域超出原图或尺寸不正确。"
-          : "拆分区域超出原图或尺寸不正确。",
+          ? tNow("errors.tool.regionOut")
+          : tNow("errors.tool.splitRegionOut"),
       );
   }
   if (
     definition.parameterCoverage === "entry-only" &&
     !capability?.parametersConfirmed
   )
-    errors.push("此工具的参数协议尚未接入，不能提交任务。");
+    errors.push(tNow("errors.tool.entryOnly"));
   return errors;
 }
 
 /** Persistence accepts incomplete drafts; service-specific validation happens at submission. */
 export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("工具任务草稿格式不正确。");
+    throw new Error(tNow("errors.tool.draftFormat"));
   const raw = value as Record<string, unknown>;
   if (raw.version !== 1 || !CANVAS_TOOLS.some((tool) => tool.id === raw.tool))
-    throw new Error("工具任务草稿版本或工具不受支持。");
+    throw new Error(tNow("errors.tool.draftVersion"));
   if (
     !Array.isArray(raw.sourceNodeIds) ||
     raw.sourceNodeIds.length > 100 ||
@@ -857,16 +887,16 @@ export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
     ) ||
     new Set(raw.sourceNodeIds).size !== raw.sourceNodeIds.length
   )
-    throw new Error("工具任务来源无效。");
+    throw new Error(tNow("errors.tool.draftSource"));
   if (
     !raw.parameters ||
     typeof raw.parameters !== "object" ||
     Array.isArray(raw.parameters)
   )
-    throw new Error("工具任务参数无效。");
+    throw new Error(tNow("errors.tool.draftParameters"));
   const parameters: ToolParameters = {};
   const entries = Object.entries(raw.parameters);
-  if (entries.length > 100) throw new Error("工具参数数量超过上限。");
+  if (entries.length > 100) throw new Error(tNow("errors.tool.paramLimit"));
   for (const [key, parameter] of entries) {
     if (
       !key ||
@@ -876,7 +906,7 @@ export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
       (typeof parameter === "number" && !Number.isFinite(parameter)) ||
       (typeof parameter === "string" && parameter.length > 100000)
     )
-      throw new Error("工具参数包含无效值。");
+      throw new Error(tNow("errors.tool.paramValue"));
     parameters[key] = parameter as ToolValue;
   }
   let selection: ToolSelection | undefined;
@@ -886,7 +916,7 @@ export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
       typeof raw.selection !== "object" ||
       Array.isArray(raw.selection)
     )
-      throw new Error("选区格式不正确。");
+      throw new Error(tNow("errors.tool.selectionFormat"));
     const s = raw.selection as Record<string, unknown>;
     if (
       typeof s.sourceNodeId !== "string" ||
@@ -896,21 +926,21 @@ export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
       (s.width as number) < 1 ||
       (s.height as number) < 1
     )
-      throw new Error("选区来源或尺寸无效。");
+      throw new Error(tNow("errors.tool.selectionSource"));
     if (
       s.maskDataUrl !== undefined &&
       (typeof s.maskDataUrl !== "string" ||
         !s.maskDataUrl.startsWith("data:image/") ||
         s.maskDataUrl.length > 90_000_000)
     )
-      throw new Error("选区蒙版无效。");
+      throw new Error(tNow("errors.tool.maskInvalid"));
     let boxes: ToolSelection["boxes"];
     if (s.boxes !== undefined) {
       if (!Array.isArray(s.boxes) || s.boxes.length > 100)
-        throw new Error("选区矩形数据无效。");
+        throw new Error(tNow("errors.tool.boxInvalid"));
       boxes = s.boxes.map((value) => {
         if (!value || typeof value !== "object")
-          throw new Error("选区矩形数据无效。");
+          throw new Error(tNow("errors.tool.boxInvalid"));
         const box = value as Record<string, unknown>;
         if (
           ![box.x, box.y, box.width, box.height].every(
@@ -921,7 +951,7 @@ export function parseCanvasToolTaskValue(value: unknown): CanvasToolTask {
           (box.width as number) <= 0 ||
           (box.height as number) <= 0
         )
-          throw new Error("选区矩形尺寸无效。");
+          throw new Error(tNow("errors.tool.boxSize"));
         return {
           x: box.x as number,
           y: box.y as number,

@@ -1,8 +1,10 @@
 /** Decode inline data locally; this function never fetches a remote resource. */
+import { tNow } from "../i18n/messages.ts";
+
 export function dataUrlToBlob(value: string): Blob {
   const comma = value.indexOf(",");
   if (!/^data:/i.test(value) || comma < 0)
-    throw new Error("内嵌素材地址格式无效，无法下载。");
+    throw new Error(tNow("errors.download.invalidUrl"));
   let mediaType = value.slice(5, comma);
   const base64 = /;base64$/i.test(mediaType);
   if (base64) mediaType = mediaType.slice(0, -7);
@@ -30,7 +32,7 @@ export function dataUrlToBlob(value: string): Blob {
     }
     return new Blob([bytes.subarray(0, length)], { type: mediaType });
   } catch {
-    throw new Error("内嵌素材数据损坏，无法创建下载文件。");
+    throw new Error(tNow("errors.download.corrupt"));
   }
 }
 
@@ -51,7 +53,7 @@ const mediaExtensions: Record<string, readonly string[]> = {
 const knownExtensions = new Set(Object.values(mediaExtensions).flat());
 
 export function downloadFilename(title: string, mimeType?: string): string {
-  const name = title.trim() || "素材";
+  const name = title.trim() || tNow("errors.download.fallbackName");
   const extensions = mediaExtensions[mimeType?.split(";")[0]?.trim().toLowerCase() ?? ""];
   if (!extensions) return name;
   const suffix = /\.([a-z0-9]+)$/i.exec(name);

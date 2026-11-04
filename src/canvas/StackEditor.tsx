@@ -5,6 +5,7 @@ import { STACK_MEMBER_KINDS, resourceFromNode } from "./operations";
 import { EditorModal, ResourcePreview } from "./EditorModal";
 import { CanvasIcon } from "./CanvasIcon";
 import { indexNodes, isNodeLocked } from "./hierarchy";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export interface StackEditorProps {
   node: CanvasNode;
@@ -21,6 +22,7 @@ export function StackEditor({
   onClose,
   onSelectNode,
 }: StackEditorProps) {
+  const t = useT();
   const [stack, setStack] = useState<StackData>(() => ({
     nodeIds: [...(node.data.stack?.nodeIds ?? [])],
     activeIndex: node.data.stack?.activeIndex ?? 0,
@@ -62,15 +64,15 @@ export function StackEditor({
   };
   return (
     <EditorModal
-      title={`资源堆叠 · ${node.data.title}`}
-      subtitle="折叠整理画布节点，保留原节点与连线；移出至不足两个成员时自动解散堆叠"
+      title={t("canvasNodes.stack.title", { title: node.data.title })}
+      subtitle={t("canvasNodes.stack.subtitle")}
       onClose={commit.close}
       disabled={node.locked || commit.saving}
       error={commit.error}
       onApply={() =>
         commit.apply(() => {
           if (stack.nodeIds.some((id) => !byId.has(id) || taken.has(id)))
-            throw new Error("部分成员已失效或属于其他堆叠，请移除后重试。");
+            throw new Error(t("canvasNodes.stack.invalidMembers"));
           return onApply({
             nodeIds: [...stack.nodeIds],
             activeIndex: stack.activeIndex,
@@ -85,7 +87,9 @@ export function StackEditor({
               <ResourcePreview resource={resource} />
             ) : current?.type === "text" ? (
               <pre>
-                {current.data.text || current.data.prompt || "空文本节点"}
+                {current.data.text ||
+                  current.data.prompt ||
+                  t("canvasNodes.stack.emptyTextNode")}
               </pre>
             ) : current ? (
               <div className="cw-resource-empty">
@@ -93,20 +97,26 @@ export function StackEditor({
                 <h3>{current.data.title}</h3>
                 <p>
                   {current.type === "timeline"
-                    ? `${current.data.timeline?.tracks.reduce((sum, track) => sum + track.clips.length, 0) ?? 0} 个时间线片段`
-                    : "该节点的详情可在原画布打开"}
+                    ? t("canvasNodes.stack.timelineClips", {
+                        count:
+                          current.data.timeline?.tracks.reduce(
+                            (sum, track) => sum + track.clips.length,
+                            0,
+                          ) ?? 0,
+                      })
+                    : t("canvasNodes.stack.openOnCanvas")}
                 </p>
               </div>
             ) : (
               <div className="cw-resource-empty">
                 <CanvasIcon name="group" size={40} />
-                <span>从右侧添加至少两个节点</span>
+                <span>{t("canvasNodes.stack.addAtLeastTwo")}</span>
               </div>
             )}
           </div>
           <div className="cw-stack-switcher">
             <button
-              aria-label="上一个堆叠资源"
+              aria-label={t("canvasNodes.stack.previousResource")}
               disabled={!stack.nodeIds.length}
               onClick={() =>
                 setStack({
@@ -121,10 +131,11 @@ export function StackEditor({
             </button>
             <span>
               {stack.nodeIds.length ? stack.activeIndex + 1 : 0} /{" "}
-              {stack.nodeIds.length} · {current?.data.title ?? "未选择"}
+              {stack.nodeIds.length} ·{" "}
+              {current?.data.title ?? t("canvasNodes.stack.unselected")}
             </span>
             <button
-              aria-label="下一个堆叠资源"
+              aria-label={t("canvasNodes.stack.nextResource")}
               disabled={!stack.nodeIds.length}
               onClick={() =>
                 setStack({
@@ -144,16 +155,16 @@ export function StackEditor({
                 onClose();
               }}
             >
-              定位原节点
+              {t("canvasNodes.stack.locate")}
             </button>
           )}
           <p className="cw-domain-note">
-            可整理图片、视频、音频、文本、主体、时间线和导演台。每个节点最多属于一个堆叠；原节点身份、素材和连线保留。
+            {t("canvasNodes.stack.hint")}
           </p>
         </div>
         <div>
           <div className="cw-domain-section-heading">
-            <h3>资源顺序</h3>
+            <h3>{t("canvasNodes.stack.order")}</h3>
             <span>{stack.nodeIds.length} / 50</span>
           </div>
           <div className="cw-stack-members">
@@ -167,24 +178,33 @@ export function StackEditor({
                 >
                   <span>{index + 1}</span>
                   <CanvasIcon name={byId.get(id)?.type ?? "file"} size={16} />
-                  <strong>{byId.get(id)?.data.title ?? "源节点已删除"}</strong>
+                  <strong>
+                    {byId.get(id)?.data.title ??
+                      t("canvasNodes.stack.sourceDeleted")}
+                  </strong>
                 </button>
                 <button
-                  aria-label={`前移资源 ${index + 1}`}
+                  aria-label={t("canvasNodes.stack.moveUp", {
+                    index: index + 1,
+                  })}
                   disabled={!index}
                   onClick={() => move(index, -1)}
                 >
                   ↑
                 </button>
                 <button
-                  aria-label={`后移资源 ${index + 1}`}
+                  aria-label={t("canvasNodes.stack.moveDown", {
+                    index: index + 1,
+                  })}
                   disabled={index === stack.nodeIds.length - 1}
                   onClick={() => move(index, 1)}
                 >
                   ↓
                 </button>
                 <button
-                  aria-label={`移除资源 ${index + 1}`}
+                  aria-label={t("canvasNodes.stack.remove", {
+                    index: index + 1,
+                  })}
                   disabled={Boolean(
                     byId.get(id) && isNodeLocked(byId.get(id)!, hierarchy),
                   )}
@@ -205,7 +225,7 @@ export function StackEditor({
             ))}
           </div>
           <div className="cw-domain-section-heading">
-            <h3>添加画布节点</h3>
+            <h3>{t("canvasNodes.stack.addNodes")}</h3>
           </div>
           <div className="cw-domain-resource-list">
             {candidates.map((item) => (
@@ -223,7 +243,9 @@ export function StackEditor({
                 <CanvasIcon name="plus" size={14} />
               </button>
             ))}
-            {!candidates.length && <p>没有其他可引用的独立节点。</p>}
+            {!candidates.length && (
+              <p>{t("canvasNodes.stack.noCandidates")}</p>
+            )}
           </div>
           <button
             className="cw-wide-button"
@@ -232,7 +254,7 @@ export function StackEditor({
               commit.apply(() => onApply({ nodeIds: [], activeIndex: 0 }))
             }
           >
-            解散堆叠，保留全部节点
+            {t("canvasNodes.stack.dissolve")}
           </button>
         </div>
       </div>

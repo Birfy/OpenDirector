@@ -1,0 +1,172 @@
+/** Timeline editor, rendering, export and track labels. */
+export const timeline = {
+  "timeline.header.title": "Timeline · {title}",
+  "timeline.header.subtitle":
+    "Local visual-track sequencing, multi-track playback, and source in/out editing",
+  "timeline.action.importJson": "Import JSON",
+  "timeline.action.importJsonAria": "Import timeline JSON",
+  "timeline.action.importMediaAria": "Import timeline media",
+  "timeline.action.exportJson": "Export editable JSON",
+  "timeline.action.exportFcpXml": "Export FCPXML",
+  "timeline.action.exportZip": "XML + media ZIP",
+  "timeline.action.renderMp4": "Render MP4",
+  "timeline.action.renderTitle": "{title} · Render",
+  "timeline.action.cancelPack": "Cancel packaging",
+  "timeline.action.cancelRender": "Cancel rendering",
+  "timeline.action.downloadMp4": "Download MP4",
+  "timeline.action.addToCanvas": "Add rendered video to canvas",
+  "timeline.action.addedToCanvas": "Added to canvas",
+  "timeline.pack.progress": "Packaging media {percent}%",
+  "timeline.render.progress": "Rendering {percent}%",
+  "timeline.render.done":
+    "MP4 complete · {size} MB (timeline at render time)",
+
+  "timeline.library.title": "Media library",
+  "timeline.library.import": "Import",
+  "timeline.library.hint":
+    "Images, video, and audio. Video and audio durations are read first.",
+  "timeline.library.typeFilter": "Filter by media type",
+  "timeline.library.sourceFilter": "Filter by source",
+  "timeline.library.allTypes": "All types",
+  "timeline.library.allSources": "All sources",
+  "timeline.library.image": "Images",
+  "timeline.library.video": "Video",
+  "timeline.library.audio": "Audio",
+  "timeline.library.canvasAssets": "Canvas media",
+  "timeline.library.imported": "Imported",
+  "timeline.library.remove": "Remove {title} from the library",
+  "timeline.library.removeHint": "Removes it from the library only; existing clips stay",
+  "timeline.library.empty":
+    "Import from this computer or reference media nodes on the canvas.",
+  "timeline.library.addAudio": "Add audio to track",
+  "timeline.library.firstAudioTrack": "First audio track / create new",
+  "timeline.library.addTrack": "Add audio track",
+  "timeline.library.reading": "Reading media…",
+  "timeline.library.resize": "Resize the media library",
+
+  "timeline.player.noVideo": "No picture at the current time",
+  "timeline.player.empty": "Add media to start arranging",
+  "timeline.player.audioError": "The audio cannot play. Import it again.",
+  "timeline.player.videoError":
+    "The video cannot play. Check the media or import it again.",
+  "timeline.player.start": "Go to the start of the timeline",
+  "timeline.player.pause": "Pause the timeline",
+  "timeline.player.play": "Play the timeline",
+  "timeline.player.fps": "Frame rate",
+  "timeline.player.seek": "Timeline playhead",
+
+  "timeline.properties.title": "Clip properties",
+  "timeline.properties.project": "Project settings",
+  "timeline.properties.playback": "{track} · playing {seconds} s",
+  "timeline.properties.inPoint": "Source in point (s)",
+  "timeline.properties.duration": "Display duration (s)",
+  "timeline.properties.outPoint": "Source out point (s)",
+  "timeline.properties.speed": "Playback speed",
+  "timeline.properties.start": "Timeline start (s)",
+  "timeline.properties.volume": "Clip volume {percent}%",
+  "timeline.properties.mute": "Mute clip",
+  "timeline.properties.nudgeAudioBack": "Move audio back one frame",
+  "timeline.properties.nudgeAudioForward": "Move audio forward one frame",
+  "timeline.properties.nudgeClipBack": "Move clip back",
+  "timeline.properties.nudgeClipForward": "Move clip forward",
+  "timeline.properties.delete": "Delete clip",
+  "timeline.properties.aspect": "Aspect ratio",
+  "timeline.properties.importSize": "Imported size · {width}×{height}",
+  "timeline.properties.hint":
+    "Select a clip to edit its source in/out points, speed, and volume. Visual clips play in sequence; audio tracks keep explicit starts and cannot overlap on one track.",
+
+  "timeline.toolbar.hideLibrary": "Hide media library",
+  "timeline.toolbar.showLibrary": "Show media library",
+  "timeline.toolbar.undo": "Undo",
+  "timeline.toolbar.redo": "Redo",
+  "timeline.toolbar.split": "Split at playhead",
+  "timeline.toolbar.trimLeft": "Trim left of playhead",
+  "timeline.toolbar.trimRight": "Trim right of playhead",
+  "timeline.toolbar.snap": "Snap",
+  "timeline.toolbar.zoom": "Timeline zoom",
+  "timeline.toolbar.fit": "Fit all",
+  "timeline.toolbar.resize": "Resize the track area",
+
+  "timeline.track.video": "Video track",
+  "timeline.track.audio": "Audio track",
+  "timeline.track.audioNumber": "Audio track {number}",
+  "timeline.track.header": "Track / seconds",
+  "timeline.track.region": "Timeline tracks",
+  "timeline.track.mute": "Mute {title}",
+  "timeline.track.unmute": "Unmute {title}",
+  "timeline.track.delete": "Delete {title}",
+  "timeline.track.muted": "Muted",
+  "timeline.track.audible": "Audible",
+  "timeline.track.dragHint":
+    "Drag visual clips to reorder them; drag audio to change its start or move it to another audio track. Press Esc to cancel and ⌘/Ctrl + Z to undo. MP4 renders in the browser and preserves order, trims, speed, volume, and multi-track mixing; the picture is scaled to fit with black bars. Speed changes also change pitch. ⌘/Ctrl + wheel zooms the timeline at the pointer; snapping aligns clip edges and the playhead. FCPXML is a standard editing interchange format, and the ZIP contains the original media; after extraction, keep the media directory's relative path. This is not a native CapCut project and compatibility with every editor version is not promised. The JSON remains editable in this project.",
+
+  "timeline.error.playFailed": "Playback did not start: {reason}",
+  "timeline.error.editFailed": "Timeline editing failed.",
+  "timeline.error.dragCancelled":
+    "Drag cancelled. Drop the clip inside a target track.",
+  "timeline.error.dragHint":
+    "Drop the clip on a target track; press Esc to cancel.",
+  "timeline.error.dropHint": "Release to apply the position; press Esc to cancel.",
+  "timeline.error.placeFailed": "The clip could not be placed.",
+  "timeline.error.assetReadFailed": "The media could not be read.",
+  "timeline.error.fileReadFailed": "{name}: {error}",
+  "timeline.error.readFailed": "Read failed",
+  "timeline.error.addClipFailed": "{title}: {error}",
+  "timeline.error.cannotAddClip": "The clip could not be added",
+  "timeline.error.partialImport":
+    "Some media was not imported ({count}): {items}",
+  "timeline.error.xmlExportFailed": "XML export failed.",
+  "timeline.error.packFailed": "Media packaging failed.",
+  "timeline.error.exportFailed": "Timeline export failed.",
+  "timeline.error.importFailed": "Timeline import failed.",
+  "timeline.error.notApplied":
+    "The timeline was not applied. The draft is kept; check the sources and lock state.",
+  "timeline.error.saveFailed": "Save failed. The timeline draft is kept.",
+  "timeline.error.videoExportFailed": "Video export failed.",
+  "timeline.error.addCanvasFailed": "Adding to the canvas failed.",
+  "timeline.error.invalidAssetKind":
+    "The timeline library accepts only images, video, or audio.",
+  "timeline.error.invalidMediaKind":
+    "The timeline accepts only images, video, or audio.",
+  "timeline.error.trackKindMismatch":
+    "The media type does not match the target track.",
+  "timeline.error.durationRequired":
+    "Read the real video or audio duration before adding it to the timeline.",
+  "timeline.error.finiteTime": "The time must be a finite number.",
+  "timeline.error.dropTime": "The drop time must be a finite number.",
+  "timeline.error.dragMissing": "The dragged clip or target track was not found.",
+  "timeline.error.sameKindTrack": "Drop the clip on a track of the same type.",
+  "timeline.error.playheadInsideClip":
+    "The playhead must be inside the selected clip.",
+  "timeline.error.localJson":
+    "Choose a timeline JSON exported by the local editor.",
+  "timeline.error.range": "The time is outside the FCPXML export range.",
+  "timeline.error.assetNoMedia":
+    "Media “{title}” has no file, so a complete media package cannot be exported.",
+  "timeline.error.noClips": "Add clips to the timeline first.",
+  "timeline.error.frameRateRange":
+    "The project frame rate is outside the FCPXML rational range.",
+  "timeline.error.frameCountRange":
+    "The timeline is outside the FCPXML frame-count range.",
+  "timeline.error.clipShorterThanFrame":
+    "Clip “{title}” is shorter than one project frame and cannot be exported.",
+  "timeline.error.zipTooMany": "The media count exceeds the ZIP32 limit.",
+  "timeline.error.zipName": "A media package filename is invalid or duplicated.",
+  "timeline.error.zipTooLarge":
+    "The media package exceeds the ZIP32 4 GiB limit. Split the timeline.",
+  "timeline.error.zipDirectory": "The media package directory exceeds the ZIP32 limit.",
+  "timeline.error.mediaMissing": "“{title}” has no media file.",
+  "timeline.error.notLocalMedia":
+    "“{title}” is not local media. Import the file first.",
+  "timeline.error.mediaRead": "Could not read “{title}”: {status}",
+  "timeline.error.emptyMedia":
+    "“{title}” is an empty file; the media package was not exported.",
+  "timeline.error.renderNoMedia": "Add media to the timeline first.",
+  "timeline.error.noCanvas": "The video canvas could not be created.",
+  "timeline.error.decodeImage": "Could not decode image “{title}”.",
+  "timeline.error.decodeVideo": "Could not decode the video in “{title}”.",
+  "timeline.error.decodeAudio": "Could not decode the audio in “{title}”.",
+  "timeline.error.noAudioTrack": "“{title}” has no readable audio track.",
+  "timeline.error.noFrameAt": "“{title}” has no picture at {time} s.",
+  "timeline.error.sourceMissing": "The timeline source no longer exists.",
+} as const;

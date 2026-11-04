@@ -1,26 +1,34 @@
 import type { ChatMessage, ChatTool } from "../backend/chat.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
-const TOOL_NAMES: Record<string, string> = {
-  query: "查询工程",
-  read: "读取素材或技能",
-  command_schema: "查看操作说明",
-  execute_command: "执行工程操作",
-  read_project: "读取工程",
-  read_canvas_item: "查看画布状态",
-  preview_asset: "预览素材",
-  read_text_asset: "读取文本",
-  save_text_asset: "保存文本",
-  generate_asset: "生成素材",
-  get_generation_task: "查看生成进度",
-  read_skill: "读取技能",
-  bash: "运行命令",
-  web_search: "搜索网页",
-  web_fetch: "读取网页",
+const TOOL_NAMES: Readonly<Partial<Record<string, MessageKey>>> = {
+  query: "assistant.tool.query",
+  read: "assistant.tool.read",
+  command_schema: "assistant.tool.command_schema",
+  execute_command: "assistant.tool.execute_command",
+  read_project: "assistant.tool.read_project",
+  read_canvas_item: "assistant.tool.read_canvas_item",
+  preview_asset: "assistant.tool.preview_asset",
+  read_text_asset: "assistant.tool.read_text_asset",
+  save_text_asset: "assistant.tool.save_text_asset",
+  generate_asset: "assistant.tool.generate_asset",
+  get_generation_task: "assistant.tool.get_generation_task",
+  read_skill: "assistant.tool.read_skill",
+  bash: "assistant.tool.bash",
+  web_search: "assistant.tool.web_search",
+  web_fetch: "assistant.tool.web_fetch",
 };
 
-export function toolLabel(tool: ChatTool): string {
+export function toolLabel(
+  tool: ChatTool,
+  t: Translate = defaultTranslate,
+): string {
+  const key = TOOL_NAMES[tool.name];
+  // An unknown tool keeps its technical name; only known tools get a label.
+  const name = key ? t(key) : tool.name;
   const operation = tool.arguments?.type;
-  const name = TOOL_NAMES[tool.name] ?? tool.name;
   return typeof operation === "string" ? `${name} ${operation}` : name;
 }
 
@@ -47,12 +55,22 @@ export function replyParts(message: Pick<ChatMessage, "text" | "tools">): ReplyP
   return parts;
 }
 
-export function activityProgress(message: ChatMessage, thinking: boolean): string {
+export function activityProgress(
+  message: ChatMessage,
+  thinking: boolean,
+  t: Translate = defaultTranslate,
+): string {
   const running = message.tools?.filter((tool) => tool.status === "running") ?? [];
   if (running.length) {
-    return `正在执行：${toolLabel(running.at(-1)!)}${running.length > 1 ? `（${running.length} 项进行中）` : ""}`;
+    const label = toolLabel(running.at(-1)!, t);
+    return running.length > 1
+      ? t("assistant.activity.running", { label }) +
+          t("assistant.activity.runningCount", { count: running.length })
+      : t("assistant.activity.running", { label });
   }
-  if (thinking) return "正在思考…";
+  if (thinking) return t("assistant.activity.thinking");
   const step = message.plan?.find((entry) => entry.status === "in_progress");
-  return step ? `正在执行计划：${step.content}` : "正在回复…";
+  return step
+    ? t("assistant.activity.plan", { step: step.content })
+    : t("assistant.activity.replying");
 }

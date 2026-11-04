@@ -6,12 +6,15 @@ import {
   useState,
   type PointerEvent,
 } from "react";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { CanvasNode } from "./model";
 import { LayerBoard } from "./LayerBoard";
 import type { LayerDocument } from "./layerDocument";
 import "./image-editor.css";
 import { INITIAL_CROP_OPTIONS, type ImageCropState } from "./imageCrop.ts";
 import type { ImageCropOptions as EditOptions } from "../contracts/generated.ts";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
 export interface ImageEditorProps {
   node: CanvasNode;
@@ -78,6 +81,7 @@ function renderImage(
   image: HTMLImageElement,
   options: EditOptions,
   preview = false,
+  t: Translate = defaultTranslate,
 ): Crop {
   const crop = calculateCrop(image, options);
   const scale = preview
@@ -86,11 +90,9 @@ function renderImage(
   canvas.width = Math.max(1, Math.round(crop.width * scale));
   canvas.height = Math.max(1, Math.round(crop.height * scale));
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("浏览器无法创建图片编辑画布。");
+  if (!context) throw new Error(t("editors.image.error.noCanvas"));
   if (!("filter" in context))
-    throw new Error(
-      "当前浏览器不支持 Canvas2D 图片滤镜，请使用新版 Brave 或 Chrome。",
-    );
+    throw new Error(t("editors.image.error.noFilter"));
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
@@ -119,8 +121,13 @@ function localImageSource(src: string): boolean {
   }
 }
 
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "图片编辑未完成，请重试。";
+function failureMessage(
+  error: unknown,
+  t: Translate = defaultTranslate,
+): string {
+  return error instanceof Error
+    ? error.message
+    : t("editors.image.error.failed");
 }
 
 export function ImageEditor({
@@ -161,6 +168,7 @@ function CropEditor({
 }: ImageEditorProps & {
   onOpenLayers: (src: string, unchanged: boolean) => void;
 }) {
+  const t = useT();
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [options, setOptions] = useState<EditOptions>({ ...INITIAL_OPTIONS });
   const [loadError, setLoadError] = useState("");
@@ -244,14 +252,12 @@ function CropEditor({
     setLoading(true);
     const src = node.data.imageCrop?.src ?? node.data.src;
     if (!src) {
-      setLoadError("这张图片还没有可编辑的本地素材。请先导入图片。");
+      setLoadError(t("editors.image.error.noLocalSource"));
       setLoading(false);
       return;
     }
     if (!localImageSource(src)) {
-      setLoadError(
-        "图片编辑仅支持本地素材，不会下载远程图片。请先将图片文件导入画布。",
-      );
+      setLoadError(t("editors.image.error.remoteSource"));
       setLoading(false);
       return;
     }
@@ -260,15 +266,13 @@ function CropEditor({
     source.onload = () => {
       if (cancelled) return;
       if (!source.naturalWidth || !source.naturalHeight)
-        setLoadError("图片没有有效尺寸，无法编辑。");
+        setLoadError(t("editors.image.error.invalidSize"));
       else setImage(source);
       setLoading(false);
     };
     source.onerror = () => {
       if (!cancelled) {
-        setLoadError(
-          "无法读取图片。素材可能已经失效或文件格式不受支持，请重新导入。",
-        );
+        setLoadError(t("editors.image.error.readFailed"));
         setLoading(false);
       }
     };
@@ -292,10 +296,11 @@ function CropEditor({
             ? { ...options, aspect: "original", zoom: 100 }
             : options,
           true,
+          t,
         );
         setRenderError("");
       } catch (error) {
-        setRenderError(failureMessage(error));
+        setRenderError(failureMessage(error, t));
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -360,12 +365,10 @@ function CropEditor({
     setRenderError("");
     try {
       const output = document.createElement("canvas");
-      renderImage(output, image, options);
+      renderImage(output, image, options, false, t);
       const src = output.toDataURL("image/png");
       if (!src.startsWith("data:image/png;base64,"))
-        throw new Error(
-          "图片尺寸超出当前浏览器的导出能力，请增加裁剪缩放后重试。",
-        );
+        throw new Error(t("editors.image.error.tooLarge"));
       const accepted = await onApply(src, undefined, {
         src: node.data.imageCrop?.src ?? node.data.src!,
         options,
@@ -373,10 +376,14 @@ function CropEditor({
         height: output.height,
       });
       if (accepted === false)
-        throw new Error("编辑未应用，草稿已保留，请核对来源与锁定状态。");
+        throw new Error(t("editors.image.error.notApplied"));
       onClose();
     } catch (error) {
-      setRenderError(`无法应用编辑：${failureMessage(error)}`);
+      setRenderError(
+        t("editors.image.error.applyFailed", {
+          reason: failureMessage(error, t),
+        }),
+      );
       setApplying(false);
     }
   };
@@ -436,7 +443,8 @@ function CropEditor({
           <div>
             <span className="cw-editor-eyebrow">LOCAL IMAGE EDITOR</span>
             <h2 id={`${id}-title`}>
-              编辑图片<span>{node.data.title}</span>
+              {t("editors.image.title")}
+              <span>{node.data.title}</span>
             </h2>
           </div>
           <div className="cw-editor-header-actions">
@@ -458,24 +466,26 @@ function CropEditor({
                     onOpenLayers(node.data.src, true);
                   else {
                     const output = document.createElement("canvas");
-                    renderImage(output, image, options);
+                    renderImage(output, image, options, false, t);
                     const src = output.toDataURL("image/png");
                     if (!src.startsWith("data:image/png;base64,"))
-                      throw new Error("无法导出裁剪结果，请缩小图片后重试。");
+                      throw new Error(
+                        t("editors.image.error.exportCropFailed"),
+                      );
                     onOpenLayers(src, false);
                   }
                 } catch (error) {
-                  setRenderError(failureMessage(error));
+                  setRenderError(failureMessage(error, t));
                 }
               }}
             >
-              图层工作台
+              {t("editors.image.openLayers")}
             </button>
             <button
               type="button"
               className="cw-editor-close"
               onClick={onClose}
-              aria-label="关闭图片编辑"
+              aria-label={t("editors.image.closeAria")}
             >
               ×
             </button>
@@ -489,13 +499,13 @@ function CropEditor({
               {loading && (
                 <div className="cw-editor-loading" role="status">
                   <span />
-                  正在读取本地图片…
+                  {t("editors.image.loading")}
                 </div>
               )}
               {!loading && !image && (
                 <div className="cw-editor-empty">
                   <span aria-hidden="true">▧</span>
-                  <p>没有可编辑的预览</p>
+                  <p>{t("editors.image.emptyPreview")}</p>
                 </div>
               )}
               <div
@@ -511,12 +521,12 @@ function CropEditor({
                 <canvas
                   ref={canvasRef}
                   className={!image ? "cw-editor-hidden" : ""}
-                  aria-label="裁剪和色彩调整后的图片预览"
+                  aria-label={t("editors.image.previewAria")}
                 />
                 {options.aspect === "free" && crop && (
                   <div
                     className="cw-free-crop"
-                    aria-label="自由裁剪区域，拖动移动，右下角调整宽高"
+                    aria-label={t("editors.image.freeCropAria")}
                     style={{
                       left: `${(crop.x / crop.imageWidth) * 100}%`,
                       top: `${(crop.y / crop.imageHeight) * 100}%`,
@@ -537,33 +547,42 @@ function CropEditor({
             <div className="cw-editor-preview-meta">
               <span>
                 {image
-                  ? `原图 ${image.naturalWidth} × ${image.naturalHeight}`
-                  : "本地图片"}
+                  ? t("editors.image.originalSize", {
+                      width: image.naturalWidth,
+                      height: image.naturalHeight,
+                    })
+                  : t("editors.image.localImage")}
               </span>
               <span>
                 {crop
-                  ? `输出 ${Math.round(crop.width)} × ${Math.round(crop.height)} · PNG`
-                  : "输出 PNG"}
+                  ? t("editors.image.outputSize", {
+                      width: Math.round(crop.width),
+                      height: Math.round(crop.height),
+                    })
+                  : t("editors.image.outputPng")}
               </span>
             </div>
             <p id={`${id}-description`} className="cw-editor-description">
-              预览显示实际裁剪区域。应用后将修改画布中的图片像素，支持画布撤销。
+              {t("editors.image.description")}
             </p>
           </div>
-          <aside className="cw-editor-controls" aria-label="图片编辑参数">
+          <aside
+            className="cw-editor-controls"
+            aria-label={t("editors.image.controlsAria")}
+          >
             <section>
               <div className="cw-editor-section-title">
-                <h3>裁剪与变换</h3>
+                <h3>{t("editors.image.section.crop")}</h3>
                 <button
                   type="button"
                   disabled={!image}
                   onClick={() => setOptions({ ...INITIAL_OPTIONS })}
                 >
-                  重置全部
+                  {t("editors.image.resetAll")}
                 </button>
               </div>
               <label className="cw-editor-select" htmlFor={`${id}-aspect`}>
-                <span>裁剪比例</span>
+                <span>{t("editors.image.aspect")}</span>
                 <select
                   id={`${id}-aspect`}
                   value={options.aspect}
@@ -572,8 +591,12 @@ function CropEditor({
                     update("aspect", event.target.value as Aspect)
                   }
                 >
-                  <option value="original">原始比例</option>
-                  <option value="free">自由裁剪</option>
+                  <option value="original">
+                    {t("editors.image.aspect.original")}
+                  </option>
+                  <option value="free">
+                    {t("editors.image.aspect.free")}
+                  </option>
                   {(["1:1", "4:3", "3:4", "16:9", "9:16"] as const).map(
                     (aspect) => (
                       <option key={aspect} value={aspect}>
@@ -595,7 +618,8 @@ function CropEditor({
                     )
                   }
                 >
-                  <span aria-hidden="true">↻</span>旋转 90°
+                  <span aria-hidden="true">↻</span>
+                  {t("editors.image.rotate")}
                 </button>
                 <button
                   type="button"
@@ -604,7 +628,8 @@ function CropEditor({
                   aria-pressed={options.flipX}
                   onClick={() => update("flipX", !options.flipX)}
                 >
-                  <span aria-hidden="true">↔</span>水平翻转
+                  <span aria-hidden="true">↔</span>
+                  {t("editors.image.flipX")}
                 </button>
                 <button
                   type="button"
@@ -613,27 +638,28 @@ function CropEditor({
                   aria-pressed={options.flipY}
                   onClick={() => update("flipY", !options.flipY)}
                 >
-                  <span aria-hidden="true">↕</span>垂直翻转
+                  <span aria-hidden="true">↕</span>
+                  {t("editors.image.flipY")}
                 </button>
               </div>
               {options.aspect === "free" ? (
                 <>
-                  {slider("freeWidth", "裁剪宽度", 1, 100)}
-                  {slider("freeHeight", "裁剪高度", 1, 100)}
+                  {slider("freeWidth", t("editors.image.freeWidth"), 1, 100)}
+                  {slider("freeHeight", t("editors.image.freeHeight"), 1, 100)}
                 </>
               ) : (
-                slider("zoom", "裁剪缩放", 100, 400)
+                slider("zoom", t("editors.image.zoom"), 100, 400)
               )}
               {slider(
                 "x",
-                "水平位置",
+                t("editors.image.positionX"),
                 0,
                 100,
                 !!crop && Math.abs(crop.imageWidth - crop.width) < 0.01,
               )}
               {slider(
                 "y",
-                "垂直位置",
+                t("editors.image.positionY"),
                 0,
                 100,
                 !!crop && Math.abs(crop.imageHeight - crop.height) < 0.01,
@@ -641,15 +667,16 @@ function CropEditor({
             </section>
             <section className="cw-editor-adjustments">
               <div className="cw-editor-section-title">
-                <h3>色彩调整</h3>
-                <span>实时像素预览</span>
+                <h3>{t("editors.image.section.color")}</h3>
+                <span>{t("editors.image.livePreview")}</span>
               </div>
-              {slider("brightness", "亮度", 0, 200)}
-              {slider("contrast", "对比度", 0, 200)}
-              {slider("saturation", "饱和度", 0, 200)}
+              {slider("brightness", t("editors.image.brightness"), 0, 200)}
+              {slider("contrast", t("editors.image.contrast"), 0, 200)}
+              {slider("saturation", t("editors.image.saturation"), 0, 200)}
             </section>
             <p className="cw-editor-local-note">
-              <span aria-hidden="true">◉</span>所有编辑都在本地浏览器内完成。
+              <span aria-hidden="true">◉</span>
+              {t("editors.image.localNote")}
             </p>
           </aside>
         </div>
@@ -659,14 +686,14 @@ function CropEditor({
           </p>
         )}
         <footer className="cw-editor-footer">
-          <span>PNG 无损导出 · 不上传素材</span>
+          <span>{t("editors.image.footerNote")}</span>
           <div>
             <button
               type="button"
               className="cw-editor-cancel"
               onClick={onClose}
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -674,7 +701,9 @@ function CropEditor({
               disabled={!image || loading || applying || !!loadError}
               onClick={apply}
             >
-              {applying ? "正在应用…" : "应用编辑"}
+              {applying
+                ? t("editors.image.applying")
+                : t("editors.image.apply")}
             </button>
           </div>
         </footer>

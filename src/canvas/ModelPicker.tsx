@@ -1,6 +1,7 @@
 import { ModelLogo } from "./ModelLogo";
 import { useState, type ReactNode } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export interface ModelTestResult {
   status: "running" | "passed" | "failed";
@@ -38,6 +39,7 @@ export function ModelPicker({
   renderDetails?: (id: string) => ReactNode;
   fetchLabel?: string;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [onlySelected, setOnlySelected] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -55,11 +57,11 @@ export function ModelPicker({
   const addManual = () => {
     const id = manualId.trim();
     if (!id || id.length > 200 || /[\x00-\x1f]/.test(id)) {
-      setManualError("请输入 1—200 个字符的模型 ID。");
+      setManualError(t("generation.picker.invalidId"));
       return;
     }
     if (selected.includes(id)) {
-      setManualError("这个模型已经选中了。");
+      setManualError(t("generation.picker.duplicate"));
       return;
     }
     setManualModels((current) => [...new Set([...current, id])]);
@@ -72,12 +74,14 @@ export function ModelPicker({
   return (
     <section
       className={`cw-model-picker${renderDetails ? " has-capability-cards" : ""}`}
-      aria-label="选择启用的模型"
+      aria-label={t("generation.picker.label")}
     >
       <div className="cw-model-picker-heading">
         <div>
-          <h4>模型</h4>
-          <span>已选 {selected.length} 个</span>
+          <h4>{t("generation.picker.heading")}</h4>
+          <span>
+            {t("generation.picker.selectedCount", { count: selected.length })}
+          </span>
         </div>
         <div className="cw-model-picker-actions">
           <button
@@ -91,7 +95,7 @@ export function ModelPicker({
             }}
           >
             <CanvasIcon name="plus" size={14} />
-            手动添加
+            {t("generation.picker.manual")}
           </button>
           <button
             type="button"
@@ -100,15 +104,18 @@ export function ModelPicker({
             onClick={onFetch}
           >
             {loading
-              ? "获取中…"
-              : (fetchLabel ?? (loaded ? "刷新列表" : "获取模型"))}
+              ? t("generation.picker.loading")
+              : (fetchLabel ??
+                (loaded
+                  ? t("generation.picker.refresh")
+                  : t("generation.picker.fetch")))}
           </button>
         </div>
       </div>
       {manualOpen && (
         <div className="cw-model-manual">
           <label htmlFor="manual-model-id">
-            Model ID（服务的 served-model-name）
+            {t("generation.picker.modelId")}
           </label>
           <div>
             <input
@@ -135,14 +142,14 @@ export function ModelPicker({
               disabled={disabled || !manualId.trim()}
               onClick={addManual}
             >
-              添加
+              {t("generation.picker.add")}
             </button>
             <button
               className="cw-settings-button cw-settings-button-quiet"
               type="button"
               onClick={() => setManualOpen(false)}
             >
-              取消
+              {t("generation.picker.cancel")}
             </button>
           </div>
           {manualError && (
@@ -154,7 +161,7 @@ export function ModelPicker({
       )}
       {error && (
         <p className="cw-model-feedback" role="alert">
-          {error} 可重试或手动添加模型。
+          {t("generation.picker.retry")}
         </p>
       )}
       {ids.length > 4 && (
@@ -163,8 +170,8 @@ export function ModelPicker({
             <label className="cw-model-search">
               <CanvasIcon name="search" size={15} />
               <input
-                aria-label="搜索模型"
-                placeholder="搜索模型名称…"
+                aria-label={t("generation.picker.search")}
+                placeholder={t("generation.picker.searchPlaceholder")}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -175,11 +182,13 @@ export function ModelPicker({
               aria-pressed={onlySelected}
               onClick={() => setOnlySelected(!onlySelected)}
             >
-              仅看已选
+              {t("generation.picker.onlySelected")}
             </button>
           </div>
           <div className="cw-model-bulk">
-            <span>{visible.length} 个模型</span>
+            <span>
+              {t("generation.picker.count", { count: visible.length })}
+            </span>
             <button
               type="button"
               className="cw-settings-button cw-settings-button-quiet"
@@ -192,7 +201,7 @@ export function ModelPicker({
                 )
               }
             >
-              {allSelected ? "取消当前全选" : "全选当前结果"}
+              {allSelected ? t("generation.picker.deselectAll") : t("generation.picker.selectAll")}
             </button>
           </div>
         </>
@@ -201,25 +210,25 @@ export function ModelPicker({
         {loading && !ids.length ? (
           <div className="cw-model-empty-state" role="status">
             <span className="cw-model-spinner" />
-            <strong>正在获取模型列表</strong>
-            <p>正在连接服务，请稍候…</p>
+            <strong>{t("generation.picker.fetching")}</strong>
+            <p>{t("generation.picker.connecting")}</p>
           </div>
         ) : !ids.length ? (
           <div className="cw-model-empty-state">
             <CanvasIcon name="model" size={26} />
-            <strong>{loaded ? "服务未返回模型" : "尚未添加模型"}</strong>
+            <strong>{loaded ? t("generation.picker.noReturned") : t("generation.picker.noneAdded")}</strong>
             <p>
               {loaded
-                ? "可以手动添加服务支持的模型 ID。"
-                : "填写服务地址后点击“获取模型”，勾选需要启用的模型。"}
+                ? t("generation.picker.manualHint")
+                : t("generation.picker.fetchHint")}
             </p>
           </div>
         ) : !visible.length ? (
           <div className="cw-model-empty-state">
             <strong>
               {onlySelected && !selected.length
-                ? "还没有选择模型"
-                : "没有匹配的模型"}
+                ? t("generation.picker.noSelection")
+                : t("generation.picker.noMatch")}
             </strong>
             <button
               className="cw-settings-button cw-settings-button-quiet"
@@ -229,7 +238,7 @@ export function ModelPicker({
                 setOnlySelected(false);
               }}
             >
-              显示全部模型
+              {t("generation.picker.showAll")}
             </button>
           </div>
         ) : (
@@ -260,14 +269,14 @@ export function ModelPicker({
                   type="button"
                   className="cw-settings-button cw-settings-button-quiet cw-model-row-test"
                   disabled={disabled || !canFetch}
-                  aria-label={`测试 ${id}`}
+                  aria-label={t("generation.picker.testAria", { id })}
                   onClick={() => onTest(id)}
                 >
                   {results[id]?.status === "running"
-                    ? "测试中…"
+                    ? t("generation.picker.testing")
                     : results[id]?.status === "passed"
                       ? results[id].message
-                      : "测试"}
+                      : t("generation.picker.test")}
                 </button>
               )}
               {selected.includes(id) && renderDetails?.(id)}
@@ -282,7 +291,7 @@ export function ModelPicker({
       </div>
       {onTest && ids.length > 0 && (
         <p className="cw-model-note">
-          测试会发送一条简短消息，可能产生少量调用费用。
+          {t("generation.picker.testNote")}
         </p>
       )}
     </section>

@@ -10,6 +10,7 @@ import {
   type CanvasNodeKind,
   type GenerationSettings,
 } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 import { absolutePosition } from "./geometry.ts";
 import { indexNodes, isNodeLocked } from "./hierarchy.ts";
 import { sameNodeData } from "./dataBoundary.ts";
@@ -59,11 +60,12 @@ type PlacementResult = {
 };
 
 function sourceError(document: CanvasDocument, source: ResultSource) {
-  if (document.id !== source.documentId) return "项目已切换，结果未写入画布。";
+  if (document.id !== source.documentId)
+    return tNow("errors.results.projectChanged");
   const target = document.nodes.find((node) => node.id === source.nodeId);
-  if (!target) return "来源节点已被删除，结果未写入画布。";
+  if (!target) return tNow("errors.results.sourceDeleted");
   if (target.type !== source.kind)
-    return "来源节点类型已改变，结果未写入画布。";
+    return tNow("errors.results.sourceTypeChanged");
 }
 
 /** Post-edit sessions require the same media or composition and an editable source. */
@@ -85,9 +87,9 @@ export function validateNodeActionSource(
     ? sameNodeData(node.data, { ...node.data, ...source.editorData })
     : !!source.src && node.data.src === source.src;
   if (!unchanged || node.data.assetState === "missing")
-    return { error: "来源素材已改变或不可用，请重新打开工具。" };
+    return { error: tNow("errors.results.sourceMediaChanged") };
   if (isNodeLocked(node, indexNodes(document.nodes)))
-    return { error: "来源节点已锁定，请先解锁节点。" };
+    return { error: tNow("errors.results.sourceLocked") };
   return { node };
 }
 
@@ -114,21 +116,21 @@ export function applyGenerationResults(
     return {
       document,
       ids: [],
-      error: "来源节点已锁定，结果仍保存在生成历史中。",
+      error: tNow("errors.results.sourceLockedHistory"),
     };
   if (!outputs.length) return { document, ids: [] };
   if (
     hasInvalidMedia(outputs) ||
     outputs.some((output) => output.kind !== target.type)
   )
-    return { document, ids: [], error: "生成结果与节点的媒体类型不匹配。" };
+    return { document, ids: [], error: tNow("errors.results.kindMismatch") };
   // Additional results do not mutate their source; a parallel first result may
   // already have filled it. Replacement must never overwrite a user's later edit.
   if (mode === "replace" && target.data.src !== source.src)
     return {
       document,
       ids: [],
-      error: "节点素材已改变，结果仍保存在生成历史中。",
+      error: tNow("errors.results.mediaChangedHistory"),
     };
   let next = document;
   const ids: string[] = [];
@@ -197,15 +199,15 @@ export function appendLinkedMediaResults(
     (resultIds.length !== outputs.length ||
       new Set(resultIds).size !== resultIds.length)
   )
-    return { document, ids: [], error: "工具结果身份不匹配。" };
+    return { document, ids: [], error: tNow("errors.results.identityMismatch") };
   const validation = validateNodeActionSource(document, source);
   if (!validation.node) return { document, ids: [], error: validation.error };
   const target = validation.node;
   if (!outputs.length) return { document, ids: [] };
   if (hasInvalidMedia(outputs))
-    return { document, ids: [], error: "结果不包含有效媒体。" };
+    return { document, ids: [], error: tNow("errors.results.noMedia") };
   if (sourceTask && sourceTask.sourceNodeIds[0] !== source.nodeId)
-    return { document, ids: [], error: "编辑草稿与来源节点不匹配。" };
+    return { document, ids: [], error: tNow("errors.results.draftMismatch") };
   const p = absolutePosition(target, document.nodes);
   const remaining = outputs.flatMap((output, index) =>
     resultIds && document.nodes.some((node) => node.id === resultIds[index])
@@ -262,7 +264,7 @@ export function appendPendingResult(
   model?: Pick<GenerationSettings, "model" | "modelConfigId">,
 ): PlacementResult {
   if (resultId && document.nodes.some((node) => node.id === resultId))
-    return { document, ids: [], error: "结果节点身份已存在。" };
+    return { document, ids: [], error: tNow("errors.results.identityExists") };
   const validation = validateNodeActionSource(document, source);
   if (!validation.node) return { document, ids: [], error: validation.error };
   const target = validation.node;
@@ -387,7 +389,7 @@ export function fillPendingResult(
   const validation = validateNodeActionSource(document, source);
   if (validation.error) return { document, ids: [], error: validation.error };
   if (sourceTask && sourceTask.sourceNodeIds[0] !== source.nodeId)
-    return { document, ids: [], error: "编辑草稿与来源节点不匹配。" };
+    return { document, ids: [], error: tNow("errors.results.draftMismatch") };
   const [first, ...rest] = outputs;
   if (
     !first ||
@@ -397,7 +399,7 @@ export function fillPendingResult(
         resultIds[0] !== pendingId ||
         new Set(resultIds).size !== resultIds.length))
   )
-    return { document, ids: [], error: "工具结果身份或素材无效。" };
+    return { document, ids: [], error: tNow("errors.results.invalidResult") };
   const existing = document.nodes.find((node) => node.id === pendingId);
   const alreadyFilled =
     existing?.type === first.kind &&
@@ -408,7 +410,7 @@ export function fillPendingResult(
     return {
       document,
       ids: [],
-      error: "结果节点已修改、锁定或移除，结果保留在历史中。",
+      error: tNow("errors.results.nodeModifiedHistory"),
     };
   if (
     rest.some((output, index) => {
@@ -420,7 +422,7 @@ export function fillPendingResult(
       );
     })
   )
-    return { document, ids: [], error: "结果节点已修改，结果保留在历史中。" };
+    return { document, ids: [], error: tNow("errors.results.nodeModified") };
   const filled = alreadyFilled
     ? document
     : applyCommand(document, {
@@ -527,7 +529,7 @@ export function placeToolResults(
     ids.length !== outputs.length ||
     new Set(ids).size !== ids.length
   )
-    return { document, ids: [], error: "工具结果身份不匹配。" };
+    return { document, ids: [], error: tNow("errors.results.identityMismatch") };
   if (toolResultsPlaced(document, outputs, ids, hidden))
     return { document, ids: [] };
   const validation = validateNodeActionSource(document, source);
@@ -543,7 +545,7 @@ export function placeToolResults(
         pendingResultNode(document, node.id, target.title, target.kind)
       )
     )
-      return { document, ids: [], error: "结果节点已修改，结果保留在历史中。" };
+      return { document, ids: [], error: tNow("errors.results.nodeModified") };
   }
   if (target?.id === ids[0] && !hidden.has(target.id))
     return fillPendingResult(

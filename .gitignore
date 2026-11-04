@@ -55,6 +55,10 @@ test-results/
 __pycache__/
 *.py[cod]
 *.egg-info/
+# Local Windows sandbox permission audit output (machine-local recovery data).
+.dsh-acl-report/
+# Scratch directories used when a sandboxed package manager cannot use TMP.
+.tmp-pip/
 /packages/*/build/
 /apps/api/build/
 .pytest_cache/

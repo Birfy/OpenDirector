@@ -42,6 +42,8 @@ import { downloadFile, downloadFilename } from "./assets";
 import { withMediaDuration } from "./editorMedia";
 import { mediaBlobDataUrl } from "./localMediaRuntime";
 import type { LinkedMediaResult } from "./linkedResults";
+import { useI18n } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 
 export interface DirectorStageProps {
   node: CanvasNode;
@@ -69,7 +71,11 @@ const vector = (value: THREE.Vector3): Vector3Value => ({
   z: value.z,
 });
 const axes = ["x", "y", "z"] as const;
-const titles = { person: "人物", box: "方块", sphere: "球体" };
+const titles: Record<StageObject["kind"], MessageKey> = {
+  person: "editors.stage.ui.objectPerson",
+  box: "editors.stage.ui.objectBox",
+  sphere: "editors.stage.ui.objectSphere",
+};
 function applyTransform(object: THREE.Object3D, value: StageTransform) {
   object.position.set(value.position.x, value.position.y, value.position.z);
   object.rotation.set(value.rotation.x, value.rotation.y, value.rotation.z);
@@ -218,11 +224,12 @@ function VectorFields({
   rotation?: boolean;
   min?: number;
 }) {
+  const { t } = useI18n();
   return (
     <fieldset className="cw-stage-vector">
       <legend>
         {label}
-        {rotation ? "（度）" : ""}
+        {rotation ? t("editors.stage.ui.degreesSuffix") : ""}
       </legend>
       {axes.map((axis) => (
         <label key={axis}>
@@ -260,11 +267,12 @@ export function DirectorStage({
   onRender,
   onPrepareRender,
 }: DirectorStageProps) {
+  const { t } = useI18n();
   const [historyState, setHistoryState] = useState(() =>
     createStageHistory(
       node.data.localStage
-        ? parseLocalStageValue(node.data.localStage)
-        : createLocalStage(),
+        ? parseLocalStageValue(node.data.localStage, t)
+        : createLocalStage(t),
     ),
   );
   const commit = useEditorCommit(onClose);
@@ -318,7 +326,11 @@ export function DirectorStage({
         commitStageHistory(history.current, operation(stageRef.current)),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "舞台修改失败。");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("editors.stage.ui.editFailed"),
+      );
     }
   };
   const navigate = (direction: "undo" | "redo") => {
@@ -404,7 +416,9 @@ export function DirectorStage({
           ...current.cameras,
           {
             id,
-            name: `摄像机 ${current.cameras.length + 1}`,
+            name: t("editors.stage.ui.cameraName", {
+              number: current.cameras.length + 1,
+            }),
             pose: sampleStage(current, timeRef.current).camera,
             keyframes: [],
           },
@@ -413,10 +427,11 @@ export function DirectorStage({
     });
   const removeCamera = () =>
     edit((current) => {
-      if (current.cameras.length === 1) throw new Error("至少保留一个摄像机。");
+      if (current.cameras.length === 1)
+        throw new Error(t("editors.stage.ui.keepCamera"));
       const id = current.activeCameraId;
       if (current.shots.some((shot) => shot.cameraId === id))
-        throw new Error("此机位仍被分镜引用，请先更换或删除对应分镜。");
+        throw new Error(t("editors.stage.ui.cameraInUse"));
       const cameras = current.cameras.filter((camera) => camera.id !== id);
       return { ...current, cameras, activeCameraId: cameras[0]!.id };
     });
@@ -457,7 +472,10 @@ export function DirectorStage({
       });
     } catch (reason) {
       setError(
-        `无法初始化 WebGL：${reason instanceof Error ? reason.message : String(reason)}`,
+        t("editors.stage.ui.webglInit", {
+          reason:
+            reason instanceof Error ? reason.message : String(reason),
+        }),
       );
       return;
     }
@@ -571,7 +589,7 @@ export function DirectorStage({
     const contextLost = (event: Event) => {
       event.preventDefault();
       setPlaying(false);
-      setError("WebGL 上下文已丢失。可先保存舞台数据，重新打开编辑器后继续。");
+      setError(t("editors.stage.ui.webglLost"));
     };
     renderer.domElement.addEventListener("webglcontextlost", contextLost);
     let frame = 0;
@@ -678,7 +696,7 @@ export function DirectorStage({
         {
           id,
           kind,
-          name: `${titles[kind]} ${current.objects.length + 1}`,
+          name: `${t(titles[kind])} ${current.objects.length + 1}`,
           color:
             kind === "person"
               ? "#a09af9"
@@ -707,7 +725,7 @@ export function DirectorStage({
     edit((current) => captureStageFrame(current, timeRef.current));
   const screenshot = () => {
     const current = runtime.current;
-    if (!current) throw new Error("舞台渲染器尚未就绪。");
+    if (!current) throw new Error(t("editors.stage.ui.rendererNotReady"));
     displayPose(current, sampleStage(stageRef.current, timeRef.current));
     current.renderer.render(current.scene, current.camera);
     return current.renderer.domElement.toDataURL("image/png");
@@ -728,12 +746,16 @@ export function DirectorStage({
         "image/png",
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "截图失败。");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("editors.stage.ui.screenshotFailed"),
+      );
     }
   };
   const importStage = async (file: File) => {
     try {
-      const next = parseLocalStageValue(JSON.parse(await file.text()));
+      const next = parseLocalStageValue(JSON.parse(await file.text()), t);
       if (active.current) {
         edit(() => next);
         setTime(0);
@@ -741,7 +763,11 @@ export function DirectorStage({
       }
     } catch (reason) {
       if (active.current)
-        setError(reason instanceof Error ? reason.message : "导入舞台失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("editors.stage.ui.importFailed"),
+        );
     }
   };
 
@@ -750,7 +776,7 @@ export function DirectorStage({
     const controller = new AbortController();
     exporting.current?.abort();
     exporting.current = controller;
-    const snapshot = parseLocalStageValue(stageRef.current);
+    const snapshot = parseLocalStageValue(stageRef.current, t);
     setPlaying(false);
     setError("");
     setRendered(null);
@@ -828,7 +854,9 @@ export function DirectorStage({
     } catch (reason) {
       if (active.current && !controller.signal.aborted)
         setError(
-          reason instanceof Error ? reason.message : "预演视频导出失败。",
+          reason instanceof Error
+            ? reason.message
+            : t("editors.stage.ui.exportFailed"),
         );
     } finally {
       // Geometry stays shared with the preview; cloned materials, renderer and shadows are export-owned.
@@ -858,7 +886,9 @@ export function DirectorStage({
             kind: "video",
             src,
             mimeType: "video/mp4",
-            title: `${node.data.title} · 动作预演`,
+            title: t("editors.stage.ui.motionTitle", {
+              title: node.data.title,
+            }),
             media: {
               width: media.width,
               height: media.height,
@@ -869,21 +899,25 @@ export function DirectorStage({
       }
     } catch (reason) {
       if (active.current && !controller.signal.aborted)
-        setError(reason instanceof Error ? reason.message : "加入画布失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("editors.stage.ui.addCanvasFailed"),
+        );
     } finally {
       if (active.current) setRenderProgress(null);
     }
   };
   return (
     <EditorModal
-      title={`导演预演 · ${node.data.title}`}
-      subtitle="本地 3D 舞台 · 镜头与主体关键帧"
+      title={t("editors.stage.ui.title", { title: node.data.title })}
+      subtitle={t("editors.stage.ui.subtitle")}
       className="cw-stage-dialog"
       onClose={commit.close}
       onApply={() =>
         commit.apply(() =>
           onApply(
-            parseLocalStageValue(stageRef.current),
+            parseLocalStageValue(stageRef.current, t),
             runtime.current ? screenshot() : undefined,
           ),
         )
@@ -896,19 +930,19 @@ export function DirectorStage({
             disabled={!history.current.past.length || renderProgress !== null}
             onClick={() => navigate("undo")}
           >
-            撤销
+            {t("editors.stage.ui.undo")}
           </button>
           <button
             disabled={!history.current.future.length || renderProgress !== null}
             onClick={() => navigate("redo")}
           >
-            重做
+            {t("editors.stage.ui.redo")}
           </button>
           <button
             disabled={renderProgress !== null}
             onClick={() => importInput.current?.click()}
           >
-            导入舞台 JSON
+            {t("editors.stage.ui.importJson")}
           </button>
           <button
             onClick={() =>
@@ -919,16 +953,16 @@ export function DirectorStage({
               )
             }
           >
-            导出舞台 JSON
+            {t("editors.stage.ui.exportJson")}
           </button>
           <button disabled={!ready} onClick={snapshot}>
-            下载镜头截图
+            {t("editors.stage.ui.screenshot")}
           </button>
           <button
             disabled={!ready || renderProgress !== null}
             onClick={() => void renderVideo()}
           >
-            合成预演 MP4
+            {t("editors.stage.ui.renderMp4")}
           </button>
         </>
       }
@@ -937,38 +971,52 @@ export function DirectorStage({
         {renderProgress !== null && (
           <div className="cw-render-status" role="status">
             <progress value={renderProgress} max={1} />
-            <span>正在合成预演 {Math.round(renderProgress * 100)}%</span>
-            <button onClick={() => exporting.current?.abort()}>取消合成</button>
+            <span>
+              {t("editors.stage.ui.renderProgress", {
+                percent: Math.round(renderProgress * 100),
+              })}
+            </span>
+            <button onClick={() => exporting.current?.abort()}>
+              {t("editors.stage.ui.cancelRender")}
+            </button>
           </div>
         )}
         {rendered && (
           <div className="cw-render-status" role="status">
             <span>
-              预演 MP4 已完成 · {outputSize.width}×{outputSize.height} · 30 fps
+              {t("editors.stage.ui.renderDone", {
+                width: outputSize.width,
+                height: outputSize.height,
+              })}
             </span>
             <button
               disabled={renderProgress !== null}
               onClick={() =>
                 downloadFile(
                   rendered,
-                  downloadFilename(node.data.title + "-预演", "video/mp4"),
+                  downloadFilename(
+                    `${node.data.title}-${t("editors.stage.ui.previewSuffix")}`,
+                    "video/mp4",
+                  ),
                 )
               }
             >
-              下载预演 MP4
+              {t("editors.stage.ui.downloadMp4")}
             </button>
             <button
               disabled={renderProgress !== null || node.locked || inserted}
               onClick={() => void insertRender()}
             >
-              {inserted ? "已加入画布" : "将预演视频加入画布"}
+              {inserted
+                ? t("editors.stage.ui.addedToCanvas")
+                : t("editors.stage.ui.addToCanvas")}
             </button>
           </div>
         )}
         <fieldset className="cw-editor-work" disabled={renderProgress !== null}>
           <div className="cw-stage-layout">
             <aside className="cw-stage-objects">
-              <h3>场景主体</h3>
+              <h3>{t("editors.stage.ui.sceneObjects")}</h3>
               <div className="cw-stage-add">
                 {(["person", "box", "sphere"] as const).map((kind) => (
                   <button key={kind} onClick={() => addObject(kind)}>
@@ -989,7 +1037,7 @@ export function DirectorStage({
                 ))}
               </div>
               <label className="cw-domain-field">
-                背景颜色
+                {t("editors.stage.ui.background")}
                 <input
                   type="color"
                   value={stage.background}
@@ -1012,12 +1060,12 @@ export function DirectorStage({
                     }))
                   }
                 />
-                显示地面网格
+                {t("editors.stage.ui.grid")}
               </label>
               <p className="cw-domain-note">
-                左键环绕 · 右键平移 · 滚轮缩放
+                {t("editors.stage.ui.orbitHint")}
                 <br />
-                点击主体选择，再调整右侧变换。
+                {t("editors.stage.ui.selectHint")}
               </p>
             </aside>
             <section className="cw-stage-center">
@@ -1029,7 +1077,7 @@ export function DirectorStage({
                 }}
                 ref={mount}
                 role="img"
-                aria-label="可交互的三维导演舞台"
+                aria-label={t("editors.stage.ui.stageAria")}
               />
               <div className="cw-stage-transport">
                 <button
@@ -1039,15 +1087,20 @@ export function DirectorStage({
                     setPlaying((current) => !current);
                   }}
                 >
-                  {playing ? "暂停" : "播放动作与关键帧"}
+                  {playing
+                    ? t("editors.stage.ui.pause")
+                    : t("editors.stage.ui.playAction")}
                 </button>
                 <output>
-                  {time.toFixed(2)} / {stage.duration.toFixed(2)} 秒
+                  {t("editors.stage.ui.time", {
+                    time: time.toFixed(2),
+                    duration: stage.duration.toFixed(2),
+                  })}
                 </output>
                 <label>
-                  总时长
+                  {t("editors.stage.ui.totalDuration")}
                   <input
-                    aria-label="舞台总时长"
+                    aria-label={t("editors.stage.ui.stageDurationAria")}
                     type="number"
                     min={0.1}
                     step={0.5}
@@ -1061,11 +1114,11 @@ export function DirectorStage({
                   />
                 </label>
                 <button onClick={captureKeyframe} disabled={!ready}>
-                  在此记录关键帧
+                  {t("editors.stage.ui.recordKeyframe")}
                 </button>
               </div>
               <ControlSlider
-                aria-label="舞台播放位置"
+                aria-label={t("editors.stage.ui.playheadAria")}
                 min={0}
                 max={stage.duration}
                 step={0.01}
@@ -1087,7 +1140,9 @@ export function DirectorStage({
                       {frame.toFixed(2)}s
                     </button>
                     <button
-                      aria-label={`删除 ${frame} 秒关键帧`}
+                      aria-label={t("editors.stage.ui.deleteKeyframe", {
+                        frame,
+                      })}
                       onClick={() =>
                         edit((current) => removeStageFrame(current, frame))
                       }
@@ -1098,22 +1153,26 @@ export function DirectorStage({
                 ))}
                 {!frameTimes.length && (
                   <p>
-                    在起点和终点分别调整镜头或主体，然后记录关键帧即可预演。
+                    {t("editors.stage.ui.keyframeHint")}
                   </p>
                 )}
               </div>
               <section className="cw-stage-storyboard">
-                <h3>分镜轨道</h3>
-                <button onClick={addShot}>在播放头添加当前机位</button>
+                <h3>{t("editors.stage.ui.storyboard")}</h3>
+                <button onClick={addShot}>
+                  {t("editors.stage.ui.addShot")}
+                </button>
                 <p className="cw-domain-note">
-                  镜头区间不能重叠；空白区间使用当前机位。切换“分镜硬切”可预览并导出同一镜头序列。
+                  {t("editors.stage.ui.shotHint")}
                 </p>
                 {stage.shots.map((shot, index) => (
                   <div className="cw-stage-shot" key={shot.id}>
                     <label>
-                      镜头 {index + 1}
+                      {t("editors.stage.ui.shot", { number: index + 1 })}
                       <select
-                        aria-label={`镜头 ${index + 1} 机位`}
+                        aria-label={t("editors.stage.ui.shotCameraAria", {
+                          number: index + 1,
+                        })}
                         value={shot.cameraId}
                         onChange={(event) =>
                           updateShot(shot.id, { cameraId: event.target.value })
@@ -1127,9 +1186,11 @@ export function DirectorStage({
                       </select>
                     </label>
                     <label>
-                      开始（秒）
+                      {t("editors.stage.ui.startSeconds")}
                       <input
-                        aria-label={`镜头 ${index + 1} 开始`}
+                        aria-label={t("editors.stage.ui.shotStartAria", {
+                          number: index + 1,
+                        })}
                         type="number"
                         min={0}
                         step={0.1}
@@ -1142,9 +1203,11 @@ export function DirectorStage({
                       />
                     </label>
                     <label>
-                      时长（秒）
+                      {t("editors.stage.ui.durationSeconds")}
                       <input
-                        aria-label={`镜头 ${index + 1} 时长`}
+                        aria-label={t("editors.stage.ui.shotDurationAria", {
+                          number: index + 1,
+                        })}
                         type="number"
                         min={0.1}
                         step={0.1}
@@ -1166,7 +1229,7 @@ export function DirectorStage({
                         }));
                       }}
                     >
-                      定位
+                      {t("editors.stage.ui.locate")}
                     </button>
                     <button
                       onClick={() =>
@@ -1178,18 +1241,24 @@ export function DirectorStage({
                         }))
                       }
                     >
-                      删除镜头 {index + 1}
+                      {t("editors.stage.ui.deleteShot", {
+                        number: index + 1,
+                      })}
                     </button>
                   </div>
                 ))}
               </section>
             </section>
             <aside className="cw-stage-inspector">
-              <h3>{object ? "主体变换" : "摄像机"}</h3>
+              <h3>
+                {object
+                  ? t("editors.stage.ui.transform")
+                  : t("editors.stage.ui.camera")}
+              </h3>
               {object && (
                 <>
                   <label className="cw-domain-field">
-                    名称
+                    {t("editors.stage.ui.name")}
                     <input
                       value={object.name}
                       onChange={(event) =>
@@ -1198,7 +1267,7 @@ export function DirectorStage({
                     />
                   </label>
                   <label className="cw-domain-field">
-                    材质颜色
+                    {t("editors.stage.ui.material")}
                     <input
                       type="color"
                       value={object.color}
@@ -1209,17 +1278,23 @@ export function DirectorStage({
                   </label>
                   {object.kind === "person" && (
                     <section className="cw-stage-clips">
-                      <h3>角色动作片段</h3>
-                      <button onClick={addMotionClip}>在播放头添加动作</button>
+                      <h3>{t("editors.stage.ui.motionClips")}</h3>
+                      <button onClick={addMotionClip}>
+                        {t("editors.stage.ui.addMotion")}
+                      </button>
                       <p className="cw-domain-note">
-                        每个角色的片段不能重叠；空白区间保持站立，动作从片段起点计时。
+                        {t("editors.stage.ui.motionHint")}
                       </p>
                       {object.motionClips.map((clip, index) => (
                         <div className="cw-stage-clip" key={clip.id}>
                           <label>
-                            动作 {index + 1}
+                            {t("editors.stage.ui.motion", {
+                              number: index + 1,
+                            })}
                             <select
-                              aria-label={`动作 ${index + 1}`}
+                              aria-label={t("editors.stage.ui.motionAria", {
+                                number: index + 1,
+                              })}
                               value={clip.motion.preset}
                               onChange={(event) =>
                                 updateClip(clip.id, {
@@ -1234,16 +1309,19 @@ export function DirectorStage({
                               {Object.entries(STAGE_MOTIONS).map(
                                 ([id, label]) => (
                                   <option key={id} value={id}>
-                                    {label}
+                                    {t(label)}
                                   </option>
                                 ),
                               )}
                             </select>
                           </label>
                           <label>
-                            开始（秒）
+                            {t("editors.stage.ui.startSeconds")}
                             <input
-                              aria-label={`动作 ${index + 1} 开始`}
+                              aria-label={t(
+                                "editors.stage.ui.motionStartAria",
+                                { number: index + 1 },
+                              )}
                               type="number"
                               min={0}
                               step={0.1}
@@ -1256,9 +1334,12 @@ export function DirectorStage({
                             />
                           </label>
                           <label>
-                            时长（秒）
+                            {t("editors.stage.ui.durationSeconds")}
                             <input
-                              aria-label={`动作 ${index + 1} 时长`}
+                              aria-label={t(
+                                "editors.stage.ui.motionDurationAria",
+                                { number: index + 1 },
+                              )}
                               type="number"
                               min={0.1}
                               step={0.1}
@@ -1271,9 +1352,12 @@ export function DirectorStage({
                             />
                           </label>
                           <label>
-                            速度
+                            {t("editors.stage.ui.speed")}
                             <input
-                              aria-label={`动作 ${index + 1} 速度`}
+                              aria-label={t(
+                                "editors.stage.ui.motionSpeedAria",
+                                { number: index + 1 },
+                              )}
                               type="number"
                               min={0.1}
                               step={0.1}
@@ -1289,9 +1373,12 @@ export function DirectorStage({
                             />
                           </label>
                           <label>
-                            幅度
+                            {t("editors.stage.ui.amplitude")}
                             <input
-                              aria-label={`动作 ${index + 1} 幅度`}
+                              aria-label={t(
+                                "editors.stage.ui.motionAmplitudeAria",
+                                { number: index + 1 },
+                              )}
                               type="range"
                               min={0}
                               max={1}
@@ -1313,7 +1400,7 @@ export function DirectorStage({
                               setTime(clip.start);
                             }}
                           >
-                            定位
+                             {t("editors.stage.ui.locate")}
                           </button>
                           <button
                             onClick={() =>
@@ -1324,43 +1411,47 @@ export function DirectorStage({
                               })
                             }
                           >
-                            删除动作 {index + 1}
+                            {t("editors.stage.ui.deleteMotion", {
+                        number: index + 1,
+                      })}
                           </button>
                         </div>
                       ))}
                     </section>
                   )}
                   <VectorFields
-                    label="位置"
+                    label={t("editors.stage.ui.position")}
                     value={object.position}
                     onChange={(position) => editObject({ position })}
                   />
                   <VectorFields
-                    label="旋转"
+                    label={t("editors.stage.ui.rotation")}
                     value={object.rotation}
                     rotation
                     onChange={(rotation) => editObject({ rotation })}
                   />
                   <VectorFields
-                    label="缩放"
+                    label={t("editors.stage.ui.scale")}
                     value={object.scale}
                     min={0.01}
                     onChange={(scale) => editObject({ scale })}
                   />
-                  <button onClick={removeObject}>删除此主体</button>
+                  <button onClick={removeObject}>
+                    {t("editors.stage.ui.deleteObject")}
+                  </button>
                 </>
               )}
               <h3>
-                摄像机 ·{" "}
+                {t("editors.stage.ui.cameraLabel")}{" "}
                 {
                   stage.cameras.find((camera) => camera.id === sampled.cameraId)
                     ?.name
                 }
               </h3>
               <label className="cw-domain-field">
-                编辑机位
+                {t("editors.stage.ui.editCamera")}
                 <select
-                  aria-label="编辑机位"
+                  aria-label={t("editors.stage.ui.editCamera")}
                   value={sampled.cameraId}
                   onChange={(event) =>
                     edit((current) => ({
@@ -1378,9 +1469,9 @@ export function DirectorStage({
                 </select>
               </label>
               <label className="cw-domain-field">
-                机位名称
+                {t("editors.stage.ui.cameraNameAria")}
                 <input
-                  aria-label="机位名称"
+                  aria-label={t("editors.stage.ui.cameraNameAria")}
                   value={
                     stage.cameras.find(
                       (camera) => camera.id === sampled.cameraId,
@@ -1399,7 +1490,9 @@ export function DirectorStage({
                 />
               </label>
               <div className="cw-stage-camera-actions">
-                <button onClick={addCamera}>复制为新机位</button>
+                <button onClick={addCamera}>
+                  {t("editors.stage.ui.copyCamera")}
+                </button>
                 <button
                   disabled={
                     stage.cameras.length === 1 ||
@@ -1407,13 +1500,13 @@ export function DirectorStage({
                   }
                   onClick={removeCamera}
                 >
-                  删除当前机位
+                  {t("editors.stage.ui.deleteCamera")}
                 </button>
               </div>
               <label className="cw-domain-field">
-                输出画幅
+                {t("editors.stage.ui.outputAspect")}
                 <select
-                  aria-label="导演输出画幅"
+                  aria-label={t("editors.stage.ui.outputAspectAria")}
                   value={stage.aspectRatio}
                   onChange={(event) =>
                     edit((current) => ({
@@ -1431,9 +1524,9 @@ export function DirectorStage({
                 </select>
               </label>
               <label className="cw-domain-field">
-                预览与导出来源
+                {t("editors.stage.ui.source")}
                 <select
-                  aria-label="导演镜头来源"
+                  aria-label={t("editors.stage.ui.sourceAria")}
                   value={stage.cameraSource}
                   onChange={(event) =>
                     edit((current) => ({
@@ -1443,22 +1536,26 @@ export function DirectorStage({
                     }))
                   }
                 >
-                  <option value="camera">当前机位全程</option>
-                  <option value="storyboard">分镜硬切</option>
+                  <option value="camera">
+                    {t("editors.stage.ui.currentCamera")}
+                  </option>
+                  <option value="storyboard">
+                    {t("editors.stage.ui.storyboardCut")}
+                  </option>
                 </select>
               </label>
               <VectorFields
-                label="机位"
+                label={t("editors.stage.ui.cameraShort")}
                 value={cameraValue.position}
                 onChange={(position) => editCamera({ position })}
               />
               <VectorFields
-                label="目标"
+                label={t("editors.stage.ui.target")}
                 value={cameraValue.target}
                 onChange={(target) => editCamera({ target })}
               />
               <label className="cw-domain-field">
-                焦距（35mm 胶片，16:9 等效）
+                {t("editors.stage.ui.focal")}
                 <input
                   type="number"
                   min={1}
@@ -1471,7 +1568,9 @@ export function DirectorStage({
                 />
               </label>
               <label className="cw-domain-field">
-                垂直视角 {cameraValue.fov.toFixed(1)}°
+                {t("editors.stage.ui.verticalFov", {
+                   value: cameraValue.fov.toFixed(1),
+                 })}
                 <input
                   type="range"
                   min={10}
@@ -1489,21 +1588,19 @@ export function DirectorStage({
                   editCamera(defaultStageCamera());
                 }}
               >
-                重置镜头
+                {t("editors.stage.ui.resetCamera")}
               </button>
             </aside>
           </div>
           <p className="cw-domain-note">
-            修改机位或主体会写入当前时间的关键帧；预览、截图与 MP4
-            共用画幅和采样。支持分镜硬切、分段关节动作和 30 fps MP4 导出。外部
-            FBX/GLB 蒙皮角色与云端导演版本尚未接入。
+            {t("editors.stage.ui.footerHint")}
           </p>
           <input
             className="cw-domain-file-input"
             ref={importInput}
             type="file"
             accept="application/json,.json"
-            aria-label="导入导演舞台"
+            aria-label={t("editors.stage.ui.importAria")}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void importStage(file);

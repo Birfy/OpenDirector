@@ -5,14 +5,16 @@ import { CanvasIcon as Icon } from "./CanvasIcon";
 import type { ModelConfig, ModelKind } from "../backend/rules";
 import { isGenerationModel } from "../backend/rules";
 import type { ModelSelections } from "../backend/chat";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 
 // Preserve OpenDirector's keyboard-accessible model and thinking pickers.
 const MODEL_KINDS = [
-  { id: "agent", label: "Agent" },
-  { id: "image", label: "图片" },
-  { id: "video", label: "视频" },
-  { id: "audio", label: "音频" },
-] as const;
+  { id: "agent", labelKey: "assistant.kind.agent" },
+  { id: "image", labelKey: "assistant.kind.image" },
+  { id: "video", labelKey: "assistant.kind.video" },
+  { id: "audio", labelKey: "assistant.kind.audio" },
+] as const satisfies readonly { id: string; labelKey: MessageKey }[];
 // Vision models serve canvas tools only; the assistant never picks one.
 type AssistantKind = (typeof MODEL_KINDS)[number]["id"];
 function modelOptions(models: ModelConfig[], kind: ModelKind) {
@@ -53,6 +55,7 @@ export function ModelPicker({
   disabled: boolean;
   includeAgent?: boolean;
 }) {
+  const t = useT();
   const kinds = includeAgent ? MODEL_KINDS : MODEL_KINDS.filter(item => item.id !== "agent");
   const [open, setOpen] = useState(false);
   const [selection, setKind] = useState<AssistantKind>("agent");
@@ -160,8 +163,12 @@ export function ModelPicker({
         type="button"
         className="chat-picker-trigger"
         disabled={disabled}
-        aria-label={`模型配置：${includeAgent ? agent?.label ?? "未配置 Agent" : "媒体模型"}`}
-        title={includeAgent ? "选择 Agent、图片、视频和音频模型" : "选择图片、视频和音频模型"}
+        aria-label={t("assistant.modelPicker.aria", {
+          name: includeAgent
+            ? agent?.label ?? t("assistant.modelPicker.unconfiguredAgent")
+            : t("assistant.modelPicker.mediaModels"),
+        })}
+        title={includeAgent ? t("assistant.modelPicker.chooseHint") : t("assistant.modelPicker.chooseMediaHint")}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
@@ -173,7 +180,12 @@ export function ModelPicker({
           }
         }}
       >
-        <span>{includeAgent ? agent?.label ?? "选择模型" : "媒体模型"}</span>
+        <Icon name="cube" />
+        <span>
+          {includeAgent
+            ? agent?.label ?? t("assistant.modelPicker.choose")
+            : t("assistant.modelPicker.mediaModels")}
+        </span>
         <Icon name="chevron" />
       </button>
       {open && (
@@ -182,7 +194,7 @@ export function ModelPicker({
           id={id}
           className="model-picker-panel"
           role="dialog"
-          aria-label="模型配置"
+          aria-label={t("assistant.modelPicker.label")}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
@@ -192,7 +204,7 @@ export function ModelPicker({
           }}
         >
           <header className="model-picker-header">
-            <span>模型配置</span>
+            <span>{t("assistant.modelPicker.label")}</span>
             <button
               type="button"
               className="model-picker-configure"
@@ -201,13 +213,13 @@ export function ModelPicker({
               onClick={configure}
             >
               <Icon name="settings" />
-              <span>修改模型配置</span>
+              <span>{t("assistant.modelPicker.configure")}</span>
             </button>
           </header>
           <div
             className="model-picker-tabs"
             role="tablist"
-            aria-label="模型类型"
+            aria-label={t("assistant.modelPicker.tabs")}
             onKeyDown={tabKeys}
           >
             {kinds.map((tab) => (
@@ -221,7 +233,7 @@ export function ModelPicker({
                 tabIndex={kind === tab.id ? 0 : -1}
                 onClick={() => setKind(tab.id)}
               >
-                {tab.label}
+                {t(tab.labelKey)}
                 <span>{modelOptions(models, tab.id).length}</span>
               </button>
             ))}
@@ -234,19 +246,19 @@ export function ModelPicker({
           >
             {options.length === 0 ? (
               <div className="model-picker-empty">
-                <p>暂无{category.label}模型</p>
+                <p>{t("assistant.modelPicker.empty", { kind: t(category.labelKey) })}</p>
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={configure}
                 >
-                  添加模型
+                  {t("assistant.modelPicker.add")}
                 </button>
               </div>
             ) : (
               <div
                 role="listbox"
-                aria-label={`${category.label}模型`}
+                aria-label={t("assistant.modelPicker.listAria", { kind: t(category.labelKey) })}
                 onKeyDown={optionKeys}
               >
                 {options.map((option, index) => (
@@ -296,6 +308,7 @@ export function ChoicePicker({
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -359,7 +372,10 @@ export function ChoicePicker({
         type="button"
         className="chat-picker-trigger"
         disabled={disabled}
-        aria-label={`${label}：${selected?.label ?? "未配置"}`}
+        aria-label={t("assistant.choice.aria", {
+          label,
+          value: selected?.label ?? t("assistant.choice.unset"),
+        })}
         title={label}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -372,7 +388,7 @@ export function ChoicePicker({
         }}
       >
         <Icon name={icon} />
-        <span>{selected?.label ?? "未配置"}</span>
+        <span>{selected?.label ?? t("assistant.choice.unset")}</span>
         <Icon name="chevron" />
       </button>
       {open && (

@@ -2,6 +2,7 @@ import { dataUrlToBlob, downloadFilename } from "./downloadAssets.ts";
 import type { CanvasDocument } from "./model.ts";
 import { parseDocument } from "./storage.ts";
 import { createZip, readZip, type ZipEntry } from "./zipArchive.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** A `.canvas` file is a ZIP archive: `manifest.json` describes the export,
  * `canvas.json` is the document and `assets/` holds the media bytes. Keeps the
@@ -31,7 +32,7 @@ export interface CanvasArchiveOptions {
 async function readMedia(src: string): Promise<Blob> {
   if (/^data:/i.test(src)) return dataUrlToBlob(src);
   const response = await fetch(src);
-  if (!response.ok) throw new Error("无法读取画布素材，未导出不完整的副本。");
+  if (!response.ok) throw new Error(tNow("errors.archive.readMedia"));
   return response.blob();
 }
 
@@ -49,7 +50,7 @@ function uniquePath(
   mimeType: string,
   taken: Set<string>,
 ): string {
-  const name = fileName(downloadFilename(title, mimeType), "素材");
+  const name = fileName(downloadFilename(title, mimeType), tNow("errors.archive.mediaFallback"));
   if (!taken.has(name)) {
     taken.add(name);
     return name;
@@ -149,7 +150,7 @@ export async function buildCanvasArchive(
 
   const canvasJson = `${JSON.stringify(copy, null, 2)}\n`;
   if (/:\s*"blob:/i.test(canvasJson))
-    throw new Error("画布素材仍使用临时地址，未导出不完整的副本。");
+    throw new Error(tNow("errors.archive.transientMedia"));
 
   const manifest = {
     magic: CANVAS_ARCHIVE_MAGIC,
@@ -179,7 +180,7 @@ export async function buildCanvasArchive(
   ];
   return {
     blob: await createZip(entries, options.now ?? new Date()),
-    filename: `${fileName(document.title, "画布")}.canvas`,
+    filename: `${fileName(document.title, tNow("errors.archive.canvasFallback"))}.canvas`,
     assets: assets.map((asset) => asset.path),
   };
 }
@@ -213,37 +214,38 @@ export async function readCanvasArchive(
   const files = await readZip(file);
   const manifestEntry = files.get("manifest.json");
   if (!manifestEntry)
-    throw new Error("这不是 OpenDirector 画布压缩包：缺少 manifest.json。");
+    throw new Error(tNow("errors.archive.noManifest"));
   let manifest: ArchiveManifest;
   try {
     manifest = JSON.parse(new TextDecoder().decode(manifestEntry));
   } catch {
-    throw new Error("画布压缩包的 manifest.json 无法解析。");
+    throw new Error(tNow("errors.archive.manifestInvalid"));
   }
   if (manifest.magic !== CANVAS_ARCHIVE_MAGIC)
-    throw new Error("这不是 OpenDirector 画布压缩包，未导入任何内容。");
+    throw new Error(tNow("errors.archive.notCanvas"));
   const version = manifest.formatVersion;
   if (
     typeof version !== "number" ||
     !Number.isSafeInteger(version) ||
     version < 1
   )
-    throw new Error("画布压缩包的格式版本无效。");
+    throw new Error(tNow("errors.archive.versionInvalid"));
   if (version > CANVAS_ARCHIVE_VERSION)
     throw new Error(
-      `该画布由更新版本的 OpenDirector 导出（格式 v${version}），当前版本无法读取。`,
+      tNow("errors.archive.versionNewer", { version }),
     );
   const documentPath =
     typeof manifest.document === "string" && manifest.document
       ? manifest.document
       : CANVAS_DOCUMENT_ENTRY;
   const documentEntry = files.get(documentPath);
-  if (!documentEntry) throw new Error(`压缩包缺少画布文件：${documentPath}`);
+  if (!documentEntry)
+    throw new Error(tNow("errors.archive.missingDocument", { path: documentPath }));
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder().decode(documentEntry));
   } catch {
-    throw new Error("画布 JSON 无法解析，未导入任何内容。");
+    throw new Error(tNow("errors.archive.documentInvalid"));
   }
   const parsed = parseDocument(raw);
   if (!parsed.ok) throw new Error(parsed.error.message);
@@ -264,9 +266,10 @@ export async function readCanvasArchive(
       if (!MEDIA_FIELDS.has(key) || typeof entry !== "string") continue;
       if (/^data:/i.test(entry)) continue;
       if (/^blob:/i.test(entry))
-        throw new Error("画布引用了临时素材地址，压缩包已损坏，未导入。");
+        throw new Error(tNow("errors.archive.transientReference"));
       const bytes = files.get(entry);
-      if (!bytes) throw new Error(`画布引用的素材缺失：${entry}，未导入。`);
+      if (!bytes)
+        throw new Error(tNow("errors.archive.missingMedia", { entry }));
       const type = mimeTypes.get(entry) || "application/octet-stream";
       record[key] = `data:${type};base64,${base64(bytes)}`;
       restored.add(entry);

@@ -23,6 +23,7 @@ import {
   type CanvasResource,
   type GenerationSettings,
 } from "../canvas/model.ts";
+import { tNow } from "../i18n/messages.ts";
 import {
   createLocalStage,
   parseLocalStageValue,
@@ -110,9 +111,9 @@ export class CreationProjection {
             resource.text ?? "",
             resource.previous,
           );
-        if (!resource.src) throw new Error("素材没有可读取的内容。");
+        if (!resource.src) throw new Error(tNow("errors.backend.mediaEmpty"));
         const response = await fetch(resource.src);
-        if (!response.ok) throw new Error("素材读取失败。");
+        if (!response.ok) throw new Error(tNow("errors.backend.mediaReadFailed"));
         const blob = await response.blob();
         const suffix = extension[blob.type] ?? blob.type.split("/")[1] ?? "bin";
         const name = /\.[\w]+$/.test(resource.title)
@@ -469,7 +470,7 @@ export class CreationProjection {
                   ref.binding === "pinned"
                     ? snapshot.assets.find((a) => a.id === ref.source.assetId)
                     : undefined;
-                const label = `@${source?.title ?? asset?.name ?? "参考"}`;
+                const label = `@${source?.title ?? asset?.name ?? tNow("errors.backend.referenceFallback")}`;
                 node.data.promptContent.push({
                   type: "reference",
                   assetId:
@@ -480,7 +481,7 @@ export class CreationProjection {
                     ? { nodeId: ref.source.id }
                     : { binding: "asset" as const }),
                   referenceId: ref.id,
-                  name: source?.title ?? asset?.name ?? "参考",
+                  name: source?.title ?? asset?.name ?? tNow("errors.backend.referenceFallback"),
                   fingerprint: asset?.fingerprint ?? null,
                 });
                 mentions.push({
@@ -559,10 +560,10 @@ export class CreationProjection {
               count: view.generationCounts?.[item.id] ?? 1,
               ...(spec.kind === "image"
                 ? {
-                    aspectRatio: spec.parameters.aspectRatio ?? "自动",
+                    aspectRatio: spec.parameters.aspectRatio ?? "auto",
                     resolution:
                       spec.parameters.size === "auto"
-                        ? "自动"
+                        ? "auto"
                         : spec.parameters.size,
                     imagePreset: spec.parameters.preset,
                   }
@@ -576,11 +577,11 @@ export class CreationProjection {
                     durationSeconds:
                       spec.parameters.durationSeconds ??
                       DEFAULT_SETTINGS.durationSeconds,
-                    aspectRatio: spec.parameters.aspectRatio ?? "自动",
+                    aspectRatio: spec.parameters.aspectRatio ?? "auto",
                     audioEnabled: spec.parameters.generateAudio,
                     resolution:
                       spec.parameters.resolution === "auto"
-                        ? "自动"
+                        ? "auto"
                         : spec.parameters.resolution,
                     frameSlotsInitialized: true,
                   }
@@ -760,12 +761,12 @@ export class CreationProjection {
               // Empty/tool placeholder nodes still use the shared "1024"
               // initializer, which means no explicit output selection.
               node.data.settings.resolution === "1024" ||
-              node.data.settings.resolution === "自动"
+              node.data.settings.resolution === "auto"
                 ? "auto"
                 : node.data.settings.resolution,
             aspectRatio:
               !node.data.settings?.aspectRatio ||
-              node.data.settings.aspectRatio === "自动"
+              node.data.settings.aspectRatio === "auto"
                 ? null
                 : node.data.settings.aspectRatio,
             preset: node.data.settings?.imagePreset ?? "none",
@@ -805,19 +806,19 @@ export class CreationProjection {
                 : (settings?.videoMode ?? "reference"),
             durationSeconds: settings?.durationSeconds ?? null,
             aspectRatio:
-              settings?.aspectRatio === "自动"
+              settings?.aspectRatio === "auto"
                 ? null
                 : (settings?.aspectRatio ?? null),
             generateAudio: settings?.audioEnabled ?? true,
             resolution:
-              settings?.resolution === "自动"
+              settings?.resolution === "auto"
                 ? "auto"
                 : (settings?.resolution ?? "auto"),
           },
         };
       }
       default:
-        throw new Error("该节点不支持生成配置。");
+        throw new Error(tNow("errors.backend.unsupportedGeneration"));
     }
   }
 
@@ -841,7 +842,7 @@ export class CreationProjection {
           .map(async (edge) => {
             const resource = assemblyResource(node, edge.assemblySlotId);
             if (!resource)
-              throw new Error("装配连线对应的主体素材或时间线片段已不存在。");
+              throw new Error(tNow("errors.backend.assemblyMissing"));
             const asset = await this.importResource(resource);
             return {
               id: edge.id,
@@ -864,7 +865,7 @@ export class CreationProjection {
           const asset =
             source?.data.src && this.client.assetForSource(source.data.src);
           if (!asset)
-            throw new Error("工具来源尚未保存或已变化，请重新打开编辑器。");
+            throw new Error(tNow("errors.backend.toolSourceMissing"));
           return assetReference(asset);
         });
         const selection = task.selection;
@@ -886,7 +887,7 @@ export class CreationProjection {
                   mask: selection.maskDataUrl
                     ? await this.importResource({
                         kind: "image",
-                        title: "工具选区.png",
+                        title: tNow("errors.backend.toolSelectionFile"),
                         src: selection.maskDataUrl,
                       })
                     : null,
@@ -966,7 +967,7 @@ export class CreationProjection {
                   sourceImage: data.palette.sourceImageUri
                     ? await this.importResource({
                         kind: "image",
-                        title: data.palette.name ?? "配色来源",
+                        title: data.palette.name ?? tNow("errors.backend.paletteSourceTitle"),
                         src: data.palette.sourceImageUri,
                       })
                     : null,
@@ -1033,7 +1034,7 @@ export class CreationProjection {
         };
       }
       default:
-        throw new Error("此编辑器需要专属命令。");
+        throw new Error(tNow("errors.backend.editorCommand"));
     }
   }
 
@@ -1042,7 +1043,7 @@ export class CreationProjection {
    * stale form permission to overwrite newer business fields. */
   async prepare(document: CanvasDocument) {
     if (!this.baseline || document.id !== this.client.id)
-      throw new Error("请先打开统一工程。");
+      throw new Error(tNow("errors.backend.openUnifiedProject"));
     const basis = this.basis;
     const oldNodes = new Map(
       [...this.baseline.nodes, ...(this.baseline.hiddenNodes ?? [])].map(
@@ -1455,7 +1456,7 @@ export class CreationProjection {
       const target = items.get(edge.target),
         current = target && itemSpec(basis, target);
       const specId = specs.get(edge.target) ?? current?.id;
-      if (!specId) throw new Error("素材节点不能直接接受生成参考。");
+      if (!specId) throw new Error(tNow("errors.backend.materialReference"));
       if (current) expect("generation_spec", current);
       if (target) expect("canvas_item", target);
       const existingOrders = basis.references
@@ -1645,7 +1646,7 @@ export class CreationProjection {
           !asset ||
           (part.fingerprint && part.fingerprint !== asset.fingerprint)
         )
-          throw new Error("固定参考版本已缺失或内容已改变。");
+          throw new Error(tNow("errors.backend.fixedReferenceMissing"));
         const orders = [
           ...basis.references
             .filter((ref) => ref.active && ref.targetSpecId === specId)

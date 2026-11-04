@@ -1,6 +1,7 @@
 import type { CanvasNode } from "./model.ts";
 import { assistantReferences } from "./assistantReferences.ts";
 import type { ReferenceInput } from "../backend/generation.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface PendingCanvasReference {
   nodeId: string;
@@ -33,15 +34,15 @@ export function pendingCanvasReferences(
             ? Boolean(data.subject?.main?.src)
             : Boolean(data.src);
       const error = !supported
-        ? "该类型暂不支持作为对话参考。"
+        ? tNow("errors.pendingRef.unsupported")
         : data.assetState === "missing"
-          ? "素材已丢失，请先恢复原文件。"
+          ? tNow("errors.pendingRef.mediaMissing")
           : !available
-            ? "尚无已保存的资产，请先上传、保存文本或等待生成完成。"
+            ? tNow("errors.pendingRef.noAsset")
             : null;
       return {
         nodeId: node.id,
-        title: data.title || "空白节点",
+        title: data.title || tNow("errors.pendingRef.blankNode"),
         kind: node.type,
         thumbnail:
           node.type === "image"
@@ -99,12 +100,12 @@ export function pendingReferenceInsertion(
   maxLength = 20000,
 ) {
   if (items.length > 64)
-    throw new Error("每次最多添加 64 份参考素材，整批未插入。");
+    throw new Error(tNow("errors.pendingRef.limit", { count: 64 }));
   const invalid = items.filter((item) => item.error);
   if (invalid.length)
     throw new Error(
       invalid.map((item) => `${item.title}：${item.error}`).join(" ") +
-        " 整批未插入。",
+        ` ${tNow("errors.pendingRef.batchSuffix")}`,
     );
   const start = Math.max(0, Math.min(value.length, end));
   const inserted =
@@ -113,6 +114,8 @@ export function pendingReferenceInsertion(
     " ";
   const next = value.slice(0, start) + inserted + value.slice(start);
   if (next.length > maxLength)
-    throw new Error(`正文最多 ${maxLength} 字，整批未插入。`);
+    throw new Error(
+      tNow("errors.pendingRef.textLimit", { max: maxLength }),
+    );
   return { value: next, start, inserted, caret: start + inserted.length };
 }

@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import { chatSkills, type ChatSkill } from "../backend/chat.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon.tsx";
+
+const SOURCE_LABELS: Record<NonNullable<ChatSkill["source"]>, MessageKey> = {
+  builtin: "assistant.skills.source.builtin",
+  workspace: "assistant.skills.source.workspace",
+  project: "assistant.skills.source.project",
+};
 
 export function SkillPicker({
   projectId,
@@ -15,6 +23,7 @@ export function SkillPicker({
   disabled: boolean;
   onChange: (names: string[], fromSlash: boolean) => void;
 }) {
+  const t = useT();
   const [skills, setSkills] = useState<ChatSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -60,7 +69,9 @@ export function SkillPicker({
       .catch((failure: unknown) => {
         if (!abort.signal.aborted)
           setError(
-            failure instanceof Error ? failure.message : "技能列表读取失败。",
+            failure instanceof Error
+              ? failure.message
+              : t("assistant.skills.loadFailed"),
           );
       })
       .finally(() => {
@@ -156,8 +167,8 @@ export function SkillPicker({
         type="button"
         ref={trigger}
         className="chat-picker-trigger cw-skill-trigger"
-        title="选择技能，或输入 / 查找；Agent 也会按任务自动选择"
-        aria-label="使用技能"
+        title={t("assistant.skills.triggerTitle")}
+        aria-label={t("assistant.skills.trigger")}
         aria-expanded={open}
         aria-controls={list}
         aria-haspopup="dialog"
@@ -169,7 +180,7 @@ export function SkillPicker({
         }}
       >
         <CanvasIcon name="sparkle" size={16} />
-        <span>使用技能</span>
+        <span>{t("assistant.skills.trigger")}</span>
         {selected.length > 0 && <small>{selected.length}</small>}
       </button>
       {open && (
@@ -177,18 +188,18 @@ export function SkillPicker({
           className="cw-skill-popover"
           popover="manual"
           role="dialog"
-          aria-label="使用技能"
+          aria-label={t("assistant.skills.trigger")}
           id={list}
         >
           <div className="cw-skill-search">
             {!slash ? <>
               <CanvasIcon name="search" size={18} />
-              <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索技能" aria-label="搜索技能" aria-controls={`${list}-options`} aria-activedescendant={shown[index] ? `${list}-${index}` : undefined} />
-            </> : <span>使用技能</span>}
-            <button type="button" aria-label="刷新技能" title="刷新技能目录" disabled={loading} onClick={() => setAttempt(value => value + 1)}>↻</button>
+              <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("assistant.skills.search")} aria-label={t("assistant.skills.search")} aria-controls={`${list}-options`} aria-activedescendant={shown[index] ? `${list}-${index}` : undefined} />
+            </> : <span>{t("assistant.skills.trigger")}</span>}
+            <button type="button" aria-label={t("assistant.skills.refresh")} title={t("assistant.skills.refreshTitle")} disabled={loading} onClick={() => setAttempt(value => value + 1)}>↻</button>
           </div>
           {loading && !skills.length ? (
-            <p role="status">正在读取技能…</p>
+            <p role="status">{t("assistant.skills.loading")}</p>
           ) : error ? (
             <div className="cw-skill-status" role="alert">
               <p>{error}</p>
@@ -196,7 +207,7 @@ export function SkillPicker({
                 type="button"
                 onClick={() => setAttempt((value) => value + 1)}
               >
-                重试
+                {t("assistant.skills.retry")}
               </button>
             </div>
           ) : (
@@ -204,7 +215,7 @@ export function SkillPicker({
               className="cw-skill-options"
               role="listbox"
               id={`${list}-options`}
-              aria-label="可用技能"
+              aria-label={t("assistant.skills.list")}
               aria-multiselectable="true"
             >
               {shown.map((skill, position) => (
@@ -222,7 +233,7 @@ export function SkillPicker({
                 >
                   <CanvasIcon name="sparkle" size={16} />
                   <span>
-                    <span className="cw-skill-title"><strong>{skill.name}</strong>{skill.source && <em>{{builtin: "内置", workspace: "工作区", project: "项目"}[skill.source]}</em>}</span>
+                    <span className="cw-skill-title"><strong>{skill.name}</strong>{skill.source && <em>{t(SOURCE_LABELS[skill.source])}</em>}</span>
                     <small title={skill.description}>{skill.description}</small>
                   </span>
                   {selected.includes(skill.name) && (
@@ -231,7 +242,7 @@ export function SkillPicker({
                 </button>
               ))}
               {!shown.length && (
-                <p>{skills.length ? "没有匹配的技能" : "暂无可用技能"}</p>
+                <p>{skills.length ? t("assistant.skills.noMatch") : t("assistant.skills.empty")}</p>
               )}
             </div>
           )}

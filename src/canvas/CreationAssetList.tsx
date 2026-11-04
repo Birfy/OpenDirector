@@ -17,6 +17,9 @@ import {
   type AssetPreview,
 } from "./CreationAssetPreview.tsx";
 import "./creation-assets.css";
+import { useT } from "../i18n/I18nProvider.tsx";
+import { PREVIEW_LABEL_KEYS } from "./creationPreviewText.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 interface Usage {
   assetId: string;
@@ -32,16 +35,23 @@ interface Row {
   createdOrder: number;
   categories: string[];
 }
-const CATEGORIES = [
-  { id: "all", label: "全部" },
-  { id: "image", label: "图片" },
-  { id: "video", label: "视频" },
-  { id: "audio", label: "音频" },
-  { id: "text", label: "文本" },
-  { id: "subject", label: "主体" },
-  { id: "timeline", label: "时间线" },
+type Category =
+  | "all"
+  | "image"
+  | "video"
+  | "audio"
+  | "text"
+  | "subject"
+  | "timeline";
+const CATEGORIES: readonly { id: Category; label: MessageKey }[] = [
+  { id: "all", label: "canvasNodes.assets.all" },
+  { id: "image", label: "canvasNodes.assets.image" },
+  { id: "video", label: "canvasNodes.assets.video" },
+  { id: "audio", label: "canvasNodes.assets.audio" },
+  { id: "text", label: "canvasNodes.assets.text" },
+  { id: "subject", label: "canvasNodes.assets.subject" },
+  { id: "timeline", label: "canvasNodes.assets.timeline" },
 ] as const;
-type Category = (typeof CATEGORIES)[number]["id"];
 interface Listing {
   items: Row[];
   nodes: NodeRow[];
@@ -79,6 +89,11 @@ export function CreationAssetList({
   onLocate: (id: string) => void;
   position: Point;
 }) {
+  const t = useT();
+  const previewLabel = (label: string) => {
+    const key = PREVIEW_LABEL_KEYS[label];
+    return key ? t(key) : label;
+  };
   const [text, setText] = useState(""),
     [visibility, setVisibility] = useState("all"),
     [query, setQuery] = useState("");
@@ -181,7 +196,7 @@ export function CreationAssetList({
           { signal: controller.signal },
         );
         if ((rows.length || nodes.length) && page.eventCursor !== cursor)
-          throw new Error("资产列表已变化，请重新读取。");
+          throw new Error(t("canvasNodes.assets.changed"));
         rows.push(...page.items);
         nodes.push(...(page.nodes ?? []));
         total = page.total;
@@ -278,7 +293,7 @@ export function CreationAssetList({
     let item = owners.find((item) => visible.has(item.id)) ?? owners[0];
     if (row.owners.length && !item) {
       setAttempt((n) => n + 1);
-      throw new Error("资产的当前版本已变化，请从更新后的列表选择。");
+      throw new Error(t("canvasNodes.assets.versionChanged"));
     }
     if (item && !visible.has(item.id)) {
       const versions = [objectVersion("canvas_item", item)];
@@ -338,7 +353,7 @@ export function CreationAssetList({
     );
     if (!item) {
       setAttempt((value) => value + 1);
-      throw new Error("节点已变化，请从更新后的列表选择。");
+      throw new Error(t("canvasNodes.assets.nodeChanged"));
     }
     if (!visibleItems(client.snapshot).has(item.id)) {
       const versions = [objectVersion("canvas_item", item)];
@@ -355,15 +370,15 @@ export function CreationAssetList({
     onLocate(item.id);
     onClose();
   };
-  const labels: Record<string, string> = {
-    visible_canvas_item: "画布中显示的节点",
-    reference: "生成参考",
-    job: "生成任务及固定输入",
-    result: "生成结果历史",
-    editor_document: "编辑文档",
-    asset_provenance: "素材来源",
-    undo_history: "画布撤销/重做记录",
-    unresolved_reference: "尚未解析的参考",
+  const labels: Record<string, MessageKey> = {
+    visible_canvas_item: "canvasNodes.assets.role.visibleCanvasItem",
+    reference: "canvasNodes.assets.role.reference",
+    job: "canvasNodes.assets.role.job",
+    result: "canvasNodes.assets.role.result",
+    editor_document: "canvasNodes.assets.role.editorDocument",
+    asset_provenance: "canvasNodes.assets.role.assetProvenance",
+    undo_history: "canvasNodes.assets.role.undoHistory",
+    unresolved_reference: "canvasNodes.assets.role.unresolvedReference",
   };
   return (
     <>
@@ -371,34 +386,44 @@ export function CreationAssetList({
         ref={dialog}
         className="cw-creation-assets nodrag nopan nowheel"
         role="dialog"
-        aria-label="资产列表"
+        aria-label={t("canvasNodes.assets.title")}
         onKeyDown={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}
         onMouseLeave={clearPreview}
       >
         <header>
-          <h2>{deleting ? "永久删除资产" : "资产列表"}</h2>
-          <button aria-label="关闭资产列表" disabled={busy} onClick={onClose}>
+          <h2>
+            {deleting
+              ? t("canvasNodes.assets.deleteTitle")
+              : t("canvasNodes.assets.title")}
+          </h2>
+          <button
+            aria-label={t("canvasNodes.assets.close")}
+            disabled={busy}
+            onClick={onClose}
+          >
             <CanvasIcon name="close" />
           </button>
         </header>
         {deleting ? (
           <>
             <p>
-              永久删除所选 {deleting.ids.length}{" "}
-              项资产及其本地文件？此操作不可撤销。
+              {t("canvasNodes.assets.deleteConfirm", {
+                count: deleting.ids.length,
+              })}
             </p>
             {deleting.impact.hiddenItemIds.length > 0 && (
-              <p>对应隐藏节点保留原身份，其已删除素材绑定将清空。</p>
+              <p>{t("canvasNodes.assets.deleteHiddenKeep")}</p>
             )}
             {!deleting.impact.canDelete ? (
               <>
-                <p>以下依赖仍在使用资产，请先处理引用。</p>
+                <p>{t("canvasNodes.assets.deleteDependencies")}</p>
                 <ul>
                   {deleting.impact.usage.flatMap((entry) =>
                     entry.reasons.map((reason) => (
                       <li key={`${entry.assetId}:${reason.type}:${reason.id}`}>
-                        {labels[reason.type] ?? reason.type} ·{" "}
+                        {t(labels[reason.type] ?? "canvasNodes.assets.fallback")}{" "}
+                        ·{" "}
                         {reason.id.slice(0, 8)}
                       </li>
                     )),
@@ -408,19 +433,19 @@ export function CreationAssetList({
             ) : (
               deleting.impact.clearsAllUndoRedo && (
                 <p role="note">
-                  继续删除将清空当前项目全部画布撤销和重做记录，包括其他节点的编辑记录。生成版本历史保留。
+                  {t("canvasNodes.assets.deleteUndoWarning")}
                 </p>
               )
             )}
             <footer>
               <button disabled={busy} onClick={() => setDeleting(null)}>
-                返回
+                {t("canvasNodes.assets.back")}
               </button>
               {deleting.impact.canDelete && (
                 <button disabled={busy} onClick={() => void perform(destroy)}>
                   {deleting.impact.clearsAllUndoRedo
-                    ? "删除并清空画布撤销记录"
-                    : "确认永久删除"}
+                    ? t("canvasNodes.assets.deleteAndClear")
+                    : t("canvasNodes.assets.confirmDelete")}
                 </button>
               )}
             </footer>
@@ -430,25 +455,29 @@ export function CreationAssetList({
             <div className="cw-creation-asset-filters">
               <input
                 autoFocus
-                aria-label="查找资产"
-                placeholder="按名称查找…"
+                aria-label={t("canvasNodes.assets.search")}
+                placeholder={t("canvasNodes.assets.searchPlaceholder")}
                 value={text}
                 onChange={(event) => setText(event.target.value)}
               />
               <select
-                aria-label="资产显示状态"
+                aria-label={t("canvasNodes.assets.visibility")}
                 value={visibility}
                 onChange={(event) => setVisibility(event.target.value)}
               >
-                <option value="all">全部</option>
-                <option value="visible">已显示</option>
-                <option value="hidden">未显示</option>
+                <option value="all">{t("canvasNodes.assets.all")}</option>
+                <option value="visible">
+                  {t("canvasNodes.assets.visible")}
+                </option>
+                <option value="hidden">
+                  {t("canvasNodes.assets.hidden")}
+                </option>
               </select>
             </div>
             <div
               className="cw-creation-asset-categories"
               role="tablist"
-              aria-label="资产类型"
+              aria-label={t("canvasNodes.assets.type")}
               onKeyDown={(event) => {
                 const index = CATEGORIES.findIndex(
                   (entry) => entry.id === category,
@@ -477,27 +506,30 @@ export function CreationAssetList({
                   type="button"
                   role="tab"
                   aria-selected={category === entry.id}
-                  aria-label={`${entry.label} ${listing?.counts?.[entry.id] ?? 0}`}
+                  aria-label={`${t(entry.label)} ${listing?.counts?.[entry.id] ?? 0}`}
                   aria-controls={rowsId}
                   tabIndex={category === entry.id ? 0 : -1}
                   onClick={() => setCategory(entry.id)}
                 >
-                  {entry.label}
+                  {t(entry.label)}
                   <span>{listing?.counts?.[entry.id] ?? 0}</span>
                 </button>
               ))}
             </div>
             {loading && !error && (
               <p role="status">
-                正在读取资产列表…
+                {t("canvasNodes.assets.loading")}
                 {listing &&
-                  `（${listing.items.length + listing.nodes.length}/${listing.total}）`}
+                  t("canvasNodes.assets.progress", {
+                    shown: listing.items.length + listing.nodes.length,
+                    total: listing.total,
+                  })}
               </p>
             )}
             <div
               id={rowsId}
               className="cw-creation-asset-rows"
-              aria-label="资产条目"
+              aria-label={t("canvasNodes.assets.items")}
               onScroll={clearPreview}
             >
               {listing?.nodes.map((row) => (
@@ -520,7 +552,7 @@ export function CreationAssetList({
                         id: row.itemId,
                         name: row.title,
                         kind: row.kind,
-                        label: row.previewLabel,
+                        label: previewLabel(row.previewLabel),
                         asset: row.asset,
                       })
                     }
@@ -529,7 +561,7 @@ export function CreationAssetList({
                         id: row.itemId,
                         name: row.title,
                         kind: row.kind,
-                        label: row.previewLabel,
+                        label: previewLabel(row.previewLabel),
                         asset: row.asset,
                       })
                     }
@@ -549,8 +581,8 @@ export function CreationAssetList({
                     <span>{row.title}</span>
                     <small>
                       {row.visible
-                        ? "已显示 · 定位节点"
-                        : "未显示 · 显示到画布"}
+                        ? t("canvasNodes.assets.locate")
+                        : t("canvasNodes.assets.show")}
                     </small>
                   </button>
                 </div>
@@ -563,7 +595,7 @@ export function CreationAssetList({
                   <div key={row.asset.id} className="cw-creation-asset-row">
                     <input
                       type="checkbox"
-                      aria-label={`选择资产：${name}`}
+                      aria-label={t("canvasNodes.assets.select", { name })}
                       checked={selected.includes(row.asset.id)}
                       disabled={
                         busy ||
@@ -595,7 +627,13 @@ export function CreationAssetList({
                           label:
                             CATEGORIES.find(
                               (entry) => entry.id === row.asset.kind,
-                            )?.label ?? "素材",
+                          )?.label
+                            ? t(
+                                CATEGORIES.find(
+                                  (entry) => entry.id === row.asset.kind,
+                                )!.label,
+                              )
+                            : t("canvasNodes.assets.fallback"),
                           kind: row.asset.kind,
                           asset: row.asset,
                         })
@@ -607,7 +645,13 @@ export function CreationAssetList({
                           label:
                             CATEGORIES.find(
                               (entry) => entry.id === row.asset.kind,
-                            )?.label ?? "素材",
+                          )?.label
+                            ? t(
+                                CATEGORIES.find(
+                                  (entry) => entry.id === row.asset.kind,
+                                )!.label,
+                              )
+                            : t("canvasNodes.assets.fallback"),
                           kind: row.asset.kind,
                           asset: row.asset,
                         })
@@ -619,8 +663,8 @@ export function CreationAssetList({
                       <span>{name}</span>
                       <small>
                         {row.owners.some((owner) => owner.visible)
-                          ? "已显示 · 定位节点"
-                          : "未显示 · 显示到画布"}
+                          ? t("canvasNodes.assets.locate")
+                          : t("canvasNodes.assets.show")}
                       </small>
                     </button>
                   </div>
@@ -629,8 +673,8 @@ export function CreationAssetList({
               {listing && !listing.items.length && !listing.nodes.length && (
                 <p>
                   {text || visibility !== "all" || category !== "all"
-                    ? "未找到匹配的资产"
-                    : "当前暂无资产"}
+                    ? t("canvasNodes.assets.noneMatch")
+                    : t("canvasNodes.assets.empty")}
                 </p>
               )}
             </div>
@@ -644,11 +688,11 @@ export function CreationAssetList({
                     )
                   }
                 >
-                  全选素材
+                  {t("canvasNodes.assets.selectAll")}
                 </button>
                 {!!selected.length && (
                   <button disabled={busy} onClick={() => setSelected([])}>
-                    取消选择
+                    {t("canvasNodes.assets.clearSelection")}
                   </button>
                 )}
                 {!!selected.length && (
@@ -656,7 +700,9 @@ export function CreationAssetList({
                     disabled={busy}
                     onClick={() => void perform(() => inspect(selected))}
                   >
-                    删除所选（{selected.length}）
+                    {t("canvasNodes.assets.deleteSelected", {
+                      count: selected.length,
+                    })}
                   </button>
                 )}
               </footer>
@@ -673,7 +719,7 @@ export function CreationAssetList({
                 else setAttempt((n) => n + 1);
               }}
             >
-              重新读取资产列表
+              {t("canvasNodes.assets.reload")}
             </button>
           </p>
         )}

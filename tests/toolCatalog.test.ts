@@ -4,10 +4,12 @@ import {
   CANVAS_TOOLS,
   createCanvasToolTask,
   initialToolParameters,
+  toolFields,
   validateToolTask,
   type ToolSource,
   type ToolParameters,
 } from "../src/canvas/toolCatalog.ts";
+import { setActiveLocale } from "../src/i18n/messages.ts";
 const source: ToolSource = {
   nodeId: "image-1",
   kind: "image",
@@ -370,5 +372,33 @@ test("panorama uses connected editing models and rejects a removed selection", (
       ...capability,
       models: { "image.edit": [] },
     }).some((error) => error.includes("可用选项")),
+  );
+});
+
+test("adapter-supplied field labels and options are translated for display", () => {
+  const tool = CANVAS_TOOLS.find((item) => item.id === "audio-separation")!;
+  setActiveLocale("en-US");
+  const fields = toolFields(tool, {
+    available: true,
+    fields: [
+      {
+        key: "mode",
+        label: "分离方式",
+        type: "select",
+        options: [{ value: "all", label: "完整音轨" }],
+      },
+    ],
+  });
+  const field = fields.find((item) => item.key === "mode")!;
+  assert.equal(field.label, "Separation mode");
+  assert.equal(field.options?.[0]?.label, "Full soundtrack");
+  assert.equal(field.options?.[0]?.value, "all");
+  setActiveLocale("zh-CN");
+  assert.equal(
+    toolFields(tool, {
+      available: true,
+      fields: [{ key: "mode", label: "分离方式", type: "select" }],
+    }).find((item) => item.key === "mode")!.label,
+    "分离方式",
   );
 });

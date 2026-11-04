@@ -1,6 +1,7 @@
 import { MEDIA_FIELDS } from "./canvasArchive.ts";
 import type { CanvasResource } from "./model.ts";
 import type { CanvasFragment } from "./operations.ts";
+import { tNow } from "../i18n/messages.ts";
 
 const KINDS = new Set<CanvasResource["kind"]>([
   "image",
@@ -68,7 +69,7 @@ function visitMedia(
 
 async function readBlob(src: string): Promise<Blob> {
   const response = await fetch(src);
-  if (!response.ok) throw new Error("素材读取失败。");
+  if (!response.ok) throw new Error(tNow("errors.files.clipboardRead"));
   return response.blob();
 }
 
@@ -128,7 +129,7 @@ export async function transferClipboardMedia(
       : undefined;
     visitMedia(node, (record, key, src) => {
       const blob = media.blobs.get(src);
-      if (!blob) throw new Error("复制的素材已失效，请重新复制。");
+      if (!blob) throw new Error(tNow("errors.files.clipboardExpired"));
       const title =
         typeof record.title === "string" ? record.title : node.data.title;
       const kind =

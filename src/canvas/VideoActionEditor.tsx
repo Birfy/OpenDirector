@@ -8,6 +8,9 @@ import {
   type PointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
+import { translateTool } from "./toolText.ts";
 import { CanvasIcon } from "./CanvasIcon";
 import { ControlSlider } from "./ControlSlider";
 import { TooltipButton } from "./TooltipButton";
@@ -59,6 +62,12 @@ const LOCAL = new Set<CanvasToolId>([
   "video-frame-capture",
   "extract-audio",
 ]);
+const CORNER_KEYS = {
+  nw: "tools.videoEditor.corner.nw",
+  ne: "tools.videoEditor.corner.ne",
+  sw: "tools.videoEditor.corner.sw",
+  se: "tools.videoEditor.corner.se",
+} as const;
 const timeLabel = (seconds: number) =>
   `${Math.floor(seconds / 60)
     .toString()
@@ -94,7 +103,11 @@ function VideoActionSession({
   onGenerate,
   unavailableReason,
 }: VideoActionEditorProps) {
-  const definition = CANVAS_TOOLS.find((item) => item.id === tool)!;
+  const { t, locale } = useI18n();
+  const definition = translateTool(
+    locale,
+    CANVAS_TOOLS.find((item) => item.id === tool)!,
+  );
   const saved =
     draft?.tool === tool &&
     draft.sourceNodeIds.length === 1 &&
@@ -369,7 +382,9 @@ function VideoActionSession({
         .catch((reason) => {
           if (active.current && !pending.signal.aborted)
             setError(
-              reason instanceof Error ? reason.message : "无法读取视频时长。",
+              reason instanceof Error
+                ? reason.message
+                : t("tools.videoEditor.error.duration"),
             );
         })
         .finally(() => {
@@ -399,7 +414,11 @@ function VideoActionSession({
       previewRange.current = selectingRange;
       await element.play();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "视频暂时无法播放。");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("tools.videoEditor.error.play"),
+      );
     }
   };
 
@@ -578,7 +597,11 @@ function VideoActionSession({
       setError("");
       onDraftChange(task());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "截帧失败。");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : t("tools.videoEditor.error.capture"),
+      );
     }
   };
   const exported = useRef<
@@ -605,7 +628,7 @@ function VideoActionSession({
         setError(
           reason instanceof Error
             ? reason.message
-            : "结果未保存，暂存帧已保留。",
+            : t("tools.videoEditor.error.framesNotSaved"),
         );
       } finally {
         setBusy(false);
@@ -623,7 +646,7 @@ function VideoActionSession({
       return;
     }
     if (tool === "video-crop" && !cropRef.current) {
-      setError("请等待视频尺寸读取完成。");
+      setError(t("tools.videoEditor.error.dimensions"));
       return;
     }
     const operation = new AbortController();
@@ -672,7 +695,11 @@ function VideoActionSession({
         onClose();
     } catch (reason) {
       if (active.current && !operation.signal.aborted)
-        setError(reason instanceof Error ? reason.message : "视频处理失败。");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : t("tools.videoEditor.error.process"),
+        );
     } finally {
       if (controller.current === operation) {
         controller.current = null;
@@ -713,31 +740,34 @@ function VideoActionSession({
       </select>
     </label>
   );
-  const promptField =
+  const promptField: {
+    key: string;
+    label: MessageKey;
+    placeholder: MessageKey;
+  } | null =
     tool === "video-edit"
       ? {
           key: "prompt",
-          label: "编辑描述",
-          placeholder: "描述希望修改的视频内容…",
+          label: "tools.videoEditor.prompt.editLabel",
+          placeholder: "tools.videoEditor.prompt.editPlaceholder",
         }
       : tool === "video-partial-reshoot"
         ? {
             key: "prompt",
-            label: "重拍描述",
-            placeholder: "描述所选片段需要怎样变化…",
+            label: "tools.videoEditor.prompt.reshootLabel",
+            placeholder: "tools.videoEditor.prompt.reshootPlaceholder",
           }
         : tool === "video-matting"
           ? {
               key: "prompt",
-              label: "抠像对象",
-              placeholder:
-                "默认抠出人物；可写多个对象，用逗号分隔，如：人物，狗",
+              label: "tools.videoEditor.prompt.mattingLabel",
+              placeholder: "tools.videoEditor.prompt.mattingPlaceholder",
             }
           : tool === "audio-separation" && parameters.mode === "description"
             ? {
                 key: "description",
-                label: "声音描述",
-                placeholder: "例如：雨声、脚步声或画面中的人声…",
+                label: "tools.videoEditor.prompt.soundLabel",
+                placeholder: "tools.videoEditor.prompt.soundPlaceholder",
               }
             : null;
   const playback = (
@@ -769,7 +799,7 @@ function VideoActionSession({
           previewRange.current = false;
         }
       }}
-      onError={() => setError("无法读取此视频，请检查文件或重新上传。")}
+      onError={() => setError(t("tools.videoEditor.error.read"))}
     />
   );
   const overlay = (
@@ -810,7 +840,9 @@ function VideoActionSession({
               <button
                 key={corner}
                 type="button"
-                aria-label={`调整裁剪${{ nw: "左上", ne: "右上", sw: "左下", se: "右下" }[corner]}角`}
+                aria-label={t("tools.videoEditor.crop.cornerAria", {
+                  corner: t(CORNER_KEYS[corner]),
+                })}
                 className={`cw-va-crop-corner is-${corner}`}
                 disabled={busy}
                 onPointerDown={(event) => beginCrop(event, corner)}
@@ -822,7 +854,11 @@ function VideoActionSession({
       {!regionTool && (
         <button
           className="cw-va-source-play"
-          aria-label={playing ? "暂停源视频" : "播放源视频"}
+          aria-label={
+            playing
+              ? t("tools.videoEditor.sourcePause")
+              : t("tools.videoEditor.sourcePlay")
+          }
           disabled={busy || !duration}
           onClick={() => void togglePlayback()}
         >
@@ -838,7 +874,9 @@ function VideoActionSession({
   return (
     <section
       className="cw-video-action-editor nodrag nopan nowheel"
-      aria-label={`${definition.title}操作面板`}
+      aria-label={t("tools.videoEditor.panelAria", {
+        title: definition.title,
+      })}
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -863,7 +901,7 @@ function VideoActionSession({
         </div>
         <TooltipButton
           className="cw-va-icon-button"
-          label={`关闭${definition.title}`}
+          label={t("tools.videoEditor.close", { title: definition.title })}
           onClick={close}
         >
           <CanvasIcon name="close" size={16} />
@@ -872,11 +910,11 @@ function VideoActionSession({
       <div className="cw-va-body">
         {promptField && (
           <label className="cw-va-prompt">
-            <span>{promptField.label}</span>
+            <span>{t(promptField.label)}</span>
             <textarea
               rows={4}
               value={String(parameters[promptField.key] ?? "")}
-              placeholder={promptField.placeholder}
+              placeholder={t(promptField.placeholder)}
               onChange={(event) =>
                 changeParameter(promptField.key, event.target.value)
               }
@@ -888,10 +926,10 @@ function VideoActionSession({
             className="cw-va-icon-button"
             label={
               playing
-                ? "暂停预览"
+                ? t("tools.videoEditor.transport.pause")
                 : selectingRange
-                  ? "预览所选范围"
-                  : "播放预览"
+                  ? t("tools.videoEditor.transport.previewRange")
+                  : t("tools.videoEditor.transport.play")
             }
             disabled={busy || !duration}
             onClick={() => void togglePlayback()}
@@ -900,7 +938,7 @@ function VideoActionSession({
           </TooltipButton>
           <span>{timeLabel(position)}</span>
           <ControlSlider
-            aria-label="视频播放位置"
+            aria-label={t("tools.videoEditor.transport.positionAria")}
             min={0}
             max={Math.max(0, duration - 0.001)}
             step="0.01"
@@ -917,7 +955,7 @@ function VideoActionSession({
             <div
               ref={track}
               className="cw-va-time-range"
-              aria-label="拖动选择视频范围"
+              aria-label={t("tools.videoEditor.range.trackAria")}
               onPointerDown={(event) => beginTimeline(event, "playhead")}
               onPointerMove={moveTimeline}
               onPointerUp={() => endTimeline()}
@@ -931,13 +969,21 @@ function VideoActionSession({
                 }}
                 onPointerDown={(event) => beginTimeline(event, "move")}
               >
-                <span>{selectedDuration.toFixed(2)} 秒</span>
+                <span>
+                  {t("tools.videoEditor.range.duration", {
+                    seconds: selectedDuration.toFixed(2),
+                  })}
+                </span>
                 {(["start", "end"] as const).map((edge) => (
                   <button
                     key={edge}
                     type="button"
                     role="slider"
-                    aria-label={edge === "start" ? "范围起点" : "范围终点"}
+                    aria-label={
+                      edge === "start"
+                        ? t("tools.videoEditor.range.startAria")
+                        : t("tools.videoEditor.range.endAria")
+                    }
                     aria-valuemin={0}
                     aria-valuemax={duration}
                     aria-valuenow={range[edge]}
@@ -968,10 +1014,14 @@ function VideoActionSession({
             <div className="cw-va-range-values">
               {(["start", "end"] as const).map((edge) => (
                 <label key={edge}>
-                  {edge === "start" ? "开始" : "结束"}
+                  {edge === "start"
+                    ? t("tools.videoEditor.range.start")
+                    : t("tools.videoEditor.range.end")}
                   <input
                     aria-label={
-                      edge === "start" ? "开始时间（秒）" : "结束时间（秒）"
+                      edge === "start"
+                        ? t("tools.videoEditor.range.startInputAria")
+                        : t("tools.videoEditor.range.endInputAria")
                     }
                     type="number"
                     min="0"
@@ -1009,7 +1059,7 @@ function VideoActionSession({
                   onDraftChange(task());
                 }}
               >
-                选择全段
+                {t("tools.videoEditor.range.selectAll")}
               </button>
             </div>
           </>
@@ -1025,7 +1075,7 @@ function VideoActionSession({
                   onDraftChange(task());
                 }}
               >
-                首帧
+                {t("tools.videoEditor.frame.first")}
               </button>
               <button
                 type="button"
@@ -1035,7 +1085,7 @@ function VideoActionSession({
                   onDraftChange(task());
                 }}
               >
-                尾帧
+                {t("tools.videoEditor.frame.last")}
               </button>
               <button
                 type="button"
@@ -1043,30 +1093,39 @@ function VideoActionSession({
                 disabled={busy || !ready || frames.length >= 20}
                 onClick={capture}
               >
-                截取当前帧
+                {t("tools.videoEditor.frame.capture")}
               </button>
               <span>{frames.length} / 20</span>
             </div>
             {frames.length ? (
-              <div className="cw-va-frame-tray" aria-label="暂存的视频帧">
+              <div
+                className="cw-va-frame-tray"
+                aria-label={t("tools.videoEditor.frame.trayAria")}
+              >
                 {frames.map((frame) => (
                   <div key={frame.id}>
                     <button
                       type="button"
                       className="cw-va-frame-preview"
-                      aria-label={`定位到 ${frame.seconds.toFixed(2)} 秒`}
+                      aria-label={t("tools.videoEditor.frame.seekAria", {
+                        seconds: frame.seconds.toFixed(2),
+                      })}
                       onClick={() => seek(frame.seconds)}
                     >
                       <img
                         src={frame.output.src}
-                        alt={`${frame.seconds.toFixed(2)} 秒的视频帧`}
+                        alt={t("tools.videoEditor.frame.alt", {
+                          seconds: frame.seconds.toFixed(2),
+                        })}
                       />
                       <span>{frame.seconds.toFixed(2)}s</span>
                     </button>
                     <button
                       type="button"
                       className="cw-va-frame-remove"
-                      aria-label={`移除 ${frame.seconds.toFixed(2)} 秒的暂存帧`}
+                      aria-label={t("tools.videoEditor.frame.removeAria", {
+                        seconds: frame.seconds.toFixed(2),
+                      })}
                       onClick={() => {
                         const next = framesRef.current.filter(
                           (item) => item.id !== frame.id,
@@ -1081,7 +1140,7 @@ function VideoActionSession({
                 ))}
               </div>
             ) : (
-              <p className="cw-va-hint">定位视频后截帧，确认时一起加入画布。</p>
+              <p className="cw-va-hint">{t("tools.videoEditor.frame.hint")}</p>
             )}
           </>
         )}
@@ -1089,9 +1148,9 @@ function VideoActionSession({
           <>
             <div className="cw-va-crop-settings">
               <label>
-                画幅
+                {t("tools.videoEditor.crop.aspect")}
                 <select
-                  aria-label="视频画面裁剪比例"
+                  aria-label={t("tools.videoEditor.crop.aspectAria")}
                   value={cropRatio}
                   disabled={busy}
                   onChange={(event) => changeCropRatio(event.target.value)}
@@ -1108,16 +1167,18 @@ function VideoActionSession({
                   ].map((ratio) => (
                     <option key={ratio} value={ratio}>
                       {ratio === "free"
-                        ? "自由"
+                        ? t("tools.videoEditor.crop.free")
                         : ratio === "original"
-                          ? "原比例"
+                          ? t("tools.videoEditor.crop.original")
                           : ratio}
                     </option>
                   ))}
                 </select>
               </label>
               <span>
-                {crop ? `${crop.width} × ${crop.height} px` : "读取视频尺寸…"}
+                {crop
+                  ? `${crop.width} × ${crop.height} px`
+                  : t("tools.videoEditor.crop.reading")}
               </span>
               <button
                 type="button"
@@ -1132,39 +1193,39 @@ function VideoActionSession({
                   changeCropRatio("free");
                 }}
               >
-                重置
+                {t("tools.videoEditor.crop.reset")}
               </button>
             </div>
-            <p className="cw-va-hint">在视频上拖动选框或四角，调整裁剪区域。</p>
+            <p className="cw-va-hint">{t("tools.videoEditor.crop.hint")}</p>
           </>
         )}
         {(tool === "video-edit" || tool === "video-subtitle-erasure") && (
           <p className="cw-va-hint">
             {tool === "video-edit"
-              ? "拖动选框或四角，框住要重绘的区域；框外画面和声音保持不变。"
-              : "选框默认覆盖底部字幕带，可拖动到字幕实际位置；声音保持不变。"}
+              ? t("tools.videoEditor.edit.hint")
+              : t("tools.videoEditor.subtitle.hint")}
           </p>
         )}
         {tool === "video-upscale" &&
-          choices("输出清晰度", "resolution", [
+          choices(t("tools.videoEditor.upscale.resolution"), "resolution", [
             ["2K", "2K"],
             ["4K", "4K"],
           ])}
         {tool === "video-depth-capture" &&
-          choices("输出清晰度", "resolution", [
+          choices(t("tools.videoEditor.depth.resolution"), "resolution", [
             ["480P", "480P"],
             ["720P", "720P"],
           ])}
         {tool === "video-frame-interpolation" &&
-          choices("目标帧率", "fps", [
+          choices(t("tools.videoEditor.interpolation.fps"), "fps", [
             [30, "30 FPS"],
             [60, "60 FPS"],
           ])}
         {tool === "video-matting" &&
-          choices("输出背景", "background", [
-            ["black", "黑色"],
-            ["green", "绿色"],
-            ["transparent", "透明"],
+          choices(t("tools.videoEditor.matting.background"), "background", [
+            ["black", t("tools.videoEditor.matting.black")],
+            ["green", t("tools.videoEditor.matting.green")],
+            ["transparent", t("tools.videoEditor.matting.transparent")],
           ])}
         {tool === "video-subtitle-erasure" && (
           <label className="cw-va-confirm">
@@ -1175,34 +1236,32 @@ function VideoActionSession({
                 changeParameter("confirmed", event.target.checked)
               }
             />
-            <span>确认擦除视频画面中的字幕</span>
+            <span>{t("tools.videoEditor.subtitle.confirm")}</span>
           </label>
         )}
         {tool === "audio-separation" &&
-          choices("需要分离的声音", "mode", [
-            ["voice", "人声"],
-            ["backgroundSound", "背景声"],
-            ["soundEffects", "音效"],
-            ["all", "全部"],
-            ["description", "按描述"],
+          choices(t("tools.videoEditor.separation.mode"), "mode", [
+            ["voice", t("tools.videoEditor.separation.voice")],
+            ["backgroundSound", t("tools.videoEditor.separation.background")],
+            ["soundEffects", t("tools.videoEditor.separation.effects")],
+            ["all", t("tools.videoEditor.separation.all")],
+            ["description", t("tools.videoEditor.separation.description")],
           ])}
         {tool === "extract-audio" && (
-          <p className="cw-va-hint">提取所选范围的原音轨，保存为 WAV。</p>
+          <p className="cw-va-hint">{t("tools.videoEditor.extract.hint")}</p>
         )}
         {(tool === "video-trim" || tool === "video-crop") && (
-          <p className="cw-va-hint">
-            本地处理后生成 WebM。处理需要播放所选片段。
-          </p>
+          <p className="cw-va-hint">{t("tools.videoEditor.local.hint")}</p>
         )}
         {probing && (
           <p className="cw-va-hint" role="status">
-            正在读取实际视频时长…
+            {t("tools.videoEditor.probing")}
           </p>
         )}
         {!local && !onGenerate && (
           <p className="cw-va-unavailable">
-            {unavailableReason ?? "当前未连接此操作的 AI 服务。"}
-            可保存设置或导入处理结果。
+            {unavailableReason ?? t("tools.videoEditor.unavailableFallback")}
+            {t("tools.videoEditor.unavailableHint")}
           </p>
         )}
         {inputError && !local && <p className="cw-va-hint">{inputError}</p>}
@@ -1220,15 +1279,19 @@ function VideoActionSession({
       <footer>
         {busy ? (
           <>
-            <span role="status">正在处理 {timeLabel(position)}…</span>
+            <span role="status">
+              {t("tools.videoEditor.processing", {
+                time: timeLabel(position),
+              })}
+            </span>
             <button type="button" onClick={() => controller.current?.abort()}>
-              取消处理
+              {t("tools.videoEditor.cancelProcessing")}
             </button>
           </>
         ) : local ? (
           <>
             <button type="button" onClick={close}>
-              取消
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -1245,17 +1308,19 @@ function VideoActionSession({
               onClick={() => void localApply()}
             >
               {tool === "video-frame-capture"
-                ? `将 ${frames.length} 帧加入画布`
+                ? t("tools.videoEditor.addFrames", { count: frames.length })
                 : tool === "extract-audio"
-                  ? "提取并加入画布"
-                  : "确认并加入画布"}
+                  ? t("tools.videoEditor.extractToCanvas")
+                  : t("tools.videoEditor.confirmToCanvas")}
             </button>
           </>
         ) : (
           <>
             <TooltipButton
               className="cw-va-icon-button cw-va-more"
-              label={`${definition.title}更多操作`}
+              label={t("tools.videoEditor.more", {
+                title: definition.title,
+              })}
               aria-haspopup="menu"
               aria-expanded={Boolean(moreAnchor)}
               aria-controls={moreAnchor ? moreId : undefined}
@@ -1276,7 +1341,11 @@ function VideoActionSession({
               type="button"
               className="cw-va-primary"
               disabled={!onGenerate || !node.data.src || !!inputError}
-              title={!onGenerate ? "尚未连接此操作的 AI 服务" : inputError}
+              title={
+                !onGenerate
+                  ? t("tools.videoEditor.notConnectedTitle")
+                  : inputError
+              }
               onClick={() => {
                 if (onGenerate && !inputError) {
                   const value = task();
@@ -1285,7 +1354,7 @@ function VideoActionSession({
                 }
               }}
             >
-              生成
+              {t("tools.videoEditor.generate")}
             </button>
           </>
         )}
@@ -1294,7 +1363,9 @@ function VideoActionSession({
         <SelectionToolbarMenu
           anchor={moreAnchor}
           id={moreId}
-          label={`${definition.title}更多操作`}
+          label={t("tools.videoEditor.more", {
+            title: definition.title,
+          })}
           onClose={() => setMoreAnchor(null)}
         >
           <button
@@ -1303,12 +1374,12 @@ function VideoActionSession({
             className="cw-selection-menu-item"
             onClick={() => {
               onDraftChange(task());
-              setNotice("设置已保存。");
+              setNotice(t("tools.videoEditor.saved"));
               moreAnchor.focus({ preventScroll: true });
               setMoreAnchor(null);
             }}
           >
-            保存设置
+            {t("tools.videoEditor.save")}
           </button>
           <button
             type="button"
@@ -1322,7 +1393,7 @@ function VideoActionSession({
               onImportResults(value);
             }}
           >
-            导入结果
+            {t("tools.videoEditor.import")}
           </button>
         </SelectionToolbarMenu>
       )}

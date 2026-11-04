@@ -6,6 +6,7 @@ import {
   recordLocalVideoRange,
 } from "./localMediaRuntime.ts";
 import { withMediaDuration } from "./editorMedia.ts";
+import { tNow } from "../i18n/messages.ts";
 import type { VideoCrop } from "./videoCrop.ts";
 
 export interface VideoTimeRange {
@@ -84,7 +85,7 @@ export function videoActionInputError(
   };
   const field = options[tool];
   if (field && !field.values.includes(parameters[field.key] as string | number))
-    return "请选择当前操作支持的选项。";
+    return tNow("errors.videoAction.options");
   if (
     ["video-trim", "video-partial-reshoot", "extract-audio"].includes(tool) &&
     (!Number.isFinite(duration) ||
@@ -95,31 +96,31 @@ export function videoActionInputError(
       range.end <= range.start ||
       range.end > duration)
   )
-    return "请等待视频时长读取完成，并选择有效范围。";
+    return tNow("errors.videoAction.duration");
   if (
     (tool === "video-edit" || tool === "video-partial-reshoot") &&
     (typeof parameters.prompt !== "string" || !parameters.prompt.trim())
   )
-    return "请填写希望修改的内容。";
+    return tNow("errors.videoAction.prompt");
   if (
     tool === "video-edit" &&
     (!Number.isFinite(duration) || duration < 4 || duration > 30)
   )
-    return "视频编辑需要 4–30 秒的素材。";
+    return tNow("errors.videoAction.minDuration");
   if (
     tool === "video-depth-capture" &&
     (!Number.isFinite(duration) || duration <= 0 || duration > 30)
   )
-    return "深度动作捕捉需要不超过 30 秒的素材。";
+    return tNow("errors.videoAction.depthDuration");
   if (
     tool === "audio-separation" &&
     parameters.mode === "description" &&
     (typeof parameters.description !== "string" ||
       !parameters.description.trim())
   )
-    return "请描述要分离的声音。";
+    return tNow("errors.videoAction.audioDescription");
   if (tool === "video-subtitle-erasure" && parameters.confirmed !== true)
-    return "请确认擦除字幕。";
+    return tNow("errors.videoAction.confirmSubtitles");
   return undefined;
 }
 
@@ -133,12 +134,12 @@ export function captureVideoFrame(
     !video.videoHeight ||
     video.readyState < 2
   )
-    throw new Error("当前视频帧尚未解码完成，请稍候再截取。");
+    throw new Error(tNow("errors.videoAction.frameNotReady"));
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("浏览器无法创建取帧画布。");
+  if (!context) throw new Error(tNow("errors.videoAction.canvas"));
   context.drawImage(video, 0, 0);
   return {
     kind: "image",
@@ -161,7 +162,7 @@ export async function captureVideoEndpoint(
     await import("mediabunny");
   signal.throwIfAborted();
   const response = await fetch(src, { signal });
-  if (!response.ok) throw new Error("无法读取视频文件。");
+  if (!response.ok) throw new Error(tNow("errors.videoAction.videoRead"));
   const blob = await response.blob();
   signal.throwIfAborted();
   const input = new Input({
@@ -173,7 +174,7 @@ export async function captureVideoEndpoint(
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode()))
-      throw new Error("当前浏览器无法精确解码此视频的首尾帧。");
+      throw new Error(tNow("errors.videoAction.preciseDecode"));
     signal.throwIfAborted();
     // EncodedPacketSink documents Infinity as the last presentation packet;
     // CanvasSink then decodes that packet timestamp with display rotation applied.
@@ -197,7 +198,7 @@ export async function captureVideoEndpoint(
       }
     }
     signal.throwIfAborted();
-    if (!frame) throw new Error("视频帧解码失败。");
+    if (!frame) throw new Error(tNow("errors.videoAction.frameDecode"));
     const canvas = frame.canvas;
     const image =
       "convertToBlob" in canvas
@@ -205,7 +206,7 @@ export async function captureVideoEndpoint(
         : await new Promise<Blob>((resolve, reject) =>
             canvas.toBlob(
               (blob) =>
-                blob ? resolve(blob) : reject(new Error("视频帧导出失败。")),
+                blob ? resolve(blob) : reject(new Error(tNow("errors.videoAction.frameExport"))),
               "image/png",
             ),
           );
@@ -214,7 +215,7 @@ export async function captureVideoEndpoint(
       kind: "image",
       src: await mediaBlobDataUrl(image, signal),
       mimeType: "image/png",
-      title: `${title} · ${endpoint === "first" ? "首帧" : "尾帧"}`,
+      title: `${title} · ${endpoint === "first" ? tNow("errors.videoAction.firstFrame") : tNow("errors.videoAction.lastFrame")}`,
       media: { width: canvas.width, height: canvas.height },
     };
   } finally {
@@ -231,7 +232,7 @@ export async function extractVideoAudio(
 ): Promise<LinkedMediaResult> {
   signal.throwIfAborted();
   const response = await fetch(src, { signal });
-  if (!response.ok) throw new Error("无法读取视频音轨。");
+  if (!response.ok) throw new Error(tNow("errors.videoAction.audioRead"));
   const source = await response.arrayBuffer();
   signal.throwIfAborted();
   const context = new AudioContext();
@@ -255,7 +256,7 @@ export async function extractVideoAudio(
         signal,
       ),
       mimeType: "audio/wav",
-      title: `${title} · 音轨`,
+      title: `${title} · ${tNow("errors.videoAction.audioTrack")}`,
       media: {
         durationSeconds:
           (wav.byteLength - 44) /
@@ -294,7 +295,7 @@ export async function exportVideoRange(
     kind: "video",
     src,
     mimeType,
-    title: `${title} · ${crop ? "画面裁剪" : "时长修剪"}`,
+    title: `${title} · ${crop ? tNow("errors.videoAction.cropTitle") : tNow("errors.videoAction.trimTitle")}`,
     media: {
       width: measured.width,
       height: measured.height,

@@ -2,6 +2,7 @@ import { json, request } from "./api.ts";
 import type { BackendAsset } from "./generation.ts";
 import { requireActiveBackendProject } from "./projects.ts";
 import { uploadAsset, type ToolSourceInput } from "./tools.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface ImageSelectionBox {
   x: number;
@@ -46,7 +47,8 @@ export async function previewImageSelection(
   let sourceAssetId = value.sourceAssetId;
   if (!sourceAssetId) {
     const response = await fetch(value.source.src, { signal });
-    if (!response.ok) throw new Error("无法读取来源图片，请重新导入。");
+    if (!response.ok)
+      throw new Error(tNow("errors.backend.imageRead"));
     sourceAssetId = await uploadAsset(
       projectId,
       await response.blob(),

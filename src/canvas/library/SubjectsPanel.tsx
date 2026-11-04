@@ -1,6 +1,7 @@
 /** 「主体」: global subjects snapshotted from completed subject nodes. */
 import { useEffect, useState } from "react";
 import { errorMessage } from "../../backend/api";
+import { useT } from "../../i18n/I18nProvider";
 import { trashItems, sameLibraryItems, type LibraryItem } from "./libraryClient";
 import { MediaCard } from "./MediaCard";
 import {
@@ -32,6 +33,7 @@ export function SubjectsPanel({
   onBackup: () => void;
   backupIssue: string | null;
 }) {
+  const t = useT();
   const [items, setItems] = useState<SubjectLibraryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -75,7 +77,7 @@ export function SubjectsPanel({
     setBusy(true);
     try {
       await trashItems(ids);
-      onNotice(`已将 ${ids.length} 个主体移入回收站`);
+      onNotice(t("library.subjects.trashed", { count: ids.length }));
       onChanged();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -88,16 +90,16 @@ export function SubjectsPanel({
     <div className="cw-lib-panel">
       <div className="cw-lib-tabs">
         <button type="button" className="cw-lib-tab cw-lib-tab-on">
-          全部
+          {t("library.all")}
         </button>
         <div className="cw-lib-tab-actions">
           <button
             type="button"
             disabled={disabled || Boolean(backupIssue)}
-            title={backupIssue ?? "将画布中选中的完整主体保存到主体库。"}
+            title={backupIssue ?? t("library.subjects.addHint")}
             onClick={onBackup}
           >
-            加入选中主体
+            {t("library.subjects.add")}
           </button>
           <button
             type="button"
@@ -106,16 +108,16 @@ export function SubjectsPanel({
               disabled || busy || !items.some((item) => selected.has(item.id))
             }
           >
-            移入回收站
+            {t("library.moveToTrash")}
           </button>
         </div>
       </div>
       {error && <p role="alert">{error}</p>}
-      {busy && !items.length && <p role="status">正在读取主体…</p>}
+      {busy && !items.length && (
+        <p role="status">{t("library.subjects.loading")}</p>
+      )}
       {!busy && !items.length && (
-        <p className="cw-lib-empty">
-          还没有主体。在画布中选中一个有内容的主体节点，再点击“加入选中主体”。
-        </p>
+        <p className="cw-lib-empty">{t("library.subjects.empty")}</p>
       )}
       <div className="cw-lib-grid">
         {items.map((item) => (

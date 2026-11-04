@@ -4,6 +4,7 @@ import { referenceMaterial } from "./connectionPolicy.ts";
 import type { ResultSource } from "./linkedResults.ts";
 import { applyCommand } from "./model.ts";
 import { lockedNodeIds } from "./hierarchy.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export function agentNodeSettings(node: CanvasNode): AgentNodeSettings {
   return { thinking: "auto", maxTokens: 8192, ...node.data.agentSettings };
@@ -14,20 +15,24 @@ export function agentGenerationBlocker(
   model?: ModelConfig,
 ) {
   if (!model || model.kind !== "agent")
-    return "请先在设置中配置并选择 Agent 模型";
-  if (!node.data.prompt.trim()) return "请输入生成要求";
+    return tNow("errors.text.noAgent");
+  if (!node.data.prompt.trim()) return tNow("errors.text.promptRequired");
   const settings = agentNodeSettings(node);
   if (
     !Number.isInteger(settings.maxTokens) ||
     settings.maxTokens < 1 ||
     settings.maxTokens > 32768
   )
-    return "最大输出长度应为 1–32768";
+    return tNow("errors.text.maxTokens");
   for (const reference of incoming) {
     if (!model.inputRules.allowedKinds.includes(reference.type))
-      return `当前 Agent 不支持${reference.data.title}的素材类型`;
+      return tNow("errors.text.unsupportedKind", {
+        title: reference.data.title,
+      });
     if (!referenceMaterial(reference))
-      return `参考素材不可用：${reference.data.title}`;
+      return tNow("errors.text.referenceUnavailable", {
+        title: reference.data.title,
+      });
   }
   for (const [kind, max] of [
     ["image", model.inputRules.maxImages],
@@ -35,7 +40,7 @@ export function agentGenerationBlocker(
     ["audio", model.inputRules.maxAudios],
   ] as const)
     if (incoming.filter((n) => n.type === kind).length > max)
-      return "参考数量超出当前 Agent 模型限制";
+      return tNow("errors.text.referenceLimit");
   return null;
 }
 export function applyTextGenerationResult(
@@ -46,19 +51,19 @@ export function applyTextGenerationResult(
   const target = document.nodes.find((n) => n.id === source.nodeId);
   const error =
     document.id !== source.documentId
-      ? "项目已切换，文本结果保留在生成历史中。"
+      ? tNow("errors.text.projectChanged")
       : !target || target.type !== "text" || source.kind !== "text"
-        ? "文本来源已删除或改变，结果保留在生成历史中。"
+        ? tNow("errors.text.sourceChanged")
         : lockedNodeIds(document.nodes).has(target.id)
-          ? "文本节点已锁定，结果保留在生成历史中。"
+          ? tNow("errors.text.locked")
           : target.data.text !== source.text
-            ? "节点正文已改变，结果保留在生成历史中。"
+            ? tNow("errors.text.bodyChanged")
             : null;
   if (error || !target)
     return {
       document,
       ids: [] as string[],
-      error: error ?? "文本节点已不存在。",
+      error: error ?? tNow("errors.text.nodeMissing"),
     };
   return {
     document: applyCommand(document, {

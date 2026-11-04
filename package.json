@@ -10,7 +10,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@lobehub/icons-static-svg": "1.102.0",

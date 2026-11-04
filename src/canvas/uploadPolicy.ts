@@ -1,4 +1,6 @@
 import type { CanvasNode, CanvasResource } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 export type UploadIntent =
   | "create"
@@ -8,11 +10,11 @@ export type UploadIntent =
   | "subject-main"
   | "subject-auxiliary"
   | "subject-voice";
-const labels: Record<string, string> = {
-  image: "图片",
-  video: "视频",
-  audio: "音频",
-  text: "文本",
+const labels: Record<string, MessageKey> = {
+  image: "errors.upload.kindImage",
+  video: "errors.upload.kindVideo",
+  audio: "errors.upload.kindAudio",
+  text: "errors.upload.kindText",
 };
 export function uploadIssue(
   kind: CanvasResource["kind"],
@@ -33,11 +35,14 @@ export function uploadIssue(
               : intent === "reference"
                 ? ["image", "video", "audio", "text"]
                 : ["image", "video", "audio", "text", "file"];
+  const labelKey = labels[targetKind ?? ""];
   return allowed.includes(kind)
     ? null
     : intent === "replace"
-      ? `该节点仅支持${labels[targetKind ?? ""] ?? targetKind}素材，上传文件类型不匹配。`
-      : "当前操作不支持此素材类型。";
+      ? tNow("errors.upload.kindMismatch", {
+          kind: labelKey ? tNow(labelKey) : (targetKind ?? ""),
+        })
+      : tNow("errors.upload.unsupported");
 }
 export function assertUpload(
   kind: CanvasResource["kind"],
@@ -60,7 +65,7 @@ export function assertReferenceSize(
         : 50 * 1024 * 1024;
   if (size > maximum)
     throw new Error(
-      `参考文件超过大小限制（${Math.round(maximum / 1024)} KiB）。`,
+      tNow("errors.upload.size", { kib: Math.round(maximum / 1024) }),
     );
 }
 

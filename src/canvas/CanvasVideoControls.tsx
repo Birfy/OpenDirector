@@ -7,6 +7,7 @@ import {
 } from "react";
 import { CanvasIcon } from "./CanvasIcon";
 import { clampSeekTime, formatMediaTime } from "./mediaPlayback";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export { clampSeekTime, formatMediaTime } from "./mediaPlayback";
 
@@ -40,6 +41,7 @@ export function VideoControls({
   onToggleFullscreen,
   fullscreen,
 }: VideoControlsProps) {
+  const t = useT();
   const track = useRef<HTMLDivElement>(null);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState(0);
@@ -94,7 +96,7 @@ export function VideoControls({
     <div
       className="cw-video-controls nodrag nopan nowheel"
       role="group"
-      aria-label="视频播放控制"
+      aria-label={t("canvasNodes.video.controls")}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
@@ -102,8 +104,12 @@ export function VideoControls({
       <button
         type="button"
         className="cw-video-control-button"
-        aria-label={playing ? "暂停" : "播放"}
-        title={playing ? "暂停" : "播放"}
+        aria-label={
+          playing ? t("canvasNodes.video.pause") : t("canvasNodes.video.play")
+        }
+        title={
+          playing ? t("canvasNodes.video.pause") : t("canvasNodes.video.play")
+        }
         onClick={(event) => {
           event.stopPropagation();
           onTogglePlay();
@@ -121,7 +127,7 @@ export function VideoControls({
         className="cw-video-scrubber"
         role="slider"
         tabIndex={0}
-        aria-label="播放进度"
+        aria-label={t("canvasNodes.video.progress")}
         aria-valuemin={0}
         aria-valuemax={Math.round(duration) || 0}
         aria-valuenow={Math.round(shown) || 0}
@@ -153,8 +159,12 @@ export function VideoControls({
       <button
         type="button"
         className="cw-video-control-button"
-        aria-label={muted ? "取消静音" : "静音"}
-        title={muted ? "取消静音" : "静音"}
+        aria-label={
+          muted ? t("canvasNodes.video.unmute") : t("canvasNodes.video.mute")
+        }
+        title={
+          muted ? t("canvasNodes.video.unmute") : t("canvasNodes.video.mute")
+        }
         onClick={(event) => {
           event.stopPropagation();
           onToggleMute();
@@ -165,8 +175,16 @@ export function VideoControls({
       <button
         type="button"
         className="cw-video-control-button"
-        aria-label={fullscreen ? "退出全屏" : "全屏"}
-        title={fullscreen ? "退出全屏" : "全屏"}
+        aria-label={
+          fullscreen
+            ? t("canvasNodes.video.exitFullscreen")
+            : t("canvasNodes.video.fullscreen")
+        }
+        title={
+          fullscreen
+            ? t("canvasNodes.video.exitFullscreen")
+            : t("canvasNodes.video.fullscreen")
+        }
         onClick={(event) => {
           event.stopPropagation();
           onToggleFullscreen();

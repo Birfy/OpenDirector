@@ -4,11 +4,13 @@ import { useState } from "react";
 import { errorMessage } from "../backend/api.ts";
 import { MODEL_KINDS, type BackendModels } from "../backend/models.ts";
 import type { ModelConfig } from "../backend/rules.ts";
+import { useT } from "../i18n/I18nProvider";
 import { ModelServiceForm, type SettingsModelKind } from "./ModelServiceForm";
 import { CanvasIcon } from "./CanvasIcon";
 import "./model-settings.css";
 
 export function ModelSettings({ catalog }: { catalog: BackendModels }) {
+  const t = useT();
   const [category, setCategory] = useState<SettingsModelKind>("agent");
   const [editing, setEditing] = useState<{
     kind: SettingsModelKind;
@@ -45,12 +47,12 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
     <div className="cw-model-settings">
       {!catalog.connected && (
         <div className="cw-settings-notice" role="alert">
-          <span>{catalog.error || "无法读取模型配置。"}</span>
+          <span>{catalog.error || t("models.readFailed")}</span>
           <button
             className="cw-settings-button"
             onClick={() => void catalog.refresh()}
           >
-            重新读取
+            {t("models.reload")}
           </button>
         </div>
       )}
@@ -65,7 +67,10 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
           />
         ) : (
           <>
-            <nav className="cw-model-categories" aria-label="模型用途">
+            <nav
+              className="cw-model-categories"
+              aria-label={t("models.categories")}
+            >
               {MODEL_KINDS.map((item) => (
                 <button
                   key={item.id}
@@ -77,16 +82,16 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                     setError("");
                   }}
                 >
-                  {item.label.replace("生成", "").replace("对话 Agent", "对话")}
+                  {t(item.shortLabelKey)}
                 </button>
               ))}
             </nav>
             <div className="cw-model-overview-heading">
               <div>
                 <h3>
-                  服务连接 <span>{services.length}</span>
+                  {t("models.services.heading")} <span>{services.length}</span>
                 </h3>
-                <p>管理服务地址、鉴权和已启用模型。</p>
+                <p>{t("models.services.hint")}</p>
               </div>
               {services.length > 0 && (
                 <button
@@ -94,7 +99,7 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                   onClick={() => setEditing({ kind: category })}
                 >
                   <CanvasIcon name="plus" size={15} />
-                  添加服务
+                  {t("models.services.add")}
                 </button>
               )}
             </div>
@@ -107,13 +112,13 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
               {!services.length && (
                 <div className="cw-model-empty-state">
                   <CanvasIcon name="connections" size={30} />
-                  <strong>暂无服务配置</strong>
-                  <p>支持服务商 API 和自部署的 vLLM / vLLM-Omni 服务。</p>
+                  <strong>{t("models.services.empty")}</strong>
+                  <p>{t("models.services.support")}</p>
                   <button
                     className="cw-settings-button"
                     onClick={() => setEditing({ kind: category })}
                   >
-                    添加服务
+                    {t("models.services.add")}
                   </button>
                 </div>
               )}
@@ -139,11 +144,13 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                         disabled={busy}
                         onClick={() => setEditing({ kind: category, model })}
                       >
-                        管理
+                        {t("models.services.manage")}
                       </button>
                     </div>
                     <div className="cw-model-service-models">
-                      <span>{members.length} 个模型</span>
+                      <span>
+                        {t("models.services.count", { count: members.length })}
+                      </span>
                       {members.slice(0, 3).map((item) => (
                         <span
                           className="cw-model-chip"
@@ -160,7 +167,9 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                       <span>
                         {providerLabel(model)}{" "}
                         ·{" "}
-                        {model.authMode === "none" ? "无需密钥" : "密钥已配置"}
+                        {model.authMode === "none"
+                          ? t("models.service.noKey")
+                          : t("models.service.keyConfigured")}
                       </span>
                       <button
                         type="button"
@@ -168,28 +177,31 @@ export function ModelSettings({ catalog }: { catalog: BackendModels }) {
                         disabled={busy}
                         onClick={() => setDeleting(model.id)}
                       >
-                        移除服务
+                        {t("models.services.remove")}
                       </button>
                     </div>
                     {deleting === model.id && (
                       <div className="cw-model-delete-confirm" role="alert">
                         <span>
-                          移除此服务及 {members.length}{" "}
-                          个模型配置？项目素材会保留。
+                          {t("models.services.removeConfirm", {
+                            count: members.length,
+                          })}
                         </span>
                         <button
                           className="cw-settings-button cw-settings-button-quiet"
                           disabled={busy}
                           onClick={() => setDeleting(null)}
                         >
-                          取消
+                          {t("models.cancel")}
                         </button>
                         <button
                           className="cw-settings-button"
                           disabled={busy}
                           onClick={() => void remove(model.id)}
                         >
-                          {busy ? "移除中…" : "确认移除"}
+                          {busy
+                            ? t("models.services.removing")
+                            : t("models.services.confirmRemove")}
                         </button>
                       </div>
                     )}

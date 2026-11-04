@@ -8,6 +8,7 @@ import {
   type ReferenceAsset,
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export function generationPrompt(node: CanvasNode) {
   return node.type === "audio" && node.data.promptContent !== undefined
@@ -127,8 +128,8 @@ export function nodeReferenceAsset(
     id: `node:${node.id}`,
     nodeId: node.id,
     referenceId,
-    name: (node.data.title || "参考").slice(0, 255),
-    nodeTitle: (node.data.title || "参考").slice(0, 255),
+    name: (node.data.title || tNow("errors.refs.fallbackTitle")).slice(0, 255),
+    nodeTitle: (node.data.title || tNow("errors.refs.fallbackTitle")).slice(0, 255),
     kind: node.type,
     type: `${node.type}/reference`,
     size: cached.size,

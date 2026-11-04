@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Asset } from "../contracts/generated.ts";
 import { creationClient } from "../backend/creationClient.ts";
 import { CanvasIcon } from "./CanvasIcon.tsx";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export interface AssetPreview {
   id: string;
@@ -20,6 +21,7 @@ export function HoverPreview({
   projectId: string;
   preview: AssetPreview;
 }) {
+  const t = useT();
   const panel = useRef<HTMLDivElement>(null);
   const [content, setContent] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -61,18 +63,18 @@ export function HoverPreview({
       id={`asset-preview-${preview.id}`}
       className="cw-creation-asset-preview"
       role="tooltip"
-      aria-label={`${preview.name}预览`}
+      aria-label={t("errors.preview.aria", { name: preview.name })}
     >
       <header>
         <strong>{preview.name}</strong>
         <span>{preview.label}</span>
       </header>
       {failed ? (
-        <p>暂时无法预览此素材</p>
+        <p>{t("errors.preview.unavailable")}</p>
       ) : !asset ? (
-        <p>暂无可预览素材</p>
+        <p>{t("errors.preview.empty")}</p>
       ) : content === undefined ? (
-        <p>正在加载预览…</p>
+        <p>{t("errors.preview.loading")}</p>
       ) : asset.kind === "image" ? (
         <img src={content} alt={preview.name} onError={() => setFailed(true)} />
       ) : asset.kind === "video" ? (
@@ -92,7 +94,7 @@ export function HoverPreview({
         <pre>
           {content
             ? content.slice(0, 4000) + (content.length > 4000 ? "\n…" : "")
-            : "（空文本）"}
+            : t("errors.preview.emptyText")}
         </pre>
       ) : (
         <p>
@@ -103,10 +105,12 @@ export function HoverPreview({
           <span>{preview.name}</span>
           <small>
             {asset.kind === "text"
-              ? "文本内容较长，可打开节点查看"
+              ? t("errors.preview.longText")
               : `${Math.ceil(asset.metadata.size / 1024)} KB`}
             {asset.metadata.durationSeconds != null &&
-              ` · ${asset.metadata.durationSeconds.toFixed(1)} 秒`}
+              ` · ${t("errors.preview.secondsUnit", {
+                value: asset.metadata.durationSeconds.toFixed(1),
+              })}`}
           </small>
         </p>
       )}

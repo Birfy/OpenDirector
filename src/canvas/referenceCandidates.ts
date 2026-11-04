@@ -2,6 +2,7 @@ import type { CanvasNode } from "./model.ts";
 import { nodeMentionOptions, type MentionOption } from "./referenceMentions.ts";
 import type { ReferenceAsset } from "./chatReferenceContent.ts";
 import { assetDisplayName } from "./assetNames.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export function assetOptionId(
   asset: Pick<ReferenceAsset, "id" | "nodeId" | "sourceRole">,
@@ -15,7 +16,11 @@ export function referenceCandidates(
   assets: readonly ReferenceAsset[],
   issue: (node: CanvasNode) => string | null = () => null,
 ): MentionOption[] {
-  const options = nodeMentionOptions(nodes, issue, "画布素材").map(
+  const options = nodeMentionOptions(
+    nodes,
+    issue,
+    tNow("errors.refs.canvasMaterial"),
+  ).map(
     (option) => ({ ...option, id: `node:${option.id}` }),
   );
   for (const asset of assets) {
@@ -30,7 +35,7 @@ export function referenceCandidates(
       id: assetOptionId(asset),
       kind: asset.kind as MentionOption["kind"],
       title: assetDisplayName(asset.nodeTitle || asset.name),
-      detail: "项目素材",
+      detail: tNow("errors.refs.projectMaterial"),
       disabledReason:
         asset.size >
         (asset.kind === "text"
@@ -38,7 +43,7 @@ export function referenceCandidates(
           : asset.kind === "image"
             ? 32 * 1024 * 1024
             : 50 * 1024 * 1024)
-          ? "文件超过参考大小限制"
+          ? tNow("errors.refs.tooLarge")
           : null,
     });
   }

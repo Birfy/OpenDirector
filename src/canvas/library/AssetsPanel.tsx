@@ -1,6 +1,7 @@
 /** 「资产」: global media backed up from uploads and canvases. */
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../../backend/api";
+import { useT } from "../../i18n/I18nProvider";
 import {
   ASSET_CATEGORIES,
   listItems,
@@ -40,6 +41,7 @@ export function AssetsPanel({
   disabled?: boolean;
   reloadKey: number;
 }) {
+  const t = useT();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [kind, setKind] = useState<LibraryMediaKind | "">("");
   const [busy, setBusy] = useState(false);
@@ -88,7 +90,7 @@ export function AssetsPanel({
     setBusy(true);
     try {
       for (const file of Array.from(files)) await uploadItem(file);
-      onNotice(`已加入 ${files.length} 个素材`);
+      onNotice(t("library.assets.uploaded", { count: files.length }));
       onChanged();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -106,7 +108,7 @@ export function AssetsPanel({
     setBusy(true);
     try {
       await trashItems(ids);
-      onNotice(`已将 ${ids.length} 个素材移入回收站`);
+      onNotice(t("library.assets.trashed", { count: ids.length }));
       onChanged();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -127,7 +129,7 @@ export function AssetsPanel({
             setKind("");
           }}
         >
-          全部
+          {t("library.all")}
         </button>
         {ASSET_CATEGORIES.map((category) => (
           <button
@@ -142,7 +144,7 @@ export function AssetsPanel({
               setKind(category.key);
             }}
           >
-            {category.label}
+            {t(category.labelKey)}
           </button>
         ))}
         <div className="cw-lib-tab-actions">
@@ -158,7 +160,7 @@ export function AssetsPanel({
             onClick={() => input.current?.click()}
             disabled={disabled || busy}
           >
-            上传素材
+            {t("library.assets.upload")}
           </button>
           <button
             type="button"
@@ -167,16 +169,16 @@ export function AssetsPanel({
               disabled || busy || !items.some((item) => selected.has(item.id))
             }
           >
-            移入回收站
+            {t("library.moveToTrash")}
           </button>
         </div>
       </div>
       {error && <p role="alert">{error}</p>}
-      {busy && !items.length && <p role="status">正在读取资产…</p>}
+      {busy && !items.length && (
+        <p role="status">{t("library.assets.loading")}</p>
+      )}
       {!busy && !items.length && (
-        <p className="cw-lib-empty">
-          还没有资产。可从本机上传，或在「画布」中把素材加入资产。
-        </p>
+        <p className="cw-lib-empty">{t("library.assets.empty")}</p>
       )}
       <div className="cw-lib-grid">
         {items.map((item) => (

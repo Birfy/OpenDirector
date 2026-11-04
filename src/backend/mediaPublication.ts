@@ -9,6 +9,7 @@ import {
   type LinkedMediaResult,
 } from "../canvas/linkedResults.ts";
 import type { CanvasToolTask } from "../canvas/toolCatalog.ts";
+import { tNow } from "../i18n/messages.ts";
 import {
   assetReference,
   CreationClient,
@@ -75,7 +76,7 @@ export class MediaPublication {
     }
   }
   async publish(outputs: readonly LinkedMediaResult[], task?: CanvasToolTask) {
-    if (this.active) throw Error("结果正在保存，请稍候。");
+    if (this.active) throw Error(tNow("errors.backend.savingResult"));
     this.active = true;
     try {
       const bytes = new TextEncoder().encode(
@@ -99,7 +100,7 @@ export class MediaPublication {
       }
       if (!this.pending) {
         const item = this.basis.canvasItems.find((i) => i.id === this.itemId);
-        if (!item) throw Error("编辑来源尚未保存。");
+        if (!item) throw Error(tNow("errors.backend.editSourceUnsaved"));
         const source = currentAsset(this.basis, item);
         const executionId = this.executionIds.get(key) ?? crypto.randomUUID();
         this.executionIds.set(key, executionId);
@@ -117,12 +118,12 @@ export class MediaPublication {
             (d) => d.id === editorId,
           )!;
           if (original.kind !== "director")
-            throw Error("不是可发布的导演舞台。");
+            throw Error(tNow("errors.backend.notDirectorStage"));
           document = { ...original, id: executionId, revision: 1 };
           sourceEditorId = original.id;
           versions.push(objectVersion("editor_document", original));
         } else {
-          if (!source) throw Error("编辑来源没有真实素材。");
+          if (!source) throw Error(tNow("errors.backend.noRealMedia"));
           const tool: MediaEditData["tool"] =
             task?.tool ??
             (source.kind === "video"
@@ -156,7 +157,7 @@ export class MediaPublication {
                     mask: selection.maskDataUrl
                       ? await this.projection.importResource({
                           kind: "image",
-                          title: "编辑选区.png",
+                          title: tNow("errors.backend.selectionFile"),
                           src: selection.maskDataUrl,
                         })
                       : null,
@@ -235,7 +236,7 @@ export class MediaPublication {
       this.confirmed = delivery.key;
       this.confirmedIds = delivery.payload.outputs.map((o) => o.itemId);
       if (resolvingPrevious)
-        throw Error("此前结果已保存；本次输出尚未提交，请核对后再次应用。");
+        throw Error(tNow("errors.backend.priorResultSaved"));
       return delivery.payload.outputs.map((o) => o.itemId);
     } catch (error) {
       if (error instanceof CreationCommandError) {

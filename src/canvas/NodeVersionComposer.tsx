@@ -5,6 +5,7 @@ import type {
 } from "../contracts/generated.ts";
 import { creationClient } from "../backend/creationClient.ts";
 import { CanvasIcon } from "./CanvasIcon";
+import { useT } from "../i18n/I18nProvider";
 import type { NodeVersion } from "./NodeVersionHistory";
 import "./reference-mentions.css";
 
@@ -21,6 +22,7 @@ function HistoricalReference({
   projectId: string;
   reference: HistoricalReferenceValue;
 }) {
+  const t = useT();
   const [preview, setPreview] = useState("");
   const [unavailable, setUnavailable] = useState(false);
   const { asset, name, sourceTitle } = reference;
@@ -46,19 +48,21 @@ function HistoricalReference({
       active = false;
     };
   }, [projectId, asset.assetId, asset.kind]);
-  const label = sourceTitle || name || "参考素材";
+  const label = sourceTitle || name || t("canvasNodes.versionComposer.referenceFallback");
   return (
     <span
       className={`cw-chat-reference${unavailable ? " is-unavailable" : ""}`}
       data-history-reference={reference.referenceId}
       data-asset-id={asset.assetId}
-      aria-label={`历史参考：${label}`}
+      aria-label={t("canvasNodes.versionComposer.referenceAria", { label })}
       title={[
         label,
         name,
         asset.kind === "text" ? preview : "",
-        unavailable ? "素材无法读取" : "",
-        reference.transmission === "context_only" ? "未传入模型" : "",
+        unavailable ? t("canvasNodes.versionComposer.unreadable") : "",
+        reference.transmission === "context_only"
+          ? t("canvasNodes.versionComposer.notSent")
+          : "",
       ]
         .filter(Boolean)
         .join("\n")}
@@ -80,32 +84,41 @@ function HistoricalOptions({
   frozen: InputSnapshot;
   available: boolean | null;
 }) {
+  const t = useT();
   const spec = frozen.spec;
   const auto = (value: string | number | null) =>
-    !value || value === "auto" ? "自动" : String(value);
+    !value || value === "auto" ? t("common.auto") : String(value);
   let summary: string;
   let mode = "";
   switch (spec.kind) {
     case "image":
-      summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.size)} · 1 张`;
+      summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.size)} · ${t("canvasNodes.versionComposer.oneImage")}`;
       mode =
-        spec.parameters.preset === "product-views" ? "产品三视图" : "自由创作";
+        spec.parameters.preset === "product-views"
+          ? t("canvasNodes.versionComposer.productViews")
+          : t("canvasNodes.versionComposer.freeCreation");
       break;
     case "video":
-      summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.resolution)}${spec.parameters.durationSeconds ? ` · ${spec.parameters.durationSeconds} 秒` : ""}`;
+      summary = `${auto(spec.parameters.aspectRatio)} · ${auto(spec.parameters.resolution)}${
+        spec.parameters.durationSeconds
+          ? ` · ${t("canvasNodes.versionComposer.seconds", {
+              value: spec.parameters.durationSeconds,
+            })}`
+          : ""
+      }`;
       mode = {
-        reference: "参考生视频",
-        first_frame: "首帧生视频",
-        continuation: "视频续写",
+        reference: t("canvasNodes.versionComposer.mode.reference"),
+        first_frame: t("canvasNodes.versionComposer.mode.firstFrame"),
+        continuation: t("canvasNodes.versionComposer.mode.continuation"),
       }[spec.parameters.videoMode];
       break;
     case "audio":
       summary =
         spec.parameters.creationType === "music"
-          ? "音乐生成"
+          ? t("canvasNodes.versionComposer.mode.music")
           : spec.parameters.mode === "tts"
-            ? "文本朗读"
-            : "全能配音";
+            ? t("canvasNodes.versionComposer.mode.speech")
+            : t("canvasNodes.versionComposer.mode.voice");
       mode = spec.parameters.voice ?? "";
       break;
     default:
@@ -119,7 +132,11 @@ function HistoricalOptions({
       <div className="cw-composer-options">
         <span
           className="cw-model-select"
-          title={`${frozen.model.modelId}${available === false ? "（原模型不可用）" : ""}`}
+          title={`${frozen.model.modelId}${
+            available === false
+              ? t("canvasNodes.versionComposer.modelUnavailable")
+              : ""
+          }`}
         >
           <span>{frozen.model.modelId}</span>
           <CanvasIcon name="chevronDown" size={12} />
@@ -146,6 +163,7 @@ export function NodeVersionComposer({
   projectId: string;
   version: NodeVersion;
 }) {
+  const t = useT();
   const frozen = version.inputSnapshot;
   const parts = frozen?.spec.promptContent;
   const references: readonly HistoricalReferenceValue[] =
@@ -153,7 +171,7 @@ export function NodeVersionComposer({
     version.asset.provenance.sources.map((asset) => ({
       asset,
       referenceId: asset.assetId,
-      name: "来源素材",
+      name: t("canvasNodes.versionComposer.source"),
       sourceTitle: "",
     }));
   const mentioned = new Set(
@@ -177,11 +195,18 @@ export function NodeVersionComposer({
     <div className="cw-composer cw-generation-composer cw-version-composer">
       <div className="cw-composer-body">
         {!!unmentioned.length && (
-          <div className="cw-version-slot-references" aria-label="历史参考素材">
+          <div
+            className="cw-version-slot-references"
+            aria-label={t("canvasNodes.versionComposer.references")}
+          >
             {unmentioned.map(renderReference)}
           </div>
         )}
-        <div className="cw-version-prompt" aria-label="历史提示词" tabIndex={0}>
+        <div
+          className="cw-version-prompt"
+          aria-label={t("canvasNodes.versionComposer.prompt")}
+          tabIndex={0}
+        >
           {parts?.length
             ? parts.map((part, index) => (
                 <Fragment key={index}>
@@ -195,12 +220,15 @@ export function NodeVersionComposer({
                       .map(renderReference)
                   ) : (
                     <span className="cw-chat-reference is-unavailable">
-                      参考素材缺失
+                      {t("canvasNodes.versionComposer.referenceMissing")}
                     </span>
                   )}
                 </Fragment>
               ))
-            : prompt || (frozen ? "（无提示词）" : "此版本没有模型生成记录。")}
+            : prompt ||
+              (frozen
+                ? t("canvasNodes.versionComposer.noPrompt")
+                : t("canvasNodes.versionComposer.noRecord"))}
         </div>
       </div>
       {frozen && (

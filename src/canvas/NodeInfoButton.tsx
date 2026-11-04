@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import type { CanvasNode } from "./model";
 import { countNodesByKind, totalNodeCount } from "./nodeStats";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 /** Grace period before closing, so moving from the trigger into the panel
  *  (crossing the 6px gap) does not dismiss it mid-travel. */
@@ -21,6 +22,7 @@ const HOVER_CLOSE_DELAY_MS = 120;
  * so the panel tracks edits live without extra subscriptions or state.
  */
 export function NodeInfoButton({ nodes }: { nodes: CanvasNode[] }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | undefined>(undefined);
@@ -92,18 +94,18 @@ export function NodeInfoButton({ nodes }: { nodes: CanvasNode[] }) {
         type="button"
         className="cw-node-info-trigger"
         aria-describedby={open ? panelId : undefined}
-        title="当前画布的节点数量"
+        title={t("canvasNodes.info.countTitle")}
         onFocus={show}
         onBlur={scheduleClose}
       >
-        节点 {total}
+        {t("canvasNodes.info.count", { total })}
       </button>
       {open && (
         <div
           id={panelId}
           className="cw-node-info-panel nodrag nopan nowheel"
           role="tooltip"
-          aria-label="节点信息"
+          aria-label={t("canvasNodes.info.aria")}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           onPointerDown={(event) => event.stopPropagation()}

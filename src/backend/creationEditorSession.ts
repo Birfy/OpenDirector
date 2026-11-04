@@ -7,6 +7,7 @@ import {
   objectVersion,
 } from "./creationClient.ts";
 import { CreationProjection } from "./creationProjection.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** A modal owns a draft and its original version basis, never a second project.
  * Keep the prepared command across an unknown reply, including imported assets
@@ -68,7 +69,7 @@ export class CreationEditorSession {
     }
   }
   async apply(data: Partial<CanvasNodeData>) {
-    if (this.active) throw new Error("编辑正在保存，请稍候。");
+    if (this.active) throw new Error(tNow("errors.backend.editSaving"));
     const key = JSON.stringify(data);
     const resolvingPrevious = !!this.pending && this.pending.key !== key;
     this.active = true;
@@ -143,7 +144,7 @@ export class CreationEditorSession {
         this.pending = undefined;
         this.storePending();
         throw new Error(
-          "编辑已保存，但内容随后又发生变化。草稿已保留，请重新打开以核对最新版本。",
+          tNow("errors.backend.editChangedAfterSave"),
         );
       }
       this.projection.baseline = document;
@@ -152,7 +153,7 @@ export class CreationEditorSession {
       this.storePending();
       if (resolvingPrevious)
         throw new Error(
-          "上一次编辑保存已确认。本次草稿尚未提交，请核对后再次应用。",
+          tNow("errors.backend.priorEditSaved"),
         );
     } catch (error) {
       // Only a definitive rejection releases the operation. Its version basis

@@ -4,6 +4,7 @@ import {
   type LayerDocument,
   type MaskStroke,
 } from "./layerDocument.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export function localLayerSource(src: string): boolean {
   if (/^data:image\//i.test(src)) return true;
@@ -20,7 +21,7 @@ export function localLayerSource(src: string): boolean {
 export function loadLayerImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     if (!localLayerSource(src)) {
-      reject(new Error("仅支持本地图片；请先导入文件，不会请求外站图片。"));
+      reject(new Error(tNow("errors.render.layerLocalOnly")));
       return;
     }
     const image = new Image();
@@ -34,7 +35,7 @@ export function loadLayerImage(src: string): Promise<HTMLImageElement> {
       }
     };
     image.onerror = () =>
-      reject(new Error("无法解码图层图片。请检查格式，或重新导入素材。"));
+      reject(new Error(tNow("errors.render.layerDecode")));
     image.src = src;
   });
 }
@@ -73,7 +74,7 @@ export class LayerImageCache {
 }
 function context(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const result = canvas.getContext("2d");
-  if (!result) throw new Error("浏览器无法创建 Canvas 2D 图层画布。");
+  if (!result) throw new Error(tNow("errors.render.layerCanvas"));
   return result;
 }
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: MaskStroke): void {
@@ -112,7 +113,8 @@ function paintLayer(
   ctx.scale(scratch.width / content.width, scratch.height / content.height);
   if (content.kind === "image") {
     const image = images.get(content.src);
-    if (!image) throw new Error(`图层「${layer.name}」未加载完成，无法合成。`);
+    if (!image)
+      throw new Error(tNow("errors.render.layerNotLoaded", { name: layer.name }));
     ctx.drawImage(image, 0, 0, content.width, content.height);
   } else if (content.kind === "rectangle") {
     ctx.fillStyle = content.color;
@@ -221,7 +223,7 @@ export function portableLayerDocument(
         return layer;
       const image = images.get(layer.content.src);
       if (!image)
-        throw new Error("图片尚未加载完成，无法保存可移植的图层文件。");
+        throw new Error(tNow("errors.render.layerNotPortable"));
       const canvas = window.document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;

@@ -4,10 +4,12 @@ import { ModelSettings } from "./ModelSettings";
 import { errorMessage } from "../backend/api";
 import type { BackendModels } from "../backend/models";
 import type { Theme, ThemeControls } from "./theme";
+import { useI18n, useT } from "../i18n/I18nProvider";
+import type { Locale } from "../i18n/types";
 
 const categories = [
-  { id: "general", label: "通用", icon: "settings" },
-  { id: "models", label: "模型接入", icon: "model" },
+  { id: "general", labelKey: "settings.general", icon: "settings" },
+  { id: "models", labelKey: "settings.models", icon: "model" },
 ] as const;
 
 function GeneralSettings({
@@ -17,6 +19,7 @@ function GeneralSettings({
   catalog: BackendModels;
   theme: ThemeControls;
 }) {
+  const { locale, setLocale, t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const saving = useRef(false);
@@ -31,7 +34,9 @@ function GeneralSettings({
       });
     } catch (reason) {
       setError(
-        `水印设置保存未确认：${errorMessage(reason)} 请核对当前状态后重试。`,
+        t("settings.watermarkSaveFailed", {
+          reason: errorMessage(reason),
+        }),
       );
     } finally {
       saving.current = false;
@@ -42,36 +47,38 @@ function GeneralSettings({
     <div className="cw-settings-fields">
       <div className="cw-settings-field">
         <div>
-          <label htmlFor="settings-language">语言</label>
-          <p>选择应用的显示语言</p>
+          <label htmlFor="settings-language">{t("common.language")}</label>
+          <p>{t("common.languageHint")}</p>
         </div>
-        <select id="settings-language" defaultValue="zh-CN">
-          <option value="zh-CN">中文</option>
+        <select
+          id="settings-language"
+          value={locale}
+          onChange={(event) => setLocale(event.target.value as Locale)}
+        >
+          <option value="zh-CN">{t("common.chinese")}</option>
+          <option value="en-US">{t("common.english")}</option>
         </select>
       </div>
       <div className="cw-settings-field">
         <div>
-          <label htmlFor="settings-theme">主题</label>
-          <p>选择浅色或深色主题</p>
+          <label htmlFor="settings-theme">{t("common.theme")}</label>
+          <p>{t("common.themeHint")}</p>
         </div>
         <select
           id="settings-theme"
           value={theme.theme}
           onChange={(event) => theme.setTheme(event.target.value as Theme)}
         >
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
+          <option value="light">{t("common.light")}</option>
+          <option value="dark">{t("common.dark")}</option>
         </select>
       </div>
       <div className="cw-settings-field cw-settings-watermark">
         <div>
           <label id="settings-watermark-label" htmlFor="settings-watermark">
-            去除水印
+            {t("settings.watermark")}
           </label>
-          <p id="settings-watermark-hint">
-            关闭服务商模型 AI
-            生成内容中的可见水印。仅对未来生成内容生效，已生成的素材保留原状。
-          </p>
+          <p id="settings-watermark-hint">{t("settings.watermarkHint")}</p>
         </div>
         <div className="cw-settings-switch-control">
           <button
@@ -88,16 +95,18 @@ function GeneralSettings({
           </button>
           <p id="settings-watermark-status" role="status">
             {busy
-              ? "保存中…"
+              ? t("settings.watermarkSaving")
               : catalog.settings === null
-                ? "状态未确认"
-                : `当前：${catalog.settings.removeWatermark ? "无水印" : "有水印"}`}
+                ? t("settings.watermarkUnknown")
+                : catalog.settings.removeWatermark
+                  ? t("settings.watermarkOn")
+                  : t("settings.watermarkOff")}
           </p>
         </div>
       </div>
       {(error || catalog.settings === null) && (
         <div className="cw-settings-notice" role="alert">
-          <span>{error || catalog.error || "无法读取通用设置。"}</span>
+          <span>{error || catalog.error || t("settings.readFailed")}</span>
           <button
             disabled={busy}
             onClick={() => {
@@ -105,7 +114,7 @@ function GeneralSettings({
               void catalog.refresh();
             }}
           >
-            重新读取
+            {t("settings.reload")}
           </button>
         </div>
       )}
@@ -124,6 +133,7 @@ export function SettingsDialog({
   initialCategory: "general" | "models";
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const backdropPressed = useRef(false);
   const [category, setCategory] = useState<"general" | "models">(
@@ -173,8 +183,11 @@ export function SettingsDialog({
     >
       <div className="cw-settings-layout">
         <aside className="cw-settings-sidebar">
-          <h1 id="settings-title">设置</h1>
-          <nav className="cw-settings-navigation" aria-label="设置分类">
+          <h1 id="settings-title">{t("settings.title")}</h1>
+          <nav
+            className="cw-settings-navigation"
+            aria-label={t("settings.categories")}
+          >
             {categories.map((item) => (
               <button
                 key={item.id}
@@ -185,7 +198,7 @@ export function SettingsDialog({
                 onClick={() => setCategory(item.id)}
               >
                 <CanvasIcon name={item.icon} size={16} />
-                <span>{item.label}</span>
+                <span>{t(item.labelKey)}</span>
               </button>
             ))}
           </nav>
@@ -197,14 +210,19 @@ export function SettingsDialog({
         >
           <header className="cw-settings-header">
             <h2 id="settings-section-title">
-              {category === "general" ? "通用" : "模型接入"}
+              {category === "general"
+                ? t("settings.general")
+                : t("settings.models")}
             </h2>
           </header>
           <div className="cw-settings-body">
             {theme.error && (
               <div className="cw-settings-notice" role="alert">
                 <span>{theme.error}</span>
-                <button aria-label="关闭主题提示" onClick={theme.clearError}>
+                <button
+                  aria-label={t("settings.closeThemeError")}
+                  onClick={theme.clearError}
+                >
                   <CanvasIcon name="close" />
                 </button>
               </div>
@@ -218,7 +236,7 @@ export function SettingsDialog({
         </section>
         <button
           className="cw-settings-close"
-          aria-label="关闭设置"
+          aria-label={t("settings.close")}
           onClick={onClose}
         >
           <CanvasIcon name="close" size={20} />

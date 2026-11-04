@@ -70,10 +70,10 @@ test("custom seconds parse bounded ranges and reject malformed or oversized valu
 
 test("model and duration changes use capability data including non-contiguous seconds", () => {
   assert.deepEqual(backendDurations(config), [3, 5, 7]);
-  assert.deepEqual(backendResolutions(settings, config), ["自动", "720P"]);
+  assert.deepEqual(backendResolutions(settings, config), ["auto", "720P"]);
   assert.deepEqual(
     backendResolutions({ ...settings, durationSeconds: 5 }, config),
-    ["自动", "540P", "720P"],
+    ["auto", "540P", "720P"],
   );
   const selected = serviceVideoSettings(
     { ...settings, durationSeconds: 15 },
@@ -87,7 +87,7 @@ test("model and duration changes use capability data including non-contiguous se
     { ...settings, durationSeconds: 3 },
     config,
   );
-  assert.equal(shorter.resolution, "自动");
+  assert.equal(shorter.resolution, "auto");
   assert.equal(backendBlocker(settings, [], [config]), null);
   assert.match(
     backendBlocker({ ...settings, resolution: "540P" }, [], [config])!,
@@ -108,9 +108,9 @@ test("unknown models advertise no guessed resolution or duration and cannot inhe
       outputResolutions: [],
     },
   };
-  assert.deepEqual(backendResolutions(settings, unknown), ["自动"]);
+  assert.deepEqual(backendResolutions(settings, unknown), ["auto"]);
   assert.deepEqual(backendDurations(unknown), []);
-  assert.equal(serviceVideoSettings(settings, unknown).resolution, "自动");
+  assert.equal(serviceVideoSettings(settings, unknown).resolution, "auto");
 });
 
 test("declared durations outside H3 range are available for other adapters", () => {

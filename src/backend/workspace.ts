@@ -10,6 +10,7 @@ import {
   objectVersion,
   visibleItems,
 } from "./creationClient.ts";
+import { tNow } from "../i18n/messages.ts";
 import { CreationProjection } from "./creationProjection.ts";
 import {
   activeBackendProjectId,
@@ -142,7 +143,7 @@ export async function importWorkspaceDocument(document: CanvasDocument) {
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
       .trim()
       .replace(/[. ]+$/, "")
-      .slice(0, 80) || "导入画布";
+      .slice(0, 80) || tNow("errors.backend.importCanvas");
   let name = base,
     suffix = 2;
   while (occupied.has(name.toLocaleLowerCase())) name = `${base} (${suffix++})`;
@@ -223,7 +224,7 @@ export function initializeWorkspace() {
       if (!projects.some((project) => project.id === selected)) {
         // Ask the authoritative store for the precise missing/unsupported-format error.
         await request(creationPath(selected));
-        throw new Error("工程不在可打开的列表中，请检查工程文件后重试。");
+        throw new Error(tNow("errors.backend.projectNotOpen"));
       }
     } else
       try {
@@ -234,7 +235,7 @@ export function initializeWorkspace() {
     if (!projects.length) {
       const id = crypto.randomUUID();
       try {
-        projects = [await createWorkspaceProject("未命名画布", id)];
+        projects = [await createWorkspaceProject(tNow("errors.backend.untitled"), id)];
       } catch (error) {
         // Another window may have created the default directory concurrently.
         if (!(error instanceof ApiError && error.status === 409)) throw error;
@@ -244,7 +245,10 @@ export function initializeWorkspace() {
           for (let suffix = 2; suffix <= 100 && !projects.length; suffix++) {
             try {
               projects = [
-                await createWorkspaceProject(`未命名画布 (${suffix})`, id),
+                await createWorkspaceProject(
+                  tNow("errors.backend.untitledSuffix", { suffix }),
+                  id,
+                ),
               ];
             } catch (conflict) {
               if (!(conflict instanceof ApiError && conflict.status === 409))

@@ -4,9 +4,10 @@ import {
   type CanvasDocument,
   type CanvasNode,
 } from "./model.ts";
-import { referenceIssue, REFERENCE_ISSUE_TEXT } from "./connectionPolicy.ts";
+import { referenceIssue, referenceIssueText } from "./connectionPolicy.ts";
 import { generationContentPatch } from "./generationReferenceContent.ts";
 import type { ReferenceContent } from "./chatReferenceContent.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Prepare a complete relationship + document edit before publishing any part. */
 export function referenceContentCommand(
@@ -16,7 +17,7 @@ export function referenceContentCommand(
   added: CanvasNode[] = [],
 ): CanvasCommand {
   const target = document.nodes.find((node) => node.id === targetId);
-  if (!target) throw new Error("目标节点已不存在。");
+  if (!target) throw new Error(tNow("errors.generation.targetMissing"));
   const desired = new Set(
     content.flatMap((part) =>
       part.type === "reference" && part.binding !== "asset" && part.nodeId
@@ -46,7 +47,7 @@ export function referenceContentCommand(
     );
     if (existing) return { ...part, referenceId: existing.id };
     const issue = referenceIssue(working, part.nodeId, targetId);
-    if (issue) throw new Error(REFERENCE_ISSUE_TEXT[issue]);
+    if (issue) throw new Error(referenceIssueText(issue));
     const add: CanvasCommand = {
       type: "add-edge",
       edge: {

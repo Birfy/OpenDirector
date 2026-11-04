@@ -1,3 +1,5 @@
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 import { parseStageMotion, type StageMotion } from "./stageMotion.ts";
 
 /** Local previsualization format. V1 is migrated here, never in consumers. */
@@ -82,7 +84,10 @@ const color = (v: unknown): v is string =>
   typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 const sameVector = (a: Vector3Value, b: Vector3Value) =>
   a.x === b.x && a.y === b.y && a.z === b.z;
-function parseTransform(v: unknown): StageTransform {
+function parseTransform(
+  v: unknown,
+  t: Translate = defaultTranslate,
+): StageTransform {
   if (
     !record(v) ||
     !vector(v.position) ||
@@ -92,14 +97,17 @@ function parseTransform(v: unknown): StageTransform {
     v.scale.y <= 0 ||
     v.scale.z <= 0
   )
-    throw new Error("舞台对象的位置、旋转或缩放无效。");
+    throw new Error(t("editors.stage.error.invalidTransform"));
   return {
     position: { ...v.position },
     rotation: { ...v.rotation },
     scale: { ...v.scale },
   };
 }
-function parseCamera(v: unknown): StageCamera {
+function parseCamera(
+  v: unknown,
+  t: Translate = defaultTranslate,
+): StageCamera {
   if (
     !record(v) ||
     !vector(v.position) ||
@@ -109,7 +117,7 @@ function parseCamera(v: unknown): StageCamera {
     v.fov >= 180 ||
     sameVector(v.position, v.target)
   )
-    throw new Error("摄像机位置、目标或视角无效。");
+    throw new Error(t("editors.stage.error.invalidCamera"));
   return { position: { ...v.position }, target: { ...v.target }, fov: v.fov };
 }
 export function defaultStageCamera(): StageCamera {
@@ -119,7 +127,9 @@ export function defaultStageCamera(): StageCamera {
     fov: 45,
   };
 }
-export function createLocalStage(): LocalStageDocument {
+export function createLocalStage(
+  t: Translate = defaultTranslate,
+): LocalStageDocument {
   return {
     format: "opendirector-local-stage",
     version: 2,
@@ -130,7 +140,7 @@ export function createLocalStage(): LocalStageDocument {
     cameras: [
       {
         id: "camera-1",
-        name: "摄像机 1",
+        name: t("editors.stage.defaultCameraName"),
         pose: defaultStageCamera(),
         keyframes: [],
       },
@@ -142,7 +152,7 @@ export function createLocalStage(): LocalStageDocument {
       {
         id: crypto.randomUUID(),
         kind: "person",
-        name: "人物 1",
+        name: t("editors.stage.defaultPersonName"),
         color: "#a09af9",
         position: { x: 0, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
@@ -157,8 +167,10 @@ function frames<T>(
   raw: unknown,
   duration: number,
   parse: (v: unknown) => T,
+  t: Translate = defaultTranslate,
 ): { id: string; time: number; value: T }[] {
-  if (!Array.isArray(raw)) throw new Error("关键帧列表无效。");
+  if (!Array.isArray(raw))
+    throw new Error(t("editors.stage.error.invalidKeyframes"));
   const ids = new Set<string>(),
     times = new Set<number>();
   return raw
@@ -172,7 +184,7 @@ function frames<T>(
         v.time > duration ||
         times.has(v.time)
       )
-        throw new Error("关键帧标识或时间无效，帧时间不能重复。");
+        throw new Error(t("editors.stage.error.invalidKeyframeTime"));
       ids.add(v.id);
       times.add(v.time);
       return { id: v.id, time: v.time, value: parse(v.value) };
@@ -183,6 +195,7 @@ function intervals<T extends { id: string; start: number; duration: number }>(
   items: T[],
   duration: number,
   label: string,
+  t: Translate = defaultTranslate,
 ): T[] {
   const ids = new Set<string>();
   const sorted = items.sort((a, b) => a.start - b.start);
@@ -196,20 +209,23 @@ function intervals<T extends { id: string; start: number; duration: number }>(
       v.duration <= 0 ||
       v.start + v.duration > duration + 1e-8
     )
-      throw new Error(`${label}标识或区间无效，不能超出舞台时长。`);
+      throw new Error(t("editors.stage.error.intervalInvalid", { label }));
     if (i && sorted[i - 1]!.start + sorted[i - 1]!.duration > v.start + 1e-8)
-      throw new Error(`${label}区间不能重叠。`);
+      throw new Error(t("editors.stage.error.intervalOverlap", { label }));
     ids.add(v.id);
   }
   return sorted;
 }
-function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
+function migrateV1(
+  v: Record<string, unknown>,
+  t: Translate = defaultTranslate,
+): Record<string, unknown> {
   if (
     !Array.isArray(v.objects) ||
     !Array.isArray(v.keyframes) ||
     !finite(v.duration)
   )
-    throw new Error("旧舞台文档无效。");
+    throw new Error(t("editors.stage.error.invalidLegacy"));
   const objectIds = new Set(
     v.objects.map((o) => (record(o) ? o.id : undefined)),
   );
@@ -218,18 +234,19 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
     v.duration,
     (f) => {
       if (!record(f) || !Array.isArray(f.objects))
-        throw new Error("旧舞台关键帧无效。");
+        throw new Error(t("editors.stage.error.invalidLegacyKeyframe"));
       const ids = new Set();
       return {
-        camera: parseCamera(f.camera),
+        camera: parseCamera(f.camera, t),
         objects: f.objects.map((o) => {
           if (!record(o) || !objectIds.has(o.id) || ids.has(o.id))
-            throw new Error("关键帧引用了缺失或重复的舞台对象。");
+            throw new Error(t("editors.stage.error.missingObject"));
           ids.add(o.id);
-          return { id: o.id, transform: parseTransform(o.transform) };
+          return { id: o.id, transform: parseTransform(o.transform, t) };
         }),
       };
     },
+    t,
   );
   return {
     ...v,
@@ -241,8 +258,8 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
     cameras: [
       {
         id: "camera-1",
-        name: "摄像机 1",
-        pose: parseCamera(v.camera),
+        name: t("editors.stage.defaultCameraName"),
+        pose: parseCamera(v.camera, t),
         keyframes: legacy.map((f) => ({
           id: f.id,
           time: f.time,
@@ -251,9 +268,10 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
       },
     ],
     objects: v.objects.map((o) => {
-      if (!record(o)) throw new Error("旧舞台对象无效。");
+      if (!record(o))
+        throw new Error(t("editors.stage.error.invalidLegacyObject"));
       if (o.motion !== undefined && o.kind !== "person")
-        throw new Error("只有人物支持关节动作。");
+        throw new Error(t("editors.stage.error.jointMotionPerson"));
       return {
         ...o,
         keyframes: legacy.map((f) => ({
@@ -261,7 +279,7 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
           time: f.time,
           value:
             f.value.objects.find((item) => item.id === o.id)?.transform ??
-            parseTransform(o),
+            parseTransform(o, t),
         })),
         motionClips:
           o.motion === undefined
@@ -278,10 +296,13 @@ function migrateV1(v: Record<string, unknown>): Record<string, unknown> {
     }),
   };
 }
-export function parseLocalStageValue(input: unknown): LocalStageDocument {
+export function parseLocalStageValue(
+  input: unknown,
+  t: Translate = defaultTranslate,
+): LocalStageDocument {
   let v = input;
   if (record(v) && v.format === "opendirector-local-stage" && v.version === 1)
-    v = migrateV1(v);
+    v = migrateV1(v, t);
   if (
     !record(v) ||
     v.format !== "opendirector-local-stage" ||
@@ -298,7 +319,7 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
     ) ||
     !["camera", "storyboard"].includes(String(v.cameraSource))
   )
-    throw new Error("本地导演预演格式无效。");
+    throw new Error(t("editors.stage.error.invalidDocument"));
   const duration = v.duration,
     ids = new Set<string>(),
     cameraIds = new Set<string>();
@@ -312,20 +333,21 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
       !color(o.color) ||
       !Array.isArray(o.motionClips)
     )
-      throw new Error("舞台对象 ID、类型或颜色无效。");
+      throw new Error(t("editors.stage.error.invalidObject"));
     ids.add(o.id);
     if (o.kind !== "person" && o.motionClips.length)
-      throw new Error("只有人物支持关节动作。");
+      throw new Error(t("editors.stage.error.jointMotionPerson"));
     return {
       id: o.id,
       kind: o.kind as StageObject["kind"],
       name: o.name,
       color: o.color,
-      ...parseTransform(o),
-      keyframes: frames(o.keyframes, duration, parseTransform),
+      ...parseTransform(o, t),
+      keyframes: frames(o.keyframes, duration, (v) => parseTransform(v, t), t),
       motionClips: intervals(
         o.motionClips.map((c) => {
-          if (!record(c)) throw new Error("动作片段无效。");
+          if (!record(c))
+            throw new Error(t("editors.stage.error.invalidMotionClip"));
           return {
             id: c.id as string,
             start: c.start as number,
@@ -334,7 +356,8 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
           };
         }),
         duration,
-        "动作片段",
+        t("editors.stage.label.motionClip"),
+        t,
       ),
     };
   });
@@ -345,21 +368,21 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
       cameraIds.has(c.id) ||
       typeof c.name !== "string"
     )
-      throw new Error("摄像机标识无效。");
+      throw new Error(t("editors.stage.error.invalidCameraId"));
     cameraIds.add(c.id);
     return {
       id: c.id,
       name: c.name,
-      pose: parseCamera(c.pose),
-      keyframes: frames(c.keyframes, duration, parseCamera),
+      pose: parseCamera(c.pose, t),
+      keyframes: frames(c.keyframes, duration, (v) => parseCamera(v, t), t),
     };
   });
   if (!cameras.length || !cameraIds.has(v.activeCameraId as string))
-    throw new Error("至少保留一个摄像机，当前摄像机必须存在。");
+    throw new Error(t("editors.stage.error.cameraRequired"));
   const shots = intervals(
     v.shots.map((s) => {
       if (!record(s) || !cameraIds.has(s.cameraId as string))
-        throw new Error("分镜引用了不存在的摄像机。");
+        throw new Error(t("editors.stage.error.shotCamera"));
       return {
         id: s.id as string,
         cameraId: s.cameraId as string,
@@ -368,7 +391,8 @@ export function parseLocalStageValue(input: unknown): LocalStageDocument {
       };
     }),
     duration,
-    "分镜",
+    t("editors.stage.label.shot"),
+    t,
   );
   return {
     format: "opendirector-local-stage",
@@ -493,9 +517,10 @@ export function sampleStageCamera(
   stage: LocalStageDocument,
   id: string,
   time: number,
+  t: Translate = defaultTranslate,
 ): StageCamera {
   const c = stage.cameras.find((c) => c.id === id);
-  if (!c) throw new Error("摄像机不存在。");
+  if (!c) throw new Error(t("editors.stage.error.cameraMissing"));
   return sample(c.pose, c.keyframes, time, (a, b, t) => ({
     position: mixVector(a.position, b.position, t),
     target: mixVector(a.target, b.target, t),
@@ -578,10 +603,11 @@ export function editStageObjectAt(
   id: string,
   time: number,
   patch: Partial<StageObject>,
+  t: Translate = defaultTranslate,
 ): LocalStageDocument {
   const pose = sampleStage(stage, time).objects.find((o) => o.id === id);
   if (!pose) return stage;
-  const transform = parseTransform({ ...pose, ...patch });
+  const transform = parseTransform({ ...pose, ...patch }, t);
   const {
     position: _position,
     rotation: _rotation,
@@ -591,65 +617,76 @@ export function editStageObjectAt(
   const changesTransform =
     !!(patch.position || patch.rotation || patch.scale) &&
     !sameTransform(pose, transform);
-  return parseLocalStageValue({
-    ...stage,
-    objects: stage.objects.map((o) =>
-      o.id !== id
-        ? o
-        : {
-            ...o,
-            ...metadata,
-            ...(changesTransform ? transform : {}),
-            keyframes: changesTransform
-              ? authorFrame(o.keyframes, time, transform, parseTransform(o))
-              : o.keyframes,
-          },
-    ),
-  });
+  return parseLocalStageValue(
+    {
+      ...stage,
+      objects: stage.objects.map((o) =>
+        o.id !== id
+          ? o
+          : {
+              ...o,
+              ...metadata,
+              ...(changesTransform ? transform : {}),
+              keyframes: changesTransform
+                ? authorFrame(o.keyframes, time, transform, parseTransform(o, t))
+                : o.keyframes,
+            },
+      ),
+    },
+    t,
+  );
 }
 export function editStageCameraAt(
   stage: LocalStageDocument,
   id: string,
   time: number,
   patch: Partial<StageCamera>,
+  t: Translate = defaultTranslate,
 ): LocalStageDocument {
-  const current = sampleStageCamera(stage, id, time);
-  const pose = parseCamera({ ...current, ...patch });
+  const current = sampleStageCamera(stage, id, time, t);
+  const pose = parseCamera({ ...current, ...patch }, t);
   if (sameCamera(current, pose)) return stage;
-  return parseLocalStageValue({
-    ...stage,
-    cameras: stage.cameras.map((c) =>
-      c.id !== id
-        ? c
-        : {
-            ...c,
-            pose,
-            keyframes: authorFrame(c.keyframes, time, pose, c.pose),
-          },
-    ),
-  });
+  return parseLocalStageValue(
+    {
+      ...stage,
+      cameras: stage.cameras.map((c) =>
+        c.id !== id
+          ? c
+          : {
+              ...c,
+              pose,
+              keyframes: authorFrame(c.keyframes, time, pose, c.pose),
+            },
+      ),
+    },
+    t,
+  );
 }
 export function captureStageFrame(
   stage: LocalStageDocument,
   time: number,
+  t: Translate = defaultTranslate,
 ): LocalStageDocument {
   const pose = sampleStage(stage, time);
-  return parseLocalStageValue({
-    ...stage,
-    objects: stage.objects.map((o) => ({
-      ...o,
-      keyframes: putFrame(
-        o.keyframes,
-        time,
-        parseTransform(pose.objects.find((p) => p.id === o.id)!),
+  return parseLocalStageValue(
+    {
+      ...stage,
+      objects: stage.objects.map((o) => ({
+        ...o,
+        keyframes: putFrame(
+          o.keyframes,
+          time,
+          parseTransform(pose.objects.find((p) => p.id === o.id)!, t),
+        ),
+      })),
+      cameras: stage.cameras.map((c) =>
+        c.id === pose.cameraId
+          ? { ...c, keyframes: putFrame(c.keyframes, time, pose.camera) }
+          : c,
       ),
-    })),
-    cameras: stage.cameras.map((c) =>
-      c.id === pose.cameraId
-        ? { ...c, keyframes: putFrame(c.keyframes, time, pose.camera) }
-        : c,
-    ),
-  });
+    },
+    t,
+  );
 }
 export function stageFrameTimes(stage: LocalStageDocument): number[] {
   return [

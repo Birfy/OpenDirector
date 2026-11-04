@@ -1,5 +1,6 @@
 /** A bounded frame/audio-chunk encoder shared by local composition tools. */
 import { prepareSoftwareAac } from "./softwareAac.ts";
+import { tNow } from "../i18n/messages.ts";
 export interface Mp4Options {
   canvas: HTMLCanvasElement;
   duration: number;
@@ -13,9 +14,9 @@ export async function encodeMp4(options: Mp4Options): Promise<Blob> {
   const { canvas, duration, fps, signal, draw, audio, progress } = options;
   signal.throwIfAborted();
   if (!(duration > 0) || !Number.isFinite(duration) || !(fps > 0))
-    throw new Error("导出时长或帧率无效。");
+    throw new Error(tNow("errors.render.mp4Invalid"));
   if (canvas.width % 2 || canvas.height % 2)
-    throw new Error("MP4 的宽度与高度需要为偶数，请调整时间线尺寸。");
+    throw new Error(tNow("errors.render.mp4Even"));
   const {
     Output,
     Mp4OutputFormat,
@@ -36,14 +37,14 @@ export async function encodeMp4(options: Mp4Options): Promise<Blob> {
     }))
   )
     throw new Error(
-      "当前浏览器无法编码此尺寸的 H.264，请换用支持 WebCodecs 的浏览器或降低尺寸。",
+      tNow("errors.render.mp4H264"),
     );
   if (audio) await prepareSoftwareAac();
   if (
     audio &&
     !(await canEncodeAudio("aac", { sampleRate: 48000, numberOfChannels: 2 }))
   )
-    throw new Error("无法初始化 AAC 音频编码，请重新打开页面后重试。");
+    throw new Error(tNow("errors.render.aac"));
   signal.throwIfAborted();
   const target = new BufferTarget();
   const output = new Output({
@@ -98,7 +99,7 @@ export async function encodeMp4(options: Mp4Options): Promise<Blob> {
     sound?.close();
     await output.finalize();
     signal.throwIfAborted();
-    if (!target.buffer) throw new Error("视频编码没有返回文件。");
+    if (!target.buffer) throw new Error(tNow("errors.render.noFile"));
     progress(1);
     return new Blob([target.buffer], { type: "video/mp4" });
   } finally {

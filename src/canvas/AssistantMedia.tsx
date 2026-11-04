@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatAsset } from "../backend/chat";
 import { creationClient } from "../backend/creationClient";
+import { useT } from "../i18n/I18nProvider.tsx";
 import { CanvasIcon } from "./CanvasIcon";
 import { useCanvasPlayback } from "./CanvasMediaPreview";
 import { formatMediaTime } from "./mediaPlayback";
@@ -26,6 +27,7 @@ function useMediaSource(projectId: string, asset: ChatAsset, active: boolean) {
 }
 
 function AttachmentCard({ projectId, asset }: {projectId: string; asset: ChatAsset}) {
+  const t = useT();
   const root = useRef<HTMLButtonElement>(null);
   const [visible, setVisible] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -39,7 +41,7 @@ function AttachmentCard({ projectId, asset }: {projectId: string; asset: ChatAss
     return () => observer.disconnect();
   }, []);
   return <button type="button" ref={root} className="cw-chat-attachment" data-preview-asset={asset.id}
-    aria-label={`预览素材 ${assetDisplayName(asset.name)}`}>
+    aria-label={t("assistant.media.preview", { name: assetDisplayName(asset.name) })}>
     <span className="cw-chat-attachment-picture">
       {src && !failed && kind === "image" ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
         : src && !failed && kind === "video" ? <video src={src} muted playsInline preload="metadata"
@@ -54,15 +56,17 @@ function AttachmentCard({ projectId, asset }: {projectId: string; asset: ChatAss
 }
 
 export function AttachmentStrip({projectId, assets}: {projectId: string; assets: ChatAsset[]}) {
+  const t = useT();
   const [expanded, setExpanded] = useState(true);
   if (!assets.length) return null;
   return <div className="cw-chat-attachments">
-    <button type="button" className="cw-chat-attachments-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "收起素材" : `展开素材（${assets.length}）`}</button>
+    <button type="button" className="cw-chat-attachments-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? t("assistant.media.collapse") : t("assistant.media.expand", { count: assets.length })}</button>
     {expanded && <div className="cw-chat-attachment-list">{assets.map(asset => <AttachmentCard key={`${asset.id}:${asset.fingerprint}`} projectId={projectId} asset={asset} />)}</div>}
   </div>;
 }
 
 export function AttachmentHover({projectId, asset, anchor}: {projectId: string; asset: ChatAsset; anchor: DOMRect}) {
+  const t = useT();
   const panel = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [duration, setDuration] = useState(0);
@@ -89,9 +93,9 @@ export function AttachmentHover({projectId, asset, anchor}: {projectId: string; 
   }, [src, playback]);
   return <div ref={panel} popover="manual" className="cw-chat-media-preview" role="tooltip">
     <div className="cw-chat-media-preview-heading"><strong>{assetDisplayName(asset.name)}</strong>{duration > 0 && <span>{duration.toFixed(1)}s</span>}</div>
-    {failed ? <p>此素材暂时无法预览</p> : !src && kind !== "text" ? <p role="status">正在加载预览…</p>
+    {failed ? <p>{t("assistant.media.unavailable")}</p> : !src && kind !== "text" ? <p role="status">{t("assistant.media.loading")}</p>
       : kind === "image" ? <img src={src} alt={assetDisplayName(asset.name)} onLoad={event => {const image = event.currentTarget; if (image.naturalWidth && image.naturalHeight) setDimensions({width: image.naturalWidth, height: image.naturalHeight});}} onError={() => setFailed(true)} />
       : kind === "video" ? <video ref={video} src={src} muted playsInline preload="auto" onLoadedMetadata={event => {const media = event.currentTarget; if (media.videoWidth && media.videoHeight) setDimensions({width: media.videoWidth, height: media.videoHeight}); const duration = media.duration; setDuration(Number.isFinite(duration) ? duration : 0);}} onError={() => setFailed(true)} />
-      : <p>{kind === "audio" ? "音频素材" : "文件素材"} · {Math.ceil(asset.size / 1024)} KB</p>}
+      : <p>{kind === "audio" ? t("assistant.media.audio") : t("assistant.media.file")} · {Math.ceil(asset.size / 1024)} KB</p>}
   </div>;
 }

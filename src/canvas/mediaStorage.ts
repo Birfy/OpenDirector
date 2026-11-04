@@ -1,4 +1,5 @@
 /** Wire format 2 stores repeated embedded media once; runtime documents stay v1. */
+import { tNow } from "../i18n/messages.ts";
 const PREFIX = "opendirector-media:";
 const MIN_SHARED_LENGTH = 64 * 1024;
 
@@ -55,7 +56,7 @@ export function expandMedia(value: Record<string, unknown>): unknown {
     !sources.length ||
     sources.some((src) => typeof src !== "string" || !src.startsWith("data:"))
   )
-    throw new Error("画布共享媒体表无效。");
+    throw new Error(tNow("errors.media.sharedTable"));
   const { mediaSources: _, ...document } = value;
   const expanded = mapSources(document, (src) => {
     if (!src.startsWith(PREFIX)) return src;
@@ -65,7 +66,7 @@ export function expandMedia(value: Record<string, unknown>): unknown {
       !Number.isSafeInteger(Number(index)) ||
       Number(index) >= sources.length
     )
-      throw new Error("画布引用了不存在的共享媒体。");
+      throw new Error(tNow("errors.media.sharedMissing"));
     return sources[Number(index)];
   }) as Record<string, unknown>;
   return { ...expanded, version: 1 };

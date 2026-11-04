@@ -4,6 +4,8 @@ import { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 export { subjectReferenceNodes } from "../canvas/subjectReferences.ts";
 import { frameImageLimitIssue } from "../canvas/frameReferences.ts";
 import { nodeDownstreamKinds } from "../canvas/connectionPolicy.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 /** Model configurations and input rules published by the local API. */
 export type ModelKind = "agent" | "image" | "video" | "audio" | "vision";
@@ -136,12 +138,12 @@ export function isGenerationModel(
   );
 }
 
-const LABELS: Record<string, string> = {
-  image: "图片",
-  video: "视频",
-  audio: "音频",
-  text: "文本",
-  subject: "主体",
+const LABELS: Record<string, MessageKey> = {
+  image: "errors.rules.kindImage",
+  video: "errors.rules.kindVideo",
+  audio: "errors.rules.kindAudio",
+  text: "errors.rules.kindText",
+  subject: "errors.rules.kindSubject",
 };
 
 /** Speaker names a speech service accepts; others fall back to its default voice. */
@@ -176,41 +178,43 @@ export function backendReferenceIssue(
     settings.videoMode === "first-last" &&
     ["video", "audio"].includes(kind)
   )
-    return "首尾帧模式不接收视频或音频参考";
+    return tNow("errors.rules.firstLastReference");
   if (kind === "subject") {
     if (!nodeDownstreamKinds(node).includes(settings.mode))
-      return "视频主体只能作为视频节点的参考";
+      return tNow("errors.rules.videoSubject");
     if (settings.mode === "video" && settings.videoMode === "first-last")
-      return "首尾帧模式请使用图片节点选择帧素材";
+      return tNow("errors.rules.firstLastImage");
     const resources = subjectReferenceNodes(node);
-    if (!resources.length) return "主体尚未添加可用素材";
+    if (!resources.length) return tNow("errors.rules.subjectEmpty");
     return resources.some(
       (resource) =>
         !(resource.type === "video" && settings.videoMode === "continuation") &&
         !backendReferenceIssue(resource, settings, config),
     )
       ? null
-      : "当前模型或模式不接收主体中的素材";
+      : tNow("errors.rules.subjectReference");
   }
   if (!["image", "video", "audio", "text"].includes(kind))
-    return "本地服务暂不接收此类节点";
+    return tNow("errors.rules.nodeKind");
   if (kind === "text")
     return rules.allowedKinds.includes("text")
       ? node.data.text?.trim()
         ? null
-        : "文本节点为空"
-      : "当前模型不接收文本参考";
+        : tNow("errors.rules.textEmpty")
+      : tNow("errors.rules.textReference");
   const continuation =
     settings.mode === "video" && settings.videoMode === "continuation";
   if (kind === "video" && !continuation && !rules.maxVideos)
     return rules.videoModes.includes("continuation")
-      ? "视频只能在“接续”模式中作为上一段"
-      : "当前模型不接收视频参考";
+      ? tNow("errors.rules.videoContinuation")
+      : tNow("errors.rules.videoReference");
   if (!rules.allowedKinds.includes(kind))
-    return `当前模型不接收${LABELS[kind]}参考`;
+    return tNow("errors.rules.kindReference", {
+      kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
+    });
   return node.data.src && node.data.assetState !== "missing"
     ? null
-    : "素材尚未导入或已丢失";
+    : tNow("errors.rules.mediaMissing");
 }
 
 /** First-frame mode submits only the chosen frame; other modes use every usable input. */
@@ -286,20 +290,20 @@ export function backendResolutions(
 ): string[] {
   if (settings.mode === "image")
     return [
-      "自动",
+      "auto",
       ...new Set(
         (config?.inputRules.imageOutputs ?? [])
           .filter(
             (item) =>
               !settings.aspectRatio ||
-              settings.aspectRatio === "自动" ||
+              settings.aspectRatio === "auto" ||
               item.aspectRatio === settings.aspectRatio,
           )
           .map((item) => item.size),
       ),
     ];
   if (settings.mode !== "video" || settings.videoMode === "continuation")
-    return ["自动"];
+    return ["auto"];
   const rules = config?.inputRules;
   const choices =
     settings.videoMode === "reference" &&
@@ -314,7 +318,7 @@ export function backendResolutions(
       : rules?.outputResolutions;
   const outputs = rules?.videoCapabilities?.outputs;
   return [
-    "自动",
+    "auto",
     ...(choices ?? []).filter(
       (label) =>
         !outputs ||
@@ -344,7 +348,7 @@ export function backendAspectRatios(
 ): string[] {
   if (settings.mode === "image")
     return [
-      "自动",
+      "auto",
       ...new Set(
         (config?.inputRules.imageOutputs ?? []).flatMap((item) =>
           item.aspectRatio === "auto" ? [] : [item.aspectRatio],
@@ -353,8 +357,8 @@ export function backendAspectRatios(
     ];
   if (settings.mode === "video" && config?.inputRules.aspectRatios)
     return settings.videoMode === "first-last"
-      ? ["自动"]
-      : ["自动", ...config.inputRules.aspectRatios];
+      ? ["auto"]
+      : ["auto", ...config.inputRules.aspectRatios];
   if (
     settings.mode === "video" &&
     settings.videoMode !== "continuation" &&
@@ -364,7 +368,7 @@ export function backendAspectRatios(
       ))
   )
     return [
-      "自动",
+      "auto",
       "21:9",
       "16:9",
       "3:2",
@@ -377,7 +381,7 @@ export function backendAspectRatios(
       "4:5",
       "2:1",
     ];
-  return ["自动"];
+  return ["auto"];
 }
 
 export function serviceGenerationSettings(
@@ -392,13 +396,13 @@ export function serviceGenerationSettings(
       : { ...settings };
   if (next.mode !== "audio") {
     const ratios = backendAspectRatios(next, config);
-    if (!ratios.includes(next.aspectRatio)) next.aspectRatio = "自动";
+    if (!ratios.includes(next.aspectRatio)) next.aspectRatio = "auto";
     const resolutions = backendResolutions(next, config, incoming);
     if (
       (modelChanged && next.mode === "image") ||
       !resolutions.includes(next.resolution)
     )
-      next.resolution = "自动";
+      next.resolution = "auto";
   }
   next = serviceAudioSettings(next, config);
   if (modelChanged) {
@@ -436,13 +440,13 @@ export function serviceVideoSettings(
   const resolutions = backendResolutions(next, config, incoming);
   if (modelChanged || !resolutions.includes(next.resolution)) {
     const preferred =
-      caps?.defaultResolution === "auto" ? "自动" : caps?.defaultResolution;
+      caps?.defaultResolution === "auto" ? "auto" : caps?.defaultResolution;
     next.resolution =
       !modelChanged && resolutions.includes(next.resolution)
         ? next.resolution
         : preferred && resolutions.includes(preferred)
           ? preferred
-          : "自动";
+          : "auto";
   }
   return next;
 }
@@ -455,64 +459,68 @@ export function backendBlocker(
   const frameLimit = frameImageLimitIssue(settings, incoming);
   if (frameLimit) return frameLimit;
   const config = backendModel(settings, models);
-  if (!config) return "所选模型配置已删除或尚未读取，请在设置中重新选择。";
+  if (!config) return tNow("errors.rules.modelMissing");
   if (config.kind !== settings.mode)
-    return "模型类型与节点不符，请重新选择模型。";
+    return tNow("errors.rules.modelKind");
   if (isDepthModel(config))
-    return "视频深度模型仅用于深度动作捕捉，请选择生成模型。";
+    return tNow("errors.rules.depthModel");
   if (isScoreModel(config))
-    return "扒谱模型仅用于参照音乐生成，请选择音乐生成模型。";
+    return tNow("errors.rules.transcriptionModel");
   if (!isGenerationModel(config))
-    return "视觉分割模型仅用于选区、分割和抠像，请选择生成模型。";
+    return tNow("errors.rules.segmentationModel");
   if (!settings.prompt.trim())
     return settings.mode !== "audio"
-      ? "请输入生成要求。"
+      ? tNow("errors.rules.promptRequired")
       : isMusicModel(config)
-        ? "请描述音乐风格。"
-        : "请输入要合成的文字。";
+        ? tNow("errors.rules.musicStyle")
+        : tNow("errors.rules.speechText");
   const rules = config.inputRules;
   if (settings.mode === "image") {
     if (settings.imagePreset && settings.imagePreset !== "none")
-      return "当前服务不支持产品三视图预设，请使用自由创作。";
+      return tNow("errors.rules.productViews");
     if (
       !backendAspectRatios(settings, config).includes(settings.aspectRatio) ||
       !backendResolutions(settings, config).includes(settings.resolution)
     )
-      return "当前图片适配器不支持所选比例或尺寸，请重新选择。";
+      return tNow("errors.rules.imageSize");
   }
   if (settings.mode === "audio" && isMusicModel(config)) {
     if (settings.audioCreationType !== "music")
-      return "所选模型用于音乐生成，请重新选择模型。";
+      return tNow("errors.rules.musicModel");
     if (
       !(
         settings.durationSeconds >= MUSIC_SECONDS.min &&
         settings.durationSeconds <= MUSIC_SECONDS.max
       )
     )
-      return `音乐最长时长需在 ${MUSIC_SECONDS.min}–${MUSIC_SECONDS.max} 秒之间。`;
-    if ((settings.lyrics ?? "").length > 5000) return "歌词最多 5000 字。";
+      return tNow("errors.rules.musicDuration", {
+        min: MUSIC_SECONDS.min,
+        max: MUSIC_SECONDS.max,
+      });
+    if ((settings.lyrics ?? "").length > 5000)
+      return tNow("errors.rules.lyricsLimit");
     if (
       !config.inputRules.allowedKinds.includes("audio") &&
       incoming.some((node) => node.data.kind === "audio")
     )
-      return "所选音乐模型不支持参照音乐，请换用 YuE2 或断开参照。";
+      return tNow("errors.rules.referenceMusic");
     if (
       hasMusicReference(settings, incoming, config) &&
       !models.some(isScoreModel)
     )
-      return "参照音乐需要先扒谱，请在“模型接入”中添加扒谱模型（vLLM-Omni 扒谱接口）。";
+      return tNow("errors.rules.transcriptionRequired");
   } else if (
     settings.mode === "audio" &&
     ((settings.audioCreationType && settings.audioCreationType !== "audio") ||
       (settings.audioMode && settings.audioMode !== "tts"))
   )
-    return "当前语音服务仅支持文本朗读。";
+    return tNow("errors.rules.speechOnly");
   if (
     settings.mode === "audio" &&
     settings.voiceName &&
     !/^[A-Za-z0-9_.-]{1,64}$/.test(settings.voiceName)
   )
-    return "请输入服务支持的音色标识（字母、数字、点、下划线或连字符）。";
+    return tNow("errors.rules.voiceId");
   if (
     settings.mode === "video" &&
     settings.audioEnabled === false &&
@@ -521,42 +529,42 @@ export function backendBlocker(
       config.protocol === "volcengine"
     )
   )
-    return "当前视频适配器不支持关闭生成音频。";
+    return tNow("errors.rules.audioDisable");
   const references = backendReferences(settings, incoming, config);
   if (settings.mode === "video") {
     const durations = backendDurations(config);
     if (durations.length && !durations.includes(settings.durationSeconds))
-      return "当前模型不支持所选时长，请重新选择。";
+      return tNow("errors.rules.duration");
     if (
       rules.outputResolutions &&
       !backendResolutions(settings, config, incoming).includes(
         settings.resolution,
       )
     )
-      return "当前模型或参考模式不支持所选分辨率，请重新选择。";
+      return tNow("errors.rules.resolution");
     if (
       !rules.videoModes.includes(backendVideoMode(settings, references, config))
     )
-      return "当前模型不支持所选视频模式。";
+      return tNow("errors.rules.videoMode");
     if (settings.videoMode === "first-last") {
       if (settings.lastFrameNodeId && !rules.frameRoles?.includes("last_frame"))
-        return "当前服务只支持首帧，请移除尾帧。";
+        return tNow("errors.rules.lastFrame");
       if (
         settings.lastFrameNodeId &&
         !references.some((item) => item.role === "lastFrame")
       )
-        return "尾帧素材未连接或已丢失，请重新选择。";
+        return tNow("errors.rules.lastFrameMissing");
       if (
         settings.firstFrameNodeId &&
         !references.some((item) => item.role === "firstFrame")
       )
-        return "首帧素材未连接或已丢失，请重新选择。";
+        return tNow("errors.rules.firstFrameMissing");
     }
     if (
       settings.videoMode === "continuation" &&
       references.filter((item) => item.role === "continuation").length !== 1
     )
-      return "接续需要连接一段由当前 H3 服务生成的视频作为上一段。";
+      return tNow("errors.rules.continuationSource");
   }
   const count = (kind: string) =>
     references.filter(
@@ -568,7 +576,10 @@ export function backendBlocker(
     ["audio", rules.maxAudios],
   ] as const)
     if (count(kind) > limit)
-      return `参考${LABELS[kind]}超过当前模型上限（${limit} 个）。`;
+      return tNow("errors.rules.referenceLimit", {
+        kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
+        limit,
+      });
   return null;
 }
 
@@ -600,11 +611,11 @@ export function referenceBudgetIssue(
           : source.type === "video"
             ? (config.inputRules.videoBytes ?? 50 * 1024 * 1024)
             : 50 * 1024 * 1024;
-    if (size > limit) return "参考文件超过当前模型的大小限制";
+    if (size > limit) return tNow("errors.rules.referenceFileSize");
     total += size;
   }
   if (total > (config.inputRules.requestBytes ?? Infinity))
-    return "参考总大小超过当前模型的请求预算";
+    return tNow("errors.rules.referenceBudget");
   for (const [kind, maximum] of [
     ["image", config.inputRules.maxImages],
     ["video", config.inputRules.maxVideos],
@@ -614,6 +625,6 @@ export function referenceBudgetIssue(
       !(config.kind === "agent" && kind !== "image") &&
       usable.filter((source) => source.type === kind).length > maximum
     )
-      return "参考数量超出当前模型限制";
+      return tNow("errors.rules.referenceCount");
   return null;
 }

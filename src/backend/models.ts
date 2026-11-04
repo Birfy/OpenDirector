@@ -6,15 +6,33 @@ import type {
   VideoAdapter,
   VideoCapabilities,
 } from "./rules.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 export const MODEL_KINDS: readonly {
   id: Exclude<ModelKind, "vision">;
-  label: string;
+  labelKey: MessageKey;
+  shortLabelKey: MessageKey;
 }[] = [
-  { id: "agent", label: "对话 Agent" },
-  { id: "image", label: "图片生成" },
-  { id: "video", label: "视频生成" },
-  { id: "audio", label: "音频生成" },
+  {
+    id: "agent",
+    labelKey: "models.category.agent",
+    shortLabelKey: "models.category.agentShort",
+  },
+  {
+    id: "image",
+    labelKey: "models.category.image",
+    shortLabelKey: "models.category.imageShort",
+  },
+  {
+    id: "video",
+    labelKey: "models.category.video",
+    shortLabelKey: "models.category.videoShort",
+  },
+  {
+    id: "audio",
+    labelKey: "models.category.audio",
+    shortLabelKey: "models.category.audioShort",
+  },
 ];
 
 export type ModelOptions = Pick<ModelConfigInput, "inputModalities" | "videoAdapter" | "videoCapabilities">;

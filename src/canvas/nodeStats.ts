@@ -1,4 +1,6 @@
 import type { CanvasNode, CanvasNodeKind } from "./model";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 export interface NodeStatEntry {
   kind: CanvasNodeKind;
@@ -17,14 +19,14 @@ export const NODE_STAT_ORDER: readonly CanvasNodeKind[] = [
   "group",
 ];
 
-export const NODE_STAT_LABEL: Record<string, string> = {
-  image: "图片",
-  video: "视频",
-  text: "文本",
-  audio: "音频",
-  subject: "主体",
-  timeline: "时间线",
-  group: "组",
+export const NODE_STAT_LABEL: Record<string, MessageKey> = {
+  image: "errors.stats.image",
+  video: "errors.stats.video",
+  text: "errors.stats.text",
+  audio: "errors.stats.audio",
+  subject: "errors.stats.subject",
+  timeline: "errors.stats.timeline",
+  group: "errors.stats.group",
 };
 
 /**
@@ -47,7 +49,12 @@ export function countNodesByKind(
   const entries: NodeStatEntry[] = [];
   for (const kind of NODE_STAT_ORDER) {
     const count = counts.get(kind) ?? 0;
-    if (count > 0) entries.push({ kind, label: NODE_STAT_LABEL[kind], count });
+    if (count > 0)
+      entries.push({
+        kind,
+        label: tNow(NODE_STAT_LABEL[kind] ?? "errors.stats.other"),
+        count,
+      });
   }
   return entries;
 }

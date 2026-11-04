@@ -6,6 +6,7 @@ import {
   ALL_FORMATS,
 } from "mediabunny";
 import type { WrappedCanvas } from "mediabunny";
+import { tNow } from "../i18n/messages.ts";
 import { copyTimeline, timelineError } from "./dataBoundary";
 import type { TimelineData } from "./model";
 import {
@@ -26,12 +27,12 @@ export async function renderTimelineMp4(
   const timeline = copyTimeline(value),
     segments = timelineSegments(timeline);
   const duration = timelineDuration(timeline);
-  if (!duration) throw new Error("请先向时间线加入素材。");
+  if (!duration) throw new Error(tNow("errors.render.timelineEmpty"));
   const canvas = document.createElement("canvas");
   canvas.width = timeline.width;
   canvas.height = timeline.height;
   const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("无法创建视频画面。");
+  if (!context) throw new Error(tNow("errors.render.canvas"));
   const inputs = new Map<string, Input>(),
     images = new Map<string, HTMLImageElement>();
   const imageUrls: string[] = [];
@@ -48,13 +49,16 @@ export async function renderTimelineMp4(
       const { clip, track } = segment,
         resource = clip.resource;
       if (!resource.src)
-        throw new Error(`素材「${resource.title}」缺少媒体文件。`);
+        throw new Error(tNow("errors.render.missingMedia", { title: resource.title }));
       if (resource.kind === "image") {
         if (!images.has(resource.src)) {
           const response = await fetch(resource.src, { signal });
           if (!response.ok)
             throw new Error(
-              `无法读取「${resource.title}」：${response.status}`,
+              tNow("errors.render.readFailed", {
+                title: resource.title,
+                status: response.status,
+              }),
             );
           const url = URL.createObjectURL(await response.blob());
           imageUrls.push(url);
@@ -76,7 +80,11 @@ export async function renderTimelineMp4(
               };
               image.onerror = () => {
                 cleanup();
-                reject(new Error(`无法解码图片「${resource.title}」。`));
+                reject(
+                  new Error(
+                    tNow("errors.render.imageDecode", { title: resource.title }),
+                  ),
+                );
               };
               signal.addEventListener("abort", abort, { once: true });
               if (signal.aborted) abort();
@@ -91,7 +99,12 @@ export async function renderTimelineMp4(
       if (!input) {
         const response = await fetch(resource.src, { signal });
         if (!response.ok)
-          throw new Error(`无法读取「${resource.title}」：${response.status}`);
+          throw new Error(
+            tNow("errors.render.readFailed", {
+              title: resource.title,
+              status: response.status,
+            }),
+          );
         input = new Input({
           source: new BlobSource(await response.blob()),
           formats: ALL_FORMATS,
@@ -101,7 +114,9 @@ export async function renderTimelineMp4(
       if (resource.kind === "video") {
         const video = await input.getPrimaryVideoTrack();
         if (!video || !(await video.canDecode()))
-          throw new Error(`无法解码「${resource.title}」的视频。`);
+          throw new Error(
+            tNow("errors.render.videoDecode", { title: resource.title }),
+          );
         const sink = new CanvasSink(video, {
           width: timeline.width,
           height: timeline.height,
@@ -123,10 +138,14 @@ export async function renderTimelineMp4(
         const audio = await input.getPrimaryAudioTrack();
         if (audio) {
           if (!(await audio.canDecode()))
-            throw new Error(`无法解码「${resource.title}」的声音。`);
+            throw new Error(
+              tNow("errors.render.audioDecode", { title: resource.title }),
+            );
           sounds.push({ segment, sink: new AudioBufferSink(audio) });
         } else if (resource.kind === "audio")
-          throw new Error(`「${resource.title}」没有可读取的音轨。`);
+          throw new Error(
+            tNow("errors.render.noAudio", { title: resource.title }),
+          );
       }
     }
     return await encodeMp4({
@@ -165,7 +184,10 @@ export async function renderTimelineMp4(
           const frame = await videos.get(segment.clip.id)!.next();
           if (!frame.value)
             throw new Error(
-              `「${resource.title}」在 ${time.toFixed(2)} 秒没有可用画面。`,
+              tNow("errors.render.noFrame", {
+                title: resource.title,
+                time: time.toFixed(2),
+              }),
             );
           context.drawImage(frame.value.canvas, 0, 0);
         }

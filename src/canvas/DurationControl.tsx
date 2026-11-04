@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type PointerEvent } from "react";
 import { ControlSlider } from "./ControlSlider";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 /** Display scale and model-supported seconds are independent. */
 export function DurationControl({
@@ -15,6 +16,7 @@ export function DurationControl({
   onChange: (seconds: number) => void;
   scale?: { min: number; max: number; step: number };
 }) {
+  const t = useT();
   const minimum = values[0] ?? 0;
   const maximum = values.at(-1) ?? minimum;
   const { min, max, step } = scale ?? {
@@ -45,13 +47,15 @@ export function DurationControl({
   }, [notice]);
   const limit =
     minimum === maximum
-      ? `当前模型仅支持${minimum}s`
-      : `当前模型支持的时长在${minimum}到${maximum}秒之间`;
+      ? t("canvasNodes.duration.only", { minimum })
+      : t("canvasNodes.duration.range", { minimum, maximum });
   const hint = (seconds: number) =>
     seconds <= minimum || seconds >= maximum
       ? limit
       : !values.includes(seconds)
-        ? `该时长不受支持，可选：${values.join("、")}s`
+        ? t("canvasNodes.duration.unsupported", {
+            values: values.join(t("canvasNodes.duration.separator")),
+          })
         : "";
   const choose = (seconds: number) => {
     if (!Number.isFinite(seconds) || !values.length || disabled) return;
@@ -78,7 +82,7 @@ export function DurationControl({
   const commit = () => {
     if (!draft.trim() || !Number.isFinite(Number(draft))) {
       setDraft(String(value));
-      setNotice("请输入有效的时长");
+      setNotice(t("canvasNodes.duration.invalid"));
     } else choose(Number(draft));
   };
   return (
@@ -90,13 +94,13 @@ export function DurationControl({
       )}
       <div className="cw-duration-slider">
         <ControlSlider
-          aria-label="创作时长"
+          aria-label={t("canvasNodes.duration.aria")}
           min={min}
           max={max}
           step={1}
           disabled={disabled || values.length <= 1}
           value={Math.max(min, Math.min(max, value))}
-          aria-valuetext={`${value} 秒`}
+          aria-valuetext={t("canvasNodes.duration.value", { value })}
           aria-description={limit}
           aria-describedby={notice ? noticeId : undefined}
           onChange={(event) => choose(Number(event.target.value))}
@@ -137,7 +141,7 @@ export function DurationControl({
       <label className="cw-duration-number">
         <input
           type="number"
-          aria-label="精确创作时长"
+          aria-label={t("canvasNodes.duration.exactAria")}
           min={minimum}
           max={maximum}
           step={1}

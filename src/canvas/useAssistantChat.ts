@@ -18,6 +18,7 @@ import {
 import { flushChatDraft, rememberChat } from "../backend/chatDrafts";
 import { creationClient } from "../backend/creationClient.ts";
 import { fingerprint } from "../backend/generation";
+import { getActiveLocale } from "../i18n/messages.ts";
 import type { BackendModels } from "../backend/models";
 import { loadReferenceCatalog } from "../backend/referenceCatalog.ts";
 import { isGenerationModel } from "../backend/rules";
@@ -30,6 +31,7 @@ import {
 } from "./chatReferenceContent.ts";
 import type { CanvasNode } from "./model";
 import { pendingCanvasReferences } from "./pendingCanvasReferences.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
 
 export interface ProjectChatAsset extends ReferenceAsset {
   kind: string;
@@ -61,6 +63,7 @@ export function useAssistantChat(
   projectId: string,
   catalog: BackendModels,
   onTurnEnd: () => void,
+  t: Translate,
 ) {
   const [value, setValue] = useState<Conversation>(empty);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
@@ -78,6 +81,10 @@ export function useAssistantChat(
   const [changing, setChanging] = useState(false);
   const switching = useRef(false);
   const [error, setError] = useState("");
+  const displayError = (text: string) =>
+    getActiveLocale() === "en-US" && /[\u3400-\u9fff]/.test(text)
+      ? t("assistant.error.replyFailed")
+      : text;
   const alive = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const uploadController = useRef<AbortController | null>(null);
@@ -102,12 +109,12 @@ export function useAssistantChat(
     added.forEach((asset) => knownAssets.current.set(asset.id, asset));
     const assets = referenceIds(content).map((id) => {
       const asset = knownAssets.current.get(id);
-      if (!asset) throw new Error("引用素材不存在，未插入。");
+      if (!asset) throw new Error(t("assistant.error.referenceMissing"));
       return attachment(asset);
     });
     setValue((previous) => ({
       ...previous,
-      draft: contentText(content),
+      draft: contentText(content, false, t),
       draftContent: content,
       skills: content.flatMap(part => part.type === "skill" ? [part.name] : []),
       assets,
@@ -132,7 +139,9 @@ export function useAssistantChat(
       if (!abort.signal.aborted && alive.current) setThreads(list.items);
     } catch (reason) {
       if (!abort.signal.aborted && alive.current)
-        setThreadsError(`读取历史会话失败：${errorMessage(reason)}`);
+        setThreadsError(
+          t("assistant.error.threads", { detail: errorMessage(reason) }),
+        );
     } finally {
       if (listController.current === abort && alive.current) {
         listController.current = null;
@@ -152,7 +161,10 @@ export function useAssistantChat(
         if (!cancelled) setRuntimes(available);
       })
       .catch((reason) => {
-        if (!cancelled) setError(`读取引擎失败：${errorMessage(reason)}`);
+        if (!cancelled)
+          setError(
+            t("assistant.error.runtimes", { detail: errorMessage(reason) }),
+          );
       })
       .finally(() => {
         if (!cancelled) setRuntimesLoading(false);
@@ -165,7 +177,10 @@ export function useAssistantChat(
         setLoaded(true);
       })
       .catch((reason) => {
-        if (!cancelled) setError(`读取对话失败：${errorMessage(reason)}`);
+        if (!cancelled)
+          setError(
+            t("assistant.error.conversation", { detail: errorMessage(reason) }),
+          );
       });
     return () => {
       cancelled = true;
@@ -179,7 +194,7 @@ export function useAssistantChat(
   useEffect(() => {
     if (loaded && !runtimesLoading && runtimes.length && value.runtime &&
         !runtimes.some((item) => item.id === value.runtime)) {
-      setError("原 Agent 引擎已移除，请重新选择模型后继续。");
+      setError(t("assistant.error.runtimeRemoved"));
     }
   }, [loaded, runtimesLoading, runtimes, value.runtime]);
 
@@ -195,7 +210,9 @@ export function useAssistantChat(
     const timer = window.setTimeout(() => {
       void flushChatDraft(projectId).catch((reason) => {
         if (alive.current)
-          setError(`保存草稿失败，当前内容已保留：${errorMessage(reason)}`);
+          setError(
+            t("assistant.error.draft", { detail: errorMessage(reason) }),
+          );
       });
     }, 180);
     return () => clearTimeout(timer);
@@ -265,10 +282,11 @@ export function useAssistantChat(
         merged.map((asset) => asset.id),
         merged,
         previous.draftContent,
+        t,
       );
       return {
         ...previous,
-        draft: contentText(content),
+        draft: contentText(content, false, t),
         draftContent: content,
         assets: referenceIds(content).map((id) => knownAssets.current.get(id)!),
       };
@@ -302,7 +320,7 @@ export function useAssistantChat(
         new Set([...current.current.assets, ...assets].map((asset) => asset.id))
           .size > 64
       )
-        throw new Error("每次最多添加 64 份参考素材。");
+        throw new Error(t("assistant.error.tooManyReferences"));
       if (commit) {
         setAdding(false);
         return await commit(assets);
@@ -311,7 +329,7 @@ export function useAssistantChat(
       return true;
     } catch (reason) {
       if (alive.current && !abort.signal.aborted)
-        setError(errorMessage(reason));
+        setError(displayError(errorMessage(reason)));
       return false;
     } finally {
       externalSignal?.removeEventListener("abort", cancel);
@@ -337,8 +355,11 @@ export function useAssistantChat(
         );
         if (invalid.length)
           throw new Error(
-            invalid.map((item) => `${item.title}：${item.error}`).join(" ") +
-              " 整批未插入。",
+            t("assistant.error.batchNotInserted", {
+              detail: invalid
+                .map((item) => `${item.title}：${item.error}`)
+                .join(" "),
+            }),
           );
         {
           const client = creationClient(projectId);
@@ -349,7 +370,7 @@ export function useAssistantChat(
               (asset) => asset.nodeId === node.id && asset.available,
             );
             if (!assets.length)
-              throw new Error("所选节点尚无可用素材，整批未插入。");
+              throw new Error(t("assistant.error.noUsableAssets"));
             return assets;
           });
           for (const asset of selected) {
@@ -358,7 +379,7 @@ export function useAssistantChat(
               (await fingerprint(await client.blob(asset.id))) !==
               asset.fingerprint
             )
-              throw new Error("参考内容已变化，整批未插入。");
+              throw new Error(t("assistant.error.referenceChangedBatch"));
           }
           return selected;
         }
@@ -455,13 +476,14 @@ export function useAssistantChat(
             if (event.status !== "running") onEnd.current();
           } else if (event.type === "end") {
             if (event.conversation) setValue(event.conversation);
-            if (event.error) setError(event.error);
+            if (event.error) setError(displayError(event.error));
           }
         },
+        t,
       );
     } catch (reason) {
       if (alive.current && !abort.signal.aborted)
-        setError(errorMessage(reason));
+        setError(displayError(errorMessage(reason)));
     } finally {
       submitting.current = false;
       turnId.current = null;
@@ -517,7 +539,9 @@ export function useAssistantChat(
       await stopChat(projectId, turnId.current);
     } catch (reason) {
       if (alive.current) {
-        setError(`停止回复失败：${errorMessage(reason)}`);
+        setError(
+          t("assistant.error.stop", { detail: errorMessage(reason) }),
+        );
         setStopping(false);
       }
     }

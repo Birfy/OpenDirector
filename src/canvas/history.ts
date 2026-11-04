@@ -1,6 +1,7 @@
 import { applyCommand } from "./model.ts";
 import { sameGenerationSettings, sameNodeData } from "./dataBoundary.ts";
 import type { CanvasCommand, CanvasDocument, CanvasNode } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface CanvasHistory {
   past: CanvasDocument[];
@@ -15,7 +16,7 @@ export function createHistory(
   limit = 80,
 ): CanvasHistory {
   if (!Number.isSafeInteger(limit) || limit < 1)
-    throw new Error("历史记录上限必须是正整数。");
+    throw new Error(tNow("errors.history.limit"));
   return { past: [], present: document, future: [], transaction: null, limit };
 }
 

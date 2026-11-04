@@ -46,6 +46,8 @@ jobs:
           python -m pip check
       - name: Frontend tests
         run: npm test
+      - name: Check bilingual catalogs
+        run: npm run check:i18n
       - name: Python tests
         run: python -m pytest tests -q -ra
       - name: Check generated contracts

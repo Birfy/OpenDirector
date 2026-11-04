@@ -4,6 +4,7 @@ import {
   timelineError,
   timelineImportedAssets,
 } from "./dataBoundary.ts";
+import { tNow } from "../i18n/messages.ts";
 import type {
   CanvasResource,
   TimelineClip,
@@ -83,7 +84,7 @@ export function retainTimelineAsset(
   resource: CanvasResource,
 ): TimelineData {
   if (!["image", "video", "audio"].includes(resource.kind))
-    throw new Error("时间线素材库只接受图片、视频或音频。");
+    throw new Error(tNow("errors.timeline.libraryKind"));
   const assets = timelineImportedAssets(timeline);
   const same = (item: CanvasResource) =>
     item.kind === resource.kind &&
@@ -116,7 +117,7 @@ export function addTimelineClip(
 ): TimelineData {
   const kind = resource.kind === "audio" ? "audio" : "visual";
   if (!["image", "video", "audio"].includes(resource.kind))
-    throw new Error("时间线只接受图片、视频或音频。");
+    throw new Error(tNow("errors.timeline.kind"));
   let next = retainTimelineAsset(timeline, resource);
   let track = trackId
     ? next.tracks.find((track) => track.id === trackId)
@@ -125,16 +126,16 @@ export function addTimelineClip(
     track = {
       id: crypto.randomUUID(),
       kind: "audio",
-      title: "音频轨 1",
+      title: "",
       muted: false,
       clips: [],
     };
     next = { ...next, tracks: [...next.tracks, track] };
   }
   if (!track || track.kind !== kind)
-    throw new Error("素材类型与目标轨道不一致。");
+    throw new Error(tNow("errors.timeline.trackKind"));
   if (resource.kind !== "image" && resource.durationSeconds === undefined)
-    throw new Error("请先读取视频或音频的实际时长，再加入时间线。");
+    throw new Error(tNow("errors.timeline.duration"));
   const end = Math.max(
     0,
     ...timelineSegments(next)
@@ -206,7 +207,7 @@ export function snapTimelineTime(
     duration?: number;
   },
 ): number {
-  if (!Number.isFinite(time)) throw new Error("时间位置必须是有限数字。");
+  if (!Number.isFinite(time)) throw new Error(tNow("errors.timeline.finite"));
   const rounded = Math.max(0, Math.round(time * timeline.fps) / timeline.fps);
   if (!options.enabled) return rounded;
   const threshold = 8 / Math.max(0.01, options.pixelsPerSecond);
@@ -285,13 +286,13 @@ export function placeTimelineClip(
   trackId: string,
   time: number,
 ): TimelineData {
-  if (!Number.isFinite(time)) throw new Error("拖放时间必须是有限数字。");
+  if (!Number.isFinite(time)) throw new Error(tNow("errors.timeline.dropFinite"));
   const segments = timelineSegments(timeline);
   const source = segments.find((segment) => segment.clip.id === clipId);
   const target = timeline.tracks.find((track) => track.id === trackId);
-  if (!source || !target) throw new Error("找不到拖动片段或目标轨道。");
+  if (!source || !target) throw new Error(tNow("errors.timeline.dropTarget"));
   if (source.track.kind !== target.kind)
-    throw new Error("请将片段拖到同类型轨道。");
+    throw new Error(tNow("errors.timeline.sameKind"));
   const remaining = target.clips.filter((clip) => clip.id !== clipId);
   let placed = source.clip;
   let index: number;
@@ -340,7 +341,7 @@ export function addAudioTrack(timeline: TimelineData): TimelineData {
       {
         id: crypto.randomUUID(),
         kind: "audio",
-        title: `音频轨 ${timeline.tracks.filter((track) => track.kind === "audio").length + 1}`,
+        title: "",
         muted: false,
         clips: [],
       },
@@ -380,7 +381,7 @@ export function splitTimelineClip(
     playhead <= segment.start ||
     playhead >= segment.end
   )
-    throw new Error("播放头需要位于所选片段内部。");
+    throw new Error(tNow("errors.timeline.playheadInside"));
   const { clip } = segment,
     offset = playhead - segment.start;
   const image = clip.resource.kind === "image";
@@ -425,7 +426,7 @@ export function trimTimelineClip(
     playhead <= segment.start ||
     playhead >= segment.end
   )
-    throw new Error("播放头需要位于所选片段内部。");
+    throw new Error(tNow("errors.timeline.playheadInside"));
   const { clip } = segment,
     offset = playhead - segment.start;
   if (clip.resource.kind === "image")
@@ -458,7 +459,7 @@ export function importTimeline(text: string): TimelineData {
     value.timeUnit !== "seconds" ||
     !("timeline" in value)
   )
-    throw new Error("请选择本地编辑器导出的时间线 JSON。");
+    throw new Error(tNow("errors.timeline.importJson"));
   const error = timelineError(value.timeline);
   if (error) throw new Error(error);
   return copyTimeline(value.timeline as TimelineData);

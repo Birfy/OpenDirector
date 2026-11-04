@@ -137,7 +137,7 @@ for (const scenario of cases)
       assert.equal(settings.videoMode, "first-last");
       assert.equal(settings.aspectRatio, "9:16");
       assert.equal(settings.audioEnabled, false);
-      assert.equal(settings.resolution, "自动");
+      assert.equal(settings.resolution, "auto");
       assert.equal(settings.frameSlotsInitialized, true);
     }
     if (
@@ -206,17 +206,17 @@ test("image controls and validation derive from declared protocol output choices
     [],
     true,
   );
-  assert.equal(settings.aspectRatio, "自动");
-  assert.equal(settings.resolution, "自动");
+  assert.equal(settings.aspectRatio, "auto");
+  assert.equal(settings.resolution, "auto");
   assert.equal(backendBlocker(settings, [], [config]), null);
   assert.deepEqual(backendAspectRatios(settings, config), [
-    "自动",
+    "auto",
     "1:1",
     "3:2",
   ]);
   assert.deepEqual(
     backendResolutions({ ...settings, aspectRatio: "3:2" }, config),
-    ["自动", "1536x1024"],
+    ["auto", "1536x1024"],
   );
   assert.match(
     backendBlocker({ ...settings, aspectRatio: "16:9" }, [], [config])!,
@@ -226,7 +226,7 @@ test("image controls and validation derive from declared protocol output choices
     { ...settings, aspectRatio: "1:1", resolution: "1536x1024" },
     config,
   );
-  assert.equal(changed.resolution, "自动");
+  assert.equal(changed.resolution, "auto");
 });
 
 test("an audio node composes with a music model and reads aloud with a speech model", () => {
@@ -388,8 +388,8 @@ test("official H3 derives frame slots and output ratios from model capabilities"
   const settings = { ...generationDefaults("video"), modelConfigId: config.id, videoMode: "first-last" as const,
     firstFrameNodeId: first.id, lastFrameNodeId: last.id, resolution: "768P", durationSeconds: 5, prompt: "Animate" };
   assert.equal(backendBlocker(settings, [first, last], [config]), null);
-  assert.deepEqual(backendAspectRatios({ ...settings, videoMode: "reference" }, config), ["自动", "16:9", "9:16"]);
-  assert.deepEqual(backendAspectRatios(settings, config), ["自动"]);
+  assert.deepEqual(backendAspectRatios({ ...settings, videoMode: "reference" }, config), ["auto", "16:9", "9:16"]);
+  assert.deepEqual(backendAspectRatios(settings, config), ["auto"]);
   assert.match(backendBlocker(settings, [first], [config])!, /尾帧素材/);
   const local = { ...config, inputRules: { ...config.inputRules, frameRoles: null } };
   assert.match(backendBlocker(settings, [first, last], [local])!, /只支持首帧/);

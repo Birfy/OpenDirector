@@ -8,6 +8,8 @@ import {
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
 import { editContent, type Caret } from "./chatReferenceDOM.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
 export interface ReferenceRules {
   availableIds?: string[];
@@ -31,20 +33,25 @@ export function referenceInsertion(
   catalog: ReferenceAsset[],
   rules: ReferenceRules,
   deduplicate = false,
+  t: Translate = defaultTranslate,
 ) {
   for (const asset of added) {
     if (asset.fileAvailable === false)
-      throw new Error(`“${asset.name}”的文件已缺失或改变，整批未插入。`);
+      throw new Error(t("assistant.error.fileMissing", { name: asset.name }));
     if (asset.available === false && asset.binding !== "asset")
-      throw new Error(`“${asset.name}”已不可用，整批未插入。`);
-    if (!rules.allowedKinds.includes(assetKind(asset)))
-      throw new Error(`“${asset.name}”的类型不支持引用，整批未插入。`);
-    if (rules.availableIds && !rules.availableIds.includes(asset.id))
-      throw new Error(`“${asset.name}”不是有效的当前版本，整批未插入。`);
-    if (asset.size > referenceSizeLimit(asset, rules.imageBytes))
       throw new Error(
-        `“${asset.name}”超过当前输入的文件大小限制，整批未插入。`,
+        t("assistant.error.assetUnavailable", { name: asset.name }),
       );
+    if (!rules.allowedKinds.includes(assetKind(asset)))
+      throw new Error(
+        t("assistant.error.unsupportedKind", { name: asset.name }),
+      );
+    if (rules.availableIds && !rules.availableIds.includes(asset.id))
+      throw new Error(
+        t("assistant.error.invalidVersion", { name: asset.name }),
+      );
+    if (asset.size > referenceSizeLimit(asset, rules.imageBytes))
+      throw new Error(t("assistant.error.tooLarge", { name: asset.name }));
     if (
       content.some(
         (part) =>
@@ -55,7 +62,7 @@ export function referenceInsertion(
       )
     )
       throw new Error(
-        `“${asset.name}”与正文中的版本不同，请重新核对参考，整批未插入。`,
+        t("assistant.error.versionMismatch", { name: asset.name }),
       );
   }
   const ids = new Set(referenceIds(content));
@@ -75,7 +82,7 @@ export function referenceInsertion(
   );
   if (!validContent(next) || images.length > rules.maxImages)
     throw new Error(
-      `合并后超过正文、参考数量或 ${rules.maxImages} 张图片限制，整批未插入。`,
+      t("assistant.error.limitExceeded", { max: rules.maxImages }),
     );
   const end = caret.start + parts.length;
   return { content: next, caret: parts.length ? { start: end, end } : caret };

@@ -1,5 +1,50 @@
 import type { ModelConfigInput } from "../backend/models.ts";
 import type { ModelConfig, ModelKind } from "../backend/rules.ts";
+import { getActiveLocale } from "../i18n/messages.ts";
+
+/** Preset labels are product copy; ids, protocols and URLs stay stable. */
+const EN_NAMES: Record<string, string> = {
+  "OpenAI 兼容": "OpenAI compatible",
+  "MiniMax 官方视频": "MiniMax official video",
+  "火山方舟 / Agent Plan": "Volcano Ark / Agent Plan",
+  "vLLM-Omni 图片接口": "vLLM-Omni image API",
+  "vLLM-Omni 语音合成接口": "vLLM-Omni speech synthesis API",
+  "vLLM-Omni 音乐生成接口": "vLLM-Omni music generation API",
+  "vLLM-Omni 扒谱接口": "vLLM-Omni transcription API",
+  "vLLM-Omni 视频接口": "vLLM-Omni video API",
+  "vLLM-Omni 分割接口": "vLLM-Omni segmentation API",
+  "vLLM-Omni 深度接口": "vLLM-Omni depth API",
+};
+
+const EN_OPTION_LABELS: Record<string, string> = {
+  图片接口: "Image API",
+  语音合成接口: "Speech synthesis API",
+  音乐生成接口: "Music generation API",
+  扒谱接口: "Transcription API",
+  视频接口: "Video API",
+  分割接口: "Segmentation API",
+  深度接口: "Depth API",
+};
+
+const EN_GROUPS: Record<string, string> = {
+  "vLLM-Omni 兼容": "vLLM-Omni compatible",
+  "自定义 API": "Custom API",
+};
+
+function providerName(value: string): string {
+  return getActiveLocale() === "en-US" ? (EN_NAMES[value] ?? value) : value;
+}
+
+function optionLabel(value: string): string {
+  return getActiveLocale() === "en-US"
+    ? (EN_OPTION_LABELS[value] ?? value)
+    : value;
+}
+
+function groupLabel(value: string | undefined): string | undefined {
+  if (!value) return value;
+  return getActiveLocale() === "en-US" ? (EN_GROUPS[value] ?? value) : value;
+}
 
 export interface ProviderPreset {
   id: string;
@@ -136,7 +181,13 @@ export function providerOptions(
   return PROVIDER_PRESETS.filter((preset) => preset.kinds.includes(kind)).map(
     (preset) => ({
       ...preset,
-      group: preset.group === "vLLM-Omni" ? "vLLM-Omni 兼容" : "自定义 API",
+      name: providerName(preset.name),
+      optionLabel: preset.optionLabel
+        ? optionLabel(preset.optionLabel)
+        : preset.optionLabel,
+      group: groupLabel(
+        preset.group === "vLLM-Omni" ? "vLLM-Omni 兼容" : "自定义 API",
+      ),
     }),
   );
 }
@@ -145,7 +196,8 @@ export function providerLabel(model: ModelConfig) {
   return (
     providerOptions(model.kind).find(
       (item) => item.id === providerPresetFor(model),
-    )?.name ?? "未预设服务"
+    )?.name ??
+    (getActiveLocale() === "en-US" ? "Custom service" : "未预设服务")
   );
 }
 

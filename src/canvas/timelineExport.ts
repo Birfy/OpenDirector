@@ -1,6 +1,7 @@
 import type { CanvasResource, TimelineData } from "./model.ts";
 import { timelineError, timelineImportedAssets } from "./dataBoundary.ts";
 import { timelineDuration, timelineSegments } from "./timeline.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface TimelineExportAsset {
   resource: CanvasResource;
@@ -21,7 +22,7 @@ const xml = (text: string) =>
 export function fcpxmlTime(seconds: number): string {
   const numerator = Math.round(seconds * 1_000_000);
   if (!Number.isSafeInteger(numerator) || numerator < 0)
-    throw new Error("时间超出 FCPXML 导出范围。");
+    throw new Error(tNow("errors.export.range"));
   let a = numerator,
     b = 1_000_000;
   while (b) {
@@ -74,7 +75,7 @@ export function timelineExportAssets(
   ]) {
     if (!asset.src)
       throw new Error(
-        `素材「${asset.title}」缺少媒体文件，无法导出完整素材包。`,
+        tNow("errors.export.missingMedia", { title: asset.title }),
       );
     assets.set(keyOf(asset), asset);
   }
@@ -107,12 +108,12 @@ export function exportTimelineFcpxml(
 ): string {
   const assets = timelineExportAssets(timeline),
     duration = timelineDuration(timeline);
-  if (!duration) throw new Error("请先向时间线加入片段。");
+  if (!duration) throw new Error(tNow("errors.export.emptyTimeline"));
   if (timeline.fps > 0xffffffff)
-    throw new Error("项目帧率超出 FCPXML 有理数范围。");
+    throw new Error(tNow("errors.export.fpsRange"));
   const frameTime = (frames: number) => {
     if (!Number.isSafeInteger(frames) || frames < 0)
-      throw new Error("时间线超出 FCPXML 帧数范围。");
+      throw new Error(tNow("errors.export.frameRange"));
     return frames % timeline.fps === 0
       ? `${frames / timeline.fps}s`
       : `${frames}/${timeline.fps}s`;
@@ -167,7 +168,7 @@ export function exportTimelineFcpxml(
         endFrame = Math.round(end * timeline.fps);
       if (endFrame <= startFrame)
         throw new Error(
-          `片段「${clip.resource.title}」短于项目的一帧，无法导出剪辑工程。`,
+          tNow("errors.export.clipShort", { title: clip.resource.title }),
         );
       const timeMap = retimed
         ? `<timeMap preservesPitch="0" frameSampling="floor"><timept time="0s" value="0s" interp="linear"/><timept time="${fcpxmlTime(sourceEnd / speed)}" value="${fcpxmlTime(sourceEnd)}" interp="linear"/></timeMap>`
@@ -221,7 +222,7 @@ export async function createTimelineZip(
   entries: ZipEntry[],
   signal: AbortSignal,
 ): Promise<Blob> {
-  if (entries.length > 65535) throw new Error("素材数量超过 ZIP32 上限。");
+  if (entries.length > 65535) throw new Error(tNow("errors.export.zipEntries"));
   const parts: BlobPart[] = [],
     central: Uint8Array[] = [],
     names = new Set<string>();
@@ -234,7 +235,7 @@ export async function createTimelineZip(
       /(^\/|\\|(^|\/)\.\.?($|\/))/.test(entry.path) ||
       names.has(entry.path)
     )
-      throw new Error("素材包文件名无效或重复。");
+      throw new Error(tNow("errors.export.zipName"));
     names.add(entry.path);
     const name = new TextEncoder().encode(entry.path),
       size = entry.content.size;
@@ -243,7 +244,7 @@ export async function createTimelineZip(
       size > 0xffffffff ||
       offset + 30 + name.length + size > 0xffffffff
     )
-      throw new Error("素材包超过 ZIP32 的 4 GiB 上限，请拆分时间线。");
+      throw new Error(tNow("errors.export.zipSize"));
     const crc = await crc32(entry.content, signal);
     const header = new Uint8Array(30 + name.length),
       view = new DataView(header.buffer);
@@ -275,7 +276,7 @@ export async function createTimelineZip(
     offset += header.length + size;
   }
   if (offset + centralSize > 0xffffffff)
-    throw new Error("素材包目录超过 ZIP32 上限。");
+    throw new Error(tNow("errors.export.zipDirectory"));
   const tail = new Uint8Array(22),
     view = new DataView(tail.buffer);
   view.setUint32(0, 0x06054b50, true);
@@ -291,7 +292,7 @@ async function readLocalResource(
   resource: CanvasResource,
   signal: AbortSignal,
 ): Promise<Blob> {
-  if (!resource.src) throw new Error(`「${resource.title}」缺少媒体文件。`);
+  if (!resource.src) throw new Error(tNow("errors.export.missingFile", { title: resource.title }));
   const base =
     typeof location === "undefined" ? "http://localhost/" : location.href;
   const url = new URL(resource.src, base);
@@ -303,10 +304,15 @@ async function readLocalResource(
         ["http:", "https:", "blob:"].includes(url.protocol))
     )
   )
-    throw new Error(`「${resource.title}」不是本地素材，请先导入媒体文件。`);
+    throw new Error(tNow("errors.export.notLocal", { title: resource.title }));
   const response = await fetch(url, { signal });
   if (!response.ok)
-    throw new Error(`「${resource.title}」读取失败：${response.status}`);
+    throw new Error(
+      tNow("errors.export.readFailed", {
+        title: resource.title,
+        status: response.status,
+      }),
+    );
   return response.blob();
 }
 export async function exportTimelinePackage(
@@ -332,14 +338,14 @@ export async function exportTimelinePackage(
     const content = await read(asset.resource, signal);
     signal.throwIfAborted();
     if (!content.size)
-      throw new Error(`「${asset.resource.title}」为空文件，素材包未导出。`);
+      throw new Error(tNow("errors.export.emptyFile", { title: asset.resource.title }));
     entries.push({ path: asset.path, content });
     progress((index + 1) / (assets.length + 1));
   }
   entries.push({
     path: "README.txt",
     content: new Blob([
-      "OpenDirector FCPXML 1.10\n解压整个文件夹后导入 project.fcpxml，保留 media 相对路径。\n包含原媒体、剪辑入出点、顺序、倍速、音量、静音与多音轨；媒体不转码。\n支持 FCPXML 的剪辑软件可读取，具体版本与源编码能力决定导入兼容性。未声称可直接导入 Premiere 或原生剪映工程。\n素材真实帧率、声道与采样率由接收软件读取；剪辑边界对齐整数项目帧率，源入点与变速时间点精度为微秒。\nFCPXML 标准：https://developer.apple.com/documentation/professional-video-applications/creating-fcpxml-documents\n",
+      tNow("errors.export.readme"),
     ]),
   });
   const zip = await createTimelineZip(entries, signal);

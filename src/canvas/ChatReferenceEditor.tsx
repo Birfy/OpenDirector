@@ -44,6 +44,8 @@ import {
 } from "./referenceMentions.ts";
 import "./reference-mentions.css";
 import { assetDisplayName } from "./assetNames.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 
 export interface ChatReferenceEditorHandle {
   focus: () => void;
@@ -100,6 +102,14 @@ const defaultRules = {
   maxImages: 64,
   imageBytes: 32 * 1024 * 1024,
 };
+const CATEGORY_LABELS: Record<ReferenceCategory, MessageKey> = {
+  all: "assistant.reference.category.all",
+  image: "assistant.kind.image",
+  video: "assistant.kind.video",
+  audio: "assistant.kind.audio",
+  text: "assistant.kind.text",
+  subject: "assistant.kind.subject",
+};
 
 /** OpenDirector's atomic content model: one reference is one editing position. */
 export function ChatReferenceEditor({
@@ -120,8 +130,8 @@ export function ChatReferenceEditor({
   onConfirmPending,
   onSlashChange,
   skillsEnabled = false,
-  label = "消息内容",
-  placeholder = "输入想法、剧本或上传参考，支持 / 使用技能，输入 @ 引用项目素材，和 Agent 一起创作",
+  label: labelProp,
+  placeholder: placeholderProp,
   className = "",
   autoGrow = false,
   referenceRules = defaultRules,
@@ -132,6 +142,9 @@ export function ChatReferenceEditor({
   rebindOnPaste = false,
   ref,
 }: Props) {
+  const t = useT();
+  const label = labelProp ?? t("assistant.reference.editorLabel");
+  const placeholder = placeholderProp ?? t("assistant.reference.placeholder");
   const rules = referenceRules;
   const root = useRef<HTMLDivElement>(null),
     panel = useRef<HTMLDivElement>(null);
@@ -188,7 +201,7 @@ export function ChatReferenceEditor({
           ".cw-chat-reference-label",
         );
         if (label) label.textContent = displayName;
-        chip.setAttribute("aria-label", `参考：${displayName}`);
+        chip.setAttribute("aria-label", t("assistant.reference.chip", { name: displayName }));
         const src = latest.current.previews[part.assetId];
         const metadataOnly =
           asset && metadataOnlyKinds.includes(assetKind(asset));
@@ -202,14 +215,14 @@ export function ChatReferenceEditor({
         chip.classList.toggle("is-off-canvas", offCanvas);
         chip.title =
           displayName +
-          (part.binding === "asset" ? "（固定版本）" : "") +
-          (offCanvas ? "（未显示在画布上，仍作为参考）" : "") +
-          (metadataOnly ? "（仅传递素材信息）" : "");
+          (part.binding === "asset" ? t("assistant.reference.pinned") : "") +
+          (offCanvas ? t("assistant.reference.offCanvas") : "") +
+          (metadataOnly ? t("assistant.reference.metadataOnly") : "");
         chip.querySelector("[data-reference-info]")?.remove();
         if (metadataOnly) {
           const hint = document.createElement("small");
           hint.dataset.referenceInfo = "1";
-          hint.textContent = "仅素材信息";
+          hint.textContent = t("assistant.reference.metadataHint");
           chip.append(hint);
         }
         chip.classList.toggle(
@@ -253,14 +266,14 @@ export function ChatReferenceEditor({
         chip.dataset.skill = part.name;
         chip.className = "cw-chat-skill-token";
         chip.textContent = `/${part.name}`;
-        chip.setAttribute("aria-label", `技能：${part.name}`);
+        chip.setAttribute("aria-label", t("assistant.reference.skillChip", { name: part.name }));
         fragment.append(chip);
       } else {
         const chip = document.createElement("span");
         chip.contentEditable = "false";
         chip.dataset.reference = JSON.stringify(part);
         chip.className = "cw-chat-reference";
-        chip.setAttribute("aria-label", `参考：${assetDisplayName(part.name)}`);
+        chip.setAttribute("aria-label", t("assistant.reference.chip", { name: assetDisplayName(part.name) }));
         const icon = document.createElement("span");
         icon.dataset.referenceIcon = "1";
         icon.setAttribute("aria-hidden", "true");
@@ -297,7 +310,7 @@ export function ChatReferenceEditor({
     // editor is still empty, so it keeps its prompt and publishes no message.
     const next = blankContent(normalized) ? [] : normalized;
     if (!validContent(next)) {
-      setNotice(next.filter(part => part.type === "skill").length > 1 ? "每条消息只能选择一个技能，原内容未修改。" : "正文最多 20000 字、64 份不同参考。");
+      setNotice(next.filter(part => part.type === "skill").length > 1 ? t("assistant.reference.tooManySkills") : t("assistant.reference.limit"));
       paint(current.current, saved.current);
       return false;
     }
@@ -341,6 +354,7 @@ export function ChatReferenceEditor({
         latest.current.assets,
         rules,
         deduplicate,
+        t,
       );
       if (!publish(next.content, next.caret, true, false, added)) return false;
       rangeRef.current = null;
@@ -479,6 +493,8 @@ export function ChatReferenceEditor({
         [...new Map(added.map((asset) => [asset.id, asset])).values()],
         [...latest.current.assets, ...added],
         rules,
+        false,
+        t,
       );
       const end = at.start + editingText(inserted).length;
       publish(
@@ -620,12 +636,13 @@ export function ChatReferenceEditor({
       current.current = value;
       paint(value, at);
     }
-  }, [value]);
+  }, [value, t]);
   useEffect(decorate, [
     assets,
     previews,
     metadataOnlyKinds,
     visibleReferenceNodeIds,
+    t,
   ]);
   useLayoutEffect(() => {
     if (!autoGrow || !root.current) return;
@@ -760,7 +777,7 @@ export function ChatReferenceEditor({
       [],
     );
     event.preventDefault();
-    event.clipboardData.setData("text/plain", contentText(selected));
+    event.clipboardData.setData("text/plain", contentText(selected, false, t));
     event.clipboardData.setData(
       CLIPBOARD,
       JSON.stringify({ scope, content: selected }),
@@ -1030,7 +1047,7 @@ export function ChatReferenceEditor({
             ref={panel}
             className="cw-reference-mention-picker nodrag nopan nowheel"
             role="dialog"
-            aria-label="引用项目资产"
+            aria-label={t("assistant.reference.picker")}
             aria-busy={busy}
             style={{ visibility: "hidden" }}
             onPointerDown={(event) => {
@@ -1042,10 +1059,10 @@ export function ChatReferenceEditor({
             onWheel={(event) => event.stopPropagation()}
           >
             <header>
-              <strong>引用项目资产</strong>
-              <small>↑↓ 选择 · ←→ 分类 · Enter 确认 · Esc 关闭</small>
+              <strong>{t("assistant.reference.picker")}</strong>
+              <small>{t("assistant.reference.pickerHint")}</small>
             </header>
-            <div role="tablist" aria-label="参考资产类型">
+            <div role="tablist" aria-label={t("assistant.reference.categories")}>
               {REFERENCE_CATEGORIES.map((item) => (
                 <button
                   key={item.id}
@@ -1059,27 +1076,27 @@ export function ChatReferenceEditor({
                     setActive(0);
                   }}
                 >
-                  {item.label}
+                  {t(CATEGORY_LABELS[item.id])}
                 </button>
               ))}
             </div>
             <div
               role="listbox"
               id={listId}
-              aria-label="可引用资产"
+              aria-label={t("assistant.reference.available")}
               className="cw-reference-mention-list"
             >
               {loading ? (
-                <p role="status">正在读取资产…</p>
+                <p role="status">{t("assistant.reference.loading")}</p>
               ) : loadError ? (
                 <p role="alert">
                   {loadError}{" "}
                   <button type="button" onClick={onOpen}>
-                    重新读取
+                    {t("assistant.reference.reload")}
                   </button>
                 </p>
               ) : !shown.length ? (
-                <p>暂无可引用的素材，请先上传或连接上游节点。</p>
+                <p>{t("assistant.reference.empty")}</p>
               ) : (
                 shown.map((option, index) => (
                   <button

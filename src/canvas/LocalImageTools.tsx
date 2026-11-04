@@ -7,6 +7,7 @@ import {
 } from "./toolCatalog";
 import { EditorModal } from "./EditorModal";
 import { loadLayerImage } from "./layerRenderer";
+import { useT } from "../i18n/I18nProvider.tsx";
 import "./local-media-tools.css";
 
 export interface LocalImageOutput {
@@ -39,6 +40,7 @@ export function LocalImageTools({
   onSelection?: (selection: ToolSelection) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [image, setImage] = useState<HTMLImageElement | null>(null),
     [error, setError] = useState("");
@@ -48,7 +50,7 @@ export function LocalImageTools({
   const [tool, setTool] = useState<Shape["kind"]>("pen"),
     [color, setColor] = useState("#ff5577"),
     [size, setSize] = useState(16),
-    [text, setText] = useState("标注文字");
+    [text, setText] = useState(() => t("tools.localImage.defaultText"));
   const [rows, setRows] = useState(3),
     [columns, setColumns] = useState(3),
     [draft, setDraft] = useState<Shape | null>(null);
@@ -70,7 +72,7 @@ export function LocalImageTools({
   useEffect(() => {
     let live = true;
     if (!node.data.src) {
-      setError("没有可编辑的图片。");
+      setError(t("tools.localImage.error.noImage"));
       return;
     }
     void loadLayerImage(node.data.src)
@@ -79,7 +81,11 @@ export function LocalImageTools({
       })
       .catch((error) => {
         if (live)
-          setError(error instanceof Error ? error.message : "图片读取失败。");
+          setError(
+            error instanceof Error
+              ? error.message
+              : t("tools.localImage.error.load"),
+          );
       });
     return () => {
       live = false;
@@ -158,7 +164,7 @@ export function LocalImageTools({
     layer.width = image!.naturalWidth;
     layer.height = image!.naturalHeight;
     const ctx = layer.getContext("2d");
-    if (!ctx) throw new Error("浏览器不能创建绘图画布。");
+    if (!ctx) throw new Error(t("tools.localImage.error.noCanvas"));
     list.forEach((shape) => paint(ctx, shape, mask));
     return layer;
   };
@@ -208,7 +214,11 @@ export function LocalImageTools({
         ctx.drawImage(overlay, 0, 0);
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "预览失败。");
+      setError(
+        error instanceof Error
+          ? error.message
+          : t("tools.localImage.error.preview"),
+      );
     }
   }, [image, shapes, draft, rows, columns, mode]);
   const position = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -251,7 +261,7 @@ export function LocalImageTools({
             break;
           }
         }
-        if (!found) throw new Error("请先绘制非空选区。");
+        if (!found) throw new Error(t("tools.localImage.error.emptyMask"));
         onSelection?.({
           sourceNodeId: node.id,
           width: image.naturalWidth,
@@ -277,7 +287,7 @@ export function LocalImageTools({
       const outputs: LocalImageOutput[] = [];
       if (mode === "grid") {
         if (rows > image.naturalHeight || columns > image.naturalWidth)
-          throw new Error("分格数量不能超过图片像素尺寸。");
+          throw new Error(t("tools.localImage.error.gridTooLarge"));
         for (let row = 0; row < rows; row++)
           for (let column = 0; column < columns; column++) {
             const x = Math.floor((column * image.naturalWidth) / columns),
@@ -309,7 +319,9 @@ export function LocalImageTools({
         outputs.push({
           src: out.toDataURL("image/png"),
           mimeType: "image/png",
-          title: `${node.data.title} · 标注`,
+          title: `${node.data.title} · ${t(
+            "tools.localImage.output.annotation",
+          )}`,
           width: out.width,
           height: out.height,
         });
@@ -326,21 +338,31 @@ export function LocalImageTools({
           ),
         )) === false
       )
-        throw Error("结果未保存，请重试。");
+        throw Error(t("tools.localImage.error.notSaved"));
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "导出失败。");
+      setError(
+        error instanceof Error
+          ? error.message
+          : t("tools.localImage.error.export"),
+      );
     } finally {
       setBusy(false);
     }
   };
   return (
     <EditorModal
-      title={`${mode === "grid" ? "图片分格" : mode === "mask" ? "绘制选区" : "图片标注"} · ${node.data.title}`}
+      title={`${
+        mode === "grid"
+          ? t("tools.localImage.title.grid")
+          : mode === "mask"
+            ? t("tools.localImage.title.mask")
+            : t("tools.localImage.title.annotation")
+      } · ${node.data.title}`}
       subtitle={
         mode === "mask"
-          ? "在原图像素上绘制选区，仅保存蒙版；不会自动识别主体或生成图片。"
-          : "所有操作在本地完成，结果作为关联节点加入画布，可整体撤销。"
+          ? t("tools.localImage.subtitle.mask")
+          : t("tools.localImage.subtitle.default")
       }
       onClose={() => {
         if (!busy) onClose();
@@ -348,10 +370,10 @@ export function LocalImageTools({
       onApply={apply}
       applyLabel={
         mode === "mask"
-          ? "使用选区"
+          ? t("tools.localImage.apply.mask")
           : mode === "grid"
-            ? `拆分为 ${rows * columns} 张图片`
-            : "保存标注图片"
+            ? t("tools.localImage.apply.grid", { count: rows * columns })
+            : t("tools.localImage.apply.annotation")
       }
       disabled={busy || !image}
       error={error}
@@ -360,9 +382,9 @@ export function LocalImageTools({
         {mode === "grid" ? (
           <>
             <label>
-              行数
+              {t("tools.localImage.grid.rows")}
               <input
-                aria-label="分格行数"
+                aria-label={t("tools.localImage.grid.rowsAria")}
                 type="number"
                 min="1"
                 max="8"
@@ -375,9 +397,9 @@ export function LocalImageTools({
               />
             </label>
             <label>
-              列数
+              {t("tools.localImage.grid.columns")}
               <input
-                aria-label="分格列数"
+                aria-label={t("tools.localImage.grid.columnsAria")}
                 type="number"
                 min="1"
                 max="8"
@@ -389,35 +411,43 @@ export function LocalImageTools({
                 }}
               />
             </label>
-            <span>按网格真实裁切；不会推断画面中的分镜边界。</span>
+            <span>{t("tools.localImage.grid.hint")}</span>
           </>
         ) : (
           <>
             <label>
-              工具
+              {t("tools.localImage.tool.label")}
               <select
-                aria-label="绘图工具"
+                aria-label={t("tools.localImage.tool.aria")}
                 value={tool}
                 onChange={(event) =>
                   setTool(event.target.value as Shape["kind"])
                 }
               >
-                <option value="pen">画笔</option>
-                <option value="erase">橡皮擦</option>
-                <option value="rectangle">矩形</option>
-                <option value="ellipse">椭圆</option>
+                <option value="pen">{t("tools.localImage.tool.pen")}</option>
+                <option value="erase">{t("tools.localImage.tool.erase")}</option>
+                <option value="rectangle">
+                  {t("tools.localImage.tool.rectangle")}
+                </option>
+                <option value="ellipse">
+                  {t("tools.localImage.tool.ellipse")}
+                </option>
                 {mode !== "mask" && (
                   <>
-                    <option value="arrow">箭头</option>
-                    <option value="text">文字</option>
+                    <option value="arrow">
+                      {t("tools.localImage.tool.arrow")}
+                    </option>
+                    <option value="text">
+                      {t("tools.localImage.tool.text")}
+                    </option>
                   </>
                 )}
               </select>
             </label>
             <label>
-              粗细
+              {t("tools.localImage.size.label")}
               <input
-                aria-label="画笔粗细"
+                aria-label={t("tools.localImage.size.aria")}
                 type="range"
                 min="2"
                 max="100"
@@ -428,9 +458,9 @@ export function LocalImageTools({
             </label>
             {mode !== "mask" && (
               <label>
-                颜色
+                {t("tools.localImage.color.label")}
                 <input
-                  aria-label="标注颜色"
+                  aria-label={t("tools.localImage.color.aria")}
                   type="color"
                   value={color}
                   onChange={(event) => setColor(event.target.value)}
@@ -439,9 +469,9 @@ export function LocalImageTools({
             )}
             {tool === "text" && (
               <label>
-                文字
+                {t("tools.localImage.text.label")}
                 <input
-                  aria-label="标注文字"
+                  aria-label={t("tools.localImage.text.aria")}
                   value={text}
                   maxLength={500}
                   onChange={(event) => setText(event.target.value)}
@@ -457,7 +487,7 @@ export function LocalImageTools({
                 setShapes(previous);
               }}
             >
-              撤销
+              {t("tools.localImage.undo")}
             </button>
             <button
               disabled={!future.length}
@@ -467,10 +497,10 @@ export function LocalImageTools({
                 setFuture(future.slice(1));
               }}
             >
-              重做
+              {t("tools.localImage.redo")}
             </button>
             <button disabled={!shapes.length} onClick={() => commit([])}>
-              清空
+              {t("tools.localImage.clear")}
             </button>
           </>
         )}
@@ -478,7 +508,7 @@ export function LocalImageTools({
       <div className="cw-local-image-surface">
         <canvas
           ref={canvas}
-          aria-label="本地图像工具预览"
+          aria-label={t("tools.localImage.canvasAria")}
           tabIndex={0}
           onKeyDown={(event) => {
             if (event.key === "Escape" && current.current) {

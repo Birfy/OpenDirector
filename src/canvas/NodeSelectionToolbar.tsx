@@ -11,6 +11,8 @@ import { TooltipButton } from "./TooltipButton";
 import { GridSplitOptions, SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import type { CanvasNode } from "./model";
 import type { CanvasToolId } from "./toolCatalog";
+import { useT } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages";
 import "./node-selection-toolbar.css";
 
 export type SelectionEditorMode =
@@ -65,25 +67,25 @@ type OpenMenu = {
   grid?: boolean;
 };
 
-const imageTools: readonly [CanvasToolId, string, string][] = [
-  ["smart-edit", "智能改图", "sparkle"],
-  ["panorama", "720 全景", "expand"],
-  ["outpaint", "扩图", "expand"],
-  ["image-hd", "智能超清", "image"],
-  ["cutout", "抠图", "subject"],
+const imageTools: readonly [CanvasToolId, MessageKey, string][] = [
+  ["smart-edit", "canvas.selection.tool.smartEdit", "sparkle"],
+  ["panorama", "canvas.selection.tool.panorama", "expand"],
+  ["outpaint", "canvas.selection.tool.outpaint", "expand"],
+  ["image-hd", "canvas.selection.tool.upscale", "image"],
+  ["cutout", "canvas.selection.tool.cutout", "subject"],
 ];
-const videoTools: readonly [CanvasToolId, string, string][] = [
-  ["video-partial-reshoot", "局部重拍", "camera"],
-  ["video-upscale", "智能超清", "video"],
-  ["video-edit", "视频编辑", "edit"],
-  ["video-extend", "视频延长", "clock"],
+const videoTools: readonly [CanvasToolId, MessageKey, string][] = [
+  ["video-partial-reshoot", "canvas.selection.tool.videoReshoot", "camera"],
+  ["video-upscale", "canvas.selection.tool.upscale", "video"],
+  ["video-edit", "canvas.selection.tool.videoEdit", "edit"],
+  ["video-extend", "canvas.selection.tool.videoExtend", "clock"],
 ];
-const editLabels: Partial<Record<CanvasNode["type"], string>> = {
-  text: "编辑文本",
-  timeline: "编辑时间线",
-  stack: "管理堆叠",
-  tool: "编辑工具",
-  external: "打开导演台",
+const editLabels: Partial<Record<CanvasNode["type"], MessageKey>> = {
+  text: "canvas.selection.edit.text",
+  timeline: "canvas.selection.edit.timeline",
+  stack: "canvas.selection.edit.stack",
+  tool: "canvas.selection.edit.tool",
+  external: "canvas.selection.edit.external",
 };
 
 /** Selection actions stay distinct from generation controls. Empty media has no post-edit toolbar.
@@ -105,6 +107,7 @@ export function NodeSelectionToolbar({
   onDuplicate,
   onDelete,
 }: NodeSelectionToolbarProps) {
+  const t = useT();
   const toolbar = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const [openMenu, setOpenMenu] = useState<OpenMenu | null>(null);
@@ -162,94 +165,138 @@ export function NodeSelectionToolbar({
       });
   };
   if (node.type === "image") {
-    for (const [tool, label, icon] of imageTools) addTool(tool, label, icon);
-    addMenu("image-presets", "预设", "sparkle", [
+    for (const [tool, labelKey, icon] of imageTools)
+      addTool(tool, t(labelKey), icon);
+    addMenu("image-presets", t("canvas.selection.presets"), "sparkle", [
       toolOption(
         "image-presets",
-        "选择图像预设",
+        t("canvas.selection.choosePreset"),
         "sparkle",
-        "可用预设由已连接的模型服务提供",
+        t("canvas.selection.presetHint"),
       ),
     ]);
-    addTool("view-control", "多角度", "rotate");
-    addTool("lighting", "智能打光", "palette");
-    addMenu("marketing", "营销工具", "palette", [
-      toolOption("multi-size", "智能多尺寸", "expand"),
-      toolOption("layer-decompose", "图层分离", "stack"),
-      toolOption("product-replacement", "商品替换", "image"),
-      toolOption("dynamic-poster", "动态海报", "video"),
+    addTool("view-control", t("canvas.selection.multiAngle"), "rotate");
+    addTool("lighting", t("canvas.selection.lighting"), "palette");
+    addMenu("marketing", t("canvas.selection.marketing"), "palette", [
+      toolOption("multi-size", t("canvas.selection.multiSize"), "expand"),
+      toolOption(
+        "layer-decompose",
+        t("canvas.selection.layerDecompose"),
+        "stack",
+      ),
+      toolOption(
+        "product-replacement",
+        t("canvas.selection.productReplacement"),
+        "image",
+      ),
+      toolOption(
+        "dynamic-poster",
+        t("canvas.selection.dynamicPoster"),
+        "video",
+      ),
     ]);
-    addMenu("tools", "工具", "tool", [
-      toolOption("inpainting-remove", "消除", "edit"),
-      toolOption("composition", "裁剪与构图", "crop"),
+    addMenu("tools", t("canvas.selection.tools"), "tool", [
+      toolOption(
+        "inpainting-remove",
+        t("canvas.selection.inpaintRemove"),
+        "edit",
+      ),
+      toolOption("composition", t("canvas.selection.cropCompose"), "crop"),
       {
         id: "grid-split",
-        label: "网格切分",
+        label: t("canvas.selection.gridSplit"),
         icon: "grid",
         grid: true,
         disabled: !onGridSplit,
       },
-      toolOption("annotation", "标注", "pencil"),
+      toolOption("annotation", t("canvas.selection.annotate"), "pencil"),
     ]);
   } else if (node.type === "video") {
-    for (const [tool, label, icon] of videoTools) addTool(tool, label, icon);
-    addMenu("video-frame-capture", "截取帧", "image", [
-      {
-        id: "capture-first",
-        label: "首帧",
-        icon: "image",
-        run: () => onCaptureFrame?.("first"),
-        disabled: !onCaptureFrame,
-      },
-      {
-        id: "capture-last",
-        label: "尾帧",
-        icon: "image",
-        run: () => onCaptureFrame?.("last"),
-        disabled: !onCaptureFrame,
-      },
-      {
-        id: "capture-custom",
-        label: "自定义截帧",
-        icon: "camera",
-        run: () => onEdit?.("frame"),
-        disabled: !onEdit,
-      },
-    ]);
-    addTool("video-depth-capture", "深度动作捕捉", "subject");
-    addEditor("video-trim", "时长修剪", "trim", "trim");
-    addMenu("sound-separation", "声音分离", "audio", [
-      {
-        id: "extract-audio",
-        label: "提取音频",
-        icon: "audio",
-        description: "提取视频中已有的音频",
-        run: () => onEdit?.("extract-audio"),
-        disabled: !onEdit,
-      },
+    for (const [tool, labelKey, icon] of videoTools)
+      addTool(tool, t(labelKey), icon);
+    addMenu(
+      "video-frame-capture",
+      t("canvas.selection.captureFrame"),
+      "image",
+      [
+        {
+          id: "capture-first",
+          label: t("canvas.selection.firstFrame"),
+          icon: "image",
+          run: () => onCaptureFrame?.("first"),
+          disabled: !onCaptureFrame,
+        },
+        {
+          id: "capture-last",
+          label: t("canvas.selection.lastFrame"),
+          icon: "image",
+          run: () => onCaptureFrame?.("last"),
+          disabled: !onCaptureFrame,
+        },
+        {
+          id: "capture-custom",
+          label: t("canvas.selection.customFrame"),
+          icon: "camera",
+          run: () => onEdit?.("frame"),
+          disabled: !onEdit,
+        },
+      ],
+    );
+    addTool(
+      "video-depth-capture",
+      t("canvas.selection.depthCapture"),
+      "subject",
+    );
+    addEditor("video-trim", t("canvas.selection.trimVideo"), "trim", "trim");
+    addMenu(
+      "sound-separation",
+      t("canvas.selection.audioSeparation"),
+      "audio",
+      [
+        {
+          id: "extract-audio",
+          label: t("canvas.selection.extractAudio"),
+          icon: "audio",
+          description: t("canvas.selection.extractAudioHint"),
+          run: () => onEdit?.("extract-audio"),
+          disabled: !onEdit,
+        },
+        toolOption(
+          "audio-separation",
+          t("canvas.selection.separateTrack"),
+          "sliders",
+          t("canvas.selection.separateTrackHint"),
+        ),
+      ],
+    );
+    addMenu("tools", t("canvas.selection.tools"), "tool", [
       toolOption(
-        "audio-separation",
-        "分离音轨",
-        "sliders",
-        "选择人声、背景声或其他声音类型",
+        "video-frame-interpolation",
+        t("canvas.selection.frameInterpolation"),
+        "video",
       ),
-    ]);
-    addMenu("tools", "工具", "tool", [
-      toolOption("video-frame-interpolation", "补帧", "video"),
-      toolOption("video-subtitle-erasure", "字幕擦除", "text"),
-      toolOption("video-matting", "视频抠像", "subject"),
-      toolOption("video-crop", "视频画面裁剪", "crop"),
+      toolOption(
+        "video-subtitle-erasure",
+        t("canvas.selection.subtitleErase"),
+        "text",
+      ),
+      toolOption(
+        "video-matting",
+        t("canvas.selection.videoMatting"),
+        "subject",
+      ),
+      toolOption("video-crop", t("canvas.selection.videoCrop"), "crop"),
     ]);
   } else if (node.type === "audio") {
-    addEditor("audio-trim", "音频裁剪", "trim", "trim");
-    addTool("audio-separation", "分离音轨", "audio");
+    addEditor("audio-trim", t("canvas.selection.trimAudio"), "trim", "trim");
+    addTool("audio-separation", t("canvas.selection.separateTrack"), "audio");
   } else if (editLabels[node.type]) {
-    addEditor("edit", editLabels[node.type]!, node.type, "default");
+    addEditor("edit", t(editLabels[node.type]!), node.type, "default");
   }
   if (onAssistant && node.type !== "group")
     editing.push({
       id: "assistant",
-      label: "AI 助手",
+      label: t("canvas.selection.assistant"),
       icon: "sparkle",
       run: onAssistant,
     });
@@ -258,7 +305,10 @@ export function NodeSelectionToolbar({
   if (onPreview && hasMedia)
     outputs.push({
       id: "preview",
-      label: node.type === "file" ? "预览文件" : "全屏预览",
+      label:
+        node.type === "file"
+          ? t("canvas.selection.previewFile")
+          : t("canvas.selection.previewFullscreen"),
       icon: "fullscreen",
       run: onPreview,
       iconOnly: true,
@@ -266,7 +316,7 @@ export function NodeSelectionToolbar({
   if (onDownload && (hasMedia || node.type === "text"))
     outputs.push({
       id: "download",
-      label: "下载",
+      label: t("common.download"),
       icon: "download",
       run: onDownload,
       iconOnly: true,
@@ -276,7 +326,7 @@ export function NodeSelectionToolbar({
   if (onRename)
     organization.push({
       id: "rename",
-      label: "重命名",
+      label: t("common.rename"),
       icon: "pencil",
       run: onRename,
       iconOnly: true,
@@ -285,7 +335,7 @@ export function NodeSelectionToolbar({
   if (onDuplicate)
     organization.push({
       id: "duplicate",
-      label: "创建副本",
+      label: t("canvas.selection.duplicate"),
       icon: "duplicate",
       run: onDuplicate,
       iconOnly: true,
@@ -293,7 +343,7 @@ export function NodeSelectionToolbar({
   if (onDelete)
     organization.push({
       id: "delete",
-      label: "删除节点",
+      label: t("canvas.selection.deleteNode"),
       icon: "trash",
       run: onDelete,
       iconOnly: true,
@@ -348,7 +398,7 @@ export function NodeSelectionToolbar({
       <div
         ref={toolbar}
         role="toolbar"
-        aria-label="节点操作"
+        aria-label={t("canvas.selection.toolbar")}
         aria-orientation="horizontal"
         data-node-id={node.id}
         className={`cw-selection-toolbar nodrag nopan nowheel ${className}`}
@@ -387,7 +437,7 @@ export function NodeSelectionToolbar({
                 }
                 label={
                   action.disabled
-                    ? `${action.label} · 请先解锁节点`
+                    ? t("canvas.selection.locked", { label: action.label })
                     : action.label
                 }
                 tooltipSide="top"
@@ -432,7 +482,9 @@ export function NodeSelectionToolbar({
           key={`${node.id}-${menuAction.id}`}
           anchor={openMenu.anchor}
           id={menuId}
-          label={openMenu.grid ? "网格切分" : menuAction.label}
+          label={
+            openMenu.grid ? t("canvas.selection.gridSplit") : menuAction.label
+          }
           role={openMenu.grid ? "dialog" : "menu"}
           initialFocus={openMenu.initialFocus}
           onClose={() => setOpenMenu(null)}
@@ -457,7 +509,9 @@ export function NodeSelectionToolbar({
                 aria-label={option.label}
                 label={
                   option.disabled
-                    ? `${option.label} · 此操作暂不可用`
+                    ? t("canvas.selection.unavailable", {
+                        label: option.label,
+                      })
                     : (option.description ?? option.label)
                 }
                 tooltipSide="right"

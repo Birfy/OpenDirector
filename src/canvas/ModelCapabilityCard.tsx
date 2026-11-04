@@ -12,6 +12,7 @@ import {
   capabilityDraft,
   type VideoCapabilityDraft,
 } from "./VideoCapabilitiesEditor";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export function ModelCapabilityCard({
   modelId,
@@ -32,6 +33,7 @@ export function ModelCapabilityCard({
   onChange: (patch: ModelOptions) => void;
   onValidity: (error: string) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(() =>
     capabilityDraft(
       saved?.videoCapabilities ?? saved?.inputRules.videoCapabilities,
@@ -81,7 +83,7 @@ export function ModelCapabilityCard({
         source,
       );
       if (!result.videoCapabilities)
-        throw new Error("没有可用的输出规格，请手动填写。");
+        throw new Error(t("models.service.noCapabilityOutput"));
       updateDraft(
         capabilityDraft(result.videoCapabilities, source === "service"),
       );
@@ -98,7 +100,9 @@ export function ModelCapabilityCard({
       open={official ? true : undefined}
     >
       <summary>
-        {connection.kind === "agent" ? "输入能力" : "参考与输出能力"}
+        {connection.kind === "agent"
+          ? t("models.service.inputCapabilities")
+          : t("models.service.referenceOutput")}
       </summary>
       <fieldset disabled={disabled || loading}>
         {connection.kind === "agent" ? (
@@ -106,7 +110,7 @@ export function ModelCapabilityCard({
             <div className="cw-model-modalities">
               <label>
                 <input type="checkbox" checked disabled />
-                文本
+                {t("models.service.textInput")}
               </label>
               <label>
                 <input
@@ -124,23 +128,29 @@ export function ModelCapabilityCard({
                     })
                   }
                 />
-                图片理解
+                {t("models.service.imageInput")}
               </label>
             </div>
-            <p className="cw-model-note">仅在该模型原生支持图片输入时启用。</p>
+            <p className="cw-model-note">
+              {t("models.service.imageInputNote")}
+            </p>
           </>
         ) : official ? (
           <div className="cw-model-capability-facts">
-            <span>文生视频 / 首尾帧 / 多模态参考</span>
+            <span>{t("models.service.officialSummary")}</span>
             <span>{modelId === "MiniMax-H3" ? "768P / 2K" : "480P / 768P"}</span>
-            <span>{modelId === "MiniMax-H3-Max" ? "5—15 秒" : "4—15 秒"}</span>
-            <small>参考：图片、视频、音频。输出包含音频。</small>
+            <span>
+              {modelId === "MiniMax-H3-Max"
+                ? t("models.service.secondsRange", { min: 5, max: 15 })
+                : t("models.service.secondsRange", { min: 4, max: 15 })}
+            </span>
+            <small>{t("models.service.officialReferences")}</small>
           </div>
         ) : (
           <>
             {connection.protocol === "vllm_omni" && (
               <label className="cw-domain-field">
-                视频适配方式
+                 {t("models.service.videoAdapter")}
                 <select
                   value={adapter}
                   onChange={(event) =>
@@ -152,12 +162,16 @@ export function ModelCapabilityCard({
                     )
                   }
                 >
-                  <option value="auto">自动识别</option>
+                  <option value="auto">{t("models.service.adapterAuto")}</option>
                   <option value="minimax_h3">
-                    MiniMax-H3（首帧、参考、接续）
+                    {t("models.service.adapterMiniMaxH3")}
                   </option>
-                  <option value="fasth3">FastH3（多模态参考）</option>
-                  <option value="standard">通用 /videos（单张首帧）</option>
+                  <option value="fasth3">
+                    {t("models.service.adapterFastH3")}
+                  </option>
+                  <option value="standard">
+                    {t("models.service.adapterStandard")}
+                  </option>
                 </select>
               </label>
             )}
@@ -167,14 +181,14 @@ export function ModelCapabilityCard({
                 className="cw-settings-button"
                 onClick={() => void load("preset")}
               >
-                载入预设
+                {t("models.service.loadPreset")}
               </button>
               <button
                 type="button"
                 className="cw-settings-button"
                 onClick={() => void load("service")}
               >
-                读取服务声明
+                {t("models.service.readService")}
               </button>
             </div>
             <VideoCapabilitiesEditor

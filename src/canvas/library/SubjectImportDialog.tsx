@@ -10,16 +10,18 @@ import { MediaCard } from "./MediaCard";
 import { CanvasSourceCard } from "./CanvasSourceCard";
 import { CanvasIcon } from "../CanvasIcon";
 import { subjectChoiceIssue, type SubjectMediaSlot } from "../subjectMedia";
+import { useT } from "../../i18n/I18nProvider";
+import type { MessageKey } from "../../i18n/messages";
 
 export type SubjectImportTab = "assets" | "subjects" | "canvas";
 export type SubjectImportChoice =
   | { tab: "assets" | "subjects"; item: LibraryItem }
   | { tab: "canvas"; item: CanvasSource };
-const tabs = [
-  { key: "assets", label: "资产库" },
-  { key: "subjects", label: "主体" },
-  { key: "canvas", label: "当前画布" },
-] as const;
+const tabs: readonly { key: SubjectImportTab; labelKey: MessageKey }[] = [
+  { key: "assets", labelKey: "library.source.assets" },
+  { key: "subjects", labelKey: "library.tab.subjects" },
+  { key: "canvas", labelKey: "library.canvases.current" },
+];
 
 export function SubjectImportDialog({
   projectId,
@@ -40,6 +42,7 @@ export function SubjectImportDialog({
   onClose: () => void;
   onConfirm: (choice: SubjectImportChoice) => Promise<void>;
 }) {
+  const t = useT();
   const [tab, setTab] = useState(initialTab),
     [query, setQuery] = useState("");
   const [items, setItems] = useState<(LibraryItem | CanvasSource)[]>([]),
@@ -97,13 +100,17 @@ export function SubjectImportDialog({
         item.kind === "subject" ? "subject" : item.main.kind,
         item.main.durationSeconds,
         slot,
+        t,
       );
     if (!(item as SubjectLibraryItem).available)
-      return (item as SubjectLibraryItem).issue || "该主体不可用。";
+      return (
+        (item as SubjectLibraryItem).issue || t("library.subjects.unavailable")
+      );
     return subjectChoiceIssue(
       item.kind === "subject" ? "subject" : (item.mediaKind ?? "file"),
       item.metadata?.durationSeconds,
       slot,
+      t,
     );
   };
   const visible = items.filter((item) =>
@@ -115,9 +122,9 @@ export function SubjectImportDialog({
   const rejection =
     targetIssue ??
     (loading
-      ? "正在读取素材。"
+      ? t("library.loading")
       : !chosen
-        ? "请先选择一个来源。"
+        ? t("library.issue.selectSource")
         : issue(chosen));
   const confirm = async () => {
     if (blocked || rejection || !chosen) return;
@@ -141,14 +148,18 @@ export function SubjectImportDialog({
       className="cw-lib-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="导入主体"
+      aria-label={t("library.import.title")}
       onClick={(event) => {
         if (event.target === event.currentTarget && !blocked) onClose();
       }}
     >
       <div className="cw-lib-dialog">
         <header className="cw-lib-header">
-          <nav className="cw-lib-top" role="tablist" aria-label="主体来源">
+          <nav
+            className="cw-lib-top"
+            role="tablist"
+            aria-label={t("library.import.sources")}
+          >
             {tabs.map((entry) => (
               <button
                 key={entry.key}
@@ -165,7 +176,7 @@ export function SubjectImportDialog({
                   setTab(entry.key);
                 }}
               >
-                {entry.label}
+                {t(entry.labelKey)}
               </button>
             ))}
           </nav>
@@ -173,8 +184,8 @@ export function SubjectImportDialog({
             <CanvasIcon name="search" size={16} />
             <input
               type="search"
-              aria-label="搜索主体来源"
-              placeholder="搜索"
+              aria-label={t("library.import.search")}
+              placeholder={t("library.search.placeholder")}
               value={query}
               disabled={blocked}
               onChange={(event) => {
@@ -188,7 +199,7 @@ export function SubjectImportDialog({
           <button
             type="button"
             className="cw-lib-close"
-            aria-label="关闭主体导入"
+            aria-label={t("library.import.close")}
             disabled={blocked}
             onClick={onClose}
           >
@@ -199,15 +210,15 @@ export function SubjectImportDialog({
           <div className="cw-lib-panel">
             <p className="cw-lib-note">
               {slot === "voice"
-                ? "选择一段 15 秒以内的音频"
+                ? t("library.import.hint.voice")
                 : slot === "auxiliary"
-                  ? "选择一张附加图片"
-                  : "选择一张图片、一段 15 秒以内的视频或一个完整主体"}{" "}
-              · 每次仅选择一项
+                  ? t("library.import.hint.auxiliary")
+                  : t("library.import.hint.main")}{" "}
+              · {t("library.import.oneOnly")}
             </p>
-            {loading && <p role="status">正在读取素材…</p>}
+            {loading && <p role="status">{t("library.reading")}</p>}
             {!loading && !visible.length && (
-              <p className="cw-lib-empty">暂无可选择的来源。</p>
+              <p className="cw-lib-empty">{t("library.import.empty")}</p>
             )}
             <div className="cw-lib-grid">
               {visible.map((item) => {
@@ -253,16 +264,18 @@ export function SubjectImportDialog({
           <span role="status">
             {notice ||
               targetIssue ||
-              (blocked ? "正在导入…" : `已选择 ${chosen ? 1 : 0} 项`)}
+              (blocked
+                ? t("library.import.importing")
+                : t("library.selected", { count: chosen ? 1 : 0 }))}
           </span>
           <div>
             <button
               type="button"
               disabled={blocked || Boolean(rejection)}
-              title={rejection ?? "导入到当前主体"}
+              title={rejection ?? t("library.import.submitHint")}
               onClick={() => void confirm()}
             >
-              确定
+              {t("library.import.submit")}
             </button>
           </div>
         </footer>

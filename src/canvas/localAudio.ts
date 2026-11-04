@@ -1,4 +1,5 @@
 /** PCM16 WAV for the selected interval. Partial boundaries include their enclosing samples. */
+import { tNow } from "../i18n/messages.ts";
 export function encodePcmWav(
   channels: readonly Float32Array[],
   sampleRate: number,
@@ -16,17 +17,17 @@ export function encodePcmWav(
     start < 0 ||
     end <= start
   )
-    throw new Error("音频裁剪参数不正确。");
+    throw new Error(tNow("errors.render.audioCrop"));
   const length = channels[0]!.length;
   if (channels.some((channel) => channel.length !== length))
-    throw new Error("音轨采样长度不一致。");
+    throw new Error(tNow("errors.render.audioLength"));
   const first = Math.floor(start * sampleRate),
     last = Math.min(length, Math.ceil(end * sampleRate));
-  if (first >= last) throw new Error("音频裁剪范围为空。");
+  if (first >= last) throw new Error(tNow("errors.render.audioEmpty"));
   const count = last - first,
     bytes = count * channels.length * 2;
   if (bytes > 256 * 1024 * 1024)
-    throw new Error("裁剪后的 WAV 超过 256 MB，请缩短范围。");
+    throw new Error(tNow("errors.render.audioSize"));
   const buffer = new ArrayBuffer(44 + bytes),
     view = new DataView(buffer);
   const text = (at: number, value: string) =>

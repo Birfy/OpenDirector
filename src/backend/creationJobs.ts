@@ -1,7 +1,12 @@
 import { creationClient } from "./creationClient.ts";
 import type { Asset, ProjectSnapshot } from "../contracts/generated.ts";
 import type { GenerationJob } from "../canvas/generationHistory.ts";
-import { generationPhase } from "../canvas/generationActivity.ts";
+import {
+  GENERATION_LABELS,
+  generationPhase,
+} from "../canvas/generationActivity.ts";
+import { generationFailureMessage } from "../canvas/generationFailureText.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Activity is snapshot metadata: it must never wait for historical media. */
 export function creationJobs(
@@ -33,10 +38,11 @@ export function creationJobs(
           item.binding.role === "material" &&
           item.binding.objectRef.assetId === asset.id,
       );
+    const phase = generationPhase(job);
     return {
       id: job.id,
       nodeId: job.originItemId ?? spec.id,
-      title: spec.prompt.slice(0, 60) || "生成任务",
+      title: spec.prompt.slice(0, 60) || tNow("errors.backend.generationTask"),
       taskId: job.id,
       status:
         job.status === "queued" || job.status === "running"
@@ -46,24 +52,28 @@ export function creationJobs(
       createdAt: job.createdAt ? Date.parse(job.createdAt) : undefined,
       durationKey: `generate:${spec.kind}:${job.inputSnapshot.model.modelConfigId}`,
       outputKind: spec.kind,
-      activityPhase: generationPhase(job) ?? undefined,
+      activityPhase: phase ?? undefined,
       preview:
         preview ??
         (asset ? { assetId: asset.id, state: "pending" } : undefined),
       outputs: preview ? prior?.outputs : undefined,
       message:
-        job.errorDetails?.message ??
+        (job.errorDetails
+          ? generationFailureMessage(job.errorDetails)
+          : null) ??
         (preview?.state === "unavailable"
-          ? "结果文件缺失或已变化，请检查本地文件。"
+          ? tNow("errors.backend.resultMissing")
           : job.status === "succeeded"
             ? selected
-              ? "当前选用的生成结果"
+              ? tNow("errors.backend.resultCurrent")
               : displayed
-                ? "结果已显示为独立节点"
+                ? tNow("errors.backend.resultNode")
                 : job.adopted
-                  ? "历史生成结果"
-                  : "结果已保留为候选"
-            : job.phase),
+                  ? tNow("errors.backend.resultHistory")
+                  : tNow("errors.backend.resultCandidate")
+            : phase
+              ? tNow(GENERATION_LABELS[phase])
+              : job.phase),
       serviceTask: {
         protocol: job.inputSnapshot.model.protocol,
         externalTaskId: job.externalTaskId,
@@ -127,7 +137,7 @@ export function applyCreationPreview(
     ...preview,
     ...(preview.preview.state === "unavailable" &&
     current.status === "succeeded"
-      ? { message: "结果文件缺失或已变化，请检查本地文件。" }
+      ? { message: tNow("errors.backend.resultMissing") }
       : {}),
   };
 }

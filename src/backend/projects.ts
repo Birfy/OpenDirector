@@ -7,6 +7,7 @@ import {
   storageRequest,
 } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Canvas documents use the stable identity of an existing filesystem project. */
 
@@ -15,7 +16,7 @@ const UUID =
 
 export function backendProjectId(documentId: string) {
   if (UUID.test(documentId)) return documentId.toLowerCase();
-  throw new ApiError("请先打开本地项目。", 409, "invalid_project");
+  throw new ApiError(tNow("errors.backend.projectRequired"), 409, "invalid_project");
 }
 
 let active: string | null = null;
@@ -67,7 +68,7 @@ export function requireActiveBackendProject(
   return serializeSessionChange(async () => {
     signal.throwIfAborted();
     if (active !== id)
-      throw new DOMException("工程已切换，请重新打开选区工具。", "AbortError");
+      throw new DOMException(tNow("errors.backend.selectionAborted"), "AbortError");
     return id;
   });
 }
@@ -97,7 +98,10 @@ function activateBackendProject<T>(
           active = previous;
         } catch (restoreFailure) {
           throw new Error(
-            `打开项目失败：${errorMessage(failure)}；原项目未能重新取得编辑权限：${errorMessage(restoreFailure)}`,
+            tNow("errors.backend.openFailed", {
+              error: errorMessage(failure),
+              restore: errorMessage(restoreFailure),
+            }),
           );
         }
       }

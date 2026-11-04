@@ -3,10 +3,11 @@ import type {
   CanvasNode,
   GenerationSettings,
 } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export const FRAME_IMAGE_LIMIT = 2;
-export const FRAME_IMAGE_LIMIT_MESSAGE =
-  "首尾帧模式最多连接 2 个图片节点，请先断开多余连线。";
+export const frameImageLimitMessage = () =>
+  tNow("errors.connection.frameCapacity");
 
 export function frameImageLimitIssue(
   settings: GenerationSettings,
@@ -17,7 +18,7 @@ export function frameImageLimitIssue(
     new Set(
       incoming.filter((node) => node.type === "image").map((node) => node.id),
     ).size > FRAME_IMAGE_LIMIT
-    ? FRAME_IMAGE_LIMIT_MESSAGE
+    ? frameImageLimitMessage()
     : null;
 }
 

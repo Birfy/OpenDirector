@@ -11,6 +11,7 @@ import {
   connectedCreationKinds,
   canSourceReference,
   canStartReference,
+  referenceIssueText,
   REFERENCE_ISSUE_TEXT,
 } from "../src/canvas/connectionPolicy.ts";
 import { applyGenerationResults } from "../src/canvas/linkedResults.ts";
@@ -195,6 +196,10 @@ test("empty nodes expose reference gestures and type menus while writes still re
   }
   assert.equal(
     REFERENCE_ISSUE_TEXT.source_empty,
+    "errors.connection.sourceEmpty",
+  );
+  assert.equal(
+    referenceIssueText("source_empty"),
     "当前节点内容为空，请先上传或生成节点内容",
   );
 });

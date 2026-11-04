@@ -1,4 +1,5 @@
 import { parseImageCrop } from "./imageCrop.ts";
+import { tNow } from "../i18n/messages.ts";
 import { parseCanvasToolTaskValue, sameCanvasToolTask } from "./toolCatalog.ts";
 import { parseLocalStageValue, sameLocalStage } from "./stageDocument.ts";
 import type {
@@ -104,12 +105,16 @@ export function isGenerationSettings(
 export function copyGenerationSettings(
   value: GenerationSettings,
 ): GenerationSettings {
-  return Object.fromEntries(
+  const next = Object.fromEntries(
     SETTINGS_KEYS.filter((key) => value[key] !== undefined).map((key) => [
       key,
       value[key],
     ]),
   ) as unknown as GenerationSettings;
+  // Documents written before the locale split stored the rendered "自动" label.
+  if (next.aspectRatio === "自动") next.aspectRatio = "auto";
+  if (next.resolution === "自动") next.resolution = "auto";
+  return next;
 }
 
 export function isResource(value: unknown): value is CanvasResource {
@@ -165,7 +170,7 @@ export function timelineError(value: unknown): string | null {
     !Array.isArray(value.tracks) ||
     !value.tracks.length
   )
-    return "时间线尺寸、帧率或轨道无效。";
+    return tNow("errors.data.timelineShape");
   if (
     value.importedAssets !== undefined &&
     (!Array.isArray(value.importedAssets) ||
@@ -173,7 +178,7 @@ export function timelineError(value: unknown): string | null {
         (asset) => isResource(asset) && asset.kind !== "file",
       ))
   )
-    return "时间线素材库仅支持有效图片、视频或音频。";
+    return tNow("errors.data.timelineAssets");
   const trackIds = new Set<string>(),
     clipIds = new Set<string>();
   let visualCount = 0;
@@ -188,7 +193,7 @@ export function timelineError(value: unknown): string | null {
       typeof track.muted !== "boolean" ||
       !Array.isArray(track.clips)
     )
-      return "时间线轨道 ID、类型或片段列表无效。";
+      return tNow("errors.data.timelineTrack");
     trackIds.add(track.id);
     if (track.kind === "visual") visualCount++;
     const audioIntervals: [number, number][] = [];
@@ -209,32 +214,32 @@ export function timelineError(value: unknown): string | null {
         clip.volume > 1 ||
         typeof clip.muted !== "boolean"
       )
-        return "时间线片段、源入出点、速度或音量无效。";
+        return tNow("errors.data.timelineClip");
       clipIds.add(clip.id);
       if (
         clip.resource.durationSeconds !== undefined &&
         clip.resource.kind !== "image" &&
         clip.outPoint > clip.resource.durationSeconds + 0.000001
       )
-        return "片段出点超出了素材已知时长。";
+        return tNow("errors.data.timelineOutPoint");
       if (track.kind === "visual") {
         if (
           !["image", "video"].includes(clip.resource.kind) ||
           clip.start !== undefined
         )
-          return "视觉轨仅支持图片或视频，时间位置由片段顺序决定。";
+          return tNow("errors.data.timelineVisualKind");
         if (
           clip.resource.kind === "image" &&
           (clip.inPoint !== 0 || clip.speed !== 1)
         )
-          return "静态图片使用展示时长，不使用源入点或变速。";
+          return tNow("errors.data.timelineStill");
       } else {
         if (
           clip.resource.kind !== "audio" ||
           !finite(clip.start) ||
           clip.start < 0
         )
-          return "音轨片段必须使用音频素材和非负时间线起点。";
+          return tNow("errors.data.timelineAudio");
         audioIntervals.push([
           clip.start,
           clip.start + (clip.outPoint - clip.inPoint) / clip.speed,
@@ -248,9 +253,9 @@ export function timelineError(value: unknown): string | null {
           index > 0 && interval[0] < audioIntervals[index - 1]![1] - 0.000001,
       )
     )
-      return "同一音轨内的片段不能重叠，请调整起点或使用另一音轨。";
+      return tNow("errors.data.timelineOverlap");
   }
-  return visualCount === 1 ? null : "时间线必须恰有一条视觉轨。";
+  return visualCount === 1 ? null : tNow("errors.data.timelineVisualTrack");
 }
 
 /** Legacy documents only kept clip snapshots. Migrate once when copying at the boundary. */
@@ -298,31 +303,31 @@ export function subjectError(value: unknown): string | null {
     !Array.isArray(value.auxiliaries) ||
     value.auxiliaries.length > 3
   )
-    return "主体描述或辅助素材无效，辅助图片最多 3 张。";
+    return tNow("errors.data.subject");
   if (
     value.main !== undefined &&
     (!isResource(value.main) || !["image", "video"].includes(value.main.kind))
   )
-    return "主体主素材必须是图片或视频。";
+    return tNow("errors.data.subjectMain");
   if (
     value.voice !== undefined &&
     (!isResource(value.voice) || value.voice.kind !== "audio")
   )
-    return "主体声音必须是音频。";
+    return tNow("errors.data.subjectVoice");
   if (
     !value.auxiliaries.every(
       (item) => isResource(item) && item.kind === "image",
     )
   )
-    return "主体辅助素材必须是图片。";
+    return tNow("errors.data.subjectAuxiliary");
   if (!value.main && (value.voice || value.auxiliaries.length))
-    return "先添加主体主素材，再添加辅助图片或声音。";
+    return tNow("errors.data.subjectOrder");
   if (
     value.main &&
     (value.main as CanvasResource).kind === "video" &&
     (value.voice || value.auxiliaries.length)
   )
-    return "视频主体不能包含附加图片或独立声音。";
+    return tNow("errors.data.subjectVideoExtras");
   if (
     value.librarySource !== undefined &&
     (!record(value.librarySource) ||
@@ -331,16 +336,17 @@ export function subjectError(value: unknown): string | null {
       !Number.isInteger(value.librarySource.revision) ||
       Number(value.librarySource.revision) < 1)
   )
-    return "主体库来源记录无效。";
+    return tNow("errors.data.subjectLibrary");
   const resources = [value.main, ...value.auxiliaries, value.voice].filter(
     Boolean,
   ) as CanvasResource[];
-  if (!uniqueIds(resources)) return "同一主体不能重复引用同一素材 ID。";
+  if (!uniqueIds(resources))
+    return tNow("errors.data.subjectDuplicateAsset");
   const nodeIds = resources.flatMap((resource) =>
     resource.nodeId ? [resource.nodeId] : [],
   );
   if (new Set(nodeIds).size !== nodeIds.length)
-    return "同一主体不能重复引用同一画布节点。";
+    return tNow("errors.data.subjectDuplicateNode");
   const main = value.main as CanvasResource | undefined,
     voice = value.voice as CanvasResource | undefined;
   if (
@@ -348,12 +354,12 @@ export function subjectError(value: unknown): string | null {
     main.durationSeconds !== undefined &&
     main.durationSeconds > 15
   )
-    return "主体视频不能超过 15 秒。";
+    return tNow("errors.data.subjectVideoDuration");
   if (
     voice?.durationSeconds !== undefined &&
     (voice.durationSeconds <= 0 || voice.durationSeconds > 15)
   )
-    return "主体声音需在 15 秒以内。";
+    return tNow("errors.data.subjectVoiceDuration");
   return null;
 }
 
@@ -381,7 +387,7 @@ export function stackError(value: unknown): string | null {
     Number(value.activeIndex) < 0 ||
     Number(value.activeIndex) >= Math.max(1, value.nodeIds.length)
   )
-    return "堆叠节点引用或当前选项无效。";
+    return tNow("errors.data.stack");
   return null;
 }
 
@@ -393,7 +399,7 @@ export function toolError(value: unknown): string | null {
     !Array.isArray(value.fields) ||
     value.fields.length > 16
   )
-    return "工具类型或字段列表无效。";
+    return tNow("errors.data.tool");
   const stringValue = (item: unknown) =>
     typeof item === "string" && [...item].length <= 256;
   if (
@@ -407,7 +413,7 @@ export function toolError(value: unknown): string | null {
         field.values.every(stringValue),
     )
   )
-    return "工具字段最多 32 个值，每个字符串最多 256 个字符。";
+    return tNow("errors.data.toolFields");
   if (
     value.provenance !== undefined &&
     (!record(value.provenance) ||
@@ -415,7 +421,7 @@ export function toolError(value: unknown): string | null {
       !Number.isSafeInteger(value.provenance.version) ||
       Number(value.provenance.version) < 0)
   )
-    return "工具来源标识无效。";
+    return tNow("errors.data.toolProvenance");
   if (value.palette !== undefined) {
     if (
       value.kind !== "palette" ||
@@ -423,7 +429,7 @@ export function toolError(value: unknown): string | null {
       (value.palette.name === undefined &&
         value.palette.sourceImageUri === undefined)
     )
-      return "调色板元数据仅适用于 palette 工具。";
+      return tNow("errors.data.paletteKind");
     if (
       value.palette.name !== undefined &&
       (!nonempty(value.palette.name) ||
@@ -431,14 +437,14 @@ export function toolError(value: unknown): string | null {
         [...value.palette.name].length > 128 ||
         new TextEncoder().encode(value.palette.name).length > 512)
     )
-      return "调色板名称无效。";
+      return tNow("errors.data.paletteName");
     if (
       value.palette.sourceImageUri !== undefined &&
       (!nonempty(value.palette.sourceImageUri) ||
         /[\s\x00-\x1f\x7f\\?#:]/.test(value.palette.sourceImageUri) ||
         new TextEncoder().encode(value.palette.sourceImageUri).length > 1024)
     )
-      return "调色板来源必须是原始存储 URI，不是网页 URL。";
+      return tNow("errors.data.paletteSource");
   }
   return null;
 }
@@ -475,7 +481,7 @@ function copyTool(value: ToolData): ToolData {
 
 export function externalError(value: unknown): string | null {
   if (!record(value) || value.externalType !== "director-stage")
-    return "外部节点类型必须是 director-stage。";
+    return tNow("errors.data.externalType");
   if (
     value.current !== undefined &&
     (!record(value.current) ||
@@ -484,7 +490,7 @@ export function externalError(value: unknown): string | null {
       value.current.versionId.length > 20 ||
       BigInt(value.current.versionId) > 18446744073709551615n)
   )
-    return "外部导演阶段的版本 ID 必须是 uint64 十进制字符串。";
+    return tNow("errors.data.externalVersion");
   return null;
 }
 
@@ -508,7 +514,7 @@ export function parseNodeData(
       value.mediaRole !== "generation") ||
     (value.settings !== undefined && !isGenerationSettings(value.settings))
   )
-    return { ok: false, error: "节点的标题、提示词、素材或设置无效。" };
+    return { ok: false, error: tNow("errors.data.node") };
   const result: CanvasNodeData = {
     kind,
     title: value.title,
@@ -546,10 +552,10 @@ export function parseNodeData(
                 typeof part.fingerprint === "string")),
       )
     )
-      return { ok: false, error: "结构化正文引用无效。" };
+      return { ok: false, error: tNow("errors.data.contentReference") };
     const content = normalizeContent(value.promptContent as ReferenceContent);
     if (!validContent(content))
-      return { ok: false, error: "结构化正文超过长度或参考数量限制。" };
+      return { ok: false, error: tNow("errors.data.contentLimit") };
     result.promptContent = content;
   }
   if (value.promptMentions !== undefined) {
@@ -570,7 +576,7 @@ export function parseNodeData(
           Number(mention.end) <= String(value.prompt).length,
       )
     )
-      return { ok: false, error: "正文引用范围无效。" };
+      return { ok: false, error: tNow("errors.data.mentionRange") };
     result.promptMentions = value.promptMentions.map((mention) => ({
       ...(mention.sourceNodeId
         ? { sourceNodeId: mention.sourceNodeId as string }
@@ -597,7 +603,7 @@ export function parseNodeData(
       Number(agent.maxTokens) < 1 ||
       Number(agent.maxTokens) > 32768
     )
-      return { ok: false, error: "Agent 参数无效。" };
+      return { ok: false, error: tNow("errors.data.agent") };
     result.agentSettings = {
       ...(agent.modelConfigId
         ? { modelConfigId: agent.modelConfigId as string }
@@ -616,7 +622,7 @@ export function parseNodeData(
         ([id, material]) => nonempty(id) && typeof material === "string",
       )
     )
-      return { ok: false, error: "生成输入记录无效。" };
+      return { ok: false, error: tNow("errors.data.evidence") };
     result.generationEvidence = {
       output: evidence.output,
       references: { ...evidence.references } as Record<string, string>,
@@ -669,7 +675,7 @@ export function parseNodeData(
           (!finite(value.media[key]) || Number(value.media[key]) <= 0),
       )
     )
-      return { ok: false, error: "素材像素尺寸或实际时长无效。" };
+      return { ok: false, error: tNow("errors.data.media") };
     result.media = Object.fromEntries(
       ["width", "height", "durationSeconds"]
         .filter(
@@ -687,7 +693,10 @@ export function parseNodeData(
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "工具任务草稿无效。",
+        error:
+          error instanceof Error
+            ? error.message
+            : tNow("errors.data.taskDraft"),
       };
     }
   }
@@ -697,7 +706,10 @@ export function parseNodeData(
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "本地舞台无效。",
+        error:
+          error instanceof Error
+            ? error.message
+            : tNow("errors.data.localStage"),
       };
     }
   }
@@ -709,7 +721,10 @@ export function parseNodeData(
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "图片编辑文档无效。",
+        error:
+          error instanceof Error
+            ? error.message
+            : tNow("errors.data.imageCrop"),
       };
     }
   }
@@ -719,7 +734,10 @@ export function parseNodeData(
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "可编辑图层内容无效。",
+        error:
+          error instanceof Error
+            ? error.message
+            : tNow("errors.data.layers"),
       };
     }
   }

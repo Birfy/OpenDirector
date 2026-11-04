@@ -1,3 +1,5 @@
+import { tNow } from "../i18n/messages.ts";
+
 export interface ImageSize {
   width: number;
   height: number;
@@ -97,7 +99,7 @@ export function writeImageInk(
   const value = JSON.stringify({ version: 1, sourceNodeId, ...size, strokes });
   if (value.length > 100_000)
     throw new Error(
-      "标记已达到保存上限；请先应用本地标记生成图片，再继续编辑。",
+      tNow("errors.imageAction.limit"),
     );
   return value;
 }

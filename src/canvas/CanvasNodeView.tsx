@@ -15,24 +15,34 @@ import {
   CanvasActionsContext,
   type CanvasActions,
 } from "./CanvasActionsContext";
+import { useI18n } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 
 export type CanvasFlowNode = Node<CanvasNodeData, CanvasNodeKind>;
 
-const names: Record<CanvasNodeKind, string> = {
-  image: "图片",
-  video: "视频",
-  audio: "音频",
-  text: "文本",
-  file: "文件",
-  group: "分组",
-  timeline: "时间线",
-  subject: "主体",
-  stack: "资源堆叠",
-  tool: "工具",
-  external: "导演台",
+const kindNameKeys: Record<CanvasNodeKind, MessageKey> = {
+  image: "canvasNodes.kind.image",
+  video: "canvasNodes.kind.video",
+  audio: "canvasNodes.kind.audio",
+  text: "canvasNodes.kind.text",
+  file: "canvasNodes.kind.file",
+  group: "canvasNodes.kind.group",
+  timeline: "canvasNodes.kind.timeline",
+  subject: "canvasNodes.kind.subject",
+  stack: "canvasNodes.kind.stack",
+  tool: "canvasNodes.kind.tool",
+  external: "canvasNodes.kind.external",
+};
+
+const toolRoleKeys: Record<string, MessageKey> = {
+  camera: "canvasNodes.tool.role.camera",
+  style: "canvasNodes.tool.role.style",
+  palette: "canvasNodes.tool.role.palette",
+  camera_motion: "canvasNodes.tool.role.cameraMotion",
 };
 
 function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { t } = useI18n();
   const actions = useContext(CanvasActionsContext);
   const kind = data.kind;
   const hasAsset = Boolean(data.src) && data.assetState !== "missing";
@@ -52,7 +62,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
     <NodeFrame
       id={id}
       kind={kind}
-      title={data.title || names[kind]}
+      title={data.title || t(kindNameKeys[kind])}
       selected={selected}
       empty={
         kind === "subject" ? !data.subject?.main?.src : !hasAsset && !data.text
@@ -69,8 +79,8 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
         actions?.isTextEditing(id) ? (
           <textarea
             className="cw-text-editor nodrag nopan nowheel"
-            aria-label={`${data.title}内容`}
-            placeholder="输入你的想法…"
+            aria-label={t("canvasNodes.text.content", { title: data.title })}
+            placeholder={t("canvasNodes.text.placeholder")}
             spellCheck={false}
             readOnly={locked}
             autoFocus
@@ -86,9 +96,14 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
             }}
           />
         ) : (
-          <div className="cw-text-display" aria-label={`${data.title}内容`}>
+          <div
+            className="cw-text-display"
+            aria-label={t("canvasNodes.text.content", { title: data.title })}
+          >
             {data.text || (
-              <span className="cw-text-placeholder">双击编辑文本</span>
+              <span className="cw-text-placeholder">
+                {t("canvasNodes.text.editHint")}
+              </span>
             )}
           </div>
         )
@@ -171,9 +186,10 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
             >
               <CanvasIcon name="file" size={38} />
               <strong>{data.title}</strong>
-              <span>{data.mimeType || "本地文件"}</span>
+              <span>{data.mimeType || t("canvasNodes.file.local")}</span>
               <span className="cw-file-action">
-                打开预览 <CanvasIcon name="arrowRight" size={14} />
+                {t("canvasNodes.file.open")}{" "}
+                <CanvasIcon name="arrowRight" size={14} />
               </span>
             </button>
           )}
@@ -185,20 +201,22 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
           </span>
           <span className="cw-placeholder-label">
             {data.assetState === "missing"
-              ? "素材未找到，请重新选择"
-              : names[kind]}
+              ? t("canvasNodes.upload.missing")
+              : t(kindNameKeys[kind])}
           </span>
           {!locked && (
             <button
               className="cw-placeholder-upload nodrag nopan"
-              aria-label={`上传${names[kind]}`}
+              aria-label={t("canvasNodes.upload.aria", {
+                kind: t(kindNameKeys[kind]),
+              })}
               onClick={(event) => {
                 event.stopPropagation();
                 actions?.upload(id);
               }}
             >
               <CanvasIcon name="upload" size={14} />
-              本地上传
+              {t("canvasNodes.upload.local")}
             </button>
           )}
         </div>
@@ -232,6 +250,7 @@ function DomainCard({
   data: CanvasNodeData;
   actions: CanvasActions | null;
 }) {
+  const { t } = useI18n();
   const kind = data.kind;
   const stack = data.stack;
   const member =
@@ -257,16 +276,20 @@ function DomainCard({
           {resource ? (
             <ResourcePreview resource={resource} controls={false} />
           ) : kind === "stack" && member?.type === "text" ? (
-            <pre>{member.data.text || member.data.prompt || "空文本"}</pre>
+            <pre>
+              {member.data.text ||
+                member.data.prompt ||
+                t("canvasNodes.stack.emptyText")}
+            </pre>
           ) : (
             <div className="cw-domain-card-empty">
               <CanvasIcon name={kind} size={38} />
               <span>
                 {kind === "timeline"
-                  ? "把素材编排成故事"
+                  ? t("canvasNodes.stack.hint.text")
                   : kind === "stack"
-                    ? "整理画布资源"
-                    : "布景、镜头与动作预演"}
+                    ? t("canvasNodes.stack.hint.resource")
+                    : t("canvasNodes.stack.hint.stage")}
               </span>
             </div>
           )}
@@ -304,7 +327,13 @@ function DomainCard({
                     />
                   ))
                 ) : (
-                  <small>添加{track.kind === "audio" ? "音轨" : "片段"}</small>
+                  <small>
+                    {t(
+                      track.kind === "audio"
+                        ? "canvasNodes.stack.addAudio"
+                        : "canvasNodes.stack.addClip",
+                    )}
+                  </small>
                 )}
               </span>
             </div>
@@ -314,7 +343,7 @@ function DomainCard({
       {kind === "stack" && (
         <div className="cw-card-stack-controls nodrag nopan">
           <TooltipButton
-            label="上一个堆叠素材"
+            label={t("canvasNodes.stack.previous")}
             disabled={!stack?.nodeIds.length}
             onClick={() => actions?.cycleStack(id, -1)}
           >
@@ -323,10 +352,12 @@ function DomainCard({
           <span>
             {stack?.nodeIds.length ? stack.activeIndex + 1 : 0} /{" "}
             {stack?.nodeIds.length ?? 0}
-            <small>{member?.data.title ?? "尚无资源"}</small>
+            <small>
+              {member?.data.title ?? t("canvasNodes.stack.none")}
+            </small>
           </span>
           <TooltipButton
-            label="下一个堆叠素材"
+            label={t("canvasNodes.stack.next")}
             disabled={!stack?.nodeIds.length}
             onClick={() => actions?.cycleStack(id, 1)}
           >
@@ -347,14 +378,7 @@ function DomainCard({
               }
               size={25}
             />
-            {
-              {
-                camera: "相机参数",
-                style: "风格参考",
-                palette: "调色板",
-                camera_motion: "运镜参数",
-              }[data.tool?.kind ?? "camera"]
-            }
+            {t(toolRoleKeys[data.tool?.kind ?? "camera"])}
           </span>
           {data.tool?.fields.length ? (
             data.tool.fields.slice(0, 4).map((field, index) => (
@@ -364,15 +388,19 @@ function DomainCard({
               </div>
             ))
           ) : (
-            <p>添加可被下游节点引用的创作参数</p>
+            <p>{t("canvasNodes.tool.hint")}</p>
           )}
         </div>
       )}
       {kind === "external" && (
         <div className="cw-card-stage-summary">
-          <span>导演台 · 本地舞台草稿</span>
+          <span>{t("canvasNodes.external.title")}</span>
           {data.external?.current && (
-            <small>外部版本 {data.external.current.versionId}</small>
+            <small>
+              {t("canvasNodes.external.version", {
+                id: data.external.current.versionId,
+              })}
+            </small>
           )}
         </div>
       )}
@@ -383,12 +411,12 @@ function DomainCard({
         >
           <CanvasIcon name="edit" size={13} />
           {kind === "timeline"
-            ? "打开时间线"
+            ? t("canvasNodes.action.openTimeline")
             : kind === "stack"
-              ? "管理堆叠"
+              ? t("canvasNodes.action.manageStack")
               : kind === "tool"
-                ? "编辑参数"
-                : "进入导演台"}
+                ? t("canvasNodes.action.editParams")
+                : t("canvasNodes.action.openDirector")}
           <CanvasIcon name="chevronRight" size={13} />
         </button>
       )}

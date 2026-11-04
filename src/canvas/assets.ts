@@ -2,6 +2,7 @@ import { createDocument, createNode } from "./model.ts";
 import type { CanvasDocument } from "./model.ts";
 import { loadLayerImage } from "./layerRenderer.ts";
 import { dataUrlToBlob } from "./downloadAssets.ts";
+import { tNow } from "../i18n/messages.ts";
 export { downloadFilename } from "./downloadAssets.ts";
 
 export const EXAMPLE_PROJECT_TITLE = "光与山之间 · 镜头研究";
@@ -38,7 +39,7 @@ export async function exampleDocument(): Promise<CanvasDocument> {
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
       const context = canvas.getContext("2d");
-      if (!context) throw new Error("无法创建示例图片。");
+      if (!context) throw new Error(tNow("errors.example.create"));
       context.drawImage(image, 0, 0);
       return canvas.toDataURL("image/png");
     }),
@@ -188,7 +189,8 @@ export function fileDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+    reader.onerror = () =>
+      reject(new Error(tNow("errors.files.read", { name: file.name })));
     reader.readAsDataURL(file);
   });
 }

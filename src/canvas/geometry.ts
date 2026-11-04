@@ -1,6 +1,7 @@
 import { indexNodes, ancestors } from "./hierarchy.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
 import type { CanvasNode, Point, Rect, Viewport } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** React Flow owns pointer transforms and gestures; these helpers operate on document geometry. */
 export function absolutePosition(
@@ -55,9 +56,9 @@ export function fitViewport(
     size.width <= 0 ||
     size.height <= 0
   )
-    throw new Error("视口尺寸必须是正数。");
+    throw new Error(tNow("errors.geometry.viewport"));
   if (!Number.isFinite(padding) || padding < 0)
-    throw new Error("视口留白必须是非负数。");
+    throw new Error(tNow("errors.geometry.padding"));
   if (!bounds) return { x: size.width / 2, y: size.height / 2, zoom: 1 };
   const availableWidth = Math.max(1, size.width - padding * 2);
   const availableHeight = Math.max(1, size.height - padding * 2);
@@ -95,7 +96,7 @@ export function arrangeNodes(
     !Number.isFinite(gap) ||
     gap < 0
   )
-    throw new Error("排列参数无效。");
+    throw new Error(tNow("errors.geometry.arrange"));
   const origin = boundsOfNodes(movable)!;
   const positions = new Map<string, Point>();
   let x = origin.x,

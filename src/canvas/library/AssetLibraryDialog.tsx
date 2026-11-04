@@ -6,16 +6,18 @@ import { SubjectsPanel } from "./SubjectsPanel";
 import { CanvasesPanel } from "./CanvasesPanel";
 import { TrashPanel } from "./TrashPanel";
 import { errorMessage } from "../../backend/api";
+import { useT } from "../../i18n/I18nProvider";
+import type { MessageKey } from "../../i18n/messages";
 import type { LibraryItem } from "./libraryClient";
 import type { SubjectLibraryItem } from "../../backend/subjectLibrary";
 import type { CanvasSource } from "../../backend/canvasSources";
 export type LibraryTab = "assets" | "subjects" | "canvases" | "trash";
-const tabs = [
-  { key: "assets", label: "资产" },
-  { key: "subjects", label: "主体" },
-  { key: "canvases", label: "画布" },
-  { key: "trash", label: "回收站" },
-] as const;
+const tabs: readonly { key: LibraryTab; labelKey: MessageKey }[] = [
+  { key: "assets", labelKey: "library.tab.assets" },
+  { key: "subjects", labelKey: "library.tab.subjects" },
+  { key: "canvases", labelKey: "library.tab.canvases" },
+  { key: "trash", labelKey: "library.tab.trash" },
+];
 export function AssetLibraryDialog({
   initialTab = "assets",
   currentId,
@@ -40,6 +42,7 @@ export function AssetLibraryDialog({
   onImportSubjects?: (items: LibraryItem[]) => Promise<void>;
   onBackupSubject?: () => Promise<void>;
 }) {
+  const t = useT();
   const [tab, setTab] = useState<LibraryTab>(initialTab),
     [query, setQuery] = useState(""),
     [selected, setSelected] = useState<Set<string>>(new Set());
@@ -86,17 +89,18 @@ export function AssetLibraryDialog({
   const chosen = items.find((item) => selected.has(item.id));
   const canvasChoice = canvasItems.find((item) => selected.has(item.nodeId));
   const issue = busy
-    ? "正在处理，请稍候。"
+    ? t("library.busy")
     : loading
-      ? "正在读取素材。"
+      ? t("library.loading")
       : tab === "canvases"
         ? !canvasChoice
-          ? "请选择一个节点。"
+          ? t("library.issue.selectNode")
           : null
         : !chosen
-          ? "请选择一项素材。"
+          ? t("library.issue.selectItem")
           : tab === "subjects" && !(chosen as SubjectLibraryItem).available
-            ? (chosen as SubjectLibraryItem).issue || "所选主体不可用。"
+            ? (chosen as SubjectLibraryItem).issue ||
+              t("library.issue.subjectUnavailable")
             : null;
   const run = async (action: () => Promise<void>, close = true) => {
     if (busy) return;
@@ -120,7 +124,7 @@ export function AssetLibraryDialog({
       else if (tab === "canvases" && canvasChoice && onImportCanvas)
         await onImportCanvas(canvasId, canvasChoice);
       else if (chosen && onInsert) await onInsert([chosen]);
-      else throw new Error("无法导入该来源。");
+      else throw new Error(t("library.importUnavailable"));
     });
   };
   return (
@@ -128,14 +132,18 @@ export function AssetLibraryDialog({
       className="cw-lib-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="资产库"
+      aria-label={t("library.title")}
       onClick={(event) => {
         if (!busy && event.target === event.currentTarget) onClose();
       }}
     >
       <div className="cw-lib-dialog">
         <header className="cw-lib-header">
-          <nav className="cw-lib-top" role="tablist" aria-label="资产库分区">
+          <nav
+            className="cw-lib-top"
+            role="tablist"
+            aria-label={t("library.sections")}
+          >
             {tabs.map((entry) => (
               <button
                 key={entry.key}
@@ -153,7 +161,7 @@ export function AssetLibraryDialog({
                   setTab(entry.key);
                 }}
               >
-                {entry.label}
+                {t(entry.labelKey)}
               </button>
             ))}
           </nav>
@@ -161,8 +169,8 @@ export function AssetLibraryDialog({
             <CanvasIcon name="search" size={16} />
             <input
               type="search"
-              placeholder="搜索"
-              aria-label="搜索资产库"
+              placeholder={t("library.search.placeholder")}
+              aria-label={t("library.search.label")}
               value={query}
               disabled={busy}
               onChange={(event) => {
@@ -177,7 +185,7 @@ export function AssetLibraryDialog({
           <button
             type="button"
             className="cw-lib-close"
-            aria-label="关闭资产库"
+            aria-label={t("library.close")}
             disabled={busy}
             onClick={onClose}
           >
@@ -211,7 +219,7 @@ export function AssetLibraryDialog({
                 if (onBackupSubject) void run(onBackupSubject, false);
               }}
               backupIssue={
-                busy ? "正在处理，请稍候。" : (backupSubjectIssue ?? null)
+                busy ? t("library.busy") : (backupSubjectIssue ?? null)
               }
             />
           )}
@@ -241,21 +249,24 @@ export function AssetLibraryDialog({
         </div>
         <footer className="cw-lib-footer">
           <span role="status">
-            {notice || (busy ? "正在处理…" : `已选择 ${selected.size} 项`)}
+            {notice ||
+              (busy
+                ? t("library.processing")
+                : t("library.selected", { count: selected.size }))}
           </span>
           <div>
             {tab === "trash" ? (
               <button type="button" onClick={onClose}>
-                关闭
+                {t("library.action.close")}
               </button>
             ) : (
               <button
                 type="button"
                 disabled={Boolean(issue)}
-                title={issue ?? "创建独立的画布节点"}
+                title={issue ?? t("library.insertHint")}
                 onClick={insert}
               >
-                导入画布
+                {t("library.action.insert")}
               </button>
             )}
           </div>

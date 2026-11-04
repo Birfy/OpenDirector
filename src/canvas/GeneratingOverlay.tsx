@@ -4,6 +4,7 @@ import {
   GENERATION_LABELS,
   type NodeGenerationActivity,
 } from "./generationActivity";
+import { useT } from "../i18n/I18nProvider.tsx";
 import "./generating.css";
 
 const RADIUS = 11;
@@ -89,6 +90,7 @@ export function GeneratingOverlay({
   activity: NodeGenerationActivity;
   hasAsset: boolean;
 }) {
+  const t = useT();
   const progress = useProgress(activity);
   return (
     <div
@@ -108,9 +110,11 @@ export function GeneratingOverlay({
       {progress !== null && <ProgressRing progress={progress} />}
       <div className="cw-generating-caption" role="status" aria-atomic="true">
         <span className="cw-generating-indicator" aria-hidden="true" />
-        <span>{GENERATION_LABELS[activity.phase]}</span>
+        <span>{t(GENERATION_LABELS[activity.phase])}</span>
         {activity.count > 1 && (
-          <span className="cw-generating-count">{activity.count} 个任务</span>
+          <span className="cw-generating-count">
+            {t("generation.overlay.tasks", { count: activity.count })}
+          </span>
         )}
       </div>
     </div>

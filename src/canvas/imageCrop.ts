@@ -1,5 +1,7 @@
 /** Retained crop state uses a browser source only in the UI projection. */
 import type { ImageCropOptions } from "../contracts/generated.ts";
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
 
 export interface ImageCropState {
   src: string;
@@ -23,9 +25,12 @@ export const INITIAL_CROP_OPTIONS: ImageCropOptions = {
   saturation: 100,
 };
 
-export function parseImageCrop(value: unknown): ImageCropState {
+export function parseImageCrop(
+  value: unknown,
+  t: Translate = defaultTranslate,
+): ImageCropState {
   if (!value || typeof value !== "object")
-    throw new Error("图片编辑文档无效。");
+    throw new Error(t("editors.imageCrop.error.invalidDocument"));
   const data = value as ImageCropState;
   const options = data.options;
   const local =
@@ -51,7 +56,7 @@ export function parseImageCrop(value: unknown): ImageCropState {
     typeof options.flipX !== "boolean" ||
     typeof options.flipY !== "boolean"
   )
-    throw new Error("图片编辑来源或参数无效。");
+    throw new Error(t("editors.imageCrop.error.invalidSource"));
   const bounds = {
     zoom: [100, 400],
     freeWidth: [1, 100],
@@ -68,7 +73,7 @@ export function parseImageCrop(value: unknown): ImageCropState {
       options[key] < bounds[key][0] ||
       options[key] > bounds[key][1]
     )
-      throw new Error("图片编辑参数超出范围。");
+      throw new Error(t("editors.imageCrop.error.outOfRange"));
   }
   return {
     src: data.src,

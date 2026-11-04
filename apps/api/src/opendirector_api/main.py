@@ -29,6 +29,7 @@ from opendirector.integrations.chat_completions import ChatCompletions, chat_pay
 from opendirector_api.creation import creation_routes
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
+from opendirector_api.localization import localized_error
 from opendirector_api.models import (ModelConfigInput, ModelConfigPublic, AgentModelTest,
     ModelCapabilityRequest, ModelDiscoveryRequest, ModelBatchInput,
     ToolTaskCreate, ToolPlacement, ImageSelectionCreate)
@@ -65,36 +66,114 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
         # Validation errors must not echo request input containing credentials.
-        return JSONResponse({"detail": "请求字段无效，请检查必填项及字段格式。", "code": "invalid_input"}, status_code=422)
+        chinese = "请求字段无效，请检查必填项及字段格式。"
+        return JSONResponse(
+            {
+                "detail": localized_error(
+                    request, chinese=chinese, status=422, code="invalid_input"
+                ),
+                "code": "invalid_input",
+            },
+            status_code=422,
+        )
 
     @app.exception_handler(ProjectError)
     async def project_error(request, error):
-        return JSONResponse({"detail": str(error), "code": error.code}, status_code=error.status)
+        return JSONResponse(
+            {
+                "detail": localized_error(
+                    request,
+                    chinese=str(error),
+                    status=error.status,
+                    code=error.code,
+                ),
+                "code": error.code,
+            },
+            status_code=error.status,
+        )
 
     @app.exception_handler(ContractError)
     async def contract_error(request, error):
         status = 404 if error.issue.code == 'missing_object' else 409 if error.issue.code in {'revision_conflict', 'preview_expired'} else 422
-        return JSONResponse({'detail': error.issue.message, 'code': error.issue.code}, status_code=status)
+        return JSONResponse(
+            {
+                "detail": localized_error(
+                    request,
+                    chinese=error.issue.message,
+                    status=status,
+                    code=error.issue.code,
+                ),
+                "code": error.issue.code,
+            },
+            status_code=status,
+        )
 
     @app.exception_handler(OSError)
     async def disk_error(request, error):
-        return JSONResponse({"detail": "文件操作失败，请检查目录权限、磁盘空间及文件是否被占用；原有项目数据不会自动删除。"}, status_code=503)
+        chinese = "文件操作失败，请检查目录权限、磁盘空间及文件是否被占用；原有项目数据不会自动删除。"
+        return JSONResponse(
+            {
+                "detail": localized_error(
+                    request, chinese=chinese, status=503, code="storage_unavailable"
+                )
+            },
+            status_code=503,
+        )
 
     @app.exception_handler(Timeout)
     async def lock_error(request, error):
-        return JSONResponse({"detail": "项目存储正忙，请稍后重试。", "code": "storage_busy"},
-                            status_code=409, headers={"Retry-After": "1"})
+        chinese = "项目存储正忙，请稍后重试。"
+        return JSONResponse(
+            {
+                "detail": localized_error(
+                    request, chinese=chinese, status=409, code="storage_busy"
+                ),
+                "code": "storage_busy",
+            },
+            status_code=409,
+            headers={"Retry-After": "1"},
+        )
 
     @app.middleware("http")
     async def local_requests(request: Request, call_next):
         if request.url.path.startswith("/api/"):
             if request.url.hostname not in {"localhost", "127.0.0.1", "::1", "testserver"}:
-                return JSONResponse({"detail": "仅允许本机访问项目服务。"}, status_code=403)
+                chinese = "仅允许本机访问项目服务。"
+                return JSONResponse(
+                    {
+                        "detail": localized_error(
+                            request, chinese=chinese, status=403, code="local_only"
+                        )
+                    },
+                    status_code=403,
+                )
             origin = request.headers.get("origin")
             if origin and urlparse(origin).hostname not in {"localhost", "127.0.0.1", "::1"}:
-                return JSONResponse({"detail": "不允许来自其他站点的文件访问。"}, status_code=403)
+                chinese = "不允许来自其他站点的文件访问。"
+                return JSONResponse(
+                    {
+                        "detail": localized_error(
+                            request,
+                            chinese=chinese,
+                            status=403,
+                            code="cross_origin",
+                        )
+                    },
+                    status_code=403,
+                )
             if request.headers.get("x-opendirector-request") != "1":
-                return JSONResponse({"detail": "无效的本地应用请求。"}, status_code=403)
+                chinese = "无效的本地应用请求。"
+                return JSONResponse(
+                    {
+                        "detail": localized_error(
+                            request,
+                            chinese=chinese,
+                            status=403,
+                            code="invalid_local_request",
+                        )
+                    },
+                    status_code=403,
+                )
         return await call_next(request)
 
     @app.get("/api/health")

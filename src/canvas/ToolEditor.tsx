@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { CanvasNode, ToolData } from "./model";
 import { toolError } from "./dataBoundary";
 import { EditorModal } from "./EditorModal";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export function ToolEditor({
   node,
@@ -13,14 +14,15 @@ export function ToolEditor({
   onApply: (data: ToolData) => EditorApplyResult;
   onClose: () => void;
 }) {
+  const t = useT();
   const [tool, setTool] = useState<ToolData>(() =>
     structuredClone(node.data.tool ?? { kind: "camera", fields: [] }),
   );
   const commit = useEditorCommit(onClose);
   return (
     <EditorModal
-      title={`工具参数 · ${node.data.title}`}
-      subtitle="编辑可被下游创作节点引用的结构化参数；此面板不会启动生成任务"
+      title={t("tools.toolEditor.title", { title: node.data.title })}
+      subtitle={t("tools.toolEditor.subtitle")}
       onClose={commit.close}
       disabled={node.locked || commit.saving}
       error={commit.error}
@@ -34,7 +36,7 @@ export function ToolEditor({
     >
       <div className="cw-tool-editor">
         <label className="cw-domain-field">
-          工具类型
+          {t("tools.toolEditor.kind")}
           <select
             value={tool.kind}
             onChange={(event) => {
@@ -48,15 +50,17 @@ export function ToolEditor({
               });
             }}
           >
-            <option value="camera">相机参数</option>
-            <option value="style">风格</option>
-            <option value="palette">调色板</option>
-            <option value="camera_motion">运镜</option>
+            <option value="camera">{t("tools.toolEditor.kind.camera")}</option>
+            <option value="style">{t("tools.toolEditor.kind.style")}</option>
+            <option value="palette">{t("tools.toolEditor.kind.palette")}</option>
+            <option value="camera_motion">
+              {t("tools.toolEditor.kind.cameraMotion")}
+            </option>
           </select>
         </label>
         {tool.kind === "palette" && (
           <label className="cw-domain-field">
-            调色板名称
+            {t("tools.toolEditor.paletteName")}
             <input
               value={tool.palette?.name ?? ""}
               onChange={(event) =>
@@ -65,12 +69,12 @@ export function ToolEditor({
                   palette: { ...tool.palette, name: event.target.value },
                 })
               }
-              placeholder="例如：暖调日落"
+              placeholder={t("tools.toolEditor.paletteNamePlaceholder")}
             />
           </label>
         )}
         <div className="cw-domain-section-heading">
-          <h3>参数字段</h3>
+          <h3>{t("tools.toolEditor.fields")}</h3>
           <button
             disabled={tool.fields.length >= 16}
             onClick={() =>
@@ -80,13 +84,13 @@ export function ToolEditor({
               })
             }
           >
-            ＋ 添加字段
+            {t("tools.toolEditor.addField")}
           </button>
         </div>
         {tool.fields.map((field, index) => (
           <div className="cw-tool-field" key={index}>
             <label className="cw-domain-field">
-              字段名
+              {t("tools.toolEditor.fieldName")}
               <input
                 value={field.name}
                 onChange={(event) =>
@@ -102,12 +106,12 @@ export function ToolEditor({
                 placeholder={
                   tool.kind === "camera"
                     ? "camera / aperture / focal"
-                    : "参数名称"
+                    : t("tools.toolEditor.fieldNamePlaceholder")
                 }
               />
             </label>
             <label className="cw-domain-field">
-              参数值（每行一个）
+              {t("tools.toolEditor.fieldValues")}
               <textarea
                 rows={3}
                 value={field.values.join("\n")}
@@ -136,20 +140,19 @@ export function ToolEditor({
                 })
               }
             >
-              移除字段
+              {t("tools.toolEditor.removeField")}
             </button>
           </div>
         ))}
         {tool.provenance && (
           <p className="cw-domain-note">
-            调色板来源：{tool.provenance.paletteId} · 版本{" "}
-            {tool.provenance.version}
+            {t("tools.toolEditor.provenance", {
+              paletteId: tool.provenance.paletteId,
+              version: tool.provenance.version,
+            })}
           </p>
         )}
-        <p className="cw-domain-note">
-          每个工具最多 16 个字段，每字段最多 32 个值，每个字符串最多 256
-          字符。参数可以保存和引用，是否支持真实模型调用由下游适配器决定。
-        </p>
+        <p className="cw-domain-note">{t("tools.toolEditor.note")}</p>
       </div>
     </EditorModal>
   );

@@ -1,4 +1,7 @@
 /** Local, editable pixel layers. This document is independent of AI task results. */
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
+
 export interface LayerPoint {
   x: number;
   y: number;
@@ -47,7 +50,11 @@ export interface LayerDocument {
 export const MAX_LAYER_PIXELS = 16_777_216;
 export const MAX_LAYER_SIDE = 8192;
 export const MAX_LAYERS = 40;
-export function assertLayerSize(width: number, height: number): void {
+export function assertLayerSize(
+  width: number,
+  height: number,
+  t: Translate = defaultTranslate,
+): void {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
@@ -57,15 +64,14 @@ export function assertLayerSize(width: number, height: number): void {
     height > MAX_LAYER_SIDE ||
     width * height > MAX_LAYER_PIXELS
   )
-    throw new Error(
-      "本地图层画布最多 8192 像素 / 边、总计 1677 万像素。请先缩小图片。",
-    );
+    throw new Error(t("editors.layerDocument.error.size"));
 }
 export function createImageLayer(
   content: LayerContent,
   name: string,
+  t: Translate = defaultTranslate,
 ): ImageLayer {
-  assertLayerSize(content.width, content.height);
+  assertLayerSize(content.width, content.height, t);
   return {
     id: crypto.randomUUID(),
     name: name.slice(0, 200),
@@ -87,16 +93,23 @@ export function createLayerDocument(
   src: string,
   width: number,
   height: number,
-  name = "原始图片",
+  name?: string,
+  t: Translate = defaultTranslate,
 ): LayerDocument {
-  assertLayerSize(width, height);
+  assertLayerSize(width, height, t);
   return {
     format: "opendirector-layers",
     version: 1,
     width,
     height,
     background: "transparent",
-    layers: [createImageLayer({ kind: "image", src, width, height }, name)],
+    layers: [
+      createImageLayer(
+        { kind: "image", src, width, height },
+        name ?? t("editors.layerDocument.defaultName"),
+        t,
+      ),
+    ],
   };
 }
 /** Inverse of the exact center-based canvas transform, including flips. */
@@ -202,13 +215,19 @@ export function redoLayers(history: LayerHistory): LayerHistory {
     : history;
 }
 /** Strict editable-document boundary; unsupported fields never become rendering instructions. */
-export function parseLayerDocument(text: string): LayerDocument {
-  return parseLayerDocumentValue(JSON.parse(text));
+export function parseLayerDocument(
+  text: string,
+  t: Translate = defaultTranslate,
+): LayerDocument {
+  return parseLayerDocumentValue(JSON.parse(text), t);
 }
-export function parseLayerDocumentValue(value: unknown): LayerDocument {
+export function parseLayerDocumentValue(
+  value: unknown,
+  t: Translate = defaultTranslate,
+): LayerDocument {
   const object = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new Error("图层文件结构不正确。");
+      throw new Error(t("editors.layerDocument.error.structure"));
     return value as Record<string, unknown>;
   };
   const finite = (value: unknown, min: number, max: number): number => {
@@ -218,43 +237,47 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
       value < min ||
       value > max
     )
-      throw new Error("图层文件包含无效的尺寸、坐标或参数。");
+      throw new Error(t("editors.layerDocument.error.invalidParameter"));
     return value;
   };
   const string = (value: unknown, max = 2000): string => {
     if (typeof value !== "string" || value.length > max)
-      throw new Error("图层文件包含无效的文本。");
+      throw new Error(t("editors.layerDocument.error.invalidText"));
     return value;
   };
   const color = (value: unknown): string => {
     if (typeof value !== "string" || !/^#[a-f\d]{6}$/i.test(value))
-      throw new Error("图层颜色必须是六位十六进制颜色。");
+      throw new Error(t("editors.layerDocument.error.invalidColor"));
     return value;
   };
   const boolean = (value: unknown): boolean => {
-    if (typeof value !== "boolean") throw new Error("图层文件包含无效的开关。");
+    if (typeof value !== "boolean")
+      throw new Error(t("editors.layerDocument.error.invalidBoolean"));
     return value;
   };
   const size = (value: unknown) => finite(value, 1, MAX_LAYER_SIDE);
   const raw = object(value);
   if (raw.format !== "opendirector-layers" || raw.version !== 1)
-    throw new Error("这不是受支持的 OpenDirector 图层文件。");
+    throw new Error(t("editors.layerDocument.error.unsupported"));
   const width = size(raw.width),
     height = size(raw.height);
-  assertLayerSize(width, height);
+  assertLayerSize(width, height, t);
   if (!Array.isArray(raw.layers) || raw.layers.length > MAX_LAYERS)
-    throw new Error(`图层文件最多包含 ${MAX_LAYERS} 个图层。`);
+    throw new Error(
+      t("editors.layerDocument.error.tooManyLayers", { count: MAX_LAYERS }),
+    );
   const ids = new Set<string>();
   let points = 0;
   const layers = raw.layers.map((value): ImageLayer => {
     const layer = object(value),
       source = object(layer.content);
     const id = string(layer.id, 100);
-    if (!id || ids.has(id)) throw new Error("图层 ID 为空或重复。");
+    if (!id || ids.has(id))
+      throw new Error(t("editors.layerDocument.error.emptyId"));
     ids.add(id);
     const contentWidth = size(source.width),
       contentHeight = size(source.height);
-    assertLayerSize(contentWidth, contentHeight);
+    assertLayerSize(contentWidth, contentHeight, t);
     let content: LayerContent;
     if (source.kind === "image") {
       const src = string(source.src, 90_000_000);
@@ -269,9 +292,7 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
         !/^\/(?!\/)/.test(src) &&
         !localBlob
       )
-        throw new Error(
-          "图层图片必须内嵌于文件或来自本应用资源，不会请求外站资源。",
-        );
+        throw new Error(t("editors.layerDocument.error.remoteImage"));
       content = {
         kind: "image",
         src,
@@ -294,9 +315,10 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
         width: contentWidth,
         height: contentHeight,
       };
-    } else throw new Error("图层文件包含不支持的图层类型。");
+    } else
+      throw new Error(t("editors.layerDocument.error.unsupportedKind"));
     if (!Array.isArray(layer.mask) || layer.mask.length > 2000)
-      throw new Error("图层蒙版数据过大或无效。");
+      throw new Error(t("editors.layerDocument.error.maskTooLarge"));
     const mask = layer.mask.map((value): MaskStroke => {
       const stroke = object(value);
       if (
@@ -304,9 +326,10 @@ export function parseLayerDocumentValue(value: unknown): LayerDocument {
         !Array.isArray(stroke.points) ||
         !stroke.points.length
       )
-        throw new Error("图层蒙版笔画不正确。");
+        throw new Error(t("editors.layerDocument.error.invalidStroke"));
       points += stroke.points.length;
-      if (points > 200000) throw new Error("蒙版点数超过本地编辑器上限。");
+      if (points > 200000)
+        throw new Error(t("editors.layerDocument.error.tooManyPoints"));
       return {
         mode: stroke.mode,
         size: finite(stroke.size, 1, 4096),

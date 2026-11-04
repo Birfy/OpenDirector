@@ -19,6 +19,7 @@ from opendirector.agent.skills import skills
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_projects import durable_json
 from opendirector.infrastructure.local_projects import child, read_json
+from opendirector_api.localization import localized_error_for_language
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,8 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
         return {'ok': True}
 
     @router.post('/turns')
-    async def turn(project_id: UUID, value: Turn, x_opendirector_session: UUID = Header()):
+    async def turn(project_id: UUID, value: Turn, x_opendirector_session: UUID = Header(),
+                   accept_language: str | None = Header(default=None, alias='Accept-Language')):
         async with admission.setdefault(project_id, asyncio.Lock()):
             if project_id in active:
                 raise ProjectError('当前工程已有回复正在执行。', 409)
@@ -303,7 +305,15 @@ def agent_routes(projects, generation, configs, provider=None) -> APIRouter:
                 except Exception as failure:
                     # Persist partial output even when an integration fails unexpectedly.
                     status = 'interrupted'
-                    error = str(failure) if isinstance(failure, ProjectError) else 'Agent 执行失败，请检查后端日志。'
+                    if isinstance(failure, ProjectError):
+                        error = localized_error_for_language(
+                            accept_language, chinese=str(failure),
+                            status=failure.status, code=failure.code)
+                    else:
+                        error = localized_error_for_language(
+                            accept_language,
+                            chinese='Agent 执行失败，请检查后端日志。',
+                            status=500, code='operation_rejected')
                     logger.exception(f'agent.turn.failed project_id={project_id} turn_id={value.id}')
                 finally:
                     if accepted:

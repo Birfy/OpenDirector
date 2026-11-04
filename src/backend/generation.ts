@@ -1,6 +1,8 @@
 import type { ReferenceContent } from "../canvas/chatReferenceContent.ts";
+import { generationFailureMessage } from "../canvas/generationFailureText.ts";
 import { creationClient } from "./creationClient.ts";
 import type { BackendVideoMode, ModelConfig } from "./rules.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Shared media metadata and generation request values. Executions and control use project commands. */
 
@@ -106,11 +108,11 @@ export function fileName(title: string, extension: string) {
       // eslint-disable-next-line no-control-regex
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
       .trim()
-      .slice(0, 80) || "素材";
+      .slice(0, 80) || tNow("errors.backend.mediaFallback");
   const suffix = `.${extension}`;
   while (base.toLowerCase().endsWith(suffix.toLowerCase()))
     base = base.slice(0, -suffix.length);
-  return `${base || "素材"}${suffix}`;
+  return `${base || tNow("errors.backend.mediaFallback")}${suffix}`;
 }
 
 export async function fingerprint(blob: Blob) {
@@ -142,6 +144,8 @@ export async function recoverGeneration(projectId: string, taskId: string) {
     kind: job.inputSnapshot.spec.kind,
     status: job.status,
     assetId: job.asset?.assetId ?? null,
-    error: job.errorDetails?.message ?? null,
+    error: job.errorDetails
+      ? generationFailureMessage(job.errorDetails)
+      : null,
   } as BackendTask;
 }

@@ -1,4 +1,5 @@
 /** Retain successful reads in selection order. Cancellation never yields a partial commit. */
+import { tNow } from "../i18n/messages.ts";
 export async function readImportBatch<T>(
   files: readonly File[],
   read: (file: File, signal: AbortSignal) => Promise<T>,
@@ -17,7 +18,7 @@ export async function readImportBatch<T>(
       signal.throwIfAborted();
       failures.push({
         name: file.name,
-        message: error instanceof Error ? error.message : "读取失败",
+        message: error instanceof Error ? error.message : tNow("errors.import.readFailed"),
       });
     }
   }

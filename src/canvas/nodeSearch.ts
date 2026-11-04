@@ -1,16 +1,16 @@
 import type { CanvasNode, CanvasNodeKind } from "./model.ts";
 
 export const SEARCH_CATEGORIES = [
-  ["all", "全部"],
-  ["image", "图片"],
-  ["video", "视频"],
-  ["audio", "音频"],
-  ["text", "文本"],
-  ["subject", "主体"],
-  ["timeline", "时间线"],
-  ["tool", "工具"],
-  ["group", "组"],
-  ["other", "其他"],
+  ["all", "errors.stats.all"],
+  ["image", "errors.stats.image"],
+  ["video", "errors.stats.video"],
+  ["audio", "errors.stats.audio"],
+  ["text", "errors.stats.text"],
+  ["subject", "errors.stats.subject"],
+  ["timeline", "errors.stats.timeline"],
+  ["tool", "errors.stats.tool"],
+  ["group", "errors.stats.group"],
+  ["other", "errors.stats.other"],
 ] as const;
 export type SearchCategory = (typeof SEARCH_CATEGORIES)[number][0];
 

@@ -6,8 +6,10 @@ import type {
 } from "./model.ts";
 import {
   FRAME_IMAGE_LIMIT,
-  FRAME_IMAGE_LIMIT_MESSAGE,
+  frameImageLimitMessage,
 } from "./frameReferences.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 import { assemblyIssue, isAssemblyTarget } from "./editorAssembly.ts";
 
 /** Product port capabilities; model-specific input limits remain separate. */
@@ -109,23 +111,26 @@ export type ReferenceIssue =
   | "subject_duration_exceeded"
   | "source_duration_missing";
 
-export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, string> = {
-  endpoint_missing: "节点已不存在",
-  source_empty: "当前节点内容为空，请先上传或生成节点内容",
-  target_material: "素材节点不能接收生成参考，请连接生成节点",
-  locked: "请先解锁节点或所属分组",
-  self_connection: "节点不能引用自身",
-  duplicate_relation: "已经连接过",
-  source_type_unsupported: "目标节点不接收这类素材",
-  target_type_unsupported: "该节点不接收参考",
-  capacity_exceeded: "参考数量已达上限",
-  frame_capacity_exceeded: FRAME_IMAGE_LIMIT_MESSAGE,
-  subject_mode_conflict:
-    "主体只能包含一份视频，或一张主图片及最多三张附加图片，请先移除冲突素材",
-  subject_capacity_exceeded: "主体最多包含一张主图片和三张附加图片",
-  subject_duration_exceeded: "主体视频不能超过 15 秒",
-  source_duration_missing: "请先读取视频或音频的实际时长，再添加到目标节点",
+export const REFERENCE_ISSUE_TEXT: Record<ReferenceIssue, MessageKey> = {
+  endpoint_missing: "errors.connection.endpointMissing",
+  source_empty: "errors.connection.sourceEmpty",
+  target_material: "errors.connection.targetMaterial",
+  locked: "errors.connection.locked",
+  self_connection: "errors.connection.self",
+  duplicate_relation: "errors.connection.duplicate",
+  source_type_unsupported: "errors.connection.sourceType",
+  target_type_unsupported: "errors.connection.targetType",
+  capacity_exceeded: "errors.connection.capacity",
+  frame_capacity_exceeded: "errors.connection.frameCapacity",
+  subject_mode_conflict: "errors.connection.subjectMode",
+  subject_capacity_exceeded: "errors.connection.subjectCapacity",
+  subject_duration_exceeded: "errors.connection.subjectDuration",
+  source_duration_missing: "errors.connection.sourceDuration",
 };
+
+export function referenceIssueText(issue: ReferenceIssue) {
+  return tNow(REFERENCE_ISSUE_TEXT[issue]);
+}
 
 /** Preview available types without permitting empty-source writes. */
 export function connectedCreationKinds(

@@ -13,6 +13,7 @@ import type {
   Point,
 } from "./model.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "./model.ts";
+import { tNow } from "../i18n/messages.ts";
 
 export interface CanvasStorageError {
   code:
@@ -64,7 +65,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     } catch (error) {
       return failure(
         "invalid-json",
-        `画布 JSON 无法解析：${errorMessage(error)}`,
+        tNow("errors.storage.json", { reason: errorMessage(error) }),
       );
     }
   }
@@ -81,9 +82,9 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     !nonempty(value.id) ||
     typeof value.title !== "string"
   )
-    return failure("invalid-document", "画布版本、ID 或标题无效。");
+    return failure("invalid-document", tNow("errors.storage.document"));
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges))
-    return failure("invalid-document", "画布缺少 nodes 或 edges 数组。");
+    return failure("invalid-document", tNow("errors.storage.arrays"));
   if (
     !point(value.viewport) ||
     !object(value.viewport) ||
@@ -93,14 +94,14 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
   )
     return failure(
       "invalid-document",
-      `画布缩放必须介于 ${MIN_ZOOM} 和 ${MAX_ZOOM} 之间，坐标必须是有限数字。`,
+      tNow("errors.storage.viewport", { min: MIN_ZOOM, max: MAX_ZOOM }),
     );
   if (!isGenerationSettings(value.settings))
-    return failure("invalid-document", "画布生成设置无效。");
+    return failure("invalid-document", tNow("errors.storage.settings"));
 
   const nodes: CanvasNode[] = [];
   if (value.hiddenNodes !== undefined && !Array.isArray(value.hiddenNodes))
-    return failure("invalid-document", "隐藏来源格式无效。");
+    return failure("invalid-document", tNow("errors.storage.hidden"));
   const hiddenIds = new Set(
     (value.hiddenNodes as { id: string }[] | undefined)?.map(
       (node) => node?.id,
@@ -126,13 +127,22 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     )
       return failure(
         "invalid-document",
-        "节点 ID、类型、坐标、大小或分组信息无效。",
+        tNow("errors.storage.node"),
       );
     if (nodeIds.has(raw.id))
-      return failure("invalid-document", `节点 ID 重复：${raw.id}`);
+      return failure(
+        "invalid-document",
+        tNow("errors.storage.duplicateNode", { id: raw.id }),
+      );
     const parsedData = parseNodeData(raw.type as CanvasNodeKind, raw.data);
     if (!parsedData.ok)
-      return failure("invalid-document", `节点 ${raw.id}：${parsedData.error}`);
+      return failure(
+        "invalid-document",
+        tNow("errors.storage.nodeDetail", {
+          id: raw.id,
+          reason: parsedData.error,
+        }),
+      );
     nodes.push({
       id: raw.id,
       type: raw.type as CanvasNodeKind,
@@ -151,7 +161,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
   for (const node of nodes) {
     if (node.type === "stack" && node.data.stack) {
       if (node.parentId)
-        return failure("invalid-document", "堆叠必须位于画布根层级。");
+        return failure("invalid-document", tNow("errors.storage.stackRoot"));
       for (const id of node.data.stack.nodeIds) {
         const member = byId.get(id);
         if (
@@ -170,7 +180,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
         )
           return failure(
             "invalid-document",
-            "堆叠成员必须是独立且未属于另一堆叠的可引用根节点。",
+            tNow("errors.storage.stackMembers"),
           );
         stackedIds.add(id);
       }
@@ -178,7 +188,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
     if (node.parentId && byId.get(node.parentId)?.type !== "group")
       return failure(
         "invalid-document",
-        `节点 ${node.id} 的父节点不存在或不是分组。`,
+        tNow("errors.storage.parentMissing", { id: node.id }),
       );
     const ancestors = new Set([node.id]);
     let parentId = node.parentId;
@@ -186,7 +196,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       if (ancestors.has(parentId))
         return failure(
           "invalid-document",
-          `节点 ${node.id} 的分组存在循环引用。`,
+          tNow("errors.storage.parentCycle", { id: node.id }),
         );
       ancestors.add(parentId);
       parentId = byId.get(parentId)?.parentId;
@@ -210,9 +220,12 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
       (raw.sourceHandle !== null && !optionalString(raw.sourceHandle)) ||
       (raw.targetHandle !== null && !optionalString(raw.targetHandle))
     )
-      return failure("invalid-document", "连线格式无效或引用了不存在的节点。");
+      return failure("invalid-document", tNow("errors.storage.edge"));
     if (edgeIds.has(raw.id))
-      return failure("invalid-document", `连线 ID 重复：${raw.id}`);
+      return failure(
+        "invalid-document",
+        tNow("errors.storage.duplicateEdge", { id: raw.id }),
+      );
     edges.push({
       id: raw.id,
       source: raw.source,
@@ -249,7 +262,7 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
               edge.target === node.id,
           ))
       )
-        return failure("invalid-document", "视频首尾帧必须引用已连接的节点。");
+        return failure("invalid-document", tNow("errors.storage.frameReference"));
     }
     if (
       node.data.taskDraft &&
@@ -257,11 +270,11 @@ export function parseDocument(input: unknown): Result<CanvasDocument> {
         (node.data.taskDraft.selection &&
           !nodeIds.has(node.data.taskDraft.selection.sourceNodeId)))
     )
-      return failure("invalid-document", "工具草稿引用了不存在的节点。");
+      return failure("invalid-document", tNow("errors.storage.toolDraft"));
   }
   for (const key of ["firstFrameNodeId", "lastFrameNodeId"] as const)
     if (value.settings[key] !== undefined && !nodeIds.has(value.settings[key]!))
-      return failure("invalid-document", "项目设置引用了不存在的首尾帧。");
+      return failure("invalid-document", tNow("errors.storage.projectFrames"));
   return {
     ok: true,
     value: {
@@ -305,7 +318,9 @@ function persistentDocument(document: CanvasDocument): Result<CanvasDocument> {
   return transient
     ? failure(
         "transient-media",
-        `素材「${transient.data.title}」仍使用临时 blob URL。请转换为 data URL 后保存，避免刷新后丢失素材。`,
+        tNow("errors.storage.transientBlob", {
+          title: transient.data.title,
+        }),
       )
     : parsed;
 }
@@ -321,7 +336,7 @@ export function serializeDocument(document: CanvasDocument): Result<string> {
   } catch (error) {
     return failure(
       "storage",
-      `画布无法序列化，请减少项目内媒体或拆分项目：${errorMessage(error)}`,
+      tNow("errors.storage.serialize", { reason: errorMessage(error) }),
     );
   }
 }
@@ -329,5 +344,5 @@ export function serializeDocument(document: CanvasDocument): Result<string> {
 function errorMessage(error: unknown): string {
   return error instanceof Error || error instanceof DOMException
     ? error.message
-    : String(error ?? "未知错误");
+    : String(error ?? tNow("errors.storage.unknown"));
 }

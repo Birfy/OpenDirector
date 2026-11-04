@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/I18nProvider";
 import type { CanvasNode, CanvasNodeData } from "./model";
 import type { ModelConfig } from "../backend/rules";
 import { modelLabel, referenceBudgetIssue } from "../backend/rules";
@@ -36,6 +37,7 @@ export function TextNodeComposer({
   running: boolean;
   referenceControls?: GenerationReferenceControls;
 }) {
+  const t = useT();
   const root = useRef<HTMLDivElement>(null),
     anchor = useRef<HTMLElement | null>(null);
   const [openPanel, setPanel] = useState<"parameters" | null>(null);
@@ -58,15 +60,15 @@ export function TextNodeComposer({
   };
   const referenceIssue = (reference: CanvasNode) =>
     !model
-      ? "请先选择 Agent 模型"
+      ? t("generation.model.agentRequired")
       : !model.inputRules.allowedKinds.includes(reference.type)
-        ? "当前 Agent 不支持此类参考"
+        ? t("generation.model.agentUnsupported")
         : null;
   const insert = (reference: CanvasNode) => mentions.current?.insert(reference);
   return (
     <GenerationComposerShell
       composerRef={root}
-      label={`${node.data.title}创作参数`}
+      label={t("generation.composer.title", { title: node.data.title })}
       running={running}
       onEscape={() => setPanel(null)}
     >
@@ -77,8 +79,8 @@ export function TextNodeComposer({
               type="button"
               className="cw-add-reference"
               disabled={running}
-              aria-label="添加参考素材"
-              label="添加参考素材"
+              aria-label={t("generation.reference.add")}
+              label={t("generation.reference.add")}
               onClick={() => mentions.current?.openUpload()}
             >
               <CanvasIcon name="plus" size={20} />
@@ -108,8 +110,8 @@ export function TextNodeComposer({
           onUpdate={onUpdate}
           running={running}
           pickerRef={mentions}
-          label="文本生成提示词"
-          placeholder="输入生成要求，或 @ 引用素材，让 Agent 帮你创作文本"
+          label={t("generation.prompt.textLabel")}
+          placeholder={t("generation.prompt.textPlaceholder")}
           onRun={() => {
             if (!blocker && !running) onRun();
           }}
@@ -119,17 +121,17 @@ export function TextNodeComposer({
         <div className="cw-composer-options">
           <div className="cw-model-select">
             <select
-              aria-label="Agent 模型"
-              title={model ? modelLabel(model) : "选择 Agent 模型"}
+              aria-label={t("generation.model.agent")}
+              title={model ? modelLabel(model) : t("generation.model.agentPlaceholder")}
               value={selected ?? ""}
               disabled={running}
               onChange={(event) =>
                 update({ modelConfigId: event.target.value })
               }
             >
-              {!agents.length && <option value="">选择 Agent 模型</option>}
+              {!agents.length && <option value="">{t("generation.model.agentPlaceholder")}</option>}
               {selected && !model && (
-                <option value={selected}>原 Agent 模型不可用</option>
+                <option value={selected}>{t("generation.model.agentUnavailable")}</option>
               )}
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
@@ -142,7 +144,7 @@ export function TextNodeComposer({
           <button
             type="button"
             className="cw-parameter-trigger"
-            aria-label="Agent 参数"
+            aria-label={t("generation.agent.title")}
             disabled={running}
             aria-expanded={panel === "parameters"}
             onClick={(event) => toggle("parameters", event.currentTarget)}
@@ -150,7 +152,7 @@ export function TextNodeComposer({
             <CanvasIcon name="sliders" size={15} />
             <span>
               {
-                { auto: "自动", low: "低", medium: "中", high: "高" }[
+                { auto: t("common.auto"), low: t("generation.thinking.low"), medium: t("generation.thinking.medium"), high: t("generation.thinking.high") }[
                   settings.thinking
                 ]
               }{" "}
@@ -161,8 +163,8 @@ export function TextNodeComposer({
             <TooltipButton
               type="button"
               className="cw-reference-trigger"
-              aria-label="添加参考素材"
-              label="添加参考素材"
+              aria-label={t("generation.reference.add")}
+              label={t("generation.reference.add")}
               disabled={running}
               onClick={() => mentions.current?.openUpload()}
             >
@@ -172,8 +174,8 @@ export function TextNodeComposer({
           <TooltipButton
             type="button"
             className="cw-reference-trigger"
-            aria-label="引用已连接节点"
-            label="引用已连接节点"
+            aria-label={t("generation.reference.connected")}
+            label={t("generation.reference.connected")}
             disabled={running}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
@@ -187,8 +189,8 @@ export function TextNodeComposer({
         <TooltipButton
           type="button"
           className={`cw-run-button${running ? " cw-run-button-cancel" : ""}`}
-          aria-label={running ? "取消生成" : "生成文本"}
-          label={running ? "取消生成" : (blocker ?? "生成文本")}
+          aria-label={running ? t("generation.action.cancel") : t("generation.action.generateText")}
+          label={running ? t("generation.action.cancel") : (blocker ?? t("generation.action.generateText"))}
           disabled={!running && Boolean(blocker)}
           onClick={running ? onCancel : onRun}
         >
@@ -201,14 +203,14 @@ export function TextNodeComposer({
           composer={root.current}
           onClose={() => setPanel(null)}
           className="cw-parameters-popover cw-agent-parameters"
-          label="Agent 参数设置"
+          label={t("generation.agent.settings")}
         >
           <div className="cw-popover-heading">
-            <strong>Agent 参数</strong>
+            <strong>{t("generation.agent.title")}</strong>
             <button
               type="button"
               className="cw-icon-button"
-              aria-label="关闭选项"
+              aria-label={t("generation.options.close")}
               onClick={() => setPanel(null)}
             >
               <CanvasIcon name="close" size={15} />
@@ -216,9 +218,9 @@ export function TextNodeComposer({
           </div>
           <>
             <label>
-              思考程度
+              {t("generation.agent.thinking")}
               <select
-                aria-label="Agent 思考程度"
+                aria-label={t("generation.agent.thinkingLabel")}
                 value={settings.thinking}
                 disabled={running}
                 onChange={(event) =>
@@ -227,17 +229,17 @@ export function TextNodeComposer({
                   })
                 }
               >
-                <option value="auto">自动</option>
-                <option value="low">低</option>
-                <option value="medium">中</option>
-                <option value="high">高</option>
+                <option value="auto">{t("common.auto")}</option>
+                <option value="low">{t("generation.thinking.low")}</option>
+                <option value="medium">{t("generation.thinking.medium")}</option>
+                <option value="high">{t("generation.thinking.high")}</option>
               </select>
             </label>
             <label>
-              最大输出长度
+              {t("generation.agent.maxOutput")}
               <input
                 type="number"
-                aria-label="Agent 最大输出长度"
+                aria-label={t("generation.agent.maxOutputLabel")}
                 min={1}
                 max={32768}
                 step={1}

@@ -38,13 +38,35 @@ import type { AssistantLayout } from "./useAssistantLayout";
 import { usePendingCanvasReferences } from "./usePendingCanvasReferences.ts";
 import { useProjectMentionAssets } from "./useProjectMentionAssets";
 import { useReferenceUploads } from "./useReferenceUploads.tsx";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 
 const THINKING = [
-  { id: "auto", label: "自动", description: "使用模型服务的默认思考程度" },
-  { id: "low", label: "快速", description: "适合简单调整和快速问答" },
-  { id: "medium", label: "标准", description: "兼顾速度与分析深度" },
-  { id: "high", label: "深入", description: "适合剧本规划和复杂分析" },
-];
+  {
+    id: "auto",
+    labelKey: "assistant.thinking.auto",
+    descriptionKey: "assistant.thinking.auto.description",
+  },
+  {
+    id: "low",
+    labelKey: "assistant.thinking.low",
+    descriptionKey: "assistant.thinking.low.description",
+  },
+  {
+    id: "medium",
+    labelKey: "assistant.thinking.medium",
+    descriptionKey: "assistant.thinking.medium.description",
+  },
+  {
+    id: "high",
+    labelKey: "assistant.thinking.high",
+    descriptionKey: "assistant.thinking.high.description",
+  },
+] as const satisfies readonly {
+  id: Thinking;
+  labelKey: MessageKey;
+  descriptionKey: MessageKey;
+}[];
 
 function kindOf(asset: ChatAsset) {
   return asset.type.startsWith("image/")
@@ -89,7 +111,8 @@ export function AssistantPanel({
   onOpenSettings: () => void;
   onPrepareReferences: () => Promise<boolean>;
 }) {
-  const chat = useAssistantChat(documentId, catalog, onTurnEnd);
+  const t = useT();
+  const chat = useAssistantChat(documentId, catalog, onTurnEnd, t);
   const { value, setValue } = chat;
   const [deepseekLabels, setDeepseekLabels] = useState<Record<string, string>>({});
   const hasDeepseekMessages = value.messages.some((message) => message.runtime === "deepseek");
@@ -143,10 +166,15 @@ export function AssistantPanel({
     (chat.sending && !chat.started);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
-  const sessionDisabledReason = chat.changing ? "正在切换会话…"
-    : !chat.loaded ? "请等待对话加载完成"
-    : chat.sending ? "请先停止或等待当前回复结束，再切换会话"
-    : chat.adding || checkingReferences ? "正在添加参考，请稍候再切换会话" : "";
+  const sessionDisabledReason = chat.changing
+    ? t("assistant.sessions.disabled.switching")
+    : !chat.loaded
+      ? t("assistant.sessions.disabled.loading")
+      : chat.sending
+        ? t("assistant.sessions.disabled.sending")
+        : chat.adding || checkingReferences
+          ? t("assistant.sessions.disabled.adding")
+          : "";
   const changeConversation = async (id?: string, create = false) => {
     if (sessionDisabledReason) return false;
     confirming.current?.abort();
@@ -250,7 +278,9 @@ export function AssistantPanel({
     } catch (error) {
       if (!abort.signal.aborted && pendingReferences.isCurrent(batch.id))
         chat.setError(
-          error instanceof Error ? error.message : "参考插入失败，请重试。",
+          error instanceof Error
+            ? error.message
+            : t("assistant.panel.insertReferenceFailed"),
         );
     } finally {
       if (confirming.current === abort) {
@@ -267,7 +297,7 @@ export function AssistantPanel({
           option.disabledReason ||
           (value.assets.length >= 64 &&
           !value.assets.some((asset) => option.id === assetOptionId(asset))
-            ? "已达数量限制"
+            ? t("assistant.panel.mentionLimit")
             : null),
       }))
     : [];
@@ -316,7 +346,7 @@ export function AssistantPanel({
     <aside
       id="canvas-assistant"
       className={`cw-assistant-panel${dragOver ? " is-drag-over" : ""}`}
-      aria-label="AI 对话"
+      aria-label={t("assistant.panel.aria")}
       hidden={!open}
       onScrollCapture={() => setMediaPreview(null)}
       onMouseOver={event => {const target = previewTarget(event.target); if (target) setMediaPreview(previous => previous?.assetId === target.assetId ? previous : target);}}
@@ -363,14 +393,16 @@ export function AssistantPanel({
         error={chat.threadsError}
         disabledReason={sessionDisabledReason}
         changing={chat.changing}
-        onRefresh={() => void chat.refreshConversations(chat.loaded && !chat.changing)}
+        onRefresh={() =>
+          void chat.refreshConversations(chat.loaded && !chat.changing)
+        }
         onChange={changeConversation}
         onClose={onClose}
       />
       <div
         className="cw-assistant-log"
         role="log"
-        aria-label="对话消息"
+        aria-label={t("assistant.panel.log")}
         aria-live="polite"
         ref={log}
         onScroll={(event) => {
@@ -384,11 +416,11 @@ export function AssistantPanel({
             <div className="cw-assistant-avatar">
               <img src={openDirectorLogo} alt="" />
             </div>
-            <h1>从一个想法开始</h1>
+            <h1>{t("assistant.panel.welcomeTitle")}</h1>
             <p>
-              和 OpenDirector 一起构思你的下一部作品。
+              {t("assistant.panel.welcomeLead")}
               <br />
-              描述故事，或输入 @ 添加图片、视频、音频与文本参考。
+              {t("assistant.panel.welcomeBody")}
             </p>
           </div>
         )}
@@ -407,7 +439,7 @@ export function AssistantPanel({
             )}
             <div className="cw-assistant-message-text">
               {message.role === "assistant" ? (
-                <AssistantReply message={message} thinking={chat.thinkingNow} />
+                <AssistantReply message={message} thinking={chat.thinkingNow} t={t} />
               ) : message.role === "user" &&
                 (message.content || message.assets?.length) ? (
                 referenceContent(
@@ -415,6 +447,7 @@ export function AssistantPanel({
                   (message.assets ?? []).map((asset) => asset.id),
                   message.assets ?? [],
                   message.content,
+                  t,
                 ).map((part, index) =>
                   part.type === "text" ? (
                     part.text
@@ -446,16 +479,18 @@ export function AssistantPanel({
                 message.text ||
                 (message.status === "streaming"
                   ? chat.thinkingNow
-                    ? "正在思考…"
-                    : "正在回复…"
-                  : "本次回复未生成内容。")
+                    ? t("assistant.activity.thinking")
+                    : t("assistant.activity.replying")
+                  : t("assistant.reply.empty"))
               )}
             </div>
             {message.role === "user" && !!message.assets?.length && <AttachmentStrip projectId={documentId} assets={message.assets.map(resolveAsset)} />}
             {(message.status === "stopped" ||
               message.status === "interrupted") && (
               <small className="cw-assistant-message-status">
-                {message.status === "stopped" ? "已停止回复" : "回复已中断"}
+                {message.status === "stopped"
+                  ? t("assistant.panel.stopped")
+                  : t("assistant.panel.interrupted")}
               </small>
             )}
           </article>
@@ -467,12 +502,12 @@ export function AssistantPanel({
             <span>{chat.error}</span>
             {!chat.loaded && (
               <button type="button" onClick={chat.reload}>
-                重新加载
+                {t("assistant.panel.reload")}
               </button>
             )}
             <button
               type="button"
-              aria-label="关闭助手提示"
+              aria-label={t("assistant.panel.dismissError")}
               onClick={() => chat.setError("")}
             >
               <CanvasIcon name="close" size={14} />
@@ -481,15 +516,15 @@ export function AssistantPanel({
         )}
         {!catalog.connected && (
           <div className="cw-assistant-error" role="alert">
-            <span>{catalog.error || "正在连接对话服务…"}</span>
+            <span>{catalog.error || t("assistant.panel.connecting")}</span>
             <button type="button" onClick={() => void catalog.refresh()}>
-              重新读取
+              {t("assistant.panel.refreshCatalog")}
             </button>
           </div>
         )}
         <form
           className="cw-assistant-composer"
-          aria-label="聊天输入框"
+          aria-label={t("assistant.panel.composer")}
           onSubmit={(event) => {
             event.preventDefault();
             pendingReferences.cancel();
@@ -501,19 +536,19 @@ export function AssistantPanel({
             <div
               className="cw-pending-references"
               data-pending-references
-              aria-label="待插入参考"
+              aria-label={t("assistant.panel.pendingAria")}
               aria-busy={checkingReferences || chat.adding}
             >
               <div className="cw-pending-reference-heading">
                 <span role="status">
-                  待插入 {pending.items.length} 项 ·{" "}
+                  {t("assistant.panel.pendingCount", { count: pending.items.length })} ·{" "}
                   {referenceDisabled
-                    ? "输入框暂不可用，请稍候"
-                    : "点击正文插入，点击外部或 Esc 取消"}
+                    ? t("assistant.panel.pendingDisabled")
+                    : t("assistant.panel.pendingHint")}
                 </span>
                 <button
                   type="button"
-                  aria-label="取消待插入参考"
+                  aria-label={t("assistant.panel.pendingCancel")}
                   onClick={pendingReferences.cancel}
                 >
                   <CanvasIcon name="close" size={16} />
@@ -549,7 +584,7 @@ export function AssistantPanel({
             skillsEnabled={chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills !== false}
             scope={documentId}
             value={(() => {
-              const content = referenceContent(value.draft, value.assets.map(asset => asset.id), value.assets, value.draftContent);
+              const content = referenceContent(value.draft, value.assets.map(asset => asset.id), value.assets, value.draftContent, t);
               return value.skills?.length && !content.some(part => part.type === "skill") ? [...content, ...value.skills.map(name => ({type: "skill" as const, name}))] : content;
             })()}
             assets={chat.referenceAssets}
@@ -572,10 +607,10 @@ export function AssistantPanel({
                   !part.fingerprint ||
                   !fingerprintMatches(asset, part.fingerprint)
                 )
-                  throw new Error("固定参考素材缺失或内容已改变。");
+                  throw new Error(t("assistant.error.fixedReferenceMissing"));
                 const blob = await creationClient(documentId).blob(asset.id);
                 if (!fingerprintMatches(asset, await fingerprint(blob)))
-                  throw new Error("固定参考文件已改变。");
+                  throw new Error(t("assistant.error.fixedReferenceFileChanged"));
                 return [{ ...asset, binding: "asset" }];
               }
               const source = nodes.find((node) => node.id === part.nodeId);
@@ -584,7 +619,7 @@ export function AssistantPanel({
                 part.fingerprint?.startsWith("source:") &&
                 part.fingerprint !== nodeReferenceAsset(source).fingerprint
               )
-                throw new Error("参考内容已变化，请重新复制。");
+                throw new Error(t("assistant.error.referenceChanged"));
               const option = mentionOptions.find(
                 (option) =>
                   option.id === `node:${part.nodeId}` ||
@@ -611,14 +646,14 @@ export function AssistantPanel({
                 if (asset) {
                   const bytes = await creationClient(documentId).blob(asset.id);
                   if (!fingerprintMatches(asset, await fingerprint(bytes)))
-                    throw new Error("参考文件已改变。");
+                    throw new Error(t("assistant.error.referenceFileChanged"));
                   return [asset];
                 }
               }
               if (!option || option.disabledReason)
                 throw new Error(
                   option?.disabledReason ||
-                    "当前输入不支持此参考版本，整批未插入。",
+                    t("assistant.error.referenceVersionUnsupported"),
                 );
               return (await chooseMention(option, signal)) ?? [];
             }}
@@ -641,8 +676,8 @@ export function AssistantPanel({
             <button
               type="button"
               className="cw-assistant-icon-button"
-              aria-label="上传参考"
-              title="上传图片、视频、音频或文本"
+              aria-label={t("assistant.panel.upload")}
+              title={t("assistant.panel.uploadHint")}
               disabled={referenceDisabled || value.assets.length >= 64}
               onClick={() => fileInput.current?.click()}
             >
@@ -651,8 +686,8 @@ export function AssistantPanel({
             <button
               type="button"
               className="cw-assistant-icon-button"
-              aria-label="引用项目素材"
-              title="引用项目素材（@）"
+              aria-label={t("assistant.panel.mention")}
+              title={t("assistant.panel.mentionHint")}
               disabled={referenceDisabled}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => editor.current?.openPicker()}
@@ -692,9 +727,13 @@ export function AssistantPanel({
             />
             <div className="cw-assistant-toolbar-spacer" />
             <ChoicePicker
-              label="思考程度"
+              label={t("assistant.thinking.label")}
               icon="thinking"
-              options={THINKING}
+              options={THINKING.map((option) => ({
+                id: option.id,
+                label: t(option.labelKey),
+                description: t(option.descriptionKey),
+              }))}
               value={value.thinking}
               disabled={!chat.loaded || chat.sending}
               onChange={(thinking) =>
@@ -708,8 +747,8 @@ export function AssistantPanel({
               <button
                 type="button"
                 className="cw-assistant-send"
-                aria-label="停止回复"
-                title="停止回复"
+                aria-label={t("assistant.panel.stop")}
+                title={t("assistant.panel.stop")}
                 disabled={!chat.started || chat.stopping}
                 onClick={() => void chat.stop()}
               >
@@ -719,8 +758,8 @@ export function AssistantPanel({
               <button
                 type="submit"
                 className="cw-assistant-send"
-                aria-label="发送消息"
-                title="发送消息"
+                aria-label={t("assistant.panel.send")}
+                title={t("assistant.panel.send")}
                 disabled={!chat.canSend || locked || !value.draft.trim()}
               >
                 <CanvasIcon name="arrow" size={19} />
@@ -730,13 +769,17 @@ export function AssistantPanel({
         </form>
         <p className="cw-assistant-footnote">
           {!chat.loaded ? (
-            chat.changing ? "正在切换会话…" : chat.error ? "对话加载失败" : "正在加载对话…"
+            chat.changing
+              ? t("assistant.panel.switching")
+              : chat.error
+                ? t("assistant.panel.loadError")
+                : t("assistant.panel.loading")
           ) : chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.status === "checking" ? (
-            "正在检查当前引擎…"
+            t("assistant.panel.checkingEngine")
           ) : chat.adding ? (
-            "正在添加参考素材…"
+            t("assistant.panel.addingReferences")
           ) : (
-            `${chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.label ?? "请选择 Agent"}`
+            `${chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.label ?? t("assistant.panel.chooseAgent")}`
           )}
         </p>
       </div>
@@ -745,13 +788,15 @@ export function AssistantPanel({
           className="cw-assistant-resizer"
           role="separator"
           tabIndex={0}
-          aria-label="调整 AI 对话宽度"
+          aria-label={t("assistant.panel.resize")}
           aria-orientation="vertical"
           aria-valuemin={200}
           aria-valuemax={layout.maxWidth}
           aria-valuenow={layout.width}
-          aria-valuetext={`${Math.round(layout.width)} 像素；缩至 200 像素收起`}
-          title="拖动调整宽度，双击恢复默认宽度"
+          aria-valuetext={t("assistant.panel.resizeValue", {
+            width: Math.round(layout.width),
+          })}
+          title={t("assistant.panel.resizeHint")}
           {...layout.resizer}
         />
       )}
@@ -761,7 +806,7 @@ export function AssistantPanel({
         type="file"
         multiple
         accept="image/*,video/*,audio/*,text/*,.md,.markdown,.txt"
-        aria-label="选择对话参考文件"
+        aria-label={t("assistant.panel.selectFiles")}
         onChange={(event) => {
           if (event.target.files?.length) void upload([...event.target.files]);
           event.target.value = "";
@@ -770,7 +815,7 @@ export function AssistantPanel({
       {dragOver && (
         <div className="cw-assistant-drop">
           <CanvasIcon name="upload" size={28} />
-          <span>松开以添加参考素材</span>
+          <span>{t("assistant.panel.dropHint")}</span>
         </div>
       )}
       {uploads.dialog}

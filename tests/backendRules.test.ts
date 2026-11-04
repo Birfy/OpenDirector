@@ -218,7 +218,7 @@ test("input rules bound references, duration and model availability", () => {
   const image = {
     ...generationDefaults("image"),
     modelConfigId: zimage.id,
-    resolution: "自动",
+    resolution: "auto",
     prompt: "灯塔",
   };
   assert.match(

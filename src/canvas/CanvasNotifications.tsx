@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CanvasIcon } from "./CanvasIcon";
+import { useT } from "../i18n/I18nProvider";
 
 interface CanvasNotification {
   id: number;
@@ -27,6 +28,7 @@ function Notification({
   notification: CanvasNotification;
   onDismiss: (id: number) => void;
 }) {
+  const t = useT();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [exiting, setExiting] = useState(false);
@@ -74,7 +76,7 @@ function Notification({
           <button
             type="button"
             className="cw-toast-close"
-            aria-label="关闭提示"
+            aria-label={t("canvas.notify.dismiss")}
             onClick={() => setExiting(true)}
           >
             <CanvasIcon name="close" size={14} />
@@ -92,8 +94,9 @@ export function CanvasNotifications({
   notifications: CanvasNotification[];
   onDismiss: (id: number) => void;
 }) {
+  const t = useT();
   return (
-    <div className="cw-toast-stack" aria-label="画布提示">
+    <div className="cw-toast-stack" aria-label={t("canvas.notify.stack")}>
       {notifications.map((notification) => (
         <Notification
           key={notification.id}

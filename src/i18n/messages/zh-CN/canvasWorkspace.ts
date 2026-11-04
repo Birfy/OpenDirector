@@ -1,0 +1,380 @@
+/** Canvas workspace shell: topbar, side panels, menus, dialogs and toasts. */
+export const canvasWorkspace = {
+  "canvas.workspace.kind.image": "图片",
+  "canvas.workspace.kind.video": "视频",
+  "canvas.workspace.kind.audio": "音频",
+  "canvas.workspace.kind.text": "文本",
+  "canvas.workspace.kind.file": "文件",
+  "canvas.workspace.kind.group": "分组",
+  "canvas.workspace.kind.timeline": "时间线",
+  "canvas.workspace.kind.subject": "主体",
+  "canvas.workspace.kind.stack": "资源堆叠",
+  "canvas.workspace.kind.tool": "工具",
+  "canvas.workspace.kind.external": "导演台",
+
+  "canvas.workspace.help.title": "在画布上，自由创作",
+  "canvas.workspace.help.dialogLabel": "画布使用说明",
+  "canvas.workspace.help.close": "关闭说明",
+  "canvas.workspace.help.body":
+    "拖动节点排列画面，从节点右侧圆点拖到另一个节点左侧即可建立参考连线。点击圆点旁的按钮可创建关联节点。",
+  "canvas.workspace.help.storage":
+    "项目与画布保存在本地 projects 目录，导出的 .canvas 压缩包内含画布 JSON 与素材文件，可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置 → 模型接入”中的模型。助手对话、云分享和云端资产尚未接入。",
+
+  "canvas.workspace.help.pan": "平移画布",
+  "canvas.workspace.help.panKeys": "滚动 / 空格＋拖动",
+  "canvas.workspace.help.zoom": "缩放画布",
+  "canvas.workspace.help.zoomKeys": "⌘＋滚动",
+  "canvas.workspace.help.zoomKeysPc": "Ctrl＋滚动",
+  "canvas.workspace.help.marquee": "框选多个节点",
+  "canvas.workspace.help.marqueeKeys": "空白处拖动 / Shift",
+  "canvas.workspace.help.tools": "选择 / 抓手 / 文本",
+  "canvas.workspace.help.toolsKeys": "V / H / T",
+  "canvas.workspace.help.upload": "上传本地素材",
+  "canvas.workspace.help.uploadKeys": "⌘＋O",
+  "canvas.workspace.help.uploadKeysPc": "Ctrl＋O",
+  "canvas.workspace.help.undoRedo": "撤销 / 重做",
+  "canvas.workspace.help.undoRedoKeys": "⌘ Z / ⌘ ⇧ Z",
+  "canvas.workspace.help.undoRedoKeysPc": "Ctrl Z / Ctrl Shift Z",
+  "canvas.workspace.help.clipboard": "复制 / 粘贴 / 副本",
+  "canvas.workspace.help.clipboardKeys": "⌘ C / ⌘ V / ⌘ D",
+  "canvas.workspace.help.clipboardKeysPc": "Ctrl C / Ctrl V / Ctrl D",
+  "canvas.workspace.help.group": "编组 / 取消编组",
+  "canvas.workspace.help.groupKeys": "⌘ G / ⌘ ⇧ G",
+  "canvas.workspace.help.groupKeysPc": "Ctrl G / Ctrl Shift G",
+  "canvas.workspace.help.fit": "适应内容 / 选区",
+  "canvas.workspace.help.fitKeys": "Shift 1 / Shift 2",
+  "canvas.workspace.help.nudge": "移动 / 快速移动",
+  "canvas.workspace.help.nudgeKeys": "方向键 / Shift＋方向键",
+  "canvas.workspace.help.delete": "删除选中节点或连线",
+  "canvas.workspace.help.deleteKeys": "Delete / ⌫",
+  "canvas.workspace.help.deleteKeysPc": "Delete / Backspace",
+
+  "canvas.workspace.save.opening": "正在打开…",
+  "canvas.workspace.save.saving": "保存中…",
+  "canvas.workspace.save.saved": "已保存到本机",
+  "canvas.workspace.save.savedViewFailed":
+    "工程已保存；界面状态保存失败：{warning}",
+  "canvas.workspace.save.failed": "保存失败：{error}",
+  "canvas.workspace.save.failedPrefix": "保存失败",
+  "canvas.workspace.save.exportCopy": "导出未保存副本",
+  "canvas.workspace.save.reloadConfirm":
+    "读取服务端版本会放弃本页未保存的修改。请先导出副本，确认后继续。",
+  "canvas.workspace.save.reload": "读取服务端版本",
+
+  "canvas.workspace.toolbar.assets": "资产列表",
+  "canvas.workspace.toolbar.history": "生成历史",
+  "canvas.workspace.toolbar.importCanvas": "导入画布",
+  "canvas.workspace.toolbar.exportCanvas": "导出画布",
+  "canvas.workspace.toolbar.settings": "设置",
+  "canvas.workspace.toolbar.selectTool": "切换到选择工具",
+  "canvas.workspace.toolbar.handTool": "切换到抓手工具",
+  "canvas.workspace.toolbar.showMinimap": "显示小地图",
+  "canvas.workspace.toolbar.hideMinimap": "隐藏小地图",
+  "canvas.workspace.toolbar.showEdges": "显示连线",
+  "canvas.workspace.toolbar.hideEdges": "隐藏连线",
+  "canvas.workspace.toolbar.zoomOptions": "缩放选项",
+  "canvas.workspace.toolbar.zoomIn": "放大",
+  "canvas.workspace.toolbar.zoomOut": "缩小",
+  "canvas.workspace.toolbar.zoomPercent": "缩放百分比",
+  "canvas.workspace.toolbar.fitAll": "适应所有内容",
+  "canvas.workspace.toolbar.fitSelection": "适应选中内容",
+  "canvas.workspace.toolbar.undo": "撤销",
+  "canvas.workspace.toolbar.redo": "重做",
+  "canvas.workspace.toolbar.help": "使用帮助",
+  "canvas.workspace.toolbar.chat": "与 AI 对话",
+
+  "canvas.workspace.empty.title": "你的故事，由你执导",
+  "canvas.workspace.empty.hint": "双击画布创建节点，或拖入你的素材",
+  "canvas.workspace.empty.imageNode": "图片节点",
+  "canvas.workspace.empty.example": "体验示例画布",
+  "canvas.workspace.empty.tagline": "参考连接 · 自由编排 · 本机自动保存",
+
+  "canvas.workspace.loading.opening": "正在打开画布…",
+  "canvas.workspace.loading.switching": "正在切换画布…",
+  "canvas.workspace.loading.reconnect": "重新连接",
+  "canvas.workspace.loading.backHome": "返回画布首页",
+
+  "canvas.workspace.selection.edgesSelected": {
+    one: "已选 {count} 条连线",
+    other: "已选 {count} 条连线",
+  },
+  "canvas.workspace.selection.nodesSelected": {
+    one: "已选 {count} 个节点",
+    other: "已选 {count} 个节点",
+  },
+  "canvas.workspace.selection.edgeToolbar": "参考连线操作",
+  "canvas.workspace.selection.disconnectReference": "断开参考",
+  "canvas.workspace.selection.clear": "取消选择",
+  "canvas.workspace.selection.align": "对齐所选节点",
+  "canvas.workspace.selection.alignPlaceholder": "对齐 / 分布",
+  "canvas.workspace.selection.alignLeft": "左对齐",
+  "canvas.workspace.selection.alignCenter": "水平居中",
+  "canvas.workspace.selection.alignRight": "右对齐",
+  "canvas.workspace.selection.alignTop": "顶对齐",
+  "canvas.workspace.selection.alignMiddle": "垂直居中",
+  "canvas.workspace.selection.alignBottom": "底对齐",
+  "canvas.workspace.selection.distributeHorizontal": "水平等间距",
+  "canvas.workspace.selection.distributeVertical": "垂直等间距",
+  "canvas.workspace.selection.group": "编组",
+  "canvas.workspace.selection.stack": "堆叠",
+  "canvas.workspace.selection.autoArrange": "自动排列",
+  "canvas.workspace.selection.duplicate": "复制副本",
+  "canvas.workspace.selection.deleteSelected": "删除所选",
+
+  "canvas.workspace.menu.rename": "重命名",
+  "canvas.workspace.menu.addDownstream": "添加下游节点",
+  "canvas.workspace.menu.copy": "复制",
+  "canvas.workspace.menu.cut": "剪切",
+  "canvas.workspace.menu.paste": "粘贴",
+  "canvas.workspace.toast.crossCanvasPasteFailed":
+    "跨画布粘贴失败，未粘贴任何节点：{error}",
+  "canvas.workspace.menu.duplicate": "复制副本",
+  "canvas.workspace.menu.group": "编组",
+  "canvas.workspace.menu.stackSelection": "资源堆叠",
+  "canvas.workspace.menu.ungroup": "取消编组",
+  "canvas.workspace.menu.autoArrange": "自动排列",
+  "canvas.workspace.menu.groupLocked": "所属分组已锁定",
+  "canvas.workspace.menu.unlock": "解锁",
+  "canvas.workspace.menu.lock": "锁定",
+  "canvas.workspace.menu.unstack": "解散堆叠",
+  "canvas.workspace.menu.moveToFront": "移到顶层",
+  "canvas.workspace.menu.moveForward": "上移一层",
+  "canvas.workspace.menu.moveBackward": "下移一层",
+  "canvas.workspace.menu.moveToBack": "移到底层",
+  "canvas.workspace.menu.replaceAsset": "替换素材",
+  "canvas.workspace.menu.uploadAsset": "上传素材",
+  "canvas.workspace.menu.downloadAsset": "下载素材",
+  "canvas.workspace.menu.editImage": "编辑图片",
+  "canvas.workspace.menu.openEditor": "打开编辑器",
+  "canvas.workspace.menu.editAsset": "编辑素材",
+  "canvas.workspace.menu.delete": "删除",
+
+  "canvas.workspace.panel.assets": "资产库",
+  "canvas.workspace.panel.search": "搜索节点",
+  "canvas.workspace.panel.history": "生成历史",
+  "canvas.workspace.panel.close": "关闭侧栏",
+  "canvas.workspace.panel.referenceHint": "选择素材作为参考，或上传本地文件。",
+  "canvas.workspace.panel.assetsHint":
+    "素材保存在当前工程，可拖入图片、视频、音频。",
+  "canvas.workspace.panel.uploadLocal": "上传本地素材",
+  "canvas.workspace.panel.canvasAssets": "画布素材",
+  "canvas.workspace.panel.openLibrary": "打开资产库",
+  "canvas.workspace.panel.samples": "原创示例素材",
+  "canvas.workspace.panel.samplesNote": "示例为本工程绘制的矢量插画。",
+  "canvas.workspace.sample.mountain": "青山",
+  "canvas.workspace.sample.dusk": "暮色",
+  "canvas.workspace.sample.lake": "远湖",
+
+  "canvas.workspace.aria.canvas": "无限创作画布",
+  "canvas.workspace.aria.nodeLabel": "{kind}节点：{title}",
+  "canvas.workspace.aria.referenceEdge": "参考连线",
+  "canvas.workspace.aria.batchConnect": "批量连接所选节点",
+  "canvas.workspace.aria.batchConnectHint":
+    "拖到目标节点以批量引用；点击添加下游节点",
+  "canvas.workspace.aria.addDownstream": "添加下游参考节点",
+  "canvas.workspace.aria.addDownstreamSide": "从{side}侧添加下游参考节点",
+  "canvas.workspace.aria.expandedComposer": "展开的节点会话框",
+  "canvas.workspace.aria.fileInput": "选择本地素材文件",
+  "canvas.workspace.aria.resultInput": "导入真实生成结果",
+  "canvas.workspace.aria.previewDialog": "素材全屏预览",
+  "canvas.workspace.aria.downloadPreview": "下载预览素材",
+  "canvas.workspace.aria.closePreview": "关闭全屏",
+
+  "canvas.workspace.side.left": "左",
+  "canvas.workspace.side.right": "右",
+  "canvas.workspace.side.top": "上",
+  "canvas.workspace.side.bottom": "下",
+  "canvas.workspace.list.separator": "；",
+  "canvas.workspace.list.enumeration": "、",
+
+  "canvas.workspace.toast.resourceCopied": "素材已复制到当前画布，可独立编辑。",
+  "canvas.workspace.toast.partialAssets": "部分素材未能放入画布：{items}",
+  "canvas.workspace.toast.subjectsImported": {
+    one: "已导入 {count} 个主体到画布。",
+    other: "已导入 {count} 个主体到画布。",
+  },
+  "canvas.workspace.toast.subjectImported": "已导入主体内容，可撤销。",
+  "canvas.workspace.toast.copied": {
+    one: "已复制 {count} 个节点",
+    other: "已复制 {count} 个节点",
+  },
+  "canvas.workspace.toast.selectEditable": "请先选择可编辑的节点。",
+  "canvas.workspace.toast.cutLocked": "节点或其成员受锁定引用保护，未剪切。",
+  "canvas.workspace.toast.cut": {
+    one: "已剪切 {count} 个节点，可粘贴或撤销。",
+    other: "已剪切 {count} 个节点，可粘贴或撤销。",
+  },
+  "canvas.workspace.toast.noDownloadableAsset": "这个节点还没有可下载的素材。",
+  "canvas.workspace.toast.downloadFailed": "无法下载素材，请重试。",
+  "canvas.workspace.toast.archiveImported": {
+    one: "已导入「{title}」，恢复 {count} 个素材。",
+    other: "已导入「{title}」，恢复 {count} 个素材。",
+  },
+  "canvas.workspace.toast.unlockFirst": "请先解锁节点或所属分组。",
+  "canvas.workspace.toast.generationNoReplace":
+    "生成节点不能上传替换本体素材，请新建素材节点。",
+  "canvas.workspace.toast.nodeGenerating": "节点正在生成，请先等待或取消任务。",
+  "canvas.workspace.toast.importCancelledSwitched":
+    "已切换项目，本次素材导入已取消。",
+  "canvas.workspace.toast.importCancelledDeleted":
+    "目标节点已被删除，本次素材导入已取消。",
+  "canvas.workspace.toast.importedAssets": {
+    one: "已导入 {count} 个素材",
+    other: "已导入 {count} 个素材",
+  },
+  "canvas.workspace.toast.importedAssetsSaved": {
+    one: "已导入 {count} 个素材，保存在本机。",
+    other: "已导入 {count} 个素材，保存在本机。",
+  },
+  "canvas.workspace.toast.importFailures": {
+    one: "；{count} 个失败：{items}",
+    other: "；{count} 个失败：{items}",
+  },
+  "canvas.workspace.toast.assetImportFailed": "素材导入失败",
+  "canvas.workspace.toast.assetIssue": "{name}：{reason}",
+  "canvas.workspace.toast.editorUnsaved": "当前工程尚未保存，无法打开编辑会话。",
+  "canvas.workspace.toast.editorSaved": "编辑已保存到工程。",
+  "canvas.workspace.toast.resultsSaved": {
+    one: "已保存 {count} 个编辑结果到工程。",
+    other: "已保存 {count} 个编辑结果到工程。",
+  },
+  "canvas.workspace.toast.processingMedia": "正在处理素材…",
+  "canvas.workspace.toast.mediaProcessFailed": "素材处理失败。",
+  "canvas.workspace.toast.generationSubmitted":
+    "生成任务已提交，结果将保存到当前工程。",
+  "canvas.workspace.toast.toolDeliveryConfirmed":
+    "已确认上一次工具提交，请查看原任务进度与结果。",
+  "canvas.workspace.toast.toolUnavailable": "本地服务未提供此工具。",
+  "canvas.workspace.toast.sourceMissing": "来源素材已删除或尚未导入，请重新选择。",
+  "canvas.workspace.toast.stackCreateFailed": "无法创建堆叠。",
+  "canvas.workspace.toast.stackSwitchFailed": "堆叠切换失败。",
+  "canvas.workspace.toast.versionAppliedReferences":
+    "历史版本已应用。部分参考与历史版本不同，已使用来源节点当前内容。",
+  "canvas.workspace.toast.versionApplied":
+    "历史版本已应用到画布，未开始新的生成任务。",
+  "canvas.workspace.toast.unlockGroupFirst": "请先选择并解锁所属分组。",
+  "canvas.workspace.toast.configRestored":
+    "生成配置已恢复，当前结果保留；未开始新的生成任务。",
+  "canvas.workspace.toast.configNotVisible":
+    "该配置尚未显示，可从资产列表显示其当前结果。",
+  "canvas.workspace.toast.useRestoreConfig":
+    "请使用“恢复生成配置”，该操作不改变当前结果。",
+  "canvas.workspace.toast.oneResultPerSpec":
+    "同一生成配置一次只能选用一个历史结果。",
+  "canvas.workspace.toast.compositeSaved": "合成视频已保存到工程。",
+
+  "canvas.workspace.job.preparingTool": "正在准备工具任务",
+  "canvas.workspace.job.saveFailed": "工程保存失败，未提交工具任务。",
+  "canvas.workspace.job.uploadingSources": "正在上传素材",
+  "canvas.workspace.job.submitUnconfirmed": "提交未确认，请同步服务记录核对原任务。",
+
+  "canvas.workspace.error.referenceAssetChanged":
+    "参考素材文件已改变，请重新核对版本。",
+  "canvas.workspace.error.assetMissing": "素材已不存在。",
+  "canvas.workspace.error.referenceBatchStale":
+    "项目或目标锁定状态已变化，本批引用未插入。",
+  "canvas.workspace.error.importUnsaved": "导入未能保存。",
+  "canvas.workspace.error.noPlaceableAssets": "没有素材可以放入画布。",
+  "canvas.workspace.error.busy": "请等待当前操作完成。",
+  "canvas.workspace.error.subjectNotImported": "画布未保存，主体尚未导入。",
+  "canvas.workspace.error.importNotApplied": "项目已切换，本次导入未应用。",
+  "canvas.workspace.error.subjectImportUnsaved":
+    "主体导入未能保存，画布内容保持原状。",
+  "canvas.workspace.error.subjectTargetChanged":
+    "目标主体已变化，请重新打开导入界面。",
+  "canvas.workspace.error.saveCanvasFirst": "请先保存当前画布。",
+  "canvas.workspace.error.saveFirst": "请先保存画布。",
+  "canvas.workspace.error.subjectImportFailed": "主体导入未能保存。",
+  "canvas.workspace.error.projectSwitched": "项目已切换。",
+  "canvas.workspace.error.importFailed": "导入失败。",
+  "canvas.workspace.error.selectSubjectNode": "请选择一个有内容的主体节点。",
+  "canvas.workspace.error.reselectSubject": "项目已切换，请重新选择主体。",
+  "canvas.workspace.error.switchSaveFailed": "当前画布保存失败，未切换项目。",
+  "canvas.workspace.error.switchReopenFailed":
+    "切换失败，原项目未能重新取得编辑权限：{error}",
+  "canvas.workspace.error.openCanvasFailed": "无法打开画布。",
+  "canvas.workspace.error.projectSaving": "项目正在保存，请稍后重试。",
+  "canvas.workspace.error.renameUnsaved": "当前画布尚未保存，未执行重命名。",
+  "canvas.workspace.error.projectMissing": "项目不存在，请重新打开。",
+  "canvas.workspace.error.deleteUnsaved": "当前画布尚未保存，未执行删除。",
+  "canvas.workspace.error.projectUntitled": "未命名画布",
+  "canvas.workspace.error.projectUntitledSuffix": "未命名画布 ({suffix})",
+  "canvas.workspace.error.deletedNextOpenFailed":
+    "项目已删除，但未能打开下一个项目：{error}。请刷新页面。",
+  "canvas.workspace.error.referenceKindUnsupported":
+    "该类型不能与当前节点建立参考关系。",
+  "canvas.workspace.error.notConnectedAsReference": "未连接为参考：{items}。",
+  "canvas.workspace.error.selectionReferenceUnsupported":
+    "所选节点中有不支持作为参考的类型",
+  "canvas.workspace.error.replaceSingleFile": "替换单个节点时请选择一个文件。",
+  "canvas.workspace.error.uploadTargetChanged": "上传目标已变化，请重新选择节点。",
+  "canvas.workspace.error.subjectNeedsMedia": "主体需要图片、视频或音频素材。",
+  "canvas.workspace.error.uploadNodeChanged":
+    "节点内容、类型或锁定状态已变化，本次上传未应用。",
+  "canvas.workspace.error.editorUnavailable": "编辑会话不可用，请重新打开。",
+  "canvas.workspace.error.editNotCommitted": "项目已切换，编辑未提交。",
+  "canvas.workspace.error.editorDraftSaveFailed":
+    "工程保存失败，编辑草稿已保留。",
+  "canvas.workspace.error.editorRefreshFailed":
+    "编辑已保存，但画布刷新失败。请重试以刷新画布。",
+  "canvas.workspace.error.editorSaving": "编辑结果正在保存。",
+  "canvas.workspace.error.resultNotCommitted": "项目已切换，结果未提交。",
+  "canvas.workspace.error.resultSaveFailed": "工程保存失败，结果已保留，请重试。",
+  "canvas.workspace.error.sourceChanged":
+    "来源素材已变化，结果未发布，请重新打开编辑器。",
+  "canvas.workspace.error.pinnedMetadataUnloaded":
+    "固定参考元数据尚未加载，请重新打开引用选择器。",
+  "canvas.workspace.error.modelUnavailable": "所选模型配置不可用。",
+  "canvas.workspace.error.agentUnavailable": "Agent 配置不可用。",
+  "canvas.workspace.error.noGenerationModel":
+    "当前未选择可用的生成模型，请先在“设置 → 模型接入”中配置服务，再选择模型。",
+  "canvas.workspace.error.taskSourceInvalid": "任务来源已失效，请重新选择。",
+  "canvas.workspace.error.resultNotMedia": "结果必须是实际图片、视频或音频文件。",
+  "canvas.workspace.error.resultImportFailed": "结果导入失败。",
+  "canvas.workspace.error.subjectRemoved": "目标主体已移除。",
+  "canvas.workspace.error.versionSaveFailed": "当前修改保存失败，请关闭后重试。",
+  "canvas.workspace.error.projectSwitchedCurrent": "当前项目已切换。",
+  "canvas.workspace.error.timelineUnsaved": "时间线未保存，未开始合成。",
+  "canvas.workspace.error.selectSingleSubject":
+    "请在画布中仅选中一个有内容的主体。",
+  "canvas.workspace.error.projectCreateIncomplete":
+    "项目创建未完成，请检查名称或保存状态后重试。",
+  "canvas.workspace.error.originalTaskMissing": "原任务不存在。",
+  "canvas.workspace.error.configHistoryMissing": "未找到原任务的配置历史。",
+
+  "canvas.workspace.director.opening": "正在打开导演台",
+  "canvas.workspace.director.subtitle": "加载本地 3D 编辑器",
+  "canvas.workspace.director.loading": "正在加载…",
+
+  "canvas.workspace.preview.fileHint":
+    "此文件可通过右上角下载按钮保存查看。",
+  "canvas.workspace.preview.emptyHint":
+    "这个节点还没有素材，先上传本地文件。",
+
+  "canvas.workspace.composer.expand": "展开会话框",
+  "canvas.workspace.composer.collapse": "收起会话框",
+  "canvas.workspace.composer.close": "关闭生成面板",
+
+  "canvas.workspace.referenceIssue.endpointMissing": "节点已不存在",
+  "canvas.workspace.referenceIssue.sourceEmpty":
+    "当前节点内容为空，请先上传或生成节点内容",
+  "canvas.workspace.referenceIssue.targetMaterial":
+    "素材节点不能接收生成参考，请连接生成节点",
+  "canvas.workspace.referenceIssue.locked": "请先解锁节点或所属分组",
+  "canvas.workspace.referenceIssue.selfConnection": "节点不能引用自身",
+  "canvas.workspace.referenceIssue.duplicateRelation": "已经连接过",
+  "canvas.workspace.referenceIssue.sourceTypeUnsupported":
+    "目标节点不接收这类素材",
+  "canvas.workspace.referenceIssue.targetTypeUnsupported": "该节点不接收参考",
+  "canvas.workspace.referenceIssue.capacityExceeded": "参考数量已达上限",
+  "canvas.workspace.referenceIssue.frameCapacityExceeded":
+    "首尾帧模式最多连接 2 个图片节点，请先断开多余连线。",
+  "canvas.workspace.referenceIssue.subjectModeConflict":
+    "主体只能包含一份视频，或一张主图片及最多三张附加图片，请先移除冲突素材",
+  "canvas.workspace.referenceIssue.subjectCapacityExceeded":
+    "主体最多包含一张主图片和三张附加图片",
+  "canvas.workspace.referenceIssue.subjectDurationExceeded":
+    "主体视频不能超过 15 秒",
+  "canvas.workspace.referenceIssue.sourceDurationMissing":
+    "请先读取视频或音频的实际时长，再添加到目标节点",
+} as const;

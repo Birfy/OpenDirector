@@ -15,6 +15,7 @@ python3 -m venv .venv
 npm test
 .venv/bin/python -m pytest tests -q
 npm run build
+npm run check:i18n
 .venv/bin/python scripts/generate_contracts.py --check
 ```
 
@@ -31,6 +32,7 @@ macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统�
 | 修改范围 | 应核对的重点 |
 | --- | --- |
 | 业务规则、参考及上传 | 实际类型、字节预算、来源身份、跟随与固定、拒绝后状态不变 |
+| 中英界面与后端错误 | 词条键集合一致、源文件中文行数不增加、切换语言后无需刷新、英文界面无中文泄漏 |
 | 存储与版本 | 幂等、对象冲突、写入中断、重启恢复、回执与事件一致 |
 | 生成与工具任务 | 接受、排队、取消、未知提交、恢复、固定输入和候选采用 |
 | 编辑器与时间线 | 结构往返、素材保护、重开续编、真实文件播放及导出 |

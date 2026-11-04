@@ -3,6 +3,7 @@ import { Handle, Position } from "@xyflow/react";
 import type { CanvasNodeKind } from "./model";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasIcon } from "./CanvasIcon";
+import { useI18n } from "../i18n/I18nProvider.tsx";
 
 /** Shared node chrome and title editing; each node renderer owns only its contents. */
 export function NodeFrame({
@@ -22,6 +23,7 @@ export function NodeFrame({
   busy: boolean;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const actions = useContext(CanvasActionsContext);
   const locked = Boolean(actions?.isLocked(id));
   const target = actions?.referenceTargetState?.(id);
@@ -67,13 +69,14 @@ export function NodeFrame({
             onDoubleClick={(event) => event.stopPropagation()}
           >
             <span aria-hidden="true" className="cw-node-title-measure">
-              {actions?.nameEdit?.value || "输入节点名称"}
+              {actions?.nameEdit?.value ||
+                t("canvasNodes.nodeName.placeholder")}
             </span>
             <input
               ref={input}
               className="cw-node-title-input"
-              aria-label="节点名称"
-              placeholder="输入节点名称"
+              aria-label={t("canvasNodes.nodeName.aria")}
+              placeholder={t("canvasNodes.nodeName.placeholder")}
               value={actions?.nameEdit?.value ?? ""}
               onChange={(event) =>
                 actions?.changeNameDraft?.(event.target.value)
@@ -96,7 +99,11 @@ export function NodeFrame({
         ) : (
           <span
             className="cw-node-title nodrag nopan"
-            title={locked ? title : `${title}（双击重命名）`}
+            title={
+              locked
+                ? title
+                : t("canvasNodes.nodeName.renameHint", { title })
+            }
             tabIndex={0}
             onPointerDown={(event) => event.stopPropagation()}
             onDoubleClick={(event) => {
@@ -123,9 +130,11 @@ export function NodeFrame({
           <button
             type="button"
             className="cw-node-version-button nodrag nopan nowheel"
-            aria-label={`历史版本，共 ${actions?.versionCount?.(id)} 个`}
+            aria-label={t("canvasNodes.history.aria", {
+              count: actions?.versionCount?.(id) ?? 0,
+            })}
             aria-expanded={actions?.versionsOpen?.(id) ?? false}
-            title="历史版本（含当前版本）"
+            title={t("canvasNodes.history.title")}
             onPointerDown={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             onClick={(event) => {

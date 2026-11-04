@@ -16,6 +16,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { NodeVersionComposer } from "./NodeVersionComposer";
 import "./generation-composer.css";
 import "./node-version-history.css";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 export interface NodeVersion {
   asset: Asset;
@@ -95,6 +96,7 @@ export function VersionMedia({
   name: string;
   compact?: boolean;
 }) {
+  const t = useT();
   const [content, setContent] = useState<string>();
   const [error, setError] = useState("");
   useEffect(() => {
@@ -122,11 +124,13 @@ export function VersionMedia({
   return (
     <div className={`cw-version-media${compact ? " is-compact" : ""}`}>
       {error ? (
-        <span role="status">素材无法读取：{error}</span>
+        <span role="status">
+          {t("canvasNodes.version.missingMedia", { error })}
+        </span>
       ) : content === undefined ? (
-        <span>正在读取…</span>
+        <span>{t("canvasNodes.version.reading")}</span>
       ) : kind === "text" ? (
-        <pre>{content || "（空文本）"}</pre>
+        <pre>{content || t("canvasNodes.version.emptyText")}</pre>
       ) : kind === "image" ? (
         <img src={content} alt={name} />
       ) : kind === "video" ? (
@@ -147,6 +151,7 @@ function VersionDetails({
   projectId: string;
   version: NodeVersion;
 }) {
+  const t = useT();
   const element = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -172,7 +177,7 @@ function VersionDetails({
               name={version.asset.name}
             />
           ) : (
-            <p role="status">此版本的素材文件缺失或已改变，无法应用。</p>
+            <p role="status">{t("canvasNodes.version.missingFile")}</p>
           )}
           <NodeVersionComposer projectId={projectId} version={version} />
         </>
@@ -196,6 +201,7 @@ export function NodeVersionHistory({
   onClose: () => void;
   onApplied: (referencesChanged: boolean) => void;
 }) {
+  const t = useT();
   const dialog = useRef<HTMLDialogElement>(null);
   const [viewport, setViewport] = useState(() => ({
     width: window.innerWidth,
@@ -277,7 +283,9 @@ export function NodeVersionHistory({
       if (alive.current) onApplied(version.currentReferencesDiffer);
     } catch (reason) {
       if (alive.current) {
-        setError(`${errorMessage(reason)} 请关闭后重新打开历史版本。`);
+        setError(
+          t("canvasNodes.version.reopen", { message: errorMessage(reason) }),
+        );
         setStale(true);
       }
     } finally {
@@ -300,7 +308,7 @@ export function NodeVersionHistory({
     <dialog
       ref={dialog}
       className="cw-version-dialog nodrag nopan nowheel"
-      aria-label="节点历史版本"
+      aria-label={t("canvasNodes.version.aria")}
       style={{ left, top, width, height }}
       onCancel={(event) => {
         event.preventDefault();
@@ -323,28 +331,41 @@ export function NodeVersionHistory({
     >
       <header>
         <div>
-          <strong>{listing?.item.title ?? "节点"} · 历史版本</strong>
+          <strong>
+            {t("canvasNodes.version.title", {
+              title:
+                listing?.item.title ?? t("canvasNodes.version.nodeFallback"),
+            })}
+          </strong>
           <small>
             {listing
-              ? `共 ${listing.versions.length} 个版本（含当前版本）`
+              ? t("canvasNodes.version.count", {
+                  count: listing.versions.length,
+                })
               : error
-                ? "历史版本未能读取"
+                ? t("canvasNodes.version.loadFailed")
                 : preparing
-                  ? "正在保存当前修改…"
-                  : "正在读取历史版本…"}
+                  ? t("canvasNodes.version.saving")
+                  : t("canvasNodes.version.loading")}
           </small>
         </div>
-        <button aria-label="关闭历史版本" disabled={busy} onClick={close}>
+        <button
+          aria-label={t("canvasNodes.version.close")}
+          disabled={busy}
+          onClick={close}
+        >
           <CanvasIcon name="close" size={14} />
         </button>
       </header>
       <div
         className="cw-version-list"
         role="radiogroup"
-        aria-label="选择历史版本"
+        aria-label={t("canvasNodes.version.select")}
         aria-busy={!listing || busy}
       >
-        {listing && !listing.versions.length && <p>此节点暂无版本。</p>}
+        {listing && !listing.versions.length && (
+          <p>{t("canvasNodes.version.none")}</p>
+        )}
         {listing?.versions.map((version, index) => {
           const chosen = selected === version.asset.id;
           return (
@@ -352,7 +373,9 @@ export function NodeVersionHistory({
               key={version.asset.id}
               className={`cw-version-entry${chosen ? " is-selected" : ""}`}
               role="radio"
-              aria-label={`历史版本 ${index + 1}`}
+              aria-label={t("canvasNodes.version.item", {
+                index: index + 1,
+              })}
               data-version-asset-id={version.asset.id}
               data-current-version={version.asset.id === listing.currentAssetId}
               aria-checked={chosen}
@@ -383,9 +406,7 @@ export function NodeVersionHistory({
         </p>
       )}
       <footer>
-        <small>
-          仅恢复本节点，参考跟随来源当前内容，不修改上下游，不自动生成。
-        </small>
+        <small>{t("canvasNodes.version.hint")}</small>
         <div>
           <button
             className="cw-version-apply"
@@ -394,7 +415,9 @@ export function NodeVersionHistory({
             }
             onClick={() => void apply()}
           >
-            {busy ? "正在应用…" : "应用到画布"}
+            {busy
+              ? t("canvasNodes.version.applying")
+              : t("canvasNodes.version.apply")}
           </button>
         </div>
       </footer>

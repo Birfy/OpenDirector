@@ -14,6 +14,8 @@ import {
   type ToolCapability,
   type ToolParameters,
 } from "./toolCatalog";
+import { translateTool, translateToolText } from "./toolText.ts";
+import { useI18n } from "../i18n/I18nProvider";
 import "./node-task-panel.css";
 
 /** A single source-bound operation. Model-provided presets stay unknown until connected. */
@@ -41,7 +43,11 @@ export function NodeTaskPanel({
   capability?: ToolCapability;
   onGenerate?: (task: CanvasToolTask) => void;
 }) {
-  const spec = CANVAS_TOOLS.find((item) => item.id === tool)!;
+  const { t, locale } = useI18n();
+  const spec = translateTool(
+    locale,
+    CANVAS_TOOLS.find((item) => item.id === tool)!,
+  );
   const saved =
     draft?.tool === tool && draft.sourceNodeIds[0] === node.id
       ? draft
@@ -75,7 +81,7 @@ export function NodeTaskPanel({
       durationSeconds: item.data.media?.durationSeconds,
     })),
     capability,
-  );
+  ).map((error) => translateToolText(locale, error));
   const runnable = Boolean(onGenerate && capability?.available);
   const change = (key: string, value: string | number | boolean) => {
     setParameters((current) => ({ ...current, [key]: value }));
@@ -84,7 +90,7 @@ export function NodeTaskPanel({
   return (
     <section
       className="cw-node-task-panel"
-      aria-label={`${spec.title}面板`}
+      aria-label={t("tools.nodeTask.panelAria", { title: spec.title })}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -96,19 +102,22 @@ export function NodeTaskPanel({
       <header>
         <strong>{spec.title}</strong>
         <span>{node.data.title}</span>
-        <TooltipButton label={`退出${spec.title}`} onClick={onClose}>
+        <TooltipButton
+          label={t("tools.nodeTask.close", { title: spec.title })}
+          onClick={onClose}
+        >
           <CanvasIcon name="close" size={16} />
         </TooltipButton>
       </header>
       {spec.minSources > 1 && (
         <label className="cw-node-task-source">
-          商品参考图
+          {t("tools.nodeTask.productReference")}
           <select
-            aria-label="商品参考图"
+            aria-label={t("tools.nodeTask.productReference")}
             value={extraSource}
             onChange={(event) => setExtraSource(event.target.value)}
           >
-            <option value="">选择画布中的图片</option>
+            <option value="">{t("tools.nodeTask.chooseImage")}</option>
             {nodes
               .filter(
                 (item) =>
@@ -158,7 +167,7 @@ export function NodeTaskPanel({
                     }
                   >
                     {!field.options?.length && (
-                      <option value="">连接服务后选择</option>
+                      <option value="">{t("tools.nodeTask.connectToChoose")}</option>
                     )}
                     {field.options?.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -211,13 +220,13 @@ export function NodeTaskPanel({
       </div>
       <p className="cw-node-task-note">
         {runnable
-          ? (errors[0] ?? "由已连接的模型服务处理，结果会连接到当前节点。")
-          : `${capability?.reason ?? "尚未连接此功能的 AI 服务。"}可保存参数或导入处理结果。`}
+          ? (errors[0] ?? t("tools.nodeTask.remoteNote"))
+          : `${capability?.reason ?? t("tools.nodeTask.unavailable")}${t("tools.nodeTask.saveHint")}`}
       </p>
       <footer>
         <TooltipButton
           className="cw-node-task-more"
-          label={`${spec.title}更多操作`}
+          label={t("tools.nodeTask.more", { title: spec.title })}
           aria-haspopup="menu"
           aria-expanded={Boolean(moreAnchor)}
           aria-controls={moreAnchor ? moreId : undefined}
@@ -243,7 +252,9 @@ export function NodeTaskPanel({
               onEditSelection();
             }}
           >
-            {saved?.selection ? "修改选区" : "编辑选区"}
+            {saved?.selection
+              ? t("tools.nodeTask.modifySelection")
+              : t("tools.nodeTask.editSelection")}
           </button>
         )}
         {notice && (
@@ -258,21 +269,21 @@ export function NodeTaskPanel({
           title={
             runnable
               ? errors[0]
-              : (capability?.reason ?? "此功能尚未连接 AI 服务")
+              : (capability?.reason ?? t("tools.nodeTask.notConnected"))
           }
           onClick={() => {
             onDraftChange(task);
             onGenerate?.(task);
           }}
         >
-          生成
+          {t("tools.nodeTask.generate")}
         </button>
       </footer>
       {moreAnchor && (
         <SelectionToolbarMenu
           anchor={moreAnchor}
           id={moreId}
-          label={`${spec.title}更多操作`}
+          label={t("tools.nodeTask.more", { title: spec.title })}
           onClose={() => setMoreAnchor(null)}
         >
           <button
@@ -281,12 +292,12 @@ export function NodeTaskPanel({
             className="cw-selection-menu-item"
             onClick={() => {
               onDraftChange(task);
-              setNotice("参数已保存到当前节点。");
+              setNotice(t("tools.nodeTask.saved"));
               moreAnchor.focus({ preventScroll: true });
               setMoreAnchor(null);
             }}
           >
-            保存参数
+            {t("tools.nodeTask.save")}
           </button>
           <button
             type="button"
@@ -298,7 +309,7 @@ export function NodeTaskPanel({
               onImportResults(task);
             }}
           >
-            导入结果
+            {t("tools.nodeTask.import")}
           </button>
         </SelectionToolbarMenu>
       )}

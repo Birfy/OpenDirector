@@ -1,5 +1,6 @@
 import type { CanvasDocument, CanvasEdge } from "./model.ts";
 import { referenceMaterial } from "./connectionPolicy.ts";
+import { tNow } from "../i18n/messages.ts";
 
 /** Freeze only references actually transmitted with the generation request. */
 export function referenceSnapshot(
@@ -20,11 +21,14 @@ export function referencePresentation(
   const source = document.nodes.find((n) => n.id === edge.source);
   const target = document.nodes.find((n) => n.id === edge.target);
   if (edge.intent === "post_edit_result")
-    return { state: "provenance" as const, description: "编辑结果来源" };
+    return {
+      state: "provenance" as const,
+      description: tNow("errors.refEvidence.editSource"),
+    };
   if (edge.intent === "assembly_input")
     return {
       state: "provenance" as const,
-      description: "素材装配来源（保留加入时的素材版本）",
+      description: tNow("errors.refEvidence.assemblySource"),
     };
   const material = source && referenceMaterial(source);
   const evidence = target?.data.generationEvidence;
@@ -36,16 +40,46 @@ export function referencePresentation(
   const used = recorded ? evidence?.references[edge.source] : undefined;
   const state =
     material && used === material ? ("current" as const) : ("pending" as const);
-  const name = `${source?.data.title ?? "参考源"} → ${target?.data.title ?? "目标节点"}`;
+  const name = `${source?.data.title ?? tNow("errors.refEvidence.referenceSource")} → ${target?.data.title ?? tNow("errors.refEvidence.targetNode")}`;
   if (edge.referenceState) {
     const current = edge.referenceState === "used";
     return {
       state: current ? ("current" as const) : ("pending" as const),
-      description: `${name}：${current ? "当前结果已使用该参考" : edge.referenceState === "unknown" ? "未记录生成输入" : edge.referenceState === "unavailable" ? "参考缺失" : edge.referenceBinding === "pinned" ? "固定历史参考与来源当前内容或当前结果不同" : "待生成参考"}${edge.referenceBinding === "pinned" ? "；下次生成仍使用固定历史素材" : ""}`,
+      description: `${name}${tNow("errors.refEvidence.separator")}${
+        current
+          ? tNow("errors.refEvidence.currentUsed")
+          : edge.referenceState === "unknown"
+            ? tNow("errors.refEvidence.unknownInput")
+            : edge.referenceState === "unavailable"
+              ? tNow("errors.refEvidence.missing")
+              : edge.referenceBinding === "pinned"
+                ? tNow("errors.refEvidence.pinnedDiff")
+                : tNow("errors.refEvidence.pending")
+      }${
+        edge.referenceBinding === "pinned"
+          ? tNow("errors.refEvidence.pinnedNext")
+          : ""
+      }`,
     };
   }
   return {
     state,
-    description: `${name}：${state === "current" ? "当前参考" : "待生成参考"}\n当前结果使用：${!recorded ? "未记录生成输入" : !used ? "未使用此参考" : used === material ? "源节点当前素材" : "源节点历史素材"}\n下次生成使用：${material ? "源节点当前素材" : "参考缺失"}`,
+    description: `${name}${tNow("errors.refEvidence.separator")}${
+      state === "current"
+        ? tNow("errors.refEvidence.current")
+        : tNow("errors.refEvidence.pending")
+    }\n${tNow("errors.refEvidence.currentUses")}${
+      !recorded
+        ? tNow("errors.refEvidence.unknownInput")
+        : !used
+          ? tNow("errors.refEvidence.notUsed")
+          : used === material
+            ? tNow("errors.refEvidence.currentMaterial")
+            : tNow("errors.refEvidence.historyMaterial")
+    }\n${tNow("errors.refEvidence.nextUses")}${
+      material
+        ? tNow("errors.refEvidence.currentMaterial")
+        : tNow("errors.refEvidence.missing")
+    }`,
   };
 }

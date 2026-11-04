@@ -10,6 +10,7 @@ import type { CanvasActions } from "./CanvasActionsContext";
 import { CanvasIcon } from "./CanvasIcon";
 import { useCanvasPlayback } from "./CanvasMediaPreview";
 import { subjectDescriptionLayout } from "./subjectLayout.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
 
 /** Subject media is retained content, while the description is a user annotation. */
 export function SubjectNodeCard({
@@ -21,6 +22,7 @@ export function SubjectNodeCard({
   data: CanvasNodeData;
   actions: CanvasActions | null;
 }) {
+  const t = useT();
   const subject = data.subject;
   const main = subject?.main;
   const auxiliaries = subject?.auxiliaries ?? [];
@@ -48,10 +50,10 @@ export function SubjectNodeCard({
         <div className="cw-subject-empty-material nodrag nopan">
           {(
             [
-              ["import", "导入主体", "subject"],
-              ["canvas", "从画布选择", "canvas"],
-              ["assets", "从资产库选择", "rail-folder"],
-              ["file", "本地添加", "upload"],
+              ["import", "canvasNodes.subject.import", "subject"],
+              ["canvas", "canvasNodes.subject.fromCanvas", "canvas"],
+              ["assets", "canvasNodes.subject.fromAssets", "rail-folder"],
+              ["file", "canvasNodes.subject.fromFile", "upload"],
             ] as const
           ).map(([source, label, icon]) => (
             <button
@@ -61,7 +63,7 @@ export function SubjectNodeCard({
               onClick={() => actions?.pickSubject?.(id, source)}
             >
               <CanvasIcon name={icon} size={13} />
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -81,7 +83,10 @@ export function SubjectNodeCard({
               onClick={() => actions?.pickSubject?.(id, "import")}
             />
           </div>
-          <div className="cw-subject-auxiliaries" aria-label="附加图片">
+          <div
+            className="cw-subject-auxiliaries"
+            aria-label={t("canvasNodes.subject.auxiliaries")}
+          >
             {auxiliaries.map((item) => (
               <div className="cw-subject-auxiliary" key={item.id}>
                 <img src={item.src} alt={item.title} draggable={false} />
@@ -91,8 +96,8 @@ export function SubjectNodeCard({
               <button
                 type="button"
                 className="cw-subject-add-auxiliary nodrag nopan"
-                aria-label="添加附加图片"
-                title="添加附加图片（最多 3 张）"
+                aria-label={t("canvasNodes.subject.addAuxiliary")}
+                title={t("canvasNodes.subject.addAuxiliaryHint")}
                 disabled={locked}
                 style={{ gridRow: `span ${3 - auxiliaries.length}` }}
                 onClick={() =>
@@ -153,6 +158,7 @@ function SubjectVideo({
   onImport: () => void;
   locked: boolean;
 }) {
+  const t = useT();
   const player = useSubjectPlayer<HTMLVideoElement>(resource.src);
   return (
     <div className="cw-subject-media cw-subject-video cw-domain-card-preview">
@@ -173,7 +179,7 @@ function SubjectVideo({
         <button
           type="button"
           className="cw-subject-play nodrag nopan"
-          aria-label="播放主体视频"
+          aria-label={t("canvasNodes.subject.playVideo")}
           onClick={player.toggle}
         >
           <CanvasIcon name="play" size={19} />
@@ -191,12 +197,13 @@ function SubjectImportButton({
   locked: boolean;
   onClick: () => void;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
       className="cw-subject-replace nodrag nopan"
-      aria-label="导入主体内容"
-      title="导入主体内容"
+      aria-label={t("canvasNodes.subject.importContent")}
+      title={t("canvasNodes.subject.importContent")}
       disabled={locked}
       onClick={onClick}
     >
@@ -214,12 +221,13 @@ function SubjectVoice({
   locked: boolean;
   onAdd: () => void;
 }) {
+  const t = useT();
   const player = useSubjectPlayer<HTMLAudioElement>(resource?.src);
   const label = resource?.src
     ? player.playing
-      ? "暂停主体声音"
-      : "播放主体声音"
-    : "添加主体声音";
+      ? t("canvasNodes.subject.pauseVoice")
+      : t("canvasNodes.subject.playVoice")
+    : t("canvasNodes.subject.addVoice");
   return (
     <div className="cw-subject-voice nodrag nopan">
       <button
@@ -259,6 +267,7 @@ function SubjectDescription({
   actions: CanvasActions | null;
   layoutKey: string;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(value);
   const [editing, setEditing] = useState(false);
   const cancelled = useRef(false);
@@ -295,9 +304,9 @@ function SubjectDescription({
     <textarea
       ref={input}
       className="cw-subject-description nodrag nopan nowheel"
-      aria-label="主体描述"
-      title="仅供查看，不作为生成参考"
-      placeholder="添加描述…"
+      aria-label={t("canvasNodes.subject.description")}
+      title={t("canvasNodes.subject.descriptionHint")}
+      placeholder={t("canvasNodes.subject.descriptionPlaceholder")}
       rows={1}
       maxLength={20000}
       readOnly={actions?.isLocked(id)}

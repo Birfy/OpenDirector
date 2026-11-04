@@ -7,6 +7,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { useI18n, type Translate } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
+import { defaultTranslate } from "./assistantTranslate.ts";
+import { translateTool } from "./toolText.ts";
 import { useImageMask, type PreviewSelection } from "./useImageMask";
 import { SelectionToolbarMenu } from "./SelectionToolbarMenu";
 import { CanvasIcon } from "./CanvasIcon";
@@ -75,43 +79,43 @@ export function isImageActionTool(tool: CanvasToolId): boolean {
   return IMAGE_ACTIONS.includes(tool);
 }
 const HANDLES: ExpansionHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
-const HANDLE_NAMES = {
-  nw: "左上",
-  n: "上",
-  ne: "右上",
-  e: "右",
-  se: "右下",
-  s: "下",
-  sw: "左下",
-  w: "左",
+const HANDLE_NAMES: Record<ExpansionHandle, MessageKey> = {
+  nw: "tools.imageEditor.expand.handle.nw",
+  n: "tools.imageEditor.expand.handle.n",
+  ne: "tools.imageEditor.expand.handle.ne",
+  e: "tools.imageEditor.expand.handle.e",
+  se: "tools.imageEditor.expand.handle.se",
+  s: "tools.imageEditor.expand.handle.s",
+  sw: "tools.imageEditor.expand.handle.sw",
+  w: "tools.imageEditor.expand.handle.w",
 };
 const ASPECTS = ["original", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const CAMERA_VIEWS = [
-  ["左上", 315, 30],
-  ["上方", 0, 30],
-  ["右上", 45, 30],
-  ["左侧", 315, 0],
-  ["正面", 0, 0],
-  ["右侧", 45, 0],
-  ["左下", 315, -30],
-  ["下方", 0, -30],
-  ["右下", 45, -30],
+  ["tools.imageEditor.camera.nw", 315, 30],
+  ["tools.imageEditor.camera.n", 0, 30],
+  ["tools.imageEditor.camera.ne", 45, 30],
+  ["tools.imageEditor.camera.w", 315, 0],
+  ["tools.imageEditor.camera.center", 0, 0],
+  ["tools.imageEditor.camera.e", 45, 0],
+  ["tools.imageEditor.camera.sw", 315, -30],
+  ["tools.imageEditor.camera.s", 0, -30],
+  ["tools.imageEditor.camera.se", 45, -30],
 ] as const;
 const LIGHT_VIEWS = [
-  ["左", 270, 0],
-  ["顶", 0, 90],
-  ["右", 90, 0],
-  ["前", 0, 0],
-  ["底", 0, -90],
-  ["后", 180, 0],
+  ["tools.imageEditor.light.w", 270, 0],
+  ["tools.imageEditor.light.top", 0, 90],
+  ["tools.imageEditor.light.e", 90, 0],
+  ["tools.imageEditor.light.front", 0, 0],
+  ["tools.imageEditor.light.bottom", 0, -90],
+  ["tools.imageEditor.light.back", 180, 0],
 ] as const;
 const numberValue = (p: ToolParameters, key: string, fallback: number) =>
   typeof p[key] === "number" && Number.isFinite(p[key])
     ? (p[key] as number)
     : fallback;
-function context(canvas: HTMLCanvasElement) {
+function context(canvas: HTMLCanvasElement, t: Translate = defaultTranslate) {
   const result = canvas.getContext("2d");
-  if (!result) throw new Error("浏览器无法创建绘图画布。");
+  if (!result) throw new Error(t("tools.imageEditor.error.noCanvas"));
   return result;
 }
 function makeCanvas(size: ImageSize): HTMLCanvasElement {
@@ -137,7 +141,11 @@ export function ImageActionEditor({
   selectionUnavailableReason,
   models = [],
 }: ImageActionEditorProps) {
-  const definition = CANVAS_TOOLS.find((item) => item.id === tool)!;
+  const { t, locale } = useI18n();
+  const definition = translateTool(
+    locale,
+    CANVAS_TOOLS.find((item) => item.id === tool)!,
+  );
   const initialDraft = useRef(
     draft?.tool === tool &&
       draft.sourceNodeIds.length === 1 &&
@@ -243,7 +251,7 @@ export function ImageActionEditor({
         setNotice(
           caught instanceof Error
             ? caught.message
-            : "标记过多，请先应用本地标记。",
+            : t("tools.imageEditor.error.tooManyMarks"),
         );
         return;
       }
@@ -261,7 +269,7 @@ export function ImageActionEditor({
     let cancelled = false;
     setReady(false);
     if (!node.data.src) {
-      setError("来源图片缺失，请重新导入。");
+      setError(t("tools.imageEditor.error.noSource"));
       return;
     }
     void (async () => {
@@ -289,7 +297,7 @@ export function ImageActionEditor({
             mask.naturalWidth !== imageSize.width ||
             mask.naturalHeight !== imageSize.height
           )
-            throw new Error("保存的蒙版尺寸与原图不一致，请重新绘制。");
+            throw new Error(t("tools.imageEditor.error.maskMismatch"));
         }
         if (cancelled) return;
         setSource(image);
@@ -326,7 +334,11 @@ export function ImageActionEditor({
         setReady(true);
       } catch (caught) {
         if (!cancelled)
-          setError(caught instanceof Error ? caught.message : "图片加载失败。");
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : t("tools.imageEditor.error.loadFailed"),
+          );
       }
     })();
     return () => {
@@ -361,7 +373,7 @@ export function ImageActionEditor({
       : 1;
     target.width = Math.round(size.width * scale);
     target.height = Math.round(size.height * scale);
-    const ctx = context(target);
+    const ctx = context(target, t);
     ctx.scale(target.width / size.width, target.height / size.height);
     if (maskMode) {
       if (selection.mask) ctx.drawImage(selection.mask, 0, 0);
@@ -439,7 +451,9 @@ export function ImageActionEditor({
         emitDraft.current(taskBuilder.current());
       } catch (caught) {
         setError(
-          caught instanceof Error ? caught.message : "无法保存编辑设置。",
+          caught instanceof Error
+            ? caught.message
+            : t("tools.imageEditor.error.saveFailed"),
         );
       }
     }, 250);
@@ -451,7 +465,11 @@ export function ImageActionEditor({
       onDraftChange(task);
       run(task);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "无法保存编辑设置。");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : t("tools.imageEditor.error.saveFailed"),
+      );
     }
   };
   const close = () => {
@@ -531,7 +549,7 @@ export function ImageActionEditor({
     }
     if (activeInk === "text") {
       if (!text.trim()) {
-        setNotice("先填写标记文字，再点击图片放置。");
+        setNotice(t("tools.imageEditor.notice.needText"));
         return;
       }
       record({ tool: "text", points: [point], size: brushSize, color, text });
@@ -609,7 +627,7 @@ export function ImageActionEditor({
       const overlay = makeCanvas(size);
       paintLayer(overlay, history.current);
       const output = makeCanvas(size),
-        ctx = context(output);
+        ctx = context(output, t);
       ctx.drawImage(source, 0, 0);
       if (maskMode)
         ctx.globalCompositeOperation =
@@ -617,10 +635,10 @@ export function ImageActionEditor({
       ctx.drawImage(overlay, 0, 0);
       const suffix =
         tool === "cutout"
-          ? "抠图"
+          ? t("tools.imageEditor.output.cutout")
           : tool === "inpainting-remove"
-            ? "透明擦除"
-            : "本地标记";
+            ? t("tools.imageEditor.output.erase")
+            : t("tools.imageEditor.output.mark");
       if (
         await onApply(
           [
@@ -637,11 +655,15 @@ export function ImageActionEditor({
       ) {
         // The confirmed result and latest draft were committed in the same undo step.
         readyRef.current = false;
-        setNotice(`已应用${suffix}结果。`);
+        setNotice(t("tools.imageEditor.notice.applied", { kind: suffix }));
         onClose();
-      } else setError("结果未能添加到画布，请重试。");
+      } else setError(t("tools.imageEditor.error.applyFailed"));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "无法导出本地图片。");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : t("tools.imageEditor.error.exportFailed"),
+      );
     } finally {
       setPublishing(false);
     }
@@ -654,9 +676,13 @@ export function ImageActionEditor({
       anchor.href = mask.toDataURL("image/png");
       anchor.download = `${tool}-mask.png`;
       anchor.click();
-      setNotice("已导出原图尺寸的透明背景白色蒙版。");
+      setNotice(t("tools.imageEditor.notice.maskExported"));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "蒙版导出失败。");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : t("tools.imageEditor.error.maskExportFailed"),
+      );
     }
   };
 
@@ -687,17 +713,22 @@ export function ImageActionEditor({
       ),
     });
   const directionButtons = (
-    <div className="iae-direction" aria-label="方向微调">
-      {[
-        ["向左 5°", "←", -5, 0],
-        ["向上 5°", "↑", 0, 5],
-        ["向下 5°", "↓", 0, -5],
-        ["向右 5°", "→", 5, 0],
-      ].map(([label, glyph, x, y]) => (
+    <div
+      className="iae-direction"
+      aria-label={t("tools.imageEditor.direction.aria")}
+    >
+      {(
+        [
+          ["tools.imageEditor.direction.left", "←", -5, 0],
+          ["tools.imageEditor.direction.up", "↑", 0, 5],
+          ["tools.imageEditor.direction.down", "↓", 0, -5],
+          ["tools.imageEditor.direction.right", "→", 5, 0],
+        ] as const
+      ).map(([label, glyph, x, y]) => (
         <TooltipButton
-          key={String(label)}
-          label={String(label)}
-          onClick={() => angleChange(yaw + Number(x), pitch + Number(y))}
+          key={label}
+          label={t(label)}
+          onClick={() => angleChange(yaw + x, pitch + y)}
         >
           {glyph}
         </TooltipButton>
@@ -707,7 +738,7 @@ export function ImageActionEditor({
   const angleSliders = (
     <>
       <label className="iae-range">
-        水平角{" "}
+        {t("tools.imageEditor.angle.horizontal")}{" "}
         <input
           type="range"
           min={0}
@@ -723,7 +754,7 @@ export function ImageActionEditor({
           <button
             type="button"
             key={value}
-            aria-label={`水平角 ${value}°`}
+            aria-label={t("tools.imageEditor.angle.horizontalAria", { value })}
             onClick={() => angleChange(value, pitch)}
           >
             {value}°
@@ -731,7 +762,7 @@ export function ImageActionEditor({
         ))}
       </div>
       <label className="iae-range">
-        垂直角{" "}
+        {t("tools.imageEditor.angle.vertical")}{" "}
         <input
           type="range"
           min={tool === "lighting" ? -90 : -30}
@@ -748,7 +779,7 @@ export function ImageActionEditor({
             <button
               type="button"
               key={value}
-              aria-label={`垂直角 ${value}°`}
+              aria-label={t("tools.imageEditor.angle.verticalAria", { value })}
               onClick={() => angleChange(yaw, value)}
             >
               {value}°
@@ -787,7 +818,9 @@ export function ImageActionEditor({
                 tabIndex={0}
                 className={`iae-ink ${maskMode ? "iae-ink-mask" : ""}`}
                 aria-label={
-                  maskMode ? "在原图上涂抹选区蒙版" : "在原图上绘制标记"
+                  maskMode
+                    ? t("tools.imageEditor.ink.ariaMask")
+                    : t("tools.imageEditor.ink.ariaMark")
                 }
                 style={{
                   left: rect.x,
@@ -842,8 +875,10 @@ export function ImageActionEditor({
                     key={handle}
                     type="button"
                     className={`iae-handle iae-handle-${handle}`}
-                    aria-label={`调整扩图${HANDLE_NAMES[handle]}边界`}
-                    title="拖动调整；方向键每次调整原图的 1%"
+                    aria-label={t("tools.imageEditor.expand.handleAria", {
+                      side: t(HANDLE_NAMES[handle]),
+                    })}
+                    title={t("tools.imageEditor.expand.handleTitle")}
                     onPointerDown={(event) => {
                       if (event.button !== 0 || expansionDrag.current) return;
                       event.preventDefault();
@@ -933,7 +968,9 @@ export function ImageActionEditor({
       {overlay}
       <section
         className={`image-action-editor iae-${tool} nodrag nopan nowheel`}
-        aria-label={`${definition.title}编辑器`}
+        aria-label={t("tools.imageEditor.panelAria", {
+          title: definition.title,
+        })}
         onPointerDown={(event) => event.stopPropagation()}
         onWheel={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
@@ -957,7 +994,10 @@ export function ImageActionEditor({
         <header className="iae-header">
           <strong>{definition.title}</strong>
           {tool === "smart-edit" && (
-            <div className="iae-segment" aria-label="改图模式">
+            <div
+              className="iae-segment"
+              aria-label={t("tools.imageEditor.smartEdit.modeAria")}
+            >
               <button
                 aria-pressed={!maskMode}
                 onClick={() => {
@@ -965,7 +1005,7 @@ export function ImageActionEditor({
                   setActiveInk("brush");
                 }}
               >
-                标记
+                {t("tools.imageEditor.smartEdit.mark")}
               </button>
               <button
                 aria-pressed={maskMode}
@@ -974,12 +1014,18 @@ export function ImageActionEditor({
                   setActiveInk("brush");
                 }}
               >
-                局部选区{hasMask ? " · 已选" : ""}
+                {hasMask
+                  ? t("tools.imageEditor.smartEdit.selectionSelected")
+                  : t("tools.imageEditor.smartEdit.selection")}
               </button>
             </div>
           )}
-          {selection.pending && <span role="status">正在识别选区…</span>}
-          <TooltipButton label="关闭编辑" onClick={close}>
+          {selection.pending && (
+            <span role="status">
+              {t("tools.imageEditor.selection.pending")}
+            </span>
+          )}
+          <TooltipButton label={t("tools.imageEditor.close")} onClick={close}>
             <CanvasIcon name="close" size={16} />
           </TooltipButton>
         </header>
@@ -988,21 +1034,39 @@ export function ImageActionEditor({
             <div
               className="iae-brush-tools"
               role="toolbar"
-              aria-label={maskMode ? "蒙版绘图工具" : "改图标记工具"}
+              aria-label={
+                maskMode
+                  ? t("tools.imageEditor.brush.toolsAriaMask")
+                  : t("tools.imageEditor.brush.toolsAriaMark")
+              }
             >
               {[
                 ...[
                   {
                     tool: "brush",
-                    label: maskMode ? "选择画笔" : "画笔",
+                    label: maskMode
+                      ? t("tools.imageEditor.brush.select")
+                      : t("tools.imageEditor.brush.brush"),
                     icon: "pencil",
                   },
-                  { tool: "erase", label: "橡皮", icon: "minus" },
+                  {
+                    tool: "erase",
+                    label: t("tools.imageEditor.brush.erase"),
+                    icon: "minus",
+                  },
                 ],
                 ...(!maskMode
                   ? [
-                      { tool: "arrow", label: "箭头", icon: "arrowRight" },
-                      { tool: "text", label: "文字", icon: "text" },
+                      {
+                        tool: "arrow",
+                        label: t("tools.imageEditor.brush.arrow"),
+                        icon: "arrowRight",
+                      },
+                      {
+                        tool: "text",
+                        label: t("tools.imageEditor.brush.text"),
+                        icon: "text",
+                      },
                     ]
                   : []),
               ].map((item) => (
@@ -1024,7 +1088,7 @@ export function ImageActionEditor({
               {maskMode && (
                 <>
                   <TooltipButton
-                    label="自动选择主体"
+                    label={t("tools.imageEditor.brush.subject")}
                     disabled={
                       publishing ||
                       !onPreviewSelection ||
@@ -1036,7 +1100,7 @@ export function ImageActionEditor({
                     <CanvasIcon name="subject" size={17} />
                   </TooltipButton>
                   <TooltipButton
-                    label="快速选择：点击对象添加或移除"
+                    label={t("tools.imageEditor.brush.quick")}
                     aria-pressed={selectionTool === "quick"}
                     disabled={!onPreviewSelection}
                     onClick={() => setSelectionTool("quick")}
@@ -1044,7 +1108,7 @@ export function ImageActionEditor({
                     <CanvasIcon name="cursor" size={17} />
                   </TooltipButton>
                   <TooltipButton
-                    label="框选识别"
+                    label={t("tools.imageEditor.brush.box")}
                     aria-pressed={selectionTool === "box"}
                     disabled={!onPreviewSelection}
                     onClick={() => setSelectionTool("box")}
@@ -1052,7 +1116,7 @@ export function ImageActionEditor({
                     <CanvasIcon name="crop" size={17} />
                   </TooltipButton>
                   <TooltipButton
-                    label="按描述选择"
+                    label={t("tools.imageEditor.brush.describe")}
                     aria-expanded={showSelectionPrompt}
                     disabled={!onPreviewSelection}
                     onClick={() => setShowSelectionPrompt(!showSelectionPrompt)}
@@ -1063,21 +1127,33 @@ export function ImageActionEditor({
               )}
               <span className="iae-separator" />
               <TooltipButton
-                label={maskMode ? "撤销选区" : "撤销标记"}
+                label={
+                  maskMode
+                    ? t("tools.imageEditor.undo.selection")
+                    : t("tools.imageEditor.undo.mark")
+                }
                 disabled={!canUndo}
                 onClick={undo}
               >
                 <CanvasIcon name="undo" size={16} />
               </TooltipButton>
               <TooltipButton
-                label={maskMode ? "重做选区" : "重做标记"}
+                label={
+                  maskMode
+                    ? t("tools.imageEditor.redo.selection")
+                    : t("tools.imageEditor.redo.mark")
+                }
                 disabled={!canRedo}
                 onClick={redo}
               >
                 <CanvasIcon name="redo" size={16} />
               </TooltipButton>
               <TooltipButton
-                label={maskMode ? "清空选区" : "清除所有标记"}
+                label={
+                  maskMode
+                    ? t("tools.imageEditor.clear.selection")
+                    : t("tools.imageEditor.clear.mark")
+                }
                 onClick={() => specialStroke("clear")}
               >
                 <CanvasIcon name="trash" size={16} />
@@ -1085,9 +1161,11 @@ export function ImageActionEditor({
               {(!maskMode || selectionTool === "paint") && (
                 <div className="iae-brush-settings">
                   <label className="iae-range">
-                    {activeInk === "text" ? "字号" : "笔刷"}
+                    {activeInk === "text"
+                      ? t("tools.imageEditor.brush.fontSize")
+                      : t("tools.imageEditor.brush.size")}
                     <input
-                      aria-label="笔刷或文字像素尺寸"
+                      aria-label={t("tools.imageEditor.brush.sizeAria")}
                       type="range"
                       min={1}
                       max={160}
@@ -1100,7 +1178,7 @@ export function ImageActionEditor({
                   </label>
                   {!maskMode && (
                     <label className="iae-color">
-                      颜色
+                      {t("tools.imageEditor.brush.color")}
                       <input
                         type="color"
                         value={color}
@@ -1115,8 +1193,8 @@ export function ImageActionEditor({
               <div className="iae-row">
                 <input
                   className="iae-text"
-                  aria-label="标记文字"
-                  placeholder="输入文字，再点击图片放置"
+                  aria-label={t("tools.imageEditor.text.aria")}
+                  placeholder={t("tools.imageEditor.text.placeholder")}
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                 />
@@ -1134,7 +1212,7 @@ export function ImageActionEditor({
                     })
                   }
                 >
-                  居中放置
+                  {t("tools.imageEditor.text.center")}
                 </button>
               </div>
             )}
@@ -1147,41 +1225,45 @@ export function ImageActionEditor({
                 }}
               >
                 <input
-                  aria-label="要选择的对象"
-                  placeholder="描述要选择的对象，如人物、衣服"
+                  aria-label={t("tools.imageEditor.selection.queryAria")}
+                  placeholder={t(
+                    "tools.imageEditor.selection.queryPlaceholder",
+                  )}
                   value={selectionPrompt}
                   onChange={(event) => setSelectionPrompt(event.target.value)}
                 />
                 <button disabled={!selectionPrompt.trim() || selection.pending}>
-                  识别
+                  {t("tools.imageEditor.selection.recognize")}
                 </button>
               </form>
             )}
             {maskMode && !onPreviewSelection && (
               <p className="iae-hint">
                 {selectionUnavailableReason ??
-                  "连接 SAM 3 后可自动识别；也可直接涂抹选区。"}
+                  t("tools.imageEditor.selection.unavailable")}
               </p>
             )}
             {maskMode && selectionTool === "box" && (
               <p className="iae-hint">
-                拖框圈住要识别的对象，再用画笔或橡皮修正。
+                {t("tools.imageEditor.selection.boxHint")}
               </p>
             )}
             {maskMode && selectionTool === "quick" && (
-              <p className="iae-hint">点击已识别对象，添加或移除选区。</p>
+              <p className="iae-hint">
+                {t("tools.imageEditor.selection.quickHint")}
+              </p>
             )}
           </>
         )}
         {(tool === "smart-edit" || tool === "outpaint") && (
           <label className="iae-prompt">
-            <span>提示词</span>
+            <span>{t("tools.imageEditor.prompt.label")}</span>
             <textarea
               rows={3}
               placeholder={
                 tool === "outpaint"
-                  ? "描述扩展区域的内容（选填）"
-                  : "描述希望怎样修改这张图片"
+                  ? t("tools.imageEditor.prompt.outpaintPlaceholder")
+                  : t("tools.imageEditor.prompt.editPlaceholder")
               }
               value={String(parameters.prompt ?? "")}
               onChange={(event) => change({ prompt: event.target.value })}
@@ -1191,9 +1273,9 @@ export function ImageActionEditor({
         {tool === "outpaint" && (
           <div className="iae-row iae-wrap">
             <label>
-              画幅{" "}
+              {t("tools.imageEditor.outpaint.aspect")}{" "}
               <select
-                aria-label="扩图画幅"
+                aria-label={t("tools.imageEditor.outpaint.aspectAria")}
                 value={String(parameters.aspectPreset ?? "original")}
                 onChange={(event) => {
                   if (!size) return;
@@ -1209,11 +1291,13 @@ export function ImageActionEditor({
                 }}
               >
                 <option value="custom" disabled>
-                  自由调整
+                  {t("tools.imageEditor.outpaint.custom")}
                 </option>
                 {ASPECTS.map((aspect) => (
                   <option key={aspect} value={aspect}>
-                    {aspect === "original" ? "原比例" : aspect}
+                    {aspect === "original"
+                      ? t("tools.imageEditor.outpaint.original")
+                      : aspect}
                   </option>
                 ))}
               </select>
@@ -1225,17 +1309,22 @@ export function ImageActionEditor({
                 size && setExpansion(expansionForAspect(size), "original")
               }
             >
-              重置为 1.5×
+              {t("tools.imageEditor.outpaint.reset")}
             </button>
-            <span className="iae-hint">拖动图片外框的 8 个手柄调整范围</span>
+            <span className="iae-hint">
+              {t("tools.imageEditor.outpaint.handlesHint")}
+            </span>
           </div>
         )}
         {tool === "image-hd" && (
           <div className="iae-row iae-wrap">
-            <div className="iae-segment" aria-label="超清模式">
+            <div
+              className="iae-segment"
+              aria-label={t("tools.imageEditor.hd.modeAria")}
+            >
               {[
-                ["normal", "超清"],
-                ["pro", "智能超清"],
+                ["normal", t("tools.imageEditor.hd.normal")],
+                ["pro", t("tools.imageEditor.hd.pro")],
               ].map(([value, label]) => (
                 <button
                   type="button"
@@ -1250,9 +1339,9 @@ export function ImageActionEditor({
             {parameters.kind === "pro" && (
               <>
                 <label>
-                  分辨率{" "}
+                  {t("tools.imageEditor.hd.resolution")}{" "}
                   <select
-                    aria-label="超清分辨率"
+                    aria-label={t("tools.imageEditor.hd.resolutionAria")}
                     value={String(parameters.resolution ?? "4K")}
                     onChange={(event) =>
                       change({ resolution: event.target.value })
@@ -1264,7 +1353,7 @@ export function ImageActionEditor({
                   </select>
                 </label>
                 <label className="iae-range">
-                  细节{" "}
+                  {t("tools.imageEditor.hd.detail")}{" "}
                   <input
                     type="range"
                     min={1}
@@ -1292,7 +1381,10 @@ export function ImageActionEditor({
         {tool === "view-control" && (
           <div className="iae-angle-layout">
             <div>
-              <div className="iae-camera-grid" aria-label="摄像机方位">
+              <div
+                className="iae-camera-grid"
+                aria-label={t("tools.imageEditor.camera.aria")}
+              >
                 {CAMERA_VIEWS.map(([label, x, y]) => (
                   <button
                     key={label}
@@ -1300,7 +1392,7 @@ export function ImageActionEditor({
                     aria-pressed={yaw === x && pitch === y}
                     onClick={() => angleChange(x, y)}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
@@ -1309,12 +1401,12 @@ export function ImageActionEditor({
             <div className="iae-angle-fields">
               {angleSliders}
               <div className="iae-row">
-                <span>景别</span>
+                <span>{t("tools.imageEditor.distance.label")}</span>
                 <div className="iae-segment">
                   {[
-                    ["near", "近"],
-                    ["standard", "标准"],
-                    ["far", "远"],
+                    ["near", t("tools.imageEditor.distance.near")],
+                    ["standard", t("tools.imageEditor.distance.standard")],
+                    ["far", t("tools.imageEditor.distance.far")],
                   ].map(([value, label]) => (
                     <button
                       key={value}
@@ -1334,7 +1426,7 @@ export function ImageActionEditor({
                     change({ yaw: 0, pitch: 0, distancePreset: "standard" })
                   }
                 >
-                  重置参数
+                  {t("tools.imageEditor.distance.reset")}
                 </button>
               </div>
             </div>
@@ -1346,7 +1438,10 @@ export function ImageActionEditor({
               <div>
                 <div
                   className="iae-light-sphere"
-                  aria-label={`光位示意：水平 ${yaw} 度，垂直 ${pitch} 度`}
+                  aria-label={t("tools.imageEditor.lighting.sphereAria", {
+                    yaw,
+                    pitch,
+                  })}
                   style={
                     {
                       "--light-color": String(
@@ -1369,21 +1464,24 @@ export function ImageActionEditor({
                     aria-pressed={lightView === "perspective"}
                     onClick={() => setLightView("perspective")}
                   >
-                    透视
+                    {t("tools.imageEditor.lighting.perspective")}
                   </button>
                   <button
                     type="button"
                     aria-pressed={lightView === "front"}
                     onClick={() => setLightView("front")}
                   >
-                    正面
+                    {t("tools.imageEditor.lighting.front")}
                   </button>
                 </div>
                 {directionButtons}
               </div>
               <div className="iae-angle-fields">
                 {angleSliders}
-                <div className="iae-light-views" aria-label="光源方位">
+                <div
+                  className="iae-light-views"
+                  aria-label={t("tools.imageEditor.light.viewsAria")}
+                >
                   {LIGHT_VIEWS.map(([label, x, y]) => (
                     <button
                       type="button"
@@ -1391,7 +1489,7 @@ export function ImageActionEditor({
                       aria-pressed={yaw === x && pitch === y}
                       onClick={() => angleChange(x, y)}
                     >
-                      {label}
+                      {t(label)}
                     </button>
                   ))}
                 </div>
@@ -1399,7 +1497,7 @@ export function ImageActionEditor({
             </div>
             <div className="iae-row iae-wrap">
               <label className="iae-color">
-                光色{" "}
+                {t("tools.imageEditor.lighting.color")}{" "}
                 <input
                   type="color"
                   value={String(parameters.lightColor ?? "#ffffff")}
@@ -1409,7 +1507,7 @@ export function ImageActionEditor({
                 />
                 <input
                   className="iae-hex"
-                  aria-label="光色 HEX"
+                  aria-label={t("tools.imageEditor.lighting.colorHexAria")}
                   value={String(parameters.lightColor ?? "#ffffff")}
                   maxLength={7}
                   onChange={(event) =>
@@ -1417,10 +1515,13 @@ export function ImageActionEditor({
                   }
                 />
               </label>
-              <div className="iae-segment" aria-label="光质">
+              <div
+                className="iae-segment"
+                aria-label={t("tools.imageEditor.lighting.textureAria")}
+              >
                 {[
-                  ["soft", "柔光"],
-                  ["hard", "硬光"],
+                  ["soft", t("tools.imageEditor.lighting.soft")],
+                  ["hard", t("tools.imageEditor.lighting.hard")],
                 ].map(([value, label]) => (
                   <button
                     type="button"
@@ -1433,7 +1534,7 @@ export function ImageActionEditor({
                 ))}
               </div>
               <label className="iae-range">
-                亮度{" "}
+                {t("tools.imageEditor.lighting.brightness")}{" "}
                 <input
                   type="range"
                   min={0}
@@ -1462,15 +1563,18 @@ export function ImageActionEditor({
                   setLightView("perspective");
                 }}
               >
-                重置打光
+                {t("tools.imageEditor.lighting.reset")}
               </button>
-              <p className="iae-hint">光位图仅为参数示意；不会修改原图光照。</p>
+              <p className="iae-hint">
+                {t("tools.imageEditor.lighting.hint")}
+              </p>
             </div>
           </>
         )}
         {selection.pending && (
           <div className="iae-selection-status" role="status">
-            智能识别选区中… <button onClick={selection.cancel}>取消</button>
+            {t("tools.imageEditor.selection.recognizing")}{" "}
+            <button onClick={selection.cancel}>{t("common.cancel")}</button>
           </div>
         )}
         {selection.message && maskMode && (
@@ -1492,16 +1596,20 @@ export function ImageActionEditor({
           {models.length > 0 && tool !== "cutout" && (
             <select
               className="iae-model"
-              aria-label="编辑模型"
+              aria-label={t("tools.imageEditor.model.aria")}
               value={String(parameters.imageModelConfigId ?? "")}
               onChange={(event) =>
                 change({ imageModelConfigId: event.target.value })
               }
             >
-              <option value="">{models[0]!.label} · 自动</option>
+              <option value="">
+                {t("tools.imageEditor.model.auto", {
+                  model: models[0]!.label,
+                })}
+              </option>
               {modelMissing && (
                 <option value={String(parameters.imageModelConfigId)} disabled>
-                  原模型已不可用，请重新选择
+                  {t("tools.imageEditor.model.missingOption")}
                 </option>
               )}
               {models.map((model) => (
@@ -1513,24 +1621,25 @@ export function ImageActionEditor({
           )}
           <span className="iae-service-note">
             {modelMissing
-              ? "原编辑模型已不可用，请重新选择"
+              ? t("tools.imageEditor.service.missing")
               : !ready && !error
-                ? "正在读取原图…"
+                ? t("tools.imageEditor.service.loading")
                 : tool === "cutout"
                   ? hasMask
-                    ? "保留选区，输出透明背景"
-                    : "选择要保留的主体"
+                    ? t("tools.imageEditor.service.cutoutKeep")
+                    : t("tools.imageEditor.service.cutoutChoose")
                   : localOnly
-                    ? "本地标注"
+                    ? t("tools.imageEditor.service.local")
                     : !onGenerate
-                      ? (unavailableReason ?? "请连接编辑模型")
+                      ? (unavailableReason ??
+                        t("tools.imageEditor.service.connect"))
                       : hasMask
-                        ? "局部编辑"
+                        ? t("tools.imageEditor.service.localEdit")
                         : ""}
           </span>
           <div className="iae-actions">
             <TooltipButton
-              label="更多编辑操作"
+              label={t("tools.imageEditor.actions.more")}
               aria-haspopup="menu"
               aria-expanded={!!menuAnchor}
               aria-controls={menuAnchor ? "image-action-more" : undefined}
@@ -1550,7 +1659,7 @@ export function ImageActionEditor({
               <SelectionToolbarMenu
                 anchor={menuAnchor}
                 id="image-action-more"
-                label="更多编辑操作"
+                label={t("tools.imageEditor.actions.more")}
                 onClose={() => setMenuAnchor(null)}
               >
                 {drawing && tool !== "cutout" && !maskMode && (
@@ -1564,7 +1673,7 @@ export function ImageActionEditor({
                       applyLocal();
                     }}
                   >
-                    应用本地标记
+                    {t("tools.imageEditor.actions.applyLocal")}
                   </button>
                 )}
                 {tool === "inpainting-remove" && (
@@ -1578,7 +1687,7 @@ export function ImageActionEditor({
                       applyLocal();
                     }}
                   >
-                    本地擦为透明
+                    {t("tools.imageEditor.actions.eraseLocal")}
                   </button>
                 )}
                 {hasMask && (
@@ -1591,7 +1700,7 @@ export function ImageActionEditor({
                       exportMask();
                     }}
                   >
-                    导出蒙版
+                    {t("tools.imageEditor.actions.exportMask")}
                   </button>
                 )}
                 {maskMode && (
@@ -1604,7 +1713,7 @@ export function ImageActionEditor({
                       specialStroke("fill");
                     }}
                   >
-                    全选
+                    {t("tools.imageEditor.actions.selectAll")}
                   </button>
                 )}
                 <button
@@ -1614,10 +1723,12 @@ export function ImageActionEditor({
                   disabled={publishing || !ready}
                   onClick={() => {
                     setMenuAnchor(null);
-                    withTask(() => setNotice("设置已保存。"));
+                    withTask(() =>
+                      setNotice(t("tools.imageEditor.notice.settingsSaved")),
+                    );
                   }}
                 >
-                  保存设置
+                  {t("tools.imageEditor.actions.save")}
                 </button>
                 {!localOnly && (
                   <button
@@ -1630,7 +1741,7 @@ export function ImageActionEditor({
                       withTask(onImportResults);
                     }}
                   >
-                    导入结果
+                    {t("tools.imageEditor.actions.import")}
                   </button>
                 )}
               </SelectionToolbarMenu>
@@ -1663,7 +1774,11 @@ export function ImageActionEditor({
                 name={tool === "cutout" ? "check" : "sparkle"}
                 size={15}
               />
-              {tool === "cutout" ? "完成抠图" : localOnly ? "确认标注" : "生成"}
+              {tool === "cutout"
+                ? t("tools.imageEditor.actions.finishCutout")
+                : localOnly
+                  ? t("tools.imageEditor.actions.confirmMark")
+                  : t("tools.imageEditor.actions.generate")}
             </button>
           </div>
         </footer>

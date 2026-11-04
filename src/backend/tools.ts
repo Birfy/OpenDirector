@@ -10,6 +10,9 @@ import type {
 import { CANVAS_TOOLS } from "../canvas/toolCatalog.ts";
 import { ApiError, errorMessage, json, request } from "./api.ts";
 import { creationClient } from "./creationClient.ts";
+import { toolTaskError, toolTaskPhase } from "../canvas/toolTaskText.ts";
+import { toolReasonText } from "../canvas/toolReasonText.ts";
+import { tNow } from "../i18n/messages.ts";
 import {
   EXTENSIONS,
   fileName,
@@ -97,32 +100,37 @@ export interface ToolTask {
 /** Stopping the local execution does not confirm a provider cancellation. */
 export function toolTaskMessage(task: ToolTask): string | undefined {
   if (task.cancelRequested && task.localState !== "stopped")
-    return "停止处理中，等待当前操作安全收尾。";
+    return tNow("errors.tools.taskMessage.stopping");
   if (task.cancelRequested) {
-    const remote = {
-      not_applicable: "尚未提交模型调用。",
-      not_required: "模型调用已结束；已有结果与执行记录已保留。",
-      not_requested: "尚未向远端发送取消请求。",
-      requested: "取消请求已发送，等待远端确认。",
-      confirmed: "远端已确认取消。",
-      unsupported: "远端不支持取消，可能继续执行。",
-      unknown: "远端取消结果未知，请核对原任务；不要直接重复生成。",
-    };
-    return `已停止本地处理。${remote[task.remoteCancellation ?? "unknown"]}`;
+    const detail =
+      task.remoteCancellation === "not_applicable"
+        ? tNow("errors.tools.taskMessage.notApplicable")
+        : task.remoteCancellation === "not_required"
+          ? tNow("errors.tools.taskMessage.notRequired")
+          : task.remoteCancellation === "not_requested"
+            ? tNow("errors.tools.taskMessage.notRequested")
+            : task.remoteCancellation === "requested"
+              ? tNow("errors.tools.taskMessage.requested")
+              : task.remoteCancellation === "confirmed"
+                ? tNow("errors.tools.taskMessage.confirmed")
+                : task.remoteCancellation === "unsupported"
+                  ? tNow("errors.tools.taskMessage.unsupported")
+                  : tNow("errors.tools.taskMessage.unknown");
+    return tNow("errors.tools.taskMessage.stopped", { detail });
   }
   if (task.status === "cancelled")
-    return "历史记录标记为取消，未提供远端取消确认依据。";
+    return tNow("errors.tools.taskMessage.cancelledHistory");
   if (task.status === "interrupted" && task.modelCalls?.length) {
     const states = new Set(task.modelCalls.map((call) => call.state));
     const detail =
       states.has("unknown") || states.has("submitting")
-        ? "部分模型调用结果未知，请核对原任务。"
+        ? tNow("errors.tools.taskMessage.interruptedUnknown")
         : states.has("running")
-          ? "远端任务仍在运行。"
-          : "模型调用已结束，执行记录及已登记结果已保留。";
-    return `执行已中断。${detail}不会自动重新生成。`;
+          ? tNow("errors.tools.taskMessage.interruptedRunning")
+          : tNow("errors.tools.taskMessage.interruptedEnded");
+    return tNow("errors.tools.taskMessage.interrupted", { detail });
   }
-  return task.error ?? undefined;
+  return toolTaskError(task.error);
 }
 
 export interface ToolCanvasOrigin {
@@ -167,8 +175,16 @@ export function useToolCatalog(connected: boolean, revision: unknown) {
         tools: ToolCatalogEntry[];
         selectionPreview?: { available: boolean; reason?: string };
       }>("/tools");
-      setTools(value.tools);
-      setSelectionPreview(value.selectionPreview ?? { available: false });
+      setTools(
+        value.tools.map((entry) => ({
+          ...entry,
+          reason: toolReasonText(entry.reason),
+        })),
+      );
+      setSelectionPreview({
+        ...(value.selectionPreview ?? { available: false }),
+        reason: toolReasonText(value.selectionPreview?.reason),
+      });
       setError("");
     } catch (failure) {
       setTools([]);
@@ -257,7 +273,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       editorRef &&
       client?.snapshot.editorDocuments.find((doc) => doc.id === editorRef.id);
     if (client && (!owner || !editor || editor.kind !== "media_edit"))
-      throw new Error("请先保存工具编辑设置，再提交任务。");
+      throw new Error(tNow("errors.tools.saveBeforeSubmit"));
     const draft =
       owner && editor
         ? {
@@ -278,7 +294,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
           ? await uploadAsset(
               projectId,
               await (await fetch(value.maskDataUrl, { signal })).blob(),
-              "选区",
+              tNow("errors.tools.selectionAsset"),
               signal,
             )
           : undefined;
@@ -286,7 +302,7 @@ export async function submitToolTask(value: ToolRequest, signal: AbortSignal) {
       ? await uploadAsset(
           projectId,
           await (await fetch(value.annotatedDataUrl, { signal })).blob(),
-          "改图标注",
+          tNow("errors.tools.annotationAsset"),
           signal,
         )
       : undefined;
@@ -400,7 +416,9 @@ export async function waitForToolTask(
     if (!["queued", "running"].includes(task.status))
       throw new Error(
         toolTaskMessage(task) ??
-          (task.status === "cancelled" ? "任务已取消。" : "工具任务未完成。"),
+          (task.status === "cancelled"
+            ? tNow("errors.tools.taskCancelled")
+            : tNow("errors.tools.taskIncomplete")),
       );
     await readDelay(2000, signal);
   }
@@ -486,17 +504,19 @@ export async function toolHistoryJobs(
           toolTaskMessage(task) ??
           (unavailable
             ? transientReadFailure(outputFailure)
-              ? "结果读取暂时失败，将自动重试。"
+              ? tNow("errors.tools.resultRetry")
               : outputFailure instanceof ApiError &&
                   [404, 410].includes(outputFailure.status ?? 0)
-                ? "结果文件缺失，任务记录已保留。"
-                : `结果读取失败：${errorMessage(outputFailure)}`
-            : (task.phase ??
+                ? tNow("errors.tools.resultMissing")
+                : tNow("errors.tools.resultReadFailed", {
+                    error: errorMessage(outputFailure),
+                  })
+            : (toolTaskPhase(task.phase) ??
               (task.placement === "placed"
-                ? "已加入画布"
+                ? tNow("errors.tools.addedToCanvas")
                 : task.placement === "unplaced"
-                  ? "来源已变化，结果保留在历史中，可重新放置。"
-                  : "等待加入画布"))),
+                  ? tNow("errors.tools.sourceChanged")
+                  : tNow("errors.tools.waitingForCanvas")))),
         outputs,
         tool: {
           version: 1,

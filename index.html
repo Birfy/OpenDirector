@@ -23,6 +23,32 @@
       content="本地创作画布：组织素材、编辑图像、编排时间线与导演预演。"
     />
     <title>OpenDirector · 创作画布</title>
+    <script>
+      try {
+        const key = "opendirector.locale.v1";
+        const saved = localStorage.getItem(key);
+        const language = navigator.languages?.[0] ?? navigator.language ?? "";
+        const locale =
+          saved === "en-US" || saved === "zh-CN"
+            ? saved
+            : /^zh\b/i.test(language)
+              ? "zh-CN"
+              : "en-US";
+        document.documentElement.lang = locale;
+        document.documentElement.dataset.locale = locale;
+        if (locale === "en-US") {
+          document.title = "OpenDirector · Creation Canvas";
+          document
+            .querySelector('meta[name="description"]')
+            ?.setAttribute(
+              "content",
+              "A local creation canvas for organizing assets, editing images, arranging timelines and previewing scenes.",
+            );
+        }
+      } catch {
+        // Storage or navigator can be unavailable; the React provider re-applies.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

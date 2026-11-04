@@ -8,6 +8,7 @@ import {
   type LinkedMediaResult,
   type ResultSource,
 } from "./linkedResults.ts";
+import { tNow } from "../i18n/messages.ts";
 import { createNode, type CanvasDocument } from "./model.ts";
 
 /** Source toolbar action creates a new connected draft; generation later fills that draft. */
@@ -19,11 +20,11 @@ export function createVideoExtensionDraft(
   if (!validation.node) return { document, ids: [], error: validation.error };
   const origin = validation.node;
   if (origin.type !== "video")
-    return { document, ids: [], error: "视频延长需要一个已有视频节点。" };
+    return { document, ids: [], error: tNow("errors.nodeAction.extendNeedsVideo") };
   const inherited =
     origin.data.settings?.mode === "video" ? origin.data.settings : undefined;
   const defaults = generationDefaults("video");
-  const prompt = "请基于参考视频的结尾延长 5 秒，保持人物、场景和运动连贯。";
+  const prompt = tNow("errors.nodeAction.extendPrompt");
   const settings = {
     ...defaults,
     ...(inherited
@@ -48,7 +49,7 @@ export function createVideoExtensionDraft(
       y: position.y,
     },
     {
-      title: `${origin.data.title} · 延长`,
+      title: `${origin.data.title} · ${tNow("errors.nodeAction.extendTitle")}`,
       prompt,
       settings,
     },
@@ -103,7 +104,7 @@ function assertGridSize(rows: number, columns: number) {
     columns > 7 ||
     rows * columns < 2
   )
-    throw new Error("网格切分需要 1 至 7 行、1 至 7 列，且至少分为 2 张图片。");
+    throw new Error(tNow("errors.nodeAction.gridRange"));
 }
 
 /** Integer pixel boundaries cover every pixel exactly once, including uneven edges. */
@@ -116,7 +117,7 @@ export function gridSplitCells(
   assertGridSize(rows, columns);
   assertLayerSize(width, height);
   if (rows > height || columns > width)
-    throw new Error("行列数不能超过图片的像素尺寸。");
+    throw new Error(tNow("errors.nodeAction.gridPixels"));
   return Array.from({ length: rows * columns }, (_, index) => {
     const row = Math.floor(index / columns),
       column = index % columns;
@@ -143,7 +144,7 @@ export async function gridSplitImage(
   signal.throwIfAborted();
   assertGridSize(rows, columns);
   if (source.kind !== "image" || !source.src)
-    throw new Error("网格切分需要一个可读取的图片节点。");
+    throw new Error(tNow("errors.nodeAction.gridImage"));
   const src = source.src;
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const cancel = () => reject(signal.reason);
@@ -174,7 +175,7 @@ export async function gridSplitImage(
     );
     canvas = window.document.createElement("canvas");
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("浏览器无法创建图片切分画布。");
+    if (!context) throw new Error(tNow("errors.nodeAction.gridCanvas"));
     const outputs: LinkedMediaResult[] = [];
     for (const cell of cells) {
       signal.throwIfAborted();
@@ -195,12 +196,15 @@ export async function gridSplitImage(
         canvas!.toBlob(resolve, "image/png"),
       );
       signal.throwIfAborted();
-      if (!blob) throw new Error("图片切分结果编码失败。");
+      if (!blob) throw new Error(tNow("errors.nodeAction.gridEncode"));
       outputs.push({
         kind: "image",
         src: await mediaBlobDataUrl(blob, signal),
         mimeType: "image/png",
-        title: `网格切分 · 第 ${cell.row} 行第 ${cell.column} 列`,
+        title: tNow("errors.nodeAction.gridTitle", {
+          row: cell.row,
+          column: cell.column,
+        }),
         media: { width: cell.width, height: cell.height },
       });
     }

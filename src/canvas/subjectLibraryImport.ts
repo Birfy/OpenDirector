@@ -9,6 +9,22 @@ import {
 import { isNodeLocked, indexNodes } from "./hierarchy.ts";
 import { referenceTypeAllowed } from "./connectionPolicy.ts";
 import { subjectError } from "./dataBoundary.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { Translate } from "../i18n/I18nProvider";
+import type {
+  MessageDescriptor,
+  MessageKey,
+  MessageParams,
+} from "../i18n/types";
+
+/** Module-level fallback for helpers that cannot call React hooks. */
+const nowTranslate: Translate = (
+  input: MessageKey | MessageDescriptor,
+  params?: MessageParams,
+) =>
+  typeof input === "string"
+    ? tNow(input, params)
+    : tNow(input.key, input.params);
 
 /** Preview URLs can change after rehydration; owned asset identity cannot. */
 export function subjectTargetIdentity(node: import("./model.ts").CanvasNode) {
@@ -41,6 +57,7 @@ export function subjectTargetIdentity(node: import("./model.ts").CanvasNode) {
 export function subjectImportSelection(
   document: CanvasDocument,
   selected: readonly string[],
+  t: Translate = nowTranslate,
 ) {
   const node =
     selected.length === 1
@@ -48,9 +65,9 @@ export function subjectImportSelection(
       : undefined;
   const issue =
     !node || node.type !== "subject"
-      ? "请在画布中仅选中一个主体节点。"
+      ? t("library.subject.selectOne")
       : isNodeLocked(node, indexNodes(document.nodes))
-        ? "请先解锁主体节点或所属分组。"
+        ? t("library.subject.unlock")
         : null;
   return { node, issue };
 }
@@ -62,12 +79,13 @@ export function librarySubjectCommand(
   point: Point,
   targetId?: string,
   measure?: (subject: SubjectData, width: number) => number,
+  t: Translate = nowTranslate,
 ): CanvasCommand {
-  if (!sources.length) throw new Error("请先选择主体。");
+  if (!sources.length) throw new Error(t("library.subject.none"));
   for (const source of sources) {
     const issue = subjectError(source.subject);
     if (issue || !source.subject.main?.src)
-      throw new Error(issue ?? "空白主体不能导入。");
+      throw new Error(issue ?? t("library.subject.blank"));
   }
   if (!targetId)
     return {
@@ -87,8 +105,8 @@ export function librarySubjectCommand(
       }),
     };
   if (sources.length !== 1)
-    throw new Error("导入选中主体时只能选择一个库中主体。");
-  const { node, issue } = subjectImportSelection(document, [targetId]);
+    throw new Error(t("library.subject.singleLibrary"));
+  const { node, issue } = subjectImportSelection(document, [targetId], t);
   if (issue || !node) throw new Error(issue!);
   const command: CanvasCommand = {
     type: "batch",
@@ -135,7 +153,7 @@ export function librarySubjectCommand(
   )) {
     const target = logical.find((node) => node.id === edge.target);
     if (!target || !referenceTypeAllowed(replaced, target.type))
-      throw new Error("导入主体与已有下游节点类型不兼容，请先调整连线。");
+      throw new Error(t("library.subject.incompatible"));
   }
   return command;
 }

@@ -16,9 +16,18 @@ import {
   type RuntimeInfo,
 } from "../backend/chat";
 import { isGenerationModel, type ModelConfig } from "../backend/rules";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { MessageKey } from "../i18n/types.ts";
 import { CanvasIcon } from "./CanvasIcon";
 
 type Harness = Exclude<AgentRuntime, "default">;
+
+const EFFORT_LABELS: Record<"auto" | "low" | "medium" | "high", MessageKey> = {
+  auto: "assistant.agent.effort.auto",
+  low: "assistant.agent.effort.low",
+  medium: "assistant.agent.effort.medium",
+  high: "assistant.agent.effort.high",
+};
 
 export function AgentPicker({
   projectId,
@@ -41,6 +50,7 @@ export function AgentPicker({
   onConfigure: () => void;
   onRefresh: (runtime?: AgentRuntime) => Promise<void>;
 }) {
+  const t = useT();
   const harnesses = runtimes.filter(
     (item): item is RuntimeInfo & { id: Harness } =>
       item.group === "harness" && item.id !== "default",
@@ -85,25 +95,25 @@ export function AgentPicker({
   const setupSpec = harnesses.find((item) => item.id === setup);
   const reason = (item: RuntimeInfo) =>
     item.status === "checking"
-      ? "检查中…"
+      ? t("assistant.agent.status.checking")
       : item.status === "not_installed"
-      ? "尚未安装"
+      ? t("assistant.agent.status.notInstalled")
       : item.status === "needs_login"
-        ? "尚未登录"
+        ? t("assistant.agent.status.needsLogin")
         : item.status === "needs_configuration"
-          ? "尚未配置模型"
+          ? t("assistant.agent.status.needsConfiguration")
           : item.status === "unsupported_version"
-            ? "版本不支持所需协议"
+            ? t("assistant.agent.status.unsupportedVersion")
             : item.status === "unknown"
               ? item.id === "jiuwenswarm"
-                ? "无法读取模型目录，请检查配置"
-                : "无法确认配置状态"
-              : "尚未配置模型";
+                ? t("assistant.agent.status.catalogUnreadable")
+                : t("assistant.agent.status.unknown")
+              : t("assistant.agent.status.needsConfiguration");
   const harnessDetail = (item: RuntimeInfo & { id: Harness }) =>
     !ready(item)
       ? reason(item)
       : item.modelSource === "settings"
-        ? (configuredModel(item.id)?.modelId ?? "选择模型")
+        ? (configuredModel(item.id)?.modelId ?? t("assistant.agent.modelFallback"))
         : modelLabel(item.id);
   const setupCommand =
     setup === "deepseek"
@@ -129,16 +139,16 @@ export function AgentPicker({
   const runtime = value.runtime ?? "default";
   const harness = harnesses.find((item) => item.id === runtime);
   const title = initializing
-    ? "正在加载引擎…"
+    ? t("assistant.agent.loading")
     : !runtimes.some((item) => item.id === runtime)
-      ? "重新选择模型"
+      ? t("assistant.agent.selectAgain")
     : runtime === "default"
-      ? (agent?.modelId ?? "选择模型")
+      ? (agent?.modelId ?? t("assistant.agent.modelFallback"))
       : harness?.modelSource === "settings"
         ? (configuredModel(harness.id)?.modelId ?? harness.label)
         : harness
           ? modelLabel(harness.id)
-          : "默认模型";
+          : t("assistant.agent.defaultModel");
 
   function selectedModel(id: Harness) {
     return id in (value.harnessModels ?? {})
@@ -152,7 +162,7 @@ export function AgentPicker({
     const rows = catalogs[id] ?? [];
     return selected
       ? (rows.find((item) => item.id === selected)?.label ?? selected)
-      : (rows.find((item) => item.isDefault)?.label ?? "CLI 默认模型");
+      : (rows.find((item) => item.isDefault)?.label ?? t("assistant.agent.cliDefault"));
   }
   useEffect(() => {
     let active = true;
@@ -226,7 +236,7 @@ export function AgentPicker({
         }
       })
       .catch(() => {
-        if (active) setModelError("无法读取模型列表，请检查 CLI 配置后重试。");
+        if (active) setModelError(t("assistant.agent.modelListError"));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -316,7 +326,10 @@ export function AgentPicker({
         ref={trigger}
         className="chat-picker-trigger"
         disabled={disabled}
-        aria-label={`Agent：${harness?.label ?? "Default"} · ${title}`}
+        aria-label={t("assistant.agent.aria", {
+          name: harness?.label ?? t("assistant.agent.defaultGroup"),
+          model: title,
+        })}
         aria-haspopup="menu"
         aria-expanded={open && !disabled}
         onClick={() => {
@@ -339,7 +352,7 @@ export function AgentPicker({
           className="cw-agent-menu"
           tabIndex={-1}
           role="menu"
-          aria-label="选择 Agent"
+          aria-label={t("assistant.agent.menu")}
           ref={menu}
           onKeyDown={keys}
         >
@@ -350,13 +363,13 @@ export function AgentPicker({
                 className="cw-agent-back"
                 onClick={() => setSetup(null)}
               >
-                ← 返回
+                ← {t("assistant.agent.back")}
               </button>
-              <h3>配置 {setupSpec.label}</h3>
-              <p>{ready(setupSpec) ? "已就绪" : reason(setupSpec)}</p>
-              <p>在启动 OpenDirector 的机器上完成配置，再重新检查。</p>
+              <h3>{t("assistant.agent.configureTitle", { name: setupSpec.label })}</h3>
+              <p>{ready(setupSpec) ? t("assistant.agent.ready") : reason(setupSpec)}</p>
+              <p>{t("assistant.agent.configureHint")}</p>
               {setupSpec.id === "jiuwenswarm" && (
-                <p>配置 JiuwenSwarm 的对话模型，然后重新检查模型目录。</p>
+                <p>{t("assistant.agent.jiuwenswarmHint")}</p>
               )}
               {setupSpec.modelSource === "settings" && setupSpec.available ? (
                 <button
@@ -367,7 +380,7 @@ export function AgentPicker({
                     onConfigure();
                   }}
                 >
-                  配置对话模型
+                  {t("assistant.agent.configureModel")}
                 </button>
               ) : (
                 <>
@@ -378,29 +391,29 @@ export function AgentPicker({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      查看安装指南 ↗
+                      {t("assistant.agent.installGuide")}
                     </a>
                   ) : (
                     <>
-                      <p>在终端执行：</p>
+                      <p>{t("assistant.agent.terminal")}</p>
                       <div className="cw-agent-command">
                         <code>{setupCommand}</code>
                         <button
                           type="button"
                           className="cw-agent-command-copy"
-                          aria-label={commandCopied ? "已复制" : "复制命令"}
-                          title={commandCopied ? "已复制" : "复制命令"}
+                          aria-label={commandCopied ? t("assistant.agent.copied") : t("assistant.agent.copyCommand")}
+                          title={commandCopied ? t("assistant.agent.copied") : t("assistant.agent.copyCommand")}
                           onClick={async () => {
                             try {
                               await navigator.clipboard.writeText(setupCommand);
                               setCommandCopied(true);
                             } catch {
-                              setCheckError("复制失败，请选中命令手动复制。");
+                              setCheckError(t("assistant.agent.copyFailed"));
                             }
                           }}
                         >
                           <CanvasIcon name={commandCopied ? "check" : "copy"} size={14} />
-                          {commandCopied && <span role="status">已复制</span>}
+                          {commandCopied && <span role="status">{t("assistant.agent.copied")}</span>}
                         </button>
                       </div>
                     </>
@@ -417,20 +430,20 @@ export function AgentPicker({
                     try {
                       await onRefresh(setupSpec.id);
                     } catch {
-                      setCheckError("检查失败，请确认本地服务正在运行。");
+                      setCheckError(t("assistant.agent.checkFailed"));
                     } finally {
                       setChecking(false);
                     }
                   }}
                 >
-                  {checking ? "检查中…" : "重新检查"}
+                  {checking ? t("assistant.agent.status.checking") : t("assistant.agent.recheck")}
                 </button>
                 {ready(setupSpec) && (
                   <button
                     type="button"
                     onClick={() => chooseHarness(setupSpec.id)}
                   >
-                    使用 {setupSpec.label}
+                    {t("assistant.agent.use", { name: setupSpec.label })}
                   </button>
                 )}
               </div>
@@ -438,7 +451,7 @@ export function AgentPicker({
             </>
           ) : (
             <>
-              <h3>Harnesses</h3>
+              <h3>{t("assistant.agent.harnesses")}</h3>
               {harnesses.map((item) => (
                 <div className="cw-agent-row" key={item.id}>
                   <button
@@ -475,19 +488,19 @@ export function AgentPicker({
                       <button
                         type="button"
                         className="cw-agent-edit"
-                        aria-label={`编辑 ${item.label} 模型`}
+                        aria-label={t("assistant.agent.editModels", { name: item.label })}
                         aria-haspopup="menu"
                         aria-expanded={editing === item.id}
                         onClick={() => edit(item.id)}
                       >
-                        Edit
+                        {t("assistant.agent.edit")}
                       </button>
                     )}
                 </div>
               ))}
               <div className="cw-agent-default">
                 <h3>
-                  Default <span>· OpenCode bundled</span>
+                  {t("assistant.agent.defaultGroup")} <span>· {t("assistant.agent.bundled")}</span>
                 </h3>
                 {options.map((item) => (
                   <div className="cw-agent-row" key={item.id}>
@@ -522,7 +535,7 @@ export function AgentPicker({
                     </button>
                   </div>
                 ))}
-                {!options.length && <p>尚未配置对话模型</p>}
+                {!options.length && <p>{t("assistant.agent.noAgentModels")}</p>}
                 <button
                   type="button"
                   className="cw-agent-configure"
@@ -531,7 +544,7 @@ export function AgentPicker({
                     onConfigure();
                   }}
                 >
-                  管理模型
+                  {t("assistant.agent.manageModels")}
                 </button>
               </div>
             </>
@@ -541,7 +554,7 @@ export function AgentPicker({
               className="cw-agent-submenu"
               popover="manual"
               role="menu"
-              aria-label={`${editingSpec.label} 模型`}
+              aria-label={t("assistant.agent.modelsAria", { name: editingSpec.label })}
               ref={submenu}
             >
               <button
@@ -551,7 +564,7 @@ export function AgentPicker({
               >
                 ← {editingSpec.label}
               </button>
-              <h3>Models</h3>
+              <h3>{t("assistant.agent.models")}</h3>
               {editingSpec.modelSource === "settings" ? (
                 options.map((item) => (
                   <div className="cw-agent-row" key={item.id}>
@@ -597,12 +610,14 @@ export function AgentPicker({
                     >
                       <strong>
                         {choices.find((item) => item.isDefault)
-                          ? `跟随默认 · ${choices.find((item) => item.isDefault)!.label}`
-                          : "跟随 CLI 默认模型"}
+                          ? t("assistant.agent.followDefault", {
+                              name: choices.find((item) => item.isDefault)!.label,
+                            })
+                          : t("assistant.agent.followCliDefault")}
                       </strong>
                     </button>
                   </div>
-                  {loading && <p role="status">正在读取模型…</p>}
+                  {loading && <p role="status">{t("assistant.agent.readingModels")}</p>}
                   {choices
                     .filter((item) => item.id !== "default")
                     .map((item) => (
@@ -629,17 +644,17 @@ export function AgentPicker({
                         className="cw-agent-configure"
                         onClick={() => setChecking((value) => !value)}
                       >
-                        重试
+                        {t("assistant.agent.retry")}
                       </button>
                     </>
                   )}
                   {!loading && !modelError && !choices.length && (
-                    <p>CLI 未提供可选模型</p>
+                    <p>{t("assistant.agent.noCliModels")}</p>
                   )}
                 </>
               )}
               <div className="cw-agent-default">
-                <h3>Effort</h3>
+                <h3>{t("assistant.agent.effort")}</h3>
                 {(["auto", "low", "medium", "high"] as const)
                   .filter((effort) => {
                     const selected = choices.find(
@@ -664,14 +679,7 @@ export function AgentPicker({
                         onClick={() => onChange({ thinking: effort })}
                       >
                         <strong>
-                          {
-                            {
-                              auto: "Default",
-                              low: "Low",
-                              medium: "Medium",
-                              high: "High",
-                            }[effort]
-                          }
+                          {t(EFFORT_LABELS[effort])}
                         </strong>
                         {value.thinking === effort && (
                           <CanvasIcon name="check" />

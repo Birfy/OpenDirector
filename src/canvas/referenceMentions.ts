@@ -1,15 +1,17 @@
 import type { CanvasNode } from "./model.ts";
 import { canSourceReference } from "./connectionPolicy.ts";
 import { assetDisplayName } from "./assetNames.ts";
+import { tNow } from "../i18n/messages.ts";
+import type { MessageKey } from "../i18n/types.ts";
 
 export const REFERENCE_CATEGORIES = [
-  { id: "all", label: "全部" },
-  { id: "image", label: "图片" },
-  { id: "video", label: "视频" },
-  { id: "audio", label: "音频" },
-  { id: "text", label: "文本" },
-  { id: "subject", label: "主体" },
-] as const;
+  { id: "all", label: "errors.stats.all" },
+  { id: "image", label: "errors.stats.image" },
+  { id: "video", label: "errors.stats.video" },
+  { id: "audio", label: "errors.stats.audio" },
+  { id: "text", label: "errors.stats.text" },
+  { id: "subject", label: "errors.stats.subject" },
+] as const satisfies readonly { id: string; label: MessageKey }[];
 export type ReferenceCategory = (typeof REFERENCE_CATEGORIES)[number]["id"];
 export type ReferenceKind = Exclude<ReferenceCategory, "all">;
 export interface MentionOption {
@@ -76,7 +78,7 @@ export function mentionCategories(
 export function nodeMentionOptions(
   nodes: readonly CanvasNode[],
   issue: (node: CanvasNode) => string | null = () => null,
-  origin = "上游节点",
+  origin = tNow("errors.stats.upstream"),
 ): MentionOption[] {
   return nodes.flatMap((node) => {
     const category = REFERENCE_CATEGORIES.find((item) => item.id === node.type);
@@ -87,7 +89,7 @@ export function nodeMentionOptions(
         id: node.id,
         kind: node.type as ReferenceKind,
         title: assetDisplayName(node.data.title),
-        detail: `${category.label} · ${origin}`,
+        detail: `${tNow(category.label)} · ${origin}`,
         thumbnail:
           node.type === "image"
             ? node.data.src

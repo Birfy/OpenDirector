@@ -119,7 +119,7 @@ import { fingerprintMatches } from "./chatReferenceContent.ts";
 import {
   canStartReference,
   connectedCreationKinds,
-  REFERENCE_ISSUE_TEXT,
+  referenceIssueText,
   referenceIssue,
   referenceMaterial,
 } from "./connectionPolicy";
@@ -273,6 +273,8 @@ import { subjectWithResource, type SubjectMediaSlot } from "./subjectMedia.ts";
 import { agentGenerationBlocker, agentNodeSettings } from "./textGeneration";
 import { TextNodeComposer } from "./TextNodeComposer";
 import { useTheme } from "./theme";
+import { useI18n } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/types";
 import "./themes.css";
 import { TimelineEditor } from "./TimelineEditor";
 import {
@@ -284,6 +286,7 @@ import {
   type ToolParameters,
   type ToolSource,
 } from "./toolCatalog";
+import { translateToolText } from "./toolText.ts";
 import { ToolEditor } from "./ToolEditor";
 import { TooltipButton, TooltipProvider } from "./TooltipButton";
 import { assertUpload } from "./uploadPolicy.ts";
@@ -348,39 +351,42 @@ const toolOutputKind = (
     ? source
     : null;
 };
-const jobTime = () =>
-  new Date().toLocaleTimeString("zh-CN", {
+const jobTime = (locale: string) =>
+  new Date().toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
   });
 /** Shortcut hints name the keys the running platform actually has. */
-const helpShortcuts = (mac: boolean): Array<[string, string]> =>
+const helpShortcuts = (
+  mac: boolean,
+  t: (key: MessageKey) => string,
+): Array<[string, string]> =>
   mac
     ? [
-        ["平移画布", "滚动 / 空格＋拖动"],
-        ["缩放画布", "⌘＋滚动"],
-        ["框选多个节点", "空白处拖动 / Shift"],
-        ["选择 / 抓手 / 文本", "V / H / T"],
-        ["上传本地素材", "⌘＋O"],
-        ["撤销 / 重做", "⌘ Z / ⌘ ⇧ Z"],
-        ["复制 / 粘贴 / 副本", "⌘ C / ⌘ V / ⌘ D"],
-        ["编组 / 取消编组", "⌘ G / ⌘ ⇧ G"],
-        ["适应内容 / 选区", "Shift 1 / Shift 2"],
-        ["移动 / 快速移动", "方向键 / Shift＋方向键"],
-        ["删除选中节点或连线", "Delete / ⌫"],
+        [t("canvas.workspace.help.pan"), t("canvas.workspace.help.panKeys")],
+        [t("canvas.workspace.help.zoom"), t("canvas.workspace.help.zoomKeys")],
+        [t("canvas.workspace.help.marquee"), t("canvas.workspace.help.marqueeKeys")],
+        [t("canvas.workspace.help.tools"), t("canvas.workspace.help.toolsKeys")],
+        [t("canvas.workspace.help.upload"), t("canvas.workspace.help.uploadKeys")],
+        [t("canvas.workspace.help.undoRedo"), t("canvas.workspace.help.undoRedoKeys")],
+        [t("canvas.workspace.help.clipboard"), t("canvas.workspace.help.clipboardKeys")],
+        [t("canvas.workspace.help.group"), t("canvas.workspace.help.groupKeys")],
+        [t("canvas.workspace.help.fit"), t("canvas.workspace.help.fitKeys")],
+        [t("canvas.workspace.help.nudge"), t("canvas.workspace.help.nudgeKeys")],
+        [t("canvas.workspace.help.delete"), t("canvas.workspace.help.deleteKeys")],
       ]
     : [
-        ["平移画布", "滚动 / 空格＋拖动"],
-        ["缩放画布", "Ctrl＋滚动"],
-        ["框选多个节点", "空白处拖动 / Shift"],
-        ["选择 / 抓手 / 文本", "V / H / T"],
-        ["上传本地素材", "Ctrl＋O"],
-        ["撤销 / 重做", "Ctrl Z / Ctrl Shift Z"],
-        ["复制 / 粘贴 / 副本", "Ctrl C / Ctrl V / Ctrl D"],
-        ["编组 / 取消编组", "Ctrl G / Ctrl Shift G"],
-        ["适应内容 / 选区", "Shift 1 / Shift 2"],
-        ["移动 / 快速移动", "方向键 / Shift＋方向键"],
-        ["删除选中节点或连线", "Delete / Backspace"],
+        [t("canvas.workspace.help.pan"), t("canvas.workspace.help.panKeys")],
+        [t("canvas.workspace.help.zoom"), t("canvas.workspace.help.zoomKeysPc")],
+        [t("canvas.workspace.help.marquee"), t("canvas.workspace.help.marqueeKeys")],
+        [t("canvas.workspace.help.tools"), t("canvas.workspace.help.toolsKeys")],
+        [t("canvas.workspace.help.upload"), t("canvas.workspace.help.uploadKeysPc")],
+        [t("canvas.workspace.help.undoRedo"), t("canvas.workspace.help.undoRedoKeysPc")],
+        [t("canvas.workspace.help.clipboard"), t("canvas.workspace.help.clipboardKeysPc")],
+        [t("canvas.workspace.help.group"), t("canvas.workspace.help.groupKeysPc")],
+        [t("canvas.workspace.help.fit"), t("canvas.workspace.help.fitKeys")],
+        [t("canvas.workspace.help.nudge"), t("canvas.workspace.help.nudgeKeys")],
+        [t("canvas.workspace.help.delete"), t("canvas.workspace.help.deleteKeysPc")],
       ];
 const nodeTypes = {
   image: CanvasNodeView,
@@ -396,25 +402,25 @@ const nodeTypes = {
   external: CanvasNodeView,
 };
 const edgeTypes = { reference: CanvasReferenceEdge };
-const referenceSideLabels: Record<PortSide, string> = {
-  top: "上",
-  right: "右",
-  bottom: "下",
-  left: "左",
+const referenceSideKeys: Record<PortSide, MessageKey> = {
+  top: "canvas.workspace.side.top",
+  right: "canvas.workspace.side.right",
+  bottom: "canvas.workspace.side.bottom",
+  left: "canvas.workspace.side.left",
 };
 
-const labels: Record<CanvasNodeKind, string> = {
-  image: "图片",
-  video: "视频",
-  audio: "音频",
-  text: "文本",
-  file: "文件",
-  group: "分组",
-  timeline: "时间线",
-  subject: "主体",
-  stack: "资源堆叠",
-  tool: "工具",
-  external: "导演台",
+const nodeKindKeys: Record<CanvasNodeKind, MessageKey> = {
+  image: "canvas.workspace.kind.image",
+  video: "canvas.workspace.kind.video",
+  audio: "canvas.workspace.kind.audio",
+  text: "canvas.workspace.kind.text",
+  file: "canvas.workspace.kind.file",
+  group: "canvas.workspace.kind.group",
+  timeline: "canvas.workspace.kind.timeline",
+  subject: "canvas.workspace.kind.subject",
+  stack: "canvas.workspace.kind.stack",
+  tool: "canvas.workspace.kind.tool",
+  external: "canvas.workspace.kind.external",
 };
 const kinds: CanvasNodeKind[] = [
   "image",
@@ -496,6 +502,7 @@ function incomingNodes(
 }
 
 function Workspace() {
+  const { t, locale } = useI18n();
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -583,7 +590,7 @@ function Workspace() {
   const connectionStarted = useRef<Point | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [saveStatus, setSaveStatus] = useState("正在打开…");
+  const [saveStatus, setSaveStatus] = useState(t("canvas.workspace.save.opening"));
   const { notifications, notify, dismiss } = useCanvasNotifications();
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
@@ -783,20 +790,20 @@ function Workspace() {
         target.id,
       );
       return issue && issue !== "duplicate_relation"
-        ? REFERENCE_ISSUE_TEXT[issue]
+        ? referenceIssueText(issue)
         : null;
     },
     prepareAsset: async (asset, signal) => {
       const bytes = await creationClient(doc.id).blob(asset.id);
       signal.throwIfAborted();
       if (!fingerprintMatches(asset, await fingerprint(bytes)))
-        throw new Error("参考素材文件已改变，请重新核对版本。");
+        throw new Error(t("canvas.workspace.error.referenceAssetChanged"));
       {
         const client = creationClient(doc.id);
         const record = client.snapshot.assets.find(
           (item) => item.id === asset.id,
         );
-        if (!record) throw new Error("素材已不存在。");
+        if (!record) throw new Error(t("canvas.workspace.error.assetMissing"));
         signal.throwIfAborted();
         return record.kind === "text"
           ? { text: await client.textContent(record.id) }
@@ -806,7 +813,7 @@ function Workspace() {
     onChange: (content, sources) => {
       const current = historyRef.current.present;
       if (current.id !== doc.id || lockedNodeIds(current.nodes).has(target.id))
-        throw new Error("项目或目标锁定状态已变化，本批引用未插入。");
+        throw new Error(t("canvas.workspace.error.referenceBatchStale"));
       const edit = referenceContentCommand(
         current,
         target.id,
@@ -925,13 +932,13 @@ function Workspace() {
     );
     const next = applyCommand(current, { type: "add-nodes", nodes: [node] });
     if (!(await persist(next)))
-      throw new Error(saveError.current || "导入未能保存。");
+      throw new Error(saveError.current || t("canvas.workspace.error.importUnsaved"));
     if (historyRef.current.present.id !== current.id) return;
     change((latest) => mergeLibrarySubjectImport(latest, current, next));
     setSelected([node.id]);
     referenceTarget.current = null;
     setPanel(null);
-    notify("素材已复制到当前画布，可独立编辑。");
+    notify(t("canvas.workspace.toast.resourceCopied"));
   };
 
   const insertLibraryItems = async (items: LibraryItem[]) => {
@@ -957,11 +964,25 @@ function Workspace() {
         await importCanvasResource(resource);
         placed += 1;
       } catch (reason) {
-        issues.push(`${item.name}：${String(reason)}`);
+        issues.push(
+          t("canvas.workspace.toast.assetIssue", {
+            name: item.name,
+            reason: String(reason),
+          }),
+        );
       }
     }
-    if (!placed) throw new Error(issues.join("；") || "没有素材可以放入画布。");
-    if (issues.length) notify(`部分素材未能放入画布：${issues.join("；")}`);
+    if (!placed)
+      throw new Error(
+        issues.join(t("canvas.workspace.list.separator")) ||
+          t("canvas.workspace.error.noPlaceableAssets"),
+      );
+    if (issues.length)
+      notify(
+        t("canvas.workspace.toast.partialAssets", {
+          items: issues.join(t("canvas.workspace.list.separator")),
+        }),
+      );
   };
 
   if (!saveQueue.current) {
@@ -983,14 +1004,16 @@ function Workspace() {
           const warning = workspaceProjection(snapshot.id).viewError;
           setSaveStatus(
             warning
-              ? `工程已保存；界面状态保存失败：${warning}`
-              : "已保存到本机",
+              ? t("canvas.workspace.save.savedViewFailed", { warning })
+              : t("canvas.workspace.save.saved"),
           );
         }
         return true;
       } catch (error) {
         saveError.current = errorMessage(error);
-        setSaveStatus(`保存失败：${String(error)}`);
+        setSaveStatus(
+          t("canvas.workspace.save.failed", { error: String(error) }),
+        );
         return false;
       }
     });
@@ -1009,7 +1032,7 @@ function Workspace() {
   );
   const importLibrarySubjects = async (items: LibraryItem[]) => {
     if (subjectLibraryBusy || switchPending.current)
-      throw new Error("请等待当前操作完成。");
+      throw new Error(t("canvas.workspace.error.busy"));
     const projectId = historyRef.current.present.id;
     setSubjectLibraryBusy(true);
     try {
@@ -1019,11 +1042,11 @@ function Workspace() {
           persist,
         ))
       )
-        throw new Error("画布未保存，主体尚未导入。");
+        throw new Error(t("canvas.workspace.error.subjectNotImported"));
       const copies = await copyLibrarySubjects(projectId, items);
       const current = historyRef.current.present;
       if (current.id !== projectId || switchPending.current)
-        throw new Error("项目已切换，本次导入未应用。");
+        throw new Error(t("canvas.workspace.error.importNotApplied"));
       const operation = librarySubjectCommand(
         current,
         copies.map((copy) => ({
@@ -1043,7 +1066,7 @@ function Workspace() {
       // Publish the complete subject only after its project transaction succeeds.
       if (!(await persist(next)))
         throw new Error(
-          saveError.current || "主体导入未能保存，画布内容保持原状。",
+          saveError.current || t("canvas.workspace.error.subjectImportUnsaved"),
         );
       if (historyRef.current.present.id !== projectId) return;
       change((latest) => mergeLibrarySubjectImport(latest, current, next));
@@ -1053,7 +1076,11 @@ function Workspace() {
           .filter((node) => !previousIds.has(node.id))
           .map((node) => node.id),
       );
-      notify(`已导入 ${copies.length} 个主体到画布。`);
+      notify(
+        t("canvas.workspace.toast.subjectsImported", {
+          count: copies.length,
+        }),
+      );
     } finally {
       setSubjectLibraryBusy(false);
     }
@@ -1062,7 +1089,7 @@ function Workspace() {
   const confirmSubjectImport = async (choice: SubjectImportChoice) => {
     const intent = subjectImport;
     if (!intent || subjectLibraryBusy || switchPending.current)
-      throw new Error("请等待当前操作完成。");
+      throw new Error(t("canvas.workspace.error.busy"));
     const assertTarget = () => {
       const current = historyRef.current.present;
       const { node, issue } = subjectImportSelection(current, [intent.nodeId]);
@@ -1072,7 +1099,7 @@ function Workspace() {
         !node ||
         subjectTargetIdentity(node) !== intent.identity
       )
-        throw new Error(issue || "目标主体已变化，请重新打开导入界面。");
+        throw new Error(issue || t("canvas.workspace.error.subjectTargetChanged"));
       return { current, node };
     };
     assertTarget();
@@ -1084,7 +1111,7 @@ function Workspace() {
           persist,
         ))
       )
-        throw new Error("请先保存当前画布。");
+        throw new Error(t("canvas.workspace.error.saveCanvasFirst"));
       let source: import("./model").SubjectData;
       const complete =
         choice.tab === "subjects" ||
@@ -1136,12 +1163,12 @@ function Workspace() {
         ),
       );
       if (!(await persist(next)))
-        throw new Error(saveError.current || "主体导入未能保存。");
+        throw new Error(saveError.current || t("canvas.workspace.error.subjectImportFailed"));
       if (historyRef.current.present.id === intent.projectId)
         change((latest) =>
           mergeLibrarySubjectImport(latest, current, next, node.id),
         );
-      notify("已导入主体内容，可撤销。");
+      notify(t("canvas.workspace.toast.subjectImported"));
     } finally {
       setSubjectLibraryBusy(false);
     }
@@ -1154,7 +1181,7 @@ function Workspace() {
     if (
       !(await persistCurrentDocument(() => historyRef.current.present, persist))
     )
-      throw new Error("请先保存画布。");
+      throw new Error(t("canvas.workspace.error.saveFirst"));
     // Rows of the open canvas come from the document, which carries no revision
     // until the server is asked; only copying needs one.
     const resolved =
@@ -1171,7 +1198,7 @@ function Workspace() {
       false,
     );
     if (historyRef.current.present.id !== projectId)
-      throw new Error("项目已切换。");
+      throw new Error(t("canvas.workspace.error.projectSwitched"));
     if (copied.kind === "subject") {
       const current = historyRef.current.present;
       const next = applyCommand(
@@ -1190,7 +1217,7 @@ function Workspace() {
         ),
       );
       if (!(await persist(next)))
-        throw new Error(saveError.current || "导入失败。");
+        throw new Error(saveError.current || t("canvas.workspace.error.importFailed"));
       change((latest) => mergeLibrarySubjectImport(latest, current, next));
     } else await importCanvasResource(copied.resource);
   };
@@ -1202,9 +1229,9 @@ function Workspace() {
         ? current.nodes.find((node) => node.id === selectedRef.current[0])
         : undefined;
     if (!node || node.type !== "subject" || !node.data.subject?.main?.src)
-      throw new Error("请选择一个有内容的主体节点。");
+      throw new Error(t("canvas.workspace.error.selectSubjectNode"));
     if (subjectLibraryBusy || switchPending.current)
-      throw new Error("请等待当前操作完成。");
+      throw new Error(t("canvas.workspace.error.busy"));
     setSubjectLibraryBusy(true);
     try {
       if (
@@ -1213,9 +1240,9 @@ function Workspace() {
           persist,
         ))
       )
-        throw new Error("请先保存当前画布。");
+        throw new Error(t("canvas.workspace.error.saveCanvasFirst"));
       if (historyRef.current.present.id !== current.id)
-        throw new Error("项目已切换，请重新选择主体。");
+        throw new Error(t("canvas.workspace.error.reselectSubject"));
       await backUpLibrarySubject(current.id, node.id);
     } finally {
       setSubjectLibraryBusy(false);
@@ -1301,7 +1328,7 @@ function Workspace() {
             persist,
           ))
         ) {
-          if (throwOnFailure) throw new Error("当前画布保存失败，未切换项目。");
+          if (throwOnFailure) throw new Error(t("canvas.workspace.error.switchSaveFailed"));
           return false;
         }
         const next = await read();
@@ -1312,13 +1339,15 @@ function Workspace() {
           const current = historyRef.current.present;
           await openBackendProject(current.id, current.title);
         } catch (reopenError) {
-          const message = `切换失败，原项目未能重新取得编辑权限：${errorMessage(reopenError)}`;
+          const message = t("canvas.workspace.error.switchReopenFailed", {
+            error: errorMessage(reopenError),
+          });
           if (throwOnFailure) throw new Error(message);
           notify(message);
           return false;
         }
         if (throwOnFailure) throw error;
-        notify(error instanceof Error ? error.message : "无法打开画布。");
+        notify(error instanceof Error ? error.message : t("canvas.workspace.error.openCanvasFailed"));
         return false;
       } finally {
         switchPending.current = false;
@@ -1329,7 +1358,7 @@ function Workspace() {
   );
 
   const renameCurrentProject = async (name: string) => {
-    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    if (switchPending.current) throw new Error(t("canvas.workspace.error.projectSaving"));
     const projectId = historyRef.current.present.id;
     switchPending.current = true;
     setProjectRenaming(true);
@@ -1340,11 +1369,11 @@ function Workspace() {
           persist,
         ))
       )
-        throw new Error("当前画布尚未保存，未执行重命名。");
+        throw new Error(t("canvas.workspace.error.renameUnsaved"));
       const project = (await listWorkspaceProjects()).projects.find(
         (item) => item.id === projectId,
       );
-      if (!project) throw new Error("项目不存在，请重新打开。");
+      if (!project) throw new Error(t("canvas.workspace.error.projectMissing"));
       const renamed = await renameWorkspaceProject(project, name);
       const document = { ...historyRef.current.present, title: renamed.name };
       // Project metadata must stay consistent across canvas undo/redo.
@@ -1370,12 +1399,12 @@ function Workspace() {
   const renameProject = async (project: WorkspaceProject, nextName: string) => {
     if (project.id === historyRef.current.present.id)
       return renameCurrentProject(nextName);
-    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    if (switchPending.current) throw new Error(t("canvas.workspace.error.projectSaving"));
     await renameWorkspaceProject(project, nextName);
   };
 
   const deleteProject = async (project: WorkspaceProject) => {
-    if (switchPending.current) throw new Error("项目正在保存，请稍后重试。");
+    if (switchPending.current) throw new Error(t("canvas.workspace.error.projectSaving"));
     if (project.id !== historyRef.current.present.id) {
       await trashWorkspaceProject(project);
       return;
@@ -1396,7 +1425,7 @@ function Workspace() {
           persist,
         ))
       )
-        throw new Error("当前画布尚未保存，未执行删除。");
+        throw new Error(t("canvas.workspace.error.deleteUnsaved"));
       const { projects } = await listWorkspaceProjects();
       next = projects.find((item) => item.id !== project.id);
       taken = new Set(projects.map((item) => item.name.toLocaleLowerCase()));
@@ -1410,10 +1439,12 @@ function Workspace() {
       try {
         if (next) installDocument(await openWorkspaceProject(next), true);
         else {
-          let freshName = "未命名画布";
+          let freshName = t("canvas.workspace.error.projectUntitled");
           for (let suffix = 2; ; suffix++) {
             if (!taken.has(freshName.toLocaleLowerCase())) break;
-            freshName = `未命名画布 (${suffix})`;
+            freshName = t("canvas.workspace.error.projectUntitledSuffix", {
+              suffix,
+            });
           }
           installDocument(
             await openWorkspaceProject(
@@ -1424,7 +1455,9 @@ function Workspace() {
         }
       } catch (error) {
         notify(
-          `项目已删除，但未能打开下一个项目：${errorMessage(error)}。请刷新页面。`,
+          t("canvas.workspace.error.deletedNextOpenFailed", {
+            error: errorMessage(error),
+          }),
         );
       } finally {
         switchPending.current = false;
@@ -1455,7 +1488,7 @@ function Workspace() {
     if (!ready || switching || projectRenaming || historyReplaying) return;
     const baseline = workspaceProjection(doc.id).baseline;
     const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
-    if (contentChanged) setSaveStatus("保存中…");
+    if (contentChanged) setSaveStatus(t("canvas.workspace.save.saving"));
     const timeout = setTimeout(() => {
       if (!switchPending.current && !editorSaving.current)
         void persist(doc, true, true);
@@ -1675,7 +1708,7 @@ function Workspace() {
       })
     ) {
       setMenu(null);
-      notify(REFERENCE_ISSUE_TEXT.source_empty);
+      notify(referenceIssueText("source_empty"));
       return;
     }
     if (
@@ -1689,13 +1722,13 @@ function Workspace() {
       ).length
     ) {
       setMenu(null);
-      notify("该类型不能与当前节点建立参考关系。");
+      notify(t("canvas.workspace.error.referenceKindUnsupported"));
       return;
     }
     const where = position ?? center();
     const node = createNode(kind, where, {
       ...snapshotModel(kind),
-      title: nextNodeTitle(current, kind, labels[kind]),
+      title: nextNodeTitle(current, kind, t(nodeKindKeys[kind])),
       ...(sourceIds.length > 1 && kind === "video"
         ? { settings: { videoMode: "reference" as const } }
         : {}),
@@ -1742,7 +1775,9 @@ function Workspace() {
       {
         type: "add-nodes",
         nodes: [node],
-        ...(extra.title === undefined ? { titlePrefix: labels[kind] } : {}),
+        ...(extra.title === undefined
+          ? { titlePrefix: t(nodeKindKeys[kind]) }
+          : {}),
       },
     ];
     if (sourceIds.length > 1) {
@@ -1752,7 +1787,7 @@ function Workspace() {
         node.id,
       );
       if (plan.issue) {
-        notify(REFERENCE_ISSUE_TEXT[plan.issue.code]);
+        notify(referenceIssueText(plan.issue.code));
         setMenu(null);
         return;
       }
@@ -1810,14 +1845,20 @@ function Workspace() {
     const issues = new Set<string>();
     for (const source of sources) {
       const issue = referenceIssue(working, source, target);
-      if (issue) issues.add(REFERENCE_ISSUE_TEXT[issue]);
+      if (issue) issues.add(referenceIssueText(issue));
       else working.edges.push({ id: crypto.randomUUID(), source, target });
     }
     return {
       commands: working.edges
         .slice(present.edges.length)
         .map((edge): CanvasCommand => ({ type: "add-edge", edge })),
-      issue: issues.size ? `未连接为参考：${[...issues].join("、")}。` : "",
+      issue: issues.size
+        ? t("canvas.workspace.error.notConnectedAsReference", {
+            items: [...issues].join(
+              t("canvas.workspace.list.enumeration"),
+            ),
+          })
+        : "",
     };
   };
   const selectAndFocus = (requested: CanvasNode) => {
@@ -1979,11 +2020,11 @@ function Workspace() {
   const selectionReferenceReason = selectionNodes.some((node) =>
     lockedIds.has(node.id),
   )
-    ? REFERENCE_ISSUE_TEXT.locked
+    ? referenceIssueText("locked")
     : selectionNodes.some((node) => !canStartReference(node))
-      ? "所选节点中有不支持作为参考的类型"
+      ? t("canvas.workspace.error.selectionReferenceUnsupported")
       : selectionNodes.some((node) => !referenceMaterial(node))
-        ? REFERENCE_ISSUE_TEXT.source_empty
+        ? referenceIssueText("source_empty")
         : "";
   const references = useCanvasReferences({
     nodes: doc.nodes.filter(
@@ -2009,11 +2050,11 @@ function Workspace() {
       const current = historyRef.current.present;
       const plan = planReferenceBatch(current, sources, target);
       if (plan.issue) {
-        notify(REFERENCE_ISSUE_TEXT[plan.issue.code]);
+        notify(referenceIssueText(plan.issue.code));
         return;
       }
       if (!plan.edges.length) {
-        notify(REFERENCE_ISSUE_TEXT.duplicate_relation);
+        notify(referenceIssueText("duplicate_relation"));
         return;
       }
       command({
@@ -2180,7 +2221,10 @@ function Workspace() {
           activeAction?.nodeId !== n.id,
         style: { width: n.width, height: n.height },
         zIndex: n.type === "group" ? -1 : n.zIndex,
-        ariaLabel: `${labels[n.type]}节点：${n.data.title}`,
+        ariaLabel: t("canvas.workspace.aria.nodeLabel", {
+          kind: t(nodeKindKeys[n.type]),
+          title: n.data.title,
+        }),
       })),
     [
       doc.nodes,
@@ -2230,7 +2274,7 @@ function Workspace() {
                   other.source === e.target && other.target === e.source,
               ),
           },
-          ariaLabel: "参考连线",
+          ariaLabel: t("canvas.workspace.aria.referenceEdge"),
         })),
     [doc.edges, doc.nodes, jobs, selectedEdges, showEdges],
   );
@@ -2293,17 +2337,21 @@ function Workspace() {
     );
     clipboardMedia.current = captureMedia(clipboard.current);
     pasteCount.current = 0;
-    notify(`已复制 ${clipboard.current.nodes.length} 个节点`);
+    notify(
+      t("canvas.workspace.toast.copied", {
+        count: clipboard.current.nodes.length,
+      }),
+    );
   };
   const cut = () => {
     const movable = selectedRef.current.filter((id) => !lockedIds.has(id));
     if (!movable.length) {
-      notify("请先选择可编辑的节点。");
+      notify(t("canvas.workspace.toast.selectEditable"));
       return;
     }
     const result = cutSelection(historyRef.current.present, movable);
     if (!result.fragment) {
-      notify("节点或其成员受锁定引用保护，未剪切。");
+      notify(t("canvas.workspace.toast.cutLocked"));
       return;
     }
     const fragment = result.fragment;
@@ -2313,7 +2361,9 @@ function Workspace() {
     pasteCount.current = 0;
     setSelected([]);
     setMenu(null);
-    notify(`已剪切 ${fragment.nodes.length} 个节点，可粘贴或撤销。`);
+    notify(
+      t("canvas.workspace.toast.cut", { count: fragment.nodes.length }),
+    );
   };
   const paste = (duplicate = false) => {
     const before = historyRef.current.present;
@@ -2359,7 +2409,11 @@ function Workspace() {
       if (historyRef.current.present.id !== projectId) return;
       insertFragment(transferred, 40 * ++pasteCount.current);
     } catch (error) {
-      notify(`跨画布粘贴失败，未粘贴任何节点：${errorMessage(error)}`);
+      notify(
+        t("canvas.workspace.toast.crossCanvasPasteFailed", {
+          error: errorMessage(error),
+        }),
+      );
     } finally {
       pasting.current = false;
     }
@@ -2402,9 +2456,9 @@ function Workspace() {
           }),
           downloadFilename(node.data.title, "text/plain"),
         );
-      else notify("这个节点还没有可下载的素材。");
+      else notify(t("canvas.workspace.toast.noDownloadableAsset"));
     } catch (error) {
-      notify(error instanceof Error ? error.message : "无法下载素材，请重试。");
+      notify(error instanceof Error ? error.message : t("canvas.workspace.toast.downloadFailed"));
     }
   };
   const exportDocument = async () => {
@@ -2425,7 +2479,10 @@ function Workspace() {
       );
       if (switched)
         notify(
-          `已导入「${contents.document.title}」，恢复 ${contents.assets} 个素材。`,
+          t("canvas.workspace.toast.archiveImported", {
+            title: contents.document.title,
+            count: contents.assets,
+          }),
         );
     } catch (error) {
       notify(errorMessage(error));
@@ -2436,7 +2493,7 @@ function Workspace() {
     subjectSlot?: SubjectMediaSlot,
   ) => {
     if (id && lockedIds.has(id)) {
-      notify("请先解锁节点或所属分组。");
+      notify(t("canvas.workspace.toast.unlockFirst"));
       return;
     }
     const selected = historyRef.current.present.nodes.find(
@@ -2447,11 +2504,11 @@ function Workspace() {
       selected.data.mediaRole === "generation" &&
       selected.type !== "text"
     ) {
-      notify("生成节点不能上传替换本体素材，请新建素材节点。");
+      notify(t("canvas.workspace.toast.generationNoReplace"));
       return;
     }
     if (id && generationByNode.has(id)) {
-      notify("节点正在生成，请先等待或取消任务。");
+      notify(t("canvas.workspace.toast.nodeGenerating"));
       return;
     }
     uploadTarget.current = id;
@@ -2492,14 +2549,14 @@ function Workspace() {
     importAbort.current = controller;
     try {
       if (target && files.length !== 1)
-        throw new Error("替换单个节点时请选择一个文件。");
+        throw new Error(t("canvas.workspace.error.replaceSingleFile"));
       if (
         target &&
         (!expected ||
           expected.projectId !== importDocumentId ||
           expected.node.id !== target)
       )
-        throw new Error("上传目标已变化，请重新选择节点。");
+        throw new Error(t("canvas.workspace.error.uploadTargetChanged"));
       const nodes: CanvasNode[] = [];
       const commands: CanvasCommand[] = [];
       const origin = point ?? center();
@@ -2556,7 +2613,7 @@ function Workspace() {
           );
           if (currentTarget?.type === "subject") {
             if (!["image", "video", "audio"].includes(resource.kind))
-              throw new Error("主体需要图片、视频或音频素材。");
+              throw new Error(t("canvas.workspace.error.subjectNeedsMedia"));
             commands.push({
               type: "update-node",
               id: target,
@@ -2597,17 +2654,17 @@ function Workspace() {
           !sameNodeData(latest.data, expected.node.data) ||
           lockedNodeIds(historyRef.current.present.nodes).has(target)
         )
-          throw new Error("节点内容、类型或锁定状态已变化，本次上传未应用。");
+          throw new Error(t("canvas.workspace.error.uploadNodeChanged"));
       }
       if (historyRef.current.present.id !== importDocumentId) {
-        notify("已切换项目，本次素材导入已取消。");
+        notify(t("canvas.workspace.toast.importCancelledSwitched"));
         return;
       }
       if (
         target &&
         !historyRef.current.present.nodes.some((n) => n.id === target)
       ) {
-        notify("目标节点已被删除，本次素材导入已取消。");
+        notify(t("canvas.workspace.toast.importCancelledDeleted"));
         return;
       }
       if (
@@ -2628,12 +2685,27 @@ function Workspace() {
       setSelected(
         target ? [target] : refTarget ? [refTarget] : nodes.map((n) => n.id),
       );
-      notify(
-        `已导入 ${successes.length} 个素材${failures.length ? `；${failures.length} 个失败：${failures.map((item) => `${item.name}（${item.message}）`).join("；")}` : "，保存在本机。"}${linked.issue}`,
-      );
+      const importSummary = failures.length
+        ? `${t("canvas.workspace.toast.importedAssets", {
+            count: successes.length,
+          })}${t("canvas.workspace.toast.importFailures", {
+            count: failures.length,
+            items: failures
+              .map((item) =>
+                t("canvas.workspace.toast.assetIssue", {
+                  name: item.name,
+                  reason: item.message,
+                }),
+              )
+              .join(t("canvas.workspace.list.separator")),
+          })}`
+        : t("canvas.workspace.toast.importedAssetsSaved", {
+            count: successes.length,
+          });
+      notify(`${importSummary}${linked.issue}`);
     } catch (error) {
       if (!controller.signal.aborted)
-        notify(error instanceof Error ? error.message : "素材导入失败");
+        notify(error instanceof Error ? error.message : t("canvas.workspace.toast.assetImportFailed"));
     } finally {
       if (importAbort.current === controller) importAbort.current = null;
     }
@@ -2650,7 +2722,7 @@ function Workspace() {
   const openEditor = async (node: CanvasNode, mode: EditorMode = "default") => {
     if (node.type === "subject") return;
     if (lockedIds.has(node.id)) {
-      notify("请先解锁节点或所属分组。");
+      notify(t("canvas.workspace.toast.unlockFirst"));
       return;
     }
     if (node.type === "text") {
@@ -2668,7 +2740,7 @@ function Workspace() {
           persist,
         ))
       ) {
-        notify("当前工程尚未保存，无法打开编辑会话。");
+        notify(t("canvas.workspace.toast.editorUnsaved"));
         return;
       }
       const current = historyRef.current.present;
@@ -2696,15 +2768,15 @@ function Workspace() {
   const commitEditorData = async (data: Partial<CanvasNodeData>) => {
     const session = editorSession.current;
     if (!session || editorSaving.current)
-      throw new Error("编辑会话不可用，请重新打开。");
+      throw new Error(t("canvas.workspace.error.editorUnavailable"));
     const projectId = session.projection.client.id;
     editorSaving.current = true;
     try {
       await saveQueue.current!.wait();
       if (historyRef.current.present.id !== projectId)
-        throw new Error("项目已切换，编辑未提交。");
+        throw new Error(t("canvas.workspace.error.editNotCommitted"));
       if (!(await persist(historyRef.current.present)))
-        throw new Error("工程保存失败，编辑草稿已保留。");
+        throw new Error(t("canvas.workspace.error.editorDraftSaveFailed"));
       await session.apply(data);
       const client = session.projection.client,
         projection = workspaceProjection(projectId);
@@ -2713,7 +2785,7 @@ function Workspace() {
       try {
         next = await projection.read(snapshot);
       } catch {
-        throw new Error("编辑已保存，但画布刷新失败。请重试以刷新画布。");
+        throw new Error(t("canvas.workspace.error.editorRefreshFailed"));
       }
       if (historyRef.current.present.id === projectId) {
         const current = historyRef.current.present;
@@ -2728,7 +2800,7 @@ function Workspace() {
         const node = merged.nodes.find((item) => item.id === session.itemId);
         if (node) editorOrigin.current = captureEditorSource(projectId, node);
       }
-      notify("编辑已保存到工程。");
+      notify(t("canvas.workspace.toast.editorSaved"));
       return true;
     } finally {
       editorSaving.current = false;
@@ -2740,15 +2812,15 @@ function Workspace() {
     outputs: readonly LinkedMediaResult[],
     sourceTask?: CanvasToolTask,
   ) => {
-    if (editorSaving.current) throw Error("编辑结果正在保存。");
+    if (editorSaving.current) throw Error(t("canvas.workspace.error.editorSaving"));
     editorSaving.current = true;
     try {
       await saveQueue.current!.wait();
       const current = historyRef.current.present;
       if (current.id !== source.documentId)
-        throw Error("项目已切换，结果未提交。");
+        throw Error(t("canvas.workspace.error.resultNotCommitted"));
       if (!(await persist(current)))
-        throw Error("工程保存失败，结果已保留，请重试。");
+        throw Error(t("canvas.workspace.error.resultSaveFailed"));
       const client = creationClient(current.id);
       let publication = mediaPublications.current.get(source);
       if (!publication) {
@@ -2762,7 +2834,7 @@ function Workspace() {
             (!expected ||
               currentAsset(client.snapshot, item)?.id !== expected.id))
         )
-          throw Error("来源素材已变化，结果未发布，请重新打开编辑器。");
+          throw Error(t("canvas.workspace.error.sourceChanged"));
         publication = new MediaPublication(
           client,
           client.snapshot,
@@ -2786,7 +2858,11 @@ function Workspace() {
         setHistory((h) => ({ ...h, present: merged }));
         if (ids.length) setSelected(ids);
       }
-      notify(`已保存 ${ids.length || outputs.length} 个编辑结果到工程。`);
+      notify(
+        t("canvas.workspace.toast.resultsSaved", {
+          count: ids.length || outputs.length,
+        }),
+      );
       return true;
     } finally {
       editorSaving.current = false;
@@ -2813,7 +2889,7 @@ function Workspace() {
       setSelected([created.id]);
       setMenu(null);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "无法创建堆叠。");
+      notify(error instanceof Error ? error.message : t("canvas.workspace.toast.stackCreateFailed"));
     }
   };
   const sourceFor = (node: CanvasNode): ResultSource => ({
@@ -2930,7 +3006,7 @@ function Workspace() {
     const controller = new AbortController();
     quickAction.current = controller;
     setActionSession(null);
-    notify("正在处理素材…");
+    notify(t("canvas.workspace.toast.processingMedia"));
     try {
       const outputs = await operation(source, controller.signal);
       if (!controller.signal.aborted)
@@ -2941,7 +3017,7 @@ function Workspace() {
         );
     } catch (error) {
       if (!controller.signal.aborted)
-        notify(error instanceof Error ? error.message : "素材处理失败。");
+        notify(error instanceof Error ? error.message : t("canvas.workspace.toast.mediaProcessFailed"));
     } finally {
       if (quickAction.current === controller) quickAction.current = null;
     }
@@ -3049,7 +3125,7 @@ function Workspace() {
         for (const jobId of receipt.jobIds)
           await creationClient(origin.documentId).control(jobId, "cancel");
       } else if (receipt.status === "accepted")
-        notify("生成任务已提交，结果将保存到当前工程。");
+        notify(t("canvas.workspace.toast.generationSubmitted"));
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError"))
         notify(errorMessage(error));
@@ -3076,7 +3152,7 @@ function Workspace() {
         try {
           await deliverTool(present.id, origin.nodeId, pending);
           setJobs(await readJobs());
-          notify("已确认上一次工具提交，请查看原任务进度与结果。");
+          notify(t("canvas.workspace.toast.toolDeliveryConfirmed"));
         } catch (error) {
           notify(errorMessage(error));
         }
@@ -3085,7 +3161,7 @@ function Workspace() {
     }
     const entry = toolCatalog.tools.find((item) => item.id === task.tool);
     if (!entry?.available) {
-      notify(entry?.reason ?? "本地服务未提供此工具。");
+      notify(entry?.reason ?? t("canvas.workspace.toast.toolUnavailable"));
       return;
     }
     const sources = task.sourceNodeIds.flatMap((id) => {
@@ -3101,7 +3177,7 @@ function Workspace() {
         : [];
     });
     if (sources.length !== task.sourceNodeIds.length) {
-      notify("来源素材已删除或尚未导入，请重新选择。");
+      notify(t("canvas.workspace.toast.sourceMissing"));
       return;
     }
     const validation = validateNodeActionSource(
@@ -3113,8 +3189,10 @@ function Workspace() {
       return;
     }
     const id = crypto.randomUUID();
-    const title =
-      CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title ?? task.tool;
+    const title = translateToolText(
+      locale,
+      CANVAS_TOOLS.find((tool) => tool.id === task.tool)?.title ?? task.tool,
+    );
     const outputKind = toolOutputKind(task.tool, origin.kind);
     const targetNodeId = outputKind ? crypto.randomUUID() : undefined;
     // Persist the draft and owned placeholder before any execution can be accepted.
@@ -3165,13 +3243,13 @@ function Workspace() {
         nodeId: origin.nodeId,
         title,
         status: "running",
-        time: jobTime(),
+        time: jobTime(locale),
         createdAt: run.startedAt,
         targetNodeId,
         targetKind: outputKind ?? undefined,
         targetTitle: targetNodeId ? title : undefined,
         durationKey: `tool:${task.tool}`,
-        message: "正在准备工具任务",
+        message: t("canvas.workspace.job.preparingTool"),
         tool: { ...task, selection: undefined },
         resultSource: origin,
       },
@@ -3184,7 +3262,7 @@ function Workspace() {
       if (!(await persist(submissionDocument))) {
         updateJob(id, {
           status: "failed",
-          message: "工程保存失败，未提交工具任务。",
+          message: t("canvas.workspace.job.saveFailed"),
         });
         if (targetNodeId && historyRef.current.present.id === origin.documentId)
           change((current) =>
@@ -3195,7 +3273,7 @@ function Workspace() {
       if (historyRef.current.present.id !== origin.documentId)
         run.controller.abort();
       run.controller.signal.throwIfAborted();
-      updateJob(id, { message: "正在上传素材" });
+      updateJob(id, { message: t("canvas.workspace.job.uploadingSources") });
       const submitted = await submitToolTask(
         {
           id,
@@ -3240,7 +3318,7 @@ function Workspace() {
             ? "cancelled"
             : "failed",
         message: uncertain
-          ? "提交未确认，请同步服务记录核对原任务。"
+          ? t("canvas.workspace.job.submitUnconfirmed")
           : errorMessage(error),
       });
       if (
@@ -3368,7 +3446,7 @@ function Workspace() {
         !asset ||
         !["text", "image", "video", "audio"].includes(asset.kind ?? "")
       )
-        throw new Error("固定参考元数据尚未加载，请重新打开引用选择器。");
+        throw new Error(t("canvas.workspace.error.pinnedMetadataUnloaded"));
       return [
         {
           binding: "asset" as const,
@@ -3385,7 +3463,7 @@ function Workspace() {
     const config = backendModel(settings, backendCatalog.models);
     const blocked = backendBlocker(settings, incoming, backendCatalog.models);
     if (blocked || !config) {
-      notify(blocked ?? "所选模型配置不可用。");
+      notify(blocked ?? t("canvas.workspace.error.modelUnavailable"));
       return;
     }
     const references = backendReferences(settings, incoming, config);
@@ -3505,7 +3583,7 @@ function Workspace() {
       );
       const blocker = agentGenerationBlocker(node, incoming, config);
       if (blocker || !config) {
-        notify(blocker ?? "Agent 配置不可用。");
+        notify(blocker ?? t("canvas.workspace.error.agentUnavailable"));
         return;
       }
       void runServiceTask(
@@ -3548,7 +3626,7 @@ function Workspace() {
       return;
     }
     notify(
-      "当前未选择可用的生成模型，请先在“设置 → 模型接入”中配置服务，再选择模型。",
+      t("canvas.workspace.error.noGenerationModel"),
     );
   };
   const importActionResultFiles = async (files: File[]) => {
@@ -3559,7 +3637,7 @@ function Workspace() {
       (node) => node.id === binding.nodeId,
     );
     if (!source || historyRef.current.present.id !== binding.documentId) {
-      notify("任务来源已失效，请重新选择。");
+      notify(t("canvas.workspace.error.taskSourceInvalid"));
       return;
     }
     const origin = binding;
@@ -3571,7 +3649,7 @@ function Workspace() {
       for (const file of files) {
         const resource = await readEditorResource(file, controller.signal);
         if (resource.kind === "file" || resource.kind === "text")
-          throw new Error("结果必须是实际图片、视频或音频文件。");
+          throw new Error(t("canvas.workspace.error.resultNotMedia"));
         outputs.push({
           kind: resource.kind,
           src: resource.src!,
@@ -3595,7 +3673,7 @@ function Workspace() {
       }
     } catch (error) {
       if (!controller.signal.aborted)
-        notify(error instanceof Error ? error.message : "结果导入失败。");
+        notify(error instanceof Error ? error.message : t("canvas.workspace.error.resultImportFailed"));
     } finally {
       if (importAbort.current === controller) {
         importAbort.current = null;
@@ -3896,10 +3974,10 @@ function Workspace() {
             persist,
           ))
         )
-          throw new Error("请先保存画布。");
+          throw new Error(t("canvas.workspace.error.saveFirst"));
         const current = historyRef.current.present;
         const { node, issue } = subjectImportSelection(current, [id]);
-        if (issue || !node) throw new Error(issue || "目标主体已移除。");
+        if (issue || !node) throw new Error(issue || t("canvas.workspace.error.subjectRemoved"));
         setSelected([id]);
         setSubjectImport({
           projectId: current.id,
@@ -3969,7 +4047,7 @@ function Workspace() {
     },
     rename: (id: string) => {
       const n = doc.nodes.find((n) => n.id === id);
-      if (lockedIds.has(id)) notify("请先解锁节点或所属分组。");
+      if (lockedIds.has(id)) notify(t("canvas.workspace.toast.unlockFirst"));
       else if (n) setRename({ id, value: n.data.title });
     },
     versionCount: (id: string) => versionCounts[id] ?? 0,
@@ -3987,10 +4065,10 @@ function Workspace() {
           ))
         )
           throw new Error(
-            saveError.current || "当前修改保存失败，请关闭后重试。",
+            saveError.current || t("canvas.workspace.error.versionSaveFailed"),
           );
         if (historyRef.current.present.id !== doc.id)
-          throw new Error("当前项目已切换。");
+          throw new Error(t("canvas.workspace.error.projectSwitchedCurrent"));
       })();
       // The dialog owns the error state. Also handle dismissal before it mounts.
       void preparation.catch(() => {});
@@ -4065,7 +4143,7 @@ function Workspace() {
         });
         change(() => next);
       } catch (error) {
-        notify(error instanceof Error ? error.message : "堆叠切换失败。");
+        notify(error instanceof Error ? error.message : t("canvas.workspace.toast.stackSwitchFailed"));
       }
     },
     metadata: (id: string, media: NonNullable<CanvasNodeData["media"]>) => {
@@ -4532,7 +4610,7 @@ function Workspace() {
             deleteKeyCode={null}
             zoomOnDoubleClick={false}
             colorMode="dark"
-            aria-label="无限创作画布"
+            aria-label={t("canvas.workspace.aria.canvas")}
           >
             <Background
               variant={BackgroundVariant.Dots}
@@ -4585,10 +4663,10 @@ function Workspace() {
                 <button
                   type="button"
                   className="cw-reference-port cw-selection-reference-port nodrag nopan"
-                  aria-label="批量连接所选节点"
+                  aria-label={t("canvas.workspace.aria.batchConnect")}
                   title={
                     selectionReferenceReason ||
-                    "拖到目标节点以批量引用；点击添加下游节点"
+                    t("canvas.workspace.aria.batchConnectHint")
                   }
                   disabled={
                     Boolean(selectionReferenceReason) || references.disabled
@@ -4625,8 +4703,10 @@ function Workspace() {
                     className="cw-reference-port cw-node-reference-port nodrag nopan"
                     aria-label={
                       port.active
-                        ? "添加下游参考节点"
-                        : `从${referenceSideLabels[port.side]}侧添加下游参考节点`
+                        ? t("canvas.workspace.aria.addDownstream")
+                        : t("canvas.workspace.aria.addDownstreamSide", {
+                            side: t(referenceSideKeys[port.side]),
+                          })
                     }
                     data-reference-source={port.nodeId}
                     data-side={port.side}
@@ -4676,8 +4756,8 @@ function Workspace() {
             setVersionHistory(null);
             notify(
               referencesChanged
-                ? "历史版本已应用。部分参考与历史版本不同，已使用来源节点当前内容。"
-                : "历史版本已应用到画布，未开始新的生成任务。",
+                ? t("canvas.workspace.toast.versionAppliedReferences")
+                : t("canvas.workspace.toast.versionApplied"),
             );
           }}
         />
@@ -4709,19 +4789,19 @@ function Workspace() {
           />
           <NodeInfoButton nodes={doc.nodes} />
           <span className="cw-save-status" title={saveStatus}>
-            <i className={saveStatus === "已保存到本机" ? "saved" : ""} />
+            <i className={saveStatus === t("canvas.workspace.save.saved") ? "saved" : ""} />
             {saveStatus}
           </span>
-          {saveStatus.startsWith("保存失败") && (
+          {saveStatus.startsWith(t("canvas.workspace.save.failedPrefix")) && (
             <div className="cw-save-conflict-actions">
               <button onClick={() => void exportDocument()}>
-                导出未保存副本
+                {t("canvas.workspace.save.exportCopy")}
               </button>
               <button
                 onClick={() => {
                   if (
                     !window.confirm(
-                      "读取服务端版本会放弃本页未保存的修改。请先导出副本，确认后继续。",
+                      t("canvas.workspace.save.reloadConfirm"),
                     )
                   )
                     return;
@@ -4729,12 +4809,12 @@ function Workspace() {
                     .open()
                     .then((next) => {
                       installDocument(next);
-                      setSaveStatus("已保存到本机");
+                      setSaveStatus(t("canvas.workspace.save.saved"));
                     })
                     .catch((error) => notify(errorMessage(error)));
                 }}
               >
-                读取服务端版本
+                {t("canvas.workspace.save.reload")}
               </button>
             </div>
           )}
@@ -4743,7 +4823,7 @@ function Workspace() {
           <span ref={assetListAnchor} className="cw-asset-list-anchor">
             <IconButton
               name="search"
-              label={"资产列表"}
+              label={t("canvas.workspace.toolbar.assets")}
               tooltipSide="bottom"
               active={panel === "search"}
               onClick={() => {
@@ -4757,7 +4837,7 @@ function Workspace() {
           </span>
           <IconButton
             name="history"
-            label="生成历史"
+            label={t("canvas.workspace.toolbar.history")}
             tooltipSide="bottom"
             active={panel === "history"}
             onClick={() => togglePanel("history")}
@@ -4766,10 +4846,10 @@ function Workspace() {
             className="cw-import-button"
             onClick={() => importInput.current?.click()}
           >
-            <span>导入画布</span>
+            <span>{t("canvas.workspace.toolbar.importCanvas")}</span>
           </button>
           <button className="cw-export-button" onClick={exportDocument}>
-            <span>导出画布</span>
+            <span>{t("canvas.workspace.toolbar.exportCanvas")}</span>
           </button>
           <input
             ref={importInput}
@@ -4790,8 +4870,10 @@ function Workspace() {
           ...CANVAS_CREATION_TOOLS.map((tool) => ({
             name: tool.kind,
             icon: tool.icon,
-            label: tool.label,
-            actionLabel: tool.unavailable ? tool.label : `添加${tool.label}`,
+            label: t(tool.labelKey),
+            actionLabel: tool.unavailable
+              ? t(tool.labelKey)
+              : t("canvas.rail.add", { label: t(tool.labelKey) }),
             shortcut: tool.kind === "text" ? "T" : undefined,
             unavailable: tool.unavailable,
             onClick: tool.unavailable ? undefined : () => addNode(tool.kind),
@@ -4799,7 +4881,7 @@ function Workspace() {
           {
             name: "folder",
             icon: "rail-folder",
-            label: "资产库",
+            label: t("canvas.rail.assets"),
             preserveCollapsedOnFocusRestore: true,
             separatorBefore: true,
             active: libraryOpen,
@@ -4808,9 +4890,9 @@ function Workspace() {
           {
             name: "upload",
             icon: "rail-upload",
-            label: "上传",
+            label: t("canvas.rail.upload"),
             preserveCollapsedOnFocusRestore: true,
-            actionLabel: "上传本地素材",
+            actionLabel: t("canvas.rail.uploadLocal"),
             shortcut: navigator.platform.includes("Mac")
               ? "Meta+O"
               : "Control+O",
@@ -4824,12 +4906,12 @@ function Workspace() {
           <div className="cw-empty-orb">
             <CanvasIcon name="clapperboard" size={56} />
           </div>
-          <h1>你的故事，由你执导</h1>
-          <p>双击画布创建节点，或拖入你的素材</p>
+          <h1>{t("canvas.workspace.empty.title")}</h1>
+          <p>{t("canvas.workspace.empty.hint")}</p>
           <div>
             <button onClick={() => addNode("image")}>
               <CanvasIcon name="plus" size={15} />
-              图片节点
+              {t("canvas.workspace.empty.imageNode")}
             </button>
             <button
               onClick={() => {
@@ -4843,19 +4925,19 @@ function Workspace() {
                 );
               }}
             >
-              体验示例画布 <span>↗</span>
+              {t("canvas.workspace.empty.example")} <span>↗</span>
             </button>
           </div>
-          <small>参考连接 · 自由编排 · 本机自动保存</small>
+          <small>{t("canvas.workspace.empty.tagline")}</small>
         </div>
       )}
-      {!ready && <div className="cw-loading">正在打开画布…</div>}
+      {!ready && <div className="cw-loading">{t("canvas.workspace.loading.opening")}</div>}
 
       <div className="cw-bottom-left">
         <div className="cw-settings-control">
           <IconButton
             name="settings"
-            label="设置"
+            label={t("canvas.workspace.toolbar.settings")}
             active={settingsOpen}
             onClick={() => {
               setZoomMenu(false);
@@ -4867,7 +4949,7 @@ function Workspace() {
         <div className="cw-bottom-controls">
           <IconButton
             name={hand ? "hand" : "pointer"}
-            label={hand ? "切换到选择工具" : "切换到抓手工具"}
+            label={hand ? t("canvas.workspace.toolbar.selectTool") : t("canvas.workspace.toolbar.handTool")}
             shortcut={hand ? "V" : "H"}
             tooltipDelay={0}
             highlighted
@@ -4875,14 +4957,14 @@ function Workspace() {
           />
           <IconButton
             name="minimap"
-            label={minimap ? "隐藏小地图" : "显示小地图"}
+            label={minimap ? t("canvas.workspace.toolbar.hideMinimap") : t("canvas.workspace.toolbar.showMinimap")}
             tooltipDelay={0}
             active={minimap}
             onClick={() => setMinimap(!minimap)}
           />
           <IconButton
             name="connections"
-            label={showEdges ? "隐藏连线" : "显示连线"}
+            label={showEdges ? t("canvas.workspace.toolbar.hideEdges") : t("canvas.workspace.toolbar.showEdges")}
             tooltipDelay={0}
             active={showEdges}
             onClick={() => setShowEdges(!showEdges)}
@@ -4890,7 +4972,7 @@ function Workspace() {
           <span className="cw-vline" />
           <TooltipButton
             className="cw-zoom-button"
-            label="缩放选项"
+            label={t("canvas.workspace.toolbar.zoomOptions")}
             aria-expanded={zoomMenu}
             tooltipDelay={0}
             onClick={() => setZoomMenu(!zoomMenu)}
@@ -4901,7 +4983,7 @@ function Workspace() {
         <div className="cw-undo-controls">
           <IconButton
             name="undo"
-            label="撤销"
+            label={t("canvas.workspace.toolbar.undo")}
             shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
             tooltipDelay={0}
             disabled={!businessHistory.undo || historyReplaying}
@@ -4909,7 +4991,7 @@ function Workspace() {
           />
           <IconButton
             name="redo"
-            label="重做"
+            label={t("canvas.workspace.toolbar.redo")}
             shortcut={
               navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
             }
@@ -4924,14 +5006,14 @@ function Workspace() {
           <div className="cw-zoom-row">
             <IconButton
               name="minus"
-              label="缩小"
+              label={t("canvas.workspace.toolbar.zoomOut")}
               onClick={() => {
                 selectionPresentation.userNavigation();
                 void flow.zoomOut();
               }}
             />
             <input
-              aria-label="缩放百分比"
+              aria-label={t("canvas.workspace.toolbar.zoomPercent")}
               type="number"
               min="8"
               max="800"
@@ -4947,7 +5029,7 @@ function Workspace() {
             <span>%</span>
             <IconButton
               name="plus"
-              label="放大"
+              label={t("canvas.workspace.toolbar.zoomIn")}
               onClick={() => {
                 selectionPresentation.userNavigation();
                 void flow.zoomIn();
@@ -4960,7 +5042,7 @@ function Workspace() {
               setZoomMenu(false);
             }}
           >
-            适应所有内容 <kbd>⇧ 1</kbd>
+            {t("canvas.workspace.toolbar.fitAll")} <kbd>⇧ 1</kbd>
           </button>
           <button
             onClick={() => {
@@ -4968,7 +5050,7 @@ function Workspace() {
               setZoomMenu(false);
             }}
           >
-            适应选中内容 <kbd>⇧ 2</kbd>
+            {t("canvas.workspace.toolbar.fitSelection")} <kbd>⇧ 2</kbd>
           </button>
           {[0.5, 1, 2].map((z) => (
             <button
@@ -4987,7 +5069,7 @@ function Workspace() {
       <div className="cw-bottom-right">
         <IconButton
           name="help"
-          label="使用帮助"
+          label={t("canvas.workspace.toolbar.help")}
           shortcut="?"
           onClick={() => setHelp(true)}
         />
@@ -4999,32 +5081,40 @@ function Workspace() {
             assistantOpen ? setAssistantOpen(false) : showAssistant()
           }
         >
-          <CanvasIcon name="star" size={18} />与 AI 对话
+          <CanvasIcon name="star" size={18} />{t("canvas.workspace.toolbar.chat")}
         </button>
       </div>
       {selectedEdges.length > 0 && selected.length === 0 && (
         <div
           className="cw-selection-bar"
           role="toolbar"
-          aria-label="参考连线操作"
+          aria-label={t("canvas.workspace.selection.edgeToolbar")}
         >
-          <span>已选 {selectedEdges.length} 条连线</span>
+          <span>
+            {t("canvas.workspace.selection.edgesSelected", {
+              count: selectedEdges.length,
+            })}
+          </span>
           <button
             onClick={() => {
               command({ type: "remove-edges", ids: selectedEdges });
               setSelectedEdges([]);
             }}
           >
-            断开参考
+            {t("canvas.workspace.selection.disconnectReference")}
           </button>
-          <button onClick={() => setSelectedEdges([])}>取消选择</button>
+          <button onClick={() => setSelectedEdges([])}>{t("canvas.workspace.selection.clear")}</button>
         </div>
       )}
       {selected.length > 1 && !interacting && !spacePressed && (
         <SelectionBarAnchor nodes={selectedNodes} allNodes={doc.nodes}>
-          <span>已选 {selected.length} 个节点</span>
+          <span>
+            {t("canvas.workspace.selection.nodesSelected", {
+              count: selected.length,
+            })}
+          </span>
           <select
-            aria-label="对齐所选节点"
+            aria-label={t("canvas.workspace.selection.align")}
             value=""
             onChange={(event) => {
               const alignment = event.target.value as Alignment;
@@ -5036,28 +5126,28 @@ function Workspace() {
             }}
           >
             <option value="" disabled>
-              对齐 / 分布
+              {t("canvas.workspace.selection.alignPlaceholder")}
             </option>
-            <option value="left">左对齐</option>
-            <option value="center">水平居中</option>
-            <option value="right">右对齐</option>
-            <option value="top">顶对齐</option>
-            <option value="middle">垂直居中</option>
-            <option value="bottom">底对齐</option>
+            <option value="left">{t("canvas.workspace.selection.alignLeft")}</option>
+            <option value="center">{t("canvas.workspace.selection.alignCenter")}</option>
+            <option value="right">{t("canvas.workspace.selection.alignRight")}</option>
+            <option value="top">{t("canvas.workspace.selection.alignTop")}</option>
+            <option value="middle">{t("canvas.workspace.selection.alignMiddle")}</option>
+            <option value="bottom">{t("canvas.workspace.selection.alignBottom")}</option>
             <option value="horizontal" disabled={selected.length < 3}>
-              水平等间距
+              {t("canvas.workspace.selection.distributeHorizontal")}
             </option>
             <option value="vertical" disabled={selected.length < 3}>
-              垂直等间距
+              {t("canvas.workspace.selection.distributeVertical")}
             </option>
           </select>
           <button onClick={group}>
             <CanvasIcon name="group" size={16} />
-            编组
+            {t("canvas.workspace.selection.group")}
           </button>
           <button onClick={stack}>
             <CanvasIcon name="stack" size={16} />
-            堆叠
+            {t("canvas.workspace.selection.stack")}
           </button>
           <button
             onClick={() =>
@@ -5067,14 +5157,14 @@ function Workspace() {
               }))
             }
           >
-            自动排列
+            {t("canvas.workspace.selection.autoArrange")}
           </button>
           <IconButton
             name="copy"
-            label="复制副本"
+            label={t("canvas.workspace.selection.duplicate")}
             onClick={() => paste(true)}
           />
-          <IconButton name="trash" label="删除所选" onClick={removeSelected} />
+          <IconButton name="trash" label={t("canvas.workspace.selection.deleteSelected")} onClick={removeSelected} />
         </SelectionBarAnchor>
       )}
       {hasToolbar && single && (
@@ -5340,7 +5430,7 @@ function Workspace() {
             data-expanded={composerExpanded}
             role={composerExpanded ? "dialog" : undefined}
             aria-modal={composerExpanded ? true : undefined}
-            aria-label={composerExpanded ? "展开的节点会话框" : undefined}
+            aria-label={composerExpanded ? t("canvas.workspace.aria.expandedComposer") : undefined}
             style={
               composerExpanded
                 ? undefined
@@ -5404,8 +5494,8 @@ function Workspace() {
                 type="button"
                 className="cw-composer-expand"
                 disabled={composerRunning}
-                label={composerExpanded ? "收起会话框" : "展开会话框"}
-                aria-label={composerExpanded ? "收起会话框" : "展开会话框"}
+                label={composerExpanded ? t("canvas.workspace.composer.collapse") : t("canvas.workspace.composer.expand")}
+                aria-label={composerExpanded ? t("canvas.workspace.composer.collapse") : t("canvas.workspace.composer.expand")}
                 aria-expanded={composerExpanded}
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() =>
@@ -5422,7 +5512,7 @@ function Workspace() {
               <TooltipButton
                 className="cw-composer-dismiss"
                 disabled={composerRunning}
-                label="关闭生成面板"
+                label={t("canvas.workspace.composer.close")}
                 onClick={() => {
                   setExpandedComposerId(null);
                   setDismissedComposer(composerNode.id);
@@ -5512,7 +5602,7 @@ function Workspace() {
         contextItems(
           menu.nodeId ? (
             <>
-              {menuButton("重命名", "text", () => actions.rename(menu.nodeId!))}
+              {menuButton(t("canvas.workspace.menu.rename"), "text", () => actions.rename(menu.nodeId!))}
               <button
                 role="menuitem"
                 disabled={
@@ -5526,17 +5616,17 @@ function Workspace() {
                 onClick={() => actions.newConnected(menu.nodeId!, "source")}
               >
                 <CanvasIcon name="plus" size={16} />
-                <span>添加下游节点</span>
+                <span>{t("canvas.workspace.menu.addDownstream")}</span>
               </button>
-              {menuButton("复制", "copy", copy, "⌘ C")}
-              {menuButton("剪切", "copy", cut, "⌘ X")}
-              {menuButton("粘贴", "copy", () => paste(), "⌘ V")}
-              {menuButton("复制副本", "copy", () => paste(true), "⌘ D")}
+              {menuButton(t("canvas.workspace.menu.copy"), "copy", copy, "⌘ C")}
+              {menuButton(t("canvas.workspace.menu.cut"), "copy", cut, "⌘ X")}
+              {menuButton(t("canvas.workspace.menu.paste"), "copy", () => paste(), "⌘ V")}
+              {menuButton(t("canvas.workspace.selection.duplicate"), "copy", () => paste(true), "⌘ D")}
               <hr />
-              {menuButton("编组", "group", group, "⌘ G")}
-              {selected.length > 1 && menuButton("资源堆叠", "stack", stack)}
-              {menuButton("取消编组", "group", ungroup, "⌘ ⇧ G")}
-              {menuButton("自动排列", "map", () =>
+              {menuButton(t("canvas.workspace.selection.group"), "group", group, "⌘ G")}
+              {selected.length > 1 && menuButton(t("canvas.workspace.kind.stack"), "stack", stack)}
+              {menuButton(t("canvas.workspace.menu.ungroup"), "group", ungroup, "⌘ ⇧ G")}
+              {menuButton(t("canvas.workspace.selection.autoArrange"), "map", () =>
                 change((d) => ({
                   ...d,
                   nodes: arrangeNodes(d.nodes, selected),
@@ -5545,14 +5635,14 @@ function Workspace() {
               <hr />
               {menuButton(
                 single && lockedIds.has(single.id) && !single.locked
-                  ? "所属分组已锁定"
+                  ? t("canvas.workspace.menu.groupLocked")
                   : single?.locked
-                    ? "解锁"
-                    : "锁定",
+                    ? t("canvas.workspace.menu.unlock")
+                    : t("canvas.workspace.menu.lock"),
                 "lock",
                 () => {
                   if (single && lockedIds.has(single.id) && !single.locked) {
-                    notify("请先选择并解锁所属分组。");
+                    notify(t("canvas.workspace.toast.unlockGroupFirst"));
                     return;
                   }
                   command({
@@ -5568,10 +5658,10 @@ function Workspace() {
                 },
               )}
               {single?.type === "stack" &&
-                menuButton("解散堆叠", "stack", () =>
+                menuButton(t("canvas.workspace.menu.unstack"), "stack", () =>
                   change((d) => unstackSelection(d, selected)),
                 )}
-              {menuButton("移到顶层", "arrow", () =>
+              {menuButton(t("canvas.workspace.menu.moveToFront"), "arrow", () =>
                 command({
                   type: "reorder-nodes",
                   ids: selected,
@@ -5579,7 +5669,7 @@ function Workspace() {
                 }),
               )}
               {menuButton(
-                "上移一层",
+                t("canvas.workspace.menu.moveForward"),
                 "arrow",
                 () =>
                   command({
@@ -5590,7 +5680,7 @@ function Workspace() {
                 "⌘ ]",
               )}
               {menuButton(
-                "下移一层",
+                t("canvas.workspace.menu.moveBackward"),
                 "arrow",
                 () =>
                   command({
@@ -5601,7 +5691,7 @@ function Workspace() {
                 "⌘ [",
               )}
               {menuButton(
-                "移到底层",
+                t("canvas.workspace.menu.moveToBack"),
                 "arrow",
                 () =>
                   command({
@@ -5615,23 +5705,23 @@ function Workspace() {
                 ["image", "video", "audio", "file"].includes(single.type) &&
                 !lockedIds.has(single.id) &&
                 menuButton(
-                  single.data.src ? "替换素材" : "上传素材",
+                  single.data.src ? t("canvas.workspace.menu.replaceAsset") : t("canvas.workspace.menu.uploadAsset"),
                   "upload",
                   () => openFilePicker(single.id),
                 )}
               {single?.data.src &&
-                menuButton("下载素材", "download", () => downloadNode(single))}
+                menuButton(t("canvas.workspace.menu.downloadAsset"), "download", () => downloadNode(single))}
               {single?.type === "image" &&
                 single.data.src &&
-                menuButton("编辑图片", "crop", () => openEditor(single))}
+                menuButton(t("canvas.workspace.menu.editImage"), "crop", () => openEditor(single))}
               {single &&
                 ["timeline", "stack", "tool", "external"].includes(
                   single.type,
                 ) &&
-                menuButton("打开编辑器", single.type, () => openEditor(single))}
+                menuButton(t("canvas.workspace.menu.openEditor"), single.type, () => openEditor(single))}
               {single?.data.src &&
                 ["image", "video", "audio"].includes(single.type) &&
-                menuButton("编辑素材", "tool", () =>
+                menuButton(t("canvas.workspace.menu.editAsset"), "tool", () =>
                   openNodeAction(
                     single.data.taskDraft?.tool ??
                       (single.type === "image"
@@ -5642,7 +5732,7 @@ function Workspace() {
                   ),
                 )}
               <hr />
-              {menuButton("删除", "trash", removeSelected, "⌫")}
+              {menuButton(t("canvas.workspace.menu.delete"), "trash", removeSelected, "⌫")}
             </>
           ) : (
             <CreationMenuContent
@@ -5710,9 +5800,9 @@ function Workspace() {
           className={`cw-side-panel ${panel === "assets" ? "from-left" : ""}`}
           aria-label={
             {
-              assets: "资产库",
-              search: "搜索节点",
-              history: "生成历史",
+              assets: t("canvas.workspace.panel.assets"),
+              search: t("canvas.workspace.panel.search"),
+              history: t("canvas.workspace.toolbar.history"),
             }[panel]
           }
         >
@@ -5720,15 +5810,15 @@ function Workspace() {
             <h2>
               {
                 {
-                  assets: "资产库",
-                  search: "搜索节点",
-                  history: "生成历史",
+                  assets: t("canvas.workspace.panel.assets"),
+                  search: t("canvas.workspace.panel.search"),
+                  history: t("canvas.workspace.toolbar.history"),
                 }[panel]
               }
             </h2>
             <IconButton
               name="close"
-              label="关闭侧栏"
+              label={t("canvas.workspace.panel.close")}
               onClick={() => {
                 setPanel(null);
                 referenceTarget.current = null;
@@ -5739,17 +5829,17 @@ function Workspace() {
             <>
               <p className="cw-panel-note">
                 {referenceTarget.current
-                  ? "选择素材作为参考，或上传本地文件。"
-                  : "素材保存在当前工程，可拖入图片、视频、音频。"}
+                  ? t("canvas.workspace.panel.referenceHint")
+                  : t("canvas.workspace.panel.assetsHint")}
               </p>
               <button
                 className="cw-wide-button"
                 onClick={() => openFilePicker()}
               >
                 <CanvasIcon name="upload" />
-                上传本地素材
+                {t("canvas.workspace.help.upload")}
               </button>
-              <h3>画布素材</h3>
+              <h3>{t("canvas.workspace.panel.canvasAssets")}</h3>
               <div className="cw-asset-grid">
                 {[...doc.nodes, ...(doc.hiddenNodes ?? [])]
                   .filter((n) => n.data.src)
@@ -5792,11 +5882,15 @@ function Workspace() {
                 onClick={() => setLibraryOpen(true)}
               >
                 <CanvasIcon name="folder" />
-                打开资产库
+                {t("canvas.workspace.panel.openLibrary")}
               </button>
-              <h3>原创示例素材</h3>
+              <h3>{t("canvas.workspace.panel.samples")}</h3>
               <div className="cw-asset-grid">
-                {["青山", "暮色", "远湖"].map((title, i) => (
+                {[
+                  t("canvas.workspace.sample.mountain"),
+                  t("canvas.workspace.sample.dusk"),
+                  t("canvas.workspace.sample.lake"),
+                ].map((title, i) => (
                   <button
                     key={title}
                     onClick={() => {
@@ -5831,7 +5925,7 @@ function Workspace() {
                 ))}
               </div>
               <small className="cw-panel-note">
-                示例为本工程绘制的矢量插画。
+                {t("canvas.workspace.panel.samplesNote")}
               </small>
             </>
           )}
@@ -5847,7 +5941,7 @@ function Workspace() {
                     job = client.snapshot.jobs.find(
                       (job) => job.id === entry.taskId,
                     );
-                  if (!job) throw new Error("原任务不存在。");
+                  if (!job) throw new Error(t("canvas.workspace.error.originalTaskMissing"));
                   const spec = client.snapshot.generationSpecs.find(
                     (spec) => spec.id === job.inputSnapshot.spec.id,
                   )!;
@@ -5860,7 +5954,7 @@ function Workspace() {
                   const commandId = history.jobs.find(
                     (item) => item.job.id === job.id,
                   )?.configurationCommandId;
-                  if (!commandId) throw new Error("未找到原任务的配置历史。");
+                  if (!commandId) throw new Error(t("canvas.workspace.error.configHistoryMissing"));
                   await client.command(
                     "generationSpec.restore",
                     { specId: spec.id, commandId, referencePolicy },
@@ -5879,7 +5973,7 @@ function Workspace() {
                         })),
                     ],
                   );
-                  notify("生成配置已恢复，当前结果保留；未开始新的生成任务。");
+                  notify(t("canvas.workspace.toast.configRestored"));
                 } catch (error) {
                   notify(errorMessage(error));
                 }
@@ -5922,7 +6016,7 @@ function Workspace() {
                     (item) => item.id === id,
                   );
                   if (!item) {
-                    notify("该配置尚未显示，可从资产列表显示其当前结果。");
+                    notify(t("canvas.workspace.toast.configNotVisible"));
                     return;
                   }
                   if (!visibleItems(client.snapshot).has(id)) {
@@ -5999,7 +6093,7 @@ function Workspace() {
                   {
                     void (async () => {
                       if (requests) {
-                        notify("请使用“恢复生成配置”，该操作不改变当前结果。");
+                        notify(t("canvas.workspace.toast.useRestoreConfig"));
                         return;
                       }
                       if (!(await persist(historyRef.current.present))) return;
@@ -6012,7 +6106,7 @@ function Workspace() {
                         new Set(results.map((result) => result.specId)).size !==
                         results.length
                       ) {
-                        notify("同一生成配置一次只能选用一个历史结果。");
+                        notify(t("canvas.workspace.toast.oneResultPerSpec"));
                         return;
                       }
                       const specs = client.snapshot.generationSpecs.filter(
@@ -6090,7 +6184,7 @@ function Workspace() {
         className="sr-only"
         type="file"
         multiple
-        aria-label="选择本地素材文件"
+        aria-label={t("canvas.workspace.aria.fileInput")}
         onChange={(e) => {
           if (e.target.files?.length) void importFiles([...e.target.files]);
           e.target.value = "";
@@ -6101,7 +6195,7 @@ function Workspace() {
         className="sr-only"
         type="file"
         multiple
-        aria-label="导入真实生成结果"
+        aria-label={t("canvas.workspace.aria.resultInput")}
         onChange={(event) => {
           if (event.target.files?.length)
             void importActionResultFiles([...event.target.files]);
@@ -6113,19 +6207,19 @@ function Workspace() {
         <div
           className="cw-modal-backdrop cw-preview"
           role="dialog"
-          aria-label="素材全屏预览"
+          aria-label={t("canvas.workspace.aria.previewDialog")}
           onClick={() => setPreview(null)}
         >
           <header>
             <span>{preview.data.title}</span>
             <IconButton
               name="download"
-              label="下载预览素材"
+              label={t("canvas.workspace.aria.downloadPreview")}
               onClick={() => downloadNode(preview)}
             />
             <IconButton
               name="close"
-              label="关闭全屏"
+              label={t("canvas.workspace.aria.closePreview")}
               onClick={() => setPreview(null)}
             />
           </header>
@@ -6140,8 +6234,8 @@ function Workspace() {
               <p>
                 {preview.data.text ||
                   (preview.data.src
-                    ? "此文件可通过右上角下载按钮保存查看。"
-                    : "这个节点还没有素材，先上传本地文件。")}
+                    ? t("canvas.workspace.preview.fileHint")
+                    : t("canvas.workspace.preview.emptyHint"))}
               </p>
             )}
           </div>
@@ -6154,7 +6248,7 @@ function Workspace() {
           onApply={(timeline) => commitEditorData({ timeline })}
           onPrepareRender={async (timeline) => {
             if ((await commitEditorData({ timeline })) === false)
-              throw new Error("时间线未保存，未开始合成。");
+              throw new Error(t("canvas.workspace.error.timelineUnsaved"));
             const client = creationClient(doc.id);
             const publish = timelinePublication(
               client,
@@ -6164,7 +6258,7 @@ function Workspace() {
             return async (result) => {
               await publish(result);
               client.install(client.snapshot);
-              notify("合成视频已保存到工程。");
+              notify(t("canvas.workspace.toast.compositeSaved"));
               return true;
             };
           }}
@@ -6197,11 +6291,11 @@ function Workspace() {
         <Suspense
           fallback={
             <EditorModal
-              title="正在打开导演台"
-              subtitle="加载本地 3D 编辑器"
+              title={t("canvas.workspace.director.opening")}
+              subtitle={t("canvas.workspace.director.subtitle")}
               onClose={closeEditor}
             >
-              <p>正在加载…</p>
+              <p>{t("canvas.workspace.director.loading")}</p>
             </EditorModal>
           }
         >
@@ -6339,21 +6433,21 @@ function Workspace() {
             className="cw-modal cw-help"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-label="画布使用说明"
+            aria-label={t("canvas.workspace.help.dialogLabel")}
           >
             <div className="cw-panel-heading">
-              <h2>在画布上，自由创作</h2>
+              <h2>{t("canvas.workspace.help.title")}</h2>
               <IconButton
                 name="close"
-                label="关闭说明"
+                label={t("canvas.workspace.help.close")}
                 onClick={() => setHelp(false)}
               />
             </div>
             <p>
-              拖动节点排列画面，从节点右侧圆点拖到另一个节点左侧即可建立参考连线。点击圆点旁的按钮可创建关联节点。
+              {t("canvas.workspace.help.body")}
             </p>
             <dl>
-              {helpShortcuts(navigator.platform.includes("Mac")).map(
+              {helpShortcuts(navigator.platform.includes("Mac"), t).map(
                 ([name, key]) => (
                   <div key={name}>
                     <dt>{name}</dt>
@@ -6363,10 +6457,7 @@ function Workspace() {
               )}
             </dl>
             <p className="cw-panel-note">
-              项目与画布保存在本地 projects 目录，导出的 .canvas 压缩包内含画布
-              JSON
-              与素材文件，可备份或交换。图像裁剪与调色在本机实际执行；节点生成通过本地服务调用“设置
-              → 模型接入”中的模型。助手对话、云分享和云端资产尚未接入。
+              {t("canvas.workspace.help.storage")}
             </p>
           </section>
         </div>
@@ -6384,7 +6475,7 @@ function Workspace() {
           slot={subjectImport.slot}
           targetIssue={
             doc.id !== subjectImport.projectId
-              ? "项目已切换。"
+              ? t("canvas.workspace.error.projectSwitched")
               : (subjectImportSelection(doc, [subjectImport.nodeId]).issue ??
                 (() => {
                   const target = doc.nodes.find(
@@ -6392,7 +6483,7 @@ function Workspace() {
                   );
                   return target &&
                     subjectTargetIdentity(target) !== subjectImport.identity
-                    ? "目标主体已变化，请重新打开导入界面。"
+                    ? t("canvas.workspace.error.subjectTargetChanged")
                     : null;
                 })())
           }
@@ -6411,7 +6502,7 @@ function Workspace() {
             single.data.subject?.main?.src &&
             single.data.assetState !== "missing"
               ? null
-              : "请在画布中仅选中一个有内容的主体。"
+              : t("canvas.workspace.error.selectSingleSubject")
           }
           onImportSubjects={(items) => importLibrarySubjects(items)}
           onBackupSubject={backupLibrarySubject}
@@ -6428,13 +6519,13 @@ function Workspace() {
           {initializationError ? (
             <div role="alert">
               <p>{initializationError}</p>
-              <button onClick={() => window.location.reload()}>重新连接</button>
-              <a href="/">返回画布首页</a>
+              <button onClick={() => window.location.reload()}>{t("canvas.workspace.loading.reconnect")}</button>
+              <a href="/">{t("canvas.workspace.loading.backHome")}</a>
             </div>
           ) : switching ? (
-            "正在切换画布…"
+            t("canvas.workspace.loading.switching")
           ) : (
-            "正在打开画布…"
+            t("canvas.workspace.loading.opening")
           )}
         </div>
       )}
@@ -6458,7 +6549,7 @@ function Workspace() {
               true,
             );
             if (!success)
-              throw new Error("项目创建未完成，请检查名称或保存状态后重试。");
+              throw new Error(t("canvas.workspace.error.projectCreateIncomplete"));
           }}
         />
       )}

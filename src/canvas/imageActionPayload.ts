@@ -1,6 +1,7 @@
 import { loadLayerImage } from "./layerRenderer";
 import { paintImageInk, readImageInk } from "./imageActionGeometry";
 import type { CanvasToolTask } from "./toolCatalog";
+import { tNow } from "../i18n/messages.ts";
 
 /** Rasterize only at submission. Persist the editable vectors, not a second large image. */
 export async function imageAnnotationPayload(
@@ -22,13 +23,13 @@ export async function imageAnnotationPayload(
   overlay.width = size.width;
   overlay.height = size.height;
   const ink = overlay.getContext("2d");
-  if (!ink) throw new Error("无法绘制改图标记。");
+  if (!ink) throw new Error(tNow("errors.imageAction.ink"));
   paintImageInk(ink, strokes, size);
   const output = document.createElement("canvas");
   output.width = size.width;
   output.height = size.height;
   const context = output.getContext("2d");
-  if (!context) throw new Error("无法创建改图参考图。");
+  if (!context) throw new Error(tNow("errors.imageAction.canvas"));
   context.drawImage(image, 0, 0);
   context.drawImage(overlay, 0, 0);
   return output.toDataURL("image/png");

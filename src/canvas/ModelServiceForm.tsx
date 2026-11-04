@@ -22,30 +22,32 @@ import {
 } from "./providerPresets";
 import { CanvasIcon } from "./CanvasIcon";
 import { ModelPicker, type ModelTestResult } from "./ModelPicker";
+import { useT } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/types";
 
 export type SettingsModelKind = Exclude<ModelKind, "vision">;
 const PROTOCOLS: Record<
   SettingsModelKind,
-  readonly [ModelConfigInput["protocol"], string][]
+  readonly [ModelConfigInput["protocol"], MessageKey][]
 > = {
-  agent: [["openai", "OpenAI 兼容接口（含 vLLM）"]],
+  agent: [["openai", "models.protocolOption.openaiAgent"]],
   image: [
-    ["openai", "OpenAI 兼容接口（含 vLLM-Omni Z-Image-Turbo）"],
-    ["volcengine", "火山方舟 / Agent Plan"],
-    ["vllm_omni_segmentation", "vLLM-Omni 分割接口（SAM 3）"],
+    ["openai", "models.protocolOption.openaiImage"],
+    ["volcengine", "models.protocolOption.volcengine"],
+    ["vllm_omni_segmentation", "models.protocolOption.segmentation"],
   ],
   video: [
-    ["vllm_omni", "异步 /videos 接口（含 vLLM-Omni）"],
-    ["minimax_video_v2", "MiniMax 官方视频 V2"],
-    ["volcengine", "火山方舟 / Agent Plan"],
-    ["vllm_omni_segmentation", "vLLM-Omni 分割接口（SAM 3）"],
-    ["vllm_omni_depth", "vLLM-Omni 深度接口（Video Depth Anything）"],
+    ["vllm_omni", "models.protocolOption.videos"],
+    ["minimax_video_v2", "models.protocolOption.minimaxVideo"],
+    ["volcengine", "models.protocolOption.volcengine"],
+    ["vllm_omni_segmentation", "models.protocolOption.segmentation"],
+    ["vllm_omni_depth", "models.protocolOption.depth"],
   ],
   audio: [
-    ["openai", "OpenAI 兼容语音合成（含 vLLM-Omni TTS）"],
-    ["volcengine", "火山引擎语音 / Agent Plan"],
-    ["vllm_omni_music", "vLLM-Omni 音乐生成（MiniMax Music 3、YuE2）"],
-    ["vllm_omni_score", "vLLM-Omni 扒谱接口（SheetSage2）"],
+    ["openai", "models.protocolOption.tts"],
+    ["volcengine", "models.protocolOption.volcengineAudio"],
+    ["vllm_omni_music", "models.protocolOption.music"],
+    ["vllm_omni_score", "models.protocolOption.score"],
   ],
 };
 
@@ -80,6 +82,7 @@ export function ModelServiceForm({
   catalog: BackendModels;
   onClose: () => void;
 }) {
+  const t = useT();
   const [connection, setConnection] = useState(existing);
   const [presetId, setPresetId] = useState(
     existing
@@ -213,7 +216,7 @@ export function ModelServiceForm({
     setTesting(true);
     setResults((current) => ({
       ...current,
-      [id]: { status: "running", message: "测试中…" },
+      [id]: { status: "running", message: t("models.service.testing") },
     }));
     try {
       const result = await testAgentModel(
@@ -224,7 +227,9 @@ export function ModelServiceForm({
         ...current,
         [id]: {
           status: "passed",
-          message: `通过 ${(result.elapsedMs / 1000).toFixed(2)} s`,
+          message: t("models.service.testPassed", {
+            seconds: (result.elapsedMs / 1000).toFixed(2),
+          }),
         },
       }));
     } catch (failure) {
@@ -332,7 +337,7 @@ export function ModelServiceForm({
   return (
     <form
       className="cw-model-editor"
-      aria-label={existing ? "编辑服务" : "添加服务"}
+      aria-label={existing ? t("models.service.edit") : t("models.service.add")}
       autoComplete="off"
       onSubmit={(event) => void submit(event)}
       onInvalid={() => setConnectionOpen(true)}
@@ -341,15 +346,20 @@ export function ModelServiceForm({
         <button
           type="button"
           className="cw-settings-button cw-settings-button-icon"
-          aria-label="返回服务列表"
+          aria-label={t("models.service.back")}
           onClick={onClose}
           disabled={locked}
         >
           <CanvasIcon name="back" size={18} />
         </button>
         <div>
-          <h3>{existing ? "编辑服务" : "添加服务"}</h3>
-          <p>{MODEL_KINDS.find((item) => item.id === kind)?.label}</p>
+          <h3>{existing ? t("models.service.edit") : t("models.service.add")}</h3>
+          <p>
+            {(() => {
+              const kindSpec = MODEL_KINDS.find((item) => item.id === kind);
+              return kindSpec ? t(kindSpec.labelKey) : null;
+            })()}
+          </p>
         </div>
       </header>
       <div className="cw-model-editor-scroll">
@@ -361,7 +371,7 @@ export function ModelServiceForm({
         />
         {!connection && connections.length > 0 && (
           <div className="cw-provider-reuse">
-            <span>已有相同地址的连接</span>
+            <span>{t("models.service.existingConnections")}</span>
             {connections.map((model) => (
               <button
                 key={model.id}
@@ -369,10 +379,12 @@ export function ModelServiceForm({
                 className="cw-settings-button"
                 onClick={() => reuseConnection(model)}
               >
-                复用已保存连接 · {model.modelId}
+                {t("models.service.reuseConnection", {
+                  model: model.modelId,
+                })}
               </button>
             ))}
-            <small>不复用则保存为独立连接。</small>
+            <small>{t("models.service.reuseHint")}</small>
           </div>
         )}
         <details
@@ -381,19 +393,21 @@ export function ModelServiceForm({
           onToggle={(event) => setConnectionOpen(event.currentTarget.open)}
         >
           <summary>
-            <span>高级连接设置</span>
+            <span>{t("models.service.advancedConnection")}</span>
             <span title={value.url}>
-              {connectionOpen ? "地址与鉴权" : value.url || "尚未配置"}
+              {connectionOpen
+                ? t("models.service.addressAndAuth")
+                : value.url || t("models.service.notConfigured")}
             </span>
             <CanvasIcon name="chevron" size={16} />
           </summary>
           <fieldset
             className="cw-model-connection"
-            aria-label="连接信息"
+            aria-label={t("models.service.connectionInfo")}
             disabled={locked}
           >
             <label>
-              服务地址（Base URL）
+              {t("models.service.url")}
               <input
                 type="url"
                 required
@@ -404,7 +418,7 @@ export function ModelServiceForm({
               />
             </label>
             <p className="cw-model-note">
-              自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。
+              {t("models.service.urlNote")}
             </p>
           </fieldset>
         </details>
@@ -424,7 +438,7 @@ export function ModelServiceForm({
                   })
                 }
               />
-              无需密钥
+              {t("models.service.noKey")}
             </label>
           </div>
           <div className="cw-model-key-input">
@@ -439,27 +453,27 @@ export function ModelServiceForm({
               spellCheck={false}
               placeholder={
                 value.authMode === "none"
-                  ? "此服务无需鉴权"
+                  ? t("models.service.noAuthPlaceholder")
                   : hasSavedKey
-                    ? "已保存密钥，留空保持不变"
-                    : "输入服务提供的 API Key"
+                    ? t("models.service.savedKeyPlaceholder")
+                    : t("models.service.apiKeyPlaceholder")
               }
               onChange={(event) => update({ apiKey: event.target.value })}
             />
             <button
               type="button"
               disabled={value.authMode === "none"}
-              aria-label={showKey ? "隐藏密钥" : "显示密钥"}
+              aria-label={
+                showKey ? t("models.service.hideKey") : t("models.service.showKey")
+              }
               onClick={() => setShowKey(!showKey)}
             >
-              {showKey ? "隐藏" : "显示"}
+              {showKey ? t("models.service.hide") : t("models.service.show")}
             </button>
           </div>
         </fieldset>
         {value.protocol === "minimax_video_v2" && (
-          <p className="cw-model-note">
-            模型列表来自内置声明，载入不验证密钥，也不创建视频任务。
-          </p>
+          <p className="cw-model-note">{t("models.service.minimaxNote")}</p>
         )}
         <ModelPicker
           modelPlaceholder={placeholders[1]}
@@ -478,7 +492,9 @@ export function ModelServiceForm({
           onTest={kind === "agent" ? (id) => void test(id) : undefined}
           results={results}
           fetchLabel={
-            value.protocol === "minimax_video_v2" ? "载入支持的模型" : undefined
+            value.protocol === "minimax_video_v2"
+              ? t("models.service.loadSupportedModels")
+              : undefined
           }
           renderDetails={(id) => (
             <ModelCapabilityCard
@@ -503,18 +519,14 @@ export function ModelServiceForm({
         />
         {segmentation && (
           <p className="cw-model-note">
-            分割模型用于选区、图层拆分和抠像，不参与图片或视频生成。
+            {t("models.service.segmentationNote")}
           </p>
         )}
         {depth && (
-          <p className="cw-model-note">
-            深度模型用于深度动作捕捉，不参与视频生成。
-          </p>
+          <p className="cw-model-note">{t("models.service.depthNote")}</p>
         )}
         {score && (
-          <p className="cw-model-note">
-            扒谱模型把参照音乐转成乐谱，供 YuE2 参照生成，本身不生成音频。
-          </p>
+          <p className="cw-model-note">{t("models.service.scoreNote")}</p>
         )}
       </div>
       <footer className="cw-model-editor-footer">
@@ -522,10 +534,12 @@ export function ModelServiceForm({
           {error ||
             selectedModels.map((id) => modelErrors[id]).find(Boolean) ||
             (selectedModels.length > 200
-              ? "每个服务最多启用 200 个模型"
+              ? t("models.service.tooManyModels")
               : selectedModels.length
-                ? `将启用 ${selectedModels.length} 个模型`
-                : "请选择至少一个模型")}
+                ? t("models.service.willEnable", {
+                    count: selectedModels.length,
+                  })
+                : t("models.service.selectAtLeastOne"))}
         </div>
         <button
           className="cw-settings-button"
@@ -533,7 +547,7 @@ export function ModelServiceForm({
           disabled={locked}
           onClick={onClose}
         >
-          取消
+          {t("models.service.cancel")}
         </button>
         <button
           className="cw-settings-button cw-settings-button-primary"
@@ -546,7 +560,7 @@ export function ModelServiceForm({
             selectedModels.some((id) => modelErrors[id])
           }
         >
-          {busy ? "保存中…" : "保存服务"}
+          {busy ? t("models.service.saving") : t("models.service.save")}
         </button>
       </footer>
     </form>

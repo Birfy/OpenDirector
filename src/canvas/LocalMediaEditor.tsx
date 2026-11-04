@@ -9,6 +9,7 @@ import {
   mediaBlobDataUrl,
   recordLocalVideoRange,
 } from "./localMediaRuntime.ts";
+import { useT } from "../i18n/I18nProvider.tsx";
 import "./local-media-tools.css";
 import {
   centeredVideoCrop,
@@ -35,6 +36,24 @@ const localSource = (src: string) => {
     return false;
   }
 };
+const CROP_EDGE_LABEL = {
+  x: "tools.localMedia.crop.edge.x",
+  y: "tools.localMedia.crop.edge.y",
+  width: "tools.localMedia.crop.edge.width",
+  height: "tools.localMedia.crop.edge.height",
+} as const;
+const CROP_EDGE_ARIA = {
+  x: "tools.localMedia.crop.edgeAria.x",
+  y: "tools.localMedia.crop.edgeAria.y",
+  width: "tools.localMedia.crop.edgeAria.width",
+  height: "tools.localMedia.crop.edgeAria.height",
+} as const;
+const CROP_CORNER = {
+  nw: "tools.localMedia.corner.nw",
+  ne: "tools.localMedia.corner.ne",
+  sw: "tools.localMedia.corner.sw",
+  se: "tools.localMedia.corner.se",
+} as const;
 
 export function LocalMediaEditor({
   node,
@@ -50,6 +69,7 @@ export function LocalMediaEditor({
   ) => boolean | void | Promise<boolean | void>;
   onClose: () => void;
 }) {
+  const t = useT();
   const [duration, setDuration] = useState(
       node.data.media?.durationSeconds ?? 0,
     ),
@@ -161,7 +181,9 @@ export function LocalMediaEditor({
             durationProbe.current === controller
           )
             setError(
-              error instanceof Error ? error.message : "无法读取实际媒体时长。",
+              error instanceof Error
+                ? error.message
+                : t("tools.localMedia.error.duration"),
             );
         })
         .finally(() => {
@@ -247,15 +269,15 @@ export function LocalMediaEditor({
     const element = media.current;
     if (!node.data.src || !element || busy || abort.current) return;
     if (!localSource(node.data.src)) {
-      setError("请先将媒体文件导入本地画布。");
+      setError(t("tools.localMedia.error.notLocal"));
       return;
     }
     if (mode !== "frame" && !valid) {
-      setError("裁剪范围必须在素材时长内，结束时间需大于开始时间。");
+      setError(t("tools.localMedia.error.range"));
       return;
     }
     if (mode === "crop" && !crop) {
-      setError("请等待原视频尺寸读取完成。");
+      setError(t("tools.localMedia.error.dimensions"));
       return;
     }
     const controller = new AbortController();
@@ -293,7 +315,7 @@ export function LocalMediaEditor({
             ),
           )) === false
         )
-          throw Error("结果未保存，请重试。");
+          throw Error(t("tools.localMedia.error.notSaved"));
         onClose();
       }
     };
@@ -305,12 +327,12 @@ export function LocalMediaEditor({
       if (mode === "frame") {
         const video = element as HTMLVideoElement;
         if (video.seeking || !video.videoWidth || video.readyState < 2)
-          throw new Error("当前视频帧尚未定位并解码完成，请稍候再导出。");
+          throw new Error(t("tools.localMedia.error.frameNotReady"));
         const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const context = canvas.getContext("2d");
-        if (!context) throw new Error("浏览器无法创建取帧画布。");
+        if (!context) throw new Error(t("tools.localMedia.error.noCanvas"));
         context.drawImage(video, 0, 0);
         await commit({
           src: canvas.toDataURL("image/png"),
@@ -325,7 +347,7 @@ export function LocalMediaEditor({
         const response = await fetch(node.data.src, {
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error("无法读取本地音频。");
+        if (!response.ok) throw new Error(t("tools.localMedia.error.audioRead"));
         const source = await response.arrayBuffer();
         if (!owns(controller)) return;
         const context = new AudioContext();
@@ -383,7 +405,14 @@ export function LocalMediaEditor({
         src,
         mimeType: "video/webm",
         kind: "video",
-        title: `${node.data.title} · ${mode === "crop" ? `画幅 ${crop!.width}×${crop!.height}` : "本地时长修剪"}`,
+        title: `${node.data.title} · ${
+          mode === "crop"
+            ? t("tools.localMedia.output.crop", {
+                width: crop!.width,
+                height: crop!.height,
+              })
+            : t("tools.localMedia.output.trim")
+        }`,
         media: {
           width: measured.width,
           height: measured.height,
@@ -392,7 +421,11 @@ export function LocalMediaEditor({
       });
     } catch (error) {
       if (owns(controller))
-        setError(error instanceof Error ? error.message : "媒体处理失败。");
+        setError(
+          error instanceof Error
+            ? error.message
+            : t("tools.localMedia.error.process"),
+        );
     } finally {
       if (abort.current === controller) {
         abort.current = null;
@@ -403,24 +436,34 @@ export function LocalMediaEditor({
   };
   return (
     <EditorModal
-      title={`${mode === "crop" ? "视频画面裁剪" : mode === "frame" ? "视频取帧" : mode === "extract-audio" ? "提取音频" : isAudio ? "音频裁剪" : "视频时长修剪"} · ${node.data.title}`}
+      title={`${
+        mode === "crop"
+          ? t("tools.localMedia.title.crop")
+          : mode === "frame"
+            ? t("tools.localMedia.title.frame")
+            : mode === "extract-audio"
+              ? t("tools.localMedia.title.extractAudio")
+              : isAudio
+                ? t("tools.localMedia.title.audioTrim")
+                : t("tools.localMedia.title.videoTrim")
+      } · ${node.data.title}`}
       subtitle={
         mode === "crop"
-          ? "拖动选框或四角调整原视频像素区域；本地重编码 WebM，保留浏览器可捕获的原音轨，输出最高 30 帧/秒。"
+          ? t("tools.localMedia.subtitle.crop")
           : mode === "frame"
-            ? "定位真实视频帧，导出原始像素尺寸的 PNG。"
+            ? t("tools.localMedia.subtitle.frame")
             : isAudio
-              ? "解码本地音轨并按采样范围导出 WAV。"
-              : "以正常速度在浏览器内重编码为 WebM；范围精度受浏览器帧调度影响。"
+              ? t("tools.localMedia.subtitle.audio")
+              : t("tools.localMedia.subtitle.video")
       }
       onClose={onClose}
       onApply={() => void apply()}
       applyLabel={
         busy
-          ? "处理中…"
+          ? t("tools.localMedia.apply.busy")
           : mode === "frame"
-            ? "把当前帧加入画布"
-            : "处理并加入画布"
+            ? t("tools.localMedia.apply.frame")
+            : t("tools.localMedia.apply.default")
       }
       disabled={
         busy || probingDuration || !duration || (mode === "crop" && !crop)
@@ -437,7 +480,7 @@ export function LocalMediaEditor({
             controls={!busy}
             onLoadedMetadata={(event) => loaded(event.currentTarget)}
             onDurationChange={(event) => loaded(event.currentTarget)}
-            onError={() => setError("无法播放此媒体格式。")}
+            onError={() => setError(t("tools.localMedia.error.audioPlay"))}
             onTimeUpdate={(event) => {
               setPosition(event.currentTarget.currentTime);
               if (
@@ -473,7 +516,7 @@ export function LocalMediaEditor({
               playsInline
               onLoadedMetadata={(event) => loaded(event.currentTarget)}
               onDurationChange={(event) => loaded(event.currentTarget)}
-              onError={() => setError("无法播放此视频格式。")}
+              onError={() => setError(t("tools.localMedia.error.videoPlay"))}
               onTimeUpdate={(event) => {
                 setPosition(event.currentTarget.currentTime);
                 if (
@@ -510,7 +553,9 @@ export function LocalMediaEditor({
                   <button
                     key={handle}
                     className={`cw-crop-corner is-${handle}`}
-                    aria-label={`调整裁剪${{ nw: "左上", ne: "右上", sw: "左下", se: "右下" }[handle]}角`}
+                    aria-label={t("tools.localMedia.crop.cornerAria", {
+                      corner: t(CROP_CORNER[handle]),
+                    })}
                     disabled={busy}
                     onPointerDown={(event) => startCropDrag(event, handle)}
                   />
@@ -523,9 +568,9 @@ export function LocalMediaEditor({
       {mode === "crop" && crop && (
         <div className="cw-local-media-controls cw-video-crop-controls">
           <label>
-            画幅
+            {t("tools.localMedia.crop.aspect")}
             <select
-              aria-label="视频画面裁剪比例"
+              aria-label={t("tools.localMedia.crop.aspectAria")}
               value={cropRatio}
               disabled={busy}
               onChange={(event) => {
@@ -543,8 +588,10 @@ export function LocalMediaEditor({
                   );
               }}
             >
-              <option value="free">自由</option>
-              <option value="original">原比例</option>
+              <option value="free">{t("tools.localMedia.crop.free")}</option>
+              <option value="original">
+                {t("tools.localMedia.crop.original")}
+              </option>
               <option value={String(16 / 9)}>16:9</option>
               <option value="1">1:1</option>
               <option value={String(9 / 16)}>9:16</option>
@@ -553,9 +600,9 @@ export function LocalMediaEditor({
           </label>
           {(["x", "y", "width", "height"] as const).map((key) => (
             <label key={key}>
-              {{ x: "左", y: "上", width: "宽", height: "高" }[key]}
+              {t(CROP_EDGE_LABEL[key])}
               <input
-                aria-label={`视频画面裁剪${{ x: "左边距", y: "上边距", width: "宽度", height: "高度" }[key]}`}
+                aria-label={t(CROP_EDGE_ARIA[key])}
                 type="number"
                 step="1"
                 min={key === "x" || key === "y" ? 0 : 1}
@@ -593,24 +640,30 @@ export function LocalMediaEditor({
               });
             }}
           >
-            恢复全画面
+            {t("tools.localMedia.crop.restore")}
           </button>
           <span>
-            原视频 {dimensions.width} × {dimensions.height} 像素
+            {t("tools.localMedia.crop.sourceSize", {
+              width: dimensions.width,
+              height: dimensions.height,
+            })}
           </span>
         </div>
       )}
       <div className="cw-local-media-controls">
         {probingDuration && (
-          <span role="status">正在定位媒体尾部，读取实际时长…</span>
+          <span role="status">{t("tools.localMedia.probe")}</span>
         )}
         <span>
-          {position.toFixed(2)} / {duration.toFixed(2)} 秒
+          {t("tools.localMedia.position", {
+            position: position.toFixed(2),
+            duration: duration.toFixed(2),
+          })}
         </span>
         {mode === "frame" ? (
           <>
             <ControlSlider
-              aria-label="视频取帧位置"
+              aria-label={t("tools.localMedia.frame.positionAria")}
               min={0}
               max={Math.max(0, duration - 0.001)}
               step="0.01"
@@ -635,7 +688,7 @@ export function LocalMediaEditor({
                 }
               }}
             >
-              首帧
+              {t("tools.localMedia.frame.first")}
             </button>
             <button
               disabled={!duration || busy}
@@ -648,15 +701,15 @@ export function LocalMediaEditor({
                 }
               }}
             >
-              末尾附近
+              {t("tools.localMedia.frame.last")}
             </button>
           </>
         ) : (
           <>
             <label>
-              开始（秒）
+              {t("tools.localMedia.range.start")}
               <input
-                aria-label="裁剪开始秒"
+                aria-label={t("tools.localMedia.range.startAria")}
                 type="number"
                 min="0"
                 max={duration}
@@ -670,9 +723,9 @@ export function LocalMediaEditor({
               />
             </label>
             <label>
-              结束（秒）
+              {t("tools.localMedia.range.end")}
               <input
-                aria-label="裁剪结束秒"
+                aria-label={t("tools.localMedia.range.endAria")}
                 type="number"
                 min="0"
                 max={duration}
@@ -697,10 +750,12 @@ export function LocalMediaEditor({
                 }
               }}
             >
-              预览范围
+              {t("tools.localMedia.range.preview")}
             </button>
             {busy && (
-              <button onClick={() => abort.current?.abort()}>取消处理</button>
+              <button onClick={() => abort.current?.abort()}>
+                {t("tools.localMedia.cancelProcessing")}
+              </button>
             )}
           </>
         )}

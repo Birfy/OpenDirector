@@ -12,6 +12,7 @@ import { CanvasIcon } from "./CanvasIcon";
 import { TooltipButton } from "./TooltipButton";
 import { CANVAS_CREATION_TOOLS } from "./creationTools";
 import type { CanvasNodeKind } from "./model";
+import { useT } from "../i18n/I18nProvider";
 import "./canvas-creation-menu.css";
 
 function menuKeys(event: KeyboardEvent<HTMLDivElement>) {
@@ -50,22 +51,23 @@ export function CreationMenuContent({
   onUpload,
   allowedKinds,
 }: CreationActions & { allowedKinds?: readonly CanvasNodeKind[] }) {
+  const t = useT();
   return (
     <>
-      <div className="cw-menu-caption">新建节点</div>
+      <div className="cw-menu-caption">{t("canvas.menu.newNode")}</div>
       {CANVAS_CREATION_TOOLS.map((tool) =>
         tool.unavailable ? (
           <TooltipButton
             key={tool.kind}
             role="menuitem"
-            aria-label={tool.label}
+            aria-label={t(tool.labelKey)}
             aria-disabled="true"
-            label="暂未开放"
+            label={t("canvas.menu.unavailable")}
             tooltipSide="right"
             onClick={(event) => event.preventDefault()}
           >
             <CanvasIcon name={tool.icon} size={18} />
-            <span>{tool.label}</span>
+            <span>{t(tool.labelKey)}</span>
           </TooltipButton>
         ) : (
           <button
@@ -76,13 +78,13 @@ export function CreationMenuContent({
             )}
             title={
               allowedKinds && !allowedKinds.includes(tool.kind)
-                ? "不支持此下游类型或参考源不可用"
+                ? t("canvas.menu.downstreamUnavailable")
                 : undefined
             }
             onClick={() => onCreate(tool.kind)}
           >
             <CanvasIcon name={tool.icon} size={18} />
-            <span>{tool.label}</span>
+            <span>{t(tool.labelKey)}</span>
           </button>
         ),
       )}
@@ -91,11 +93,11 @@ export function CreationMenuContent({
           <hr />
           <button role="menuitem" onClick={onAssets}>
             <CanvasIcon name="rail-folder" size={18} />
-            <span>从资产库添加</span>
+            <span>{t("canvas.menu.addFromAssets")}</span>
           </button>
           <button role="menuitem" onClick={onUpload}>
             <CanvasIcon name="rail-upload" size={18} />
-            <span>本地上传</span>
+            <span>{t("canvas.menu.localUpload")}</span>
           </button>
         </>
       )}
@@ -128,6 +130,7 @@ export function CanvasCreationMenu({
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const submenu = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -221,7 +224,11 @@ export function CanvasCreationMenu({
         x={x}
         y={y}
         className="cw-canvas-menu"
-        aria-label={mode === "create" ? "新建节点" : "画布操作"}
+        aria-label={
+          mode === "create"
+            ? t("canvas.menu.newNode")
+            : t("canvas.menu.canvasActions")
+        }
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -264,7 +271,7 @@ export function CanvasCreationMenu({
                   }
                 }}
               >
-                <span>新建节点</span>
+                <span>{t("canvas.menu.newNode")}</span>
                 <CanvasIcon name="chevronRight" size={18} />
               </button>
               <hr />
@@ -274,7 +281,7 @@ export function CanvasCreationMenu({
                 onPointerEnter={closeSubmenu}
                 onClick={() => run(onPaste)}
               >
-                <span>粘贴</span>
+                <span>{t("canvas.menu.paste")}</span>
                 <kbd>{shortcuts[0]}</kbd>
               </button>
               <button
@@ -283,7 +290,7 @@ export function CanvasCreationMenu({
                 onPointerEnter={closeSubmenu}
                 onClick={() => run(onRedo)}
               >
-                <span>重做</span>
+                <span>{t("canvas.menu.redo")}</span>
                 <kbd>{shortcuts[1]}</kbd>
               </button>
               <button
@@ -292,7 +299,7 @@ export function CanvasCreationMenu({
                 onPointerEnter={closeSubmenu}
                 onClick={() => run(onUndo)}
               >
-                <span>撤销</span>
+                <span>{t("canvas.menu.undo")}</span>
                 <kbd>{shortcuts[2]}</kbd>
               </button>
             </>,
@@ -310,7 +317,7 @@ export function CanvasCreationMenu({
               y={y}
               anchor={trigger.current}
               className="cw-canvas-menu"
-              aria-label="新建节点"
+              aria-label={t("canvas.menu.newNode")}
               onKeyDown={(event) => {
                 if (event.key === "Escape" || event.key === "ArrowLeft") {
                   event.preventDefault();

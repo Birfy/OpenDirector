@@ -1,3 +1,6 @@
+import type { Translate } from "../i18n/I18nProvider.tsx";
+import { defaultTranslate } from "./assistantTranslate.ts";
+
 export interface VideoCrop {
   x: number;
   y: number;
@@ -10,6 +13,7 @@ export function validateVideoCrop(
   crop: VideoCrop,
   width: number,
   height: number,
+  t: Translate = defaultTranslate,
 ): VideoCrop {
   if (
     ![width, height].every((value) => Number.isInteger(value) && value > 0) ||
@@ -21,7 +25,7 @@ export function validateVideoCrop(
     crop.x + crop.width > width ||
     crop.y + crop.height > height
   )
-    throw new Error("裁剪矩形必须位于原视频像素范围内，且宽高为正整数。");
+    throw new Error(t("editors.videoCrop.error.rect"));
   return { x: crop.x, y: crop.y, width: crop.width, height: crop.height };
 }
 
@@ -45,9 +49,11 @@ export function centeredVideoCrop(
   width: number,
   height: number,
   ratio: number,
+  t: Translate = defaultTranslate,
 ): VideoCrop {
-  validateVideoCrop({ x: 0, y: 0, width, height }, width, height);
-  if (!Number.isFinite(ratio) || ratio <= 0) throw new Error("画幅比例无效。");
+  validateVideoCrop({ x: 0, y: 0, width, height }, width, height, t);
+  if (!Number.isFinite(ratio) || ratio <= 0)
+    throw new Error(t("editors.videoCrop.error.ratio"));
   const cropWidth = Math.min(width, height * ratio);
   const cropHeight = cropWidth / ratio;
   return fitVideoCrop(

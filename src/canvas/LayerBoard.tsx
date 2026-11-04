@@ -5,8 +5,11 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useT } from "../i18n/I18nProvider.tsx";
+import type { Translate } from "../i18n/I18nProvider.tsx";
 import { CanvasIcon } from "./CanvasIcon";
 import { classifyImportFile } from "./editorMedia";
+import { defaultTranslate } from "./assistantTranslate.ts";
 import {
   assertLayerSize,
   createImageLayer,
@@ -54,20 +57,21 @@ type Gesture = { pointerId: number } & (
   | { kind: "move" | "resize" | "rotate"; layer: ImageLayer; start: LayerPoint }
   | { kind: "mask"; layer: ImageLayer; stroke: MaskStroke }
 );
-const failure = (error: unknown) =>
-  error instanceof Error ? error.message : "操作未完成，请重试。";
-const readFile = (file: File) =>
+const failure = (error: unknown, t: Translate = defaultTranslate) =>
+  error instanceof Error ? error.message : t("common.error.retry");
+const readFile = (file: File, t: Translate = defaultTranslate) =>
   new Promise<string>((resolve, reject) => {
     if (file.size > 64 * 1024 * 1024) {
-      reject(new Error("单个素材最多 64 MB，请先缩小文件。"));
+      reject(new Error(t("editors.layers.error.fileTooLarge64")));
       return;
     }
     const reader = new FileReader();
     reader.onload = () =>
       typeof reader.result === "string"
         ? resolve(reader.result)
-        : reject(new Error("无法读取文件。"));
-    reader.onerror = () => reject(new Error("读取文件失败。"));
+        : reject(new Error(t("editors.layers.error.readFile")));
+    reader.onerror = () =>
+      reject(new Error(t("editors.layers.error.fileReadFailed")));
     reader.readAsDataURL(file);
   });
 function download(blob: Blob, filename: string) {
@@ -94,6 +98,7 @@ export function LayerBoard({
   onClose,
   onBack,
 }: LayerBoardProps) {
+  const t = useT();
   const [history, setHistory] = useState<LayerHistory | null>(null);
   const document = history?.present;
   const state = useRef(history);
@@ -154,14 +159,15 @@ export function LayerBoard({
     void (async () => {
       try {
         let next: LayerDocument;
-        if (initialDocument) next = parseLayerDocumentValue(initialDocument);
+        if (initialDocument) next = parseLayerDocumentValue(initialDocument, t);
         else if (src) {
           const image = await loadLayerImage(src);
           next = createLayerDocument(
             src,
             image.naturalWidth,
             image.naturalHeight,
-            title || "原始图片",
+            title || t("editors.layers.originalImage"),
+            t,
           );
         } else
           next = {
@@ -177,7 +183,7 @@ export function LayerBoard({
           install(next);
       } catch (error) {
         if (mounted.current && session.current === currentSession)
-          setError(failure(error));
+          setError(failure(error, t));
       } finally {
         if (mounted.current && session.current === currentSession)
           setBusy(false);
@@ -215,7 +221,7 @@ export function LayerBoard({
           });
         })
         .catch((error) => {
-          if (alive) setError(failure(error));
+          if (alive) setError(failure(error, t));
         });
     });
     return () => {
@@ -292,7 +298,7 @@ export function LayerBoard({
   const add = (content: LayerContent, name: string) => {
     if (!document) return;
     if (document.layers.length >= MAX_LAYERS) {
-      setError(`本地编辑器最多支持 ${MAX_LAYERS} 个图层。`);
+      setError(t("editors.layers.error.maxLayers", { count: MAX_LAYERS }));
       return;
     }
     const layer = createImageLayer(content, name);
@@ -312,13 +318,15 @@ export function LayerBoard({
   const duplicate = (source = active) => {
     if (!source || !document) return;
     if (document.layers.length >= MAX_LAYERS) {
-      setError(`本地编辑器最多支持 ${MAX_LAYERS} 个图层。`);
+      setError(t("editors.layers.error.maxLayers", { count: MAX_LAYERS }));
       return;
     }
     const layer = {
       ...structuredClone(source),
       id: crypto.randomUUID(),
-      name: `${source.name.slice(0, 197)} 副本`,
+      name: t("editors.layers.duplicateSuffix", {
+        name: source.name.slice(0, 197),
+      }),
       locked: false,
       x: source.x + 20,
       y: source.y + 20,
@@ -331,7 +339,7 @@ export function LayerBoard({
     const token = session.current;
     const initial = state.current.present;
     if (initial.layers.length + files.length > MAX_LAYERS) {
-      setError(`本地编辑器最多支持 ${MAX_LAYERS} 个图层。`);
+      setError(t("editors.layers.error.maxLayers", { count: MAX_LAYERS }));
       return;
     }
     setBusy(true);
@@ -340,11 +348,15 @@ export function LayerBoard({
       const layers: ImageLayer[] = [];
       for (const file of files) {
         const { kind, mimeType } = classifyImportFile(file);
-        if (kind !== "image") throw new Error(`「${file.name}」不是图片。`);
+        if (kind !== "image")
+          throw new Error(
+            t("editors.layers.error.notImage", { name: file.name }),
+          );
         const src = await readFile(
             file.type === mimeType
               ? file
               : new File([file], file.name, { type: mimeType }),
+            t,
           ),
           image = await loadLayerImage(src);
         const layer = createImageLayer(
@@ -373,7 +385,7 @@ export function LayerBoard({
       setTool("move");
     } catch (error) {
       if (mounted.current && token === session.current)
-        setError(failure(error));
+        setError(failure(error, t));
     } finally {
       if (mounted.current && token === session.current) setBusy(false);
     }
@@ -522,7 +534,7 @@ export function LayerBoard({
     const handle = (event.target as Element).getAttribute("data-handle");
     if (tool !== "move") {
       if (!active || active.locked || !active.visible) {
-        setNotice("请先选择一个可见且未锁定的图层。蒙版只作用于该图层。");
+        setNotice(t("editors.layers.notice.selectMaskLayer"));
         return;
       }
       const stroke: MaskStroke = {
@@ -657,16 +669,16 @@ export function LayerBoard({
           new Blob([JSON.stringify(portableLayerDocument(document, images))], {
             type: "application/json",
           }),
-          `${title || "图层"}.layers.json`,
+          `${title || t("editors.layers.defaultName")}.layers.json`,
         );
-        setNotice("已导出可编辑图层文件（包含素材和蒙版）。");
+        setNotice(t("editors.layers.notice.exportedJson"));
       } else {
         const canvas = window.document.createElement("canvas");
         renderLayers(canvas, document, images);
         if (kind === "apply") {
           const result = canvas.toDataURL("image/png");
           if (!result.startsWith("data:image/png;base64,"))
-            throw new Error("PNG 导出失败，请缩小画布尺寸后重试。");
+            throw new Error(t("editors.layers.error.pngTooLarge"));
           const accepted = await callbacks.current.onApply(
             result,
             embedSourcesOnApply
@@ -674,27 +686,35 @@ export function LayerBoard({
               : document,
           );
           if (accepted === false)
-            throw new Error(
-              "编辑未应用，图层草稿已保留，请核对来源与锁定状态。",
-            );
+            throw new Error(t("editors.layers.error.notApplied"));
           callbacks.current.onClose();
         } else {
           const blob = await new Promise<Blob>((resolve, reject) =>
             canvas.toBlob(
               (blob) =>
-                blob ? resolve(blob) : reject(new Error("PNG 导出失败。")),
+                blob
+                  ? resolve(blob)
+                  : reject(new Error(t("editors.layers.error.pngFailed"))),
               "image/png",
             ),
           );
           if (mounted.current && token === session.current) {
-            download(blob, `${title || "图层合成"}.png`);
-            setNotice(`已导出 ${document.width} × ${document.height} PNG。`);
+            download(
+              blob,
+              `${title || t("editors.layers.defaultComposite")}.png`,
+            );
+            setNotice(
+              t("editors.layers.notice.exportedPng", {
+                width: document.width,
+                height: document.height,
+              }),
+            );
           }
         }
       }
     } catch (error) {
       if (mounted.current && token === session.current)
-        setError(failure(error));
+        setError(failure(error, t));
     } finally {
       if (mounted.current && token === session.current) setBusy(false);
     }
@@ -710,7 +730,7 @@ export function LayerBoard({
       <label>
         {label}
         <input
-          aria-label={`图层${label}`}
+          aria-label={t("editors.layers.numericAria", { label })}
           type="number"
           value={Math.round(active[key] * 10) / 10}
           min={min}
@@ -757,48 +777,55 @@ export function LayerBoard({
           <div>
             <span className="lb-eyebrow">LOCAL LAYER STUDIO</span>
             <h2 id={titleId}>
-              图层工作台 <small>{title}</small>
+              {t("editors.layers.title")} <small>{title}</small>
             </h2>
           </div>
           <div className="lb-header-actions">
             {onBack && (
               <button onClick={onBack} disabled={busy}>
-                返回裁剪
+                {t("editors.layers.back")}
               </button>
             )}
-            <button onClick={onClose} aria-label="关闭图层工作台">
+            <button
+              onClick={onClose}
+              aria-label={t("editors.layers.closeAria")}
+            >
               <CanvasIcon name="close" />
             </button>
           </div>
         </header>
-        <div className="lb-toolbar" role="toolbar" aria-label="图层工具">
+        <div
+          className="lb-toolbar"
+          role="toolbar"
+          aria-label={t("editors.layers.toolbarAria")}
+        >
           <button
             className={tool === "move" ? "is-active" : ""}
             onClick={() => setTool("move")}
-            title="选择、移动与变换"
+            title={t("editors.layers.tool.moveTitle")}
           >
             <CanvasIcon name="pointer" size={16} />
-            选择
+            {t("editors.layers.tool.move")}
           </button>
           <button
             className={tool === "erase" ? "is-active" : ""}
             onClick={() => setTool("erase")}
-            title="手动擦除选中图层的区域"
+            title={t("editors.layers.tool.eraseTitle")}
           >
-            ◒ 蒙版擦除
+            ◒ {t("editors.layers.tool.erase")}
           </button>
           <button
             className={tool === "restore" ? "is-active" : ""}
             onClick={() => setTool("restore")}
-            title="恢复被蒙版擦除的原始像素"
+            title={t("editors.layers.tool.restoreTitle")}
           >
-            ◓ 蒙版恢复
+            ◓ {t("editors.layers.tool.restore")}
           </button>
           {tool !== "move" && (
             <label className="lb-brush">
-              画笔{" "}
+              {t("editors.layers.brush")}{" "}
               <input
-                aria-label="蒙版画笔大小"
+                aria-label={t("editors.layers.brushAria")}
                 type="range"
                 min="2"
                 max="300"
@@ -810,14 +837,14 @@ export function LayerBoard({
           )}
           <span className="lb-toolbar-spacer" />
           <button
-            aria-label="撤销图层操作"
+            aria-label={t("editors.layers.undoAria")}
             disabled={!history?.past.length || busy}
             onClick={() => actionRef.current.undo()}
           >
             <CanvasIcon name="undo" size={17} />
           </button>
           <button
-            aria-label="重做图层操作"
+            aria-label={t("editors.layers.redoAria")}
             disabled={!history?.future.length || busy}
             onClick={() => actionRef.current.redo()}
           >
@@ -828,26 +855,26 @@ export function LayerBoard({
             disabled={!document || busy}
           >
             <CanvasIcon name="image" size={16} />
-            添加图片
+            {t("editors.layers.addImage")}
           </button>
           <button
             onClick={() =>
               add(
                 {
                   kind: "text",
-                  text: "输入文字",
+                  text: t("editors.layers.defaultText"),
                   color: "#ffffff",
                   fontSize: 64,
                   width: 600,
                   height: 260,
                 },
-                "文字图层",
+                t("editors.layers.defaultTextLayer"),
               )
             }
             disabled={!document || busy}
           >
             <CanvasIcon name="text" size={16} />
-            文字
+            {t("editors.layers.addText")}
           </button>
           <button
             onClick={() =>
@@ -858,12 +885,12 @@ export function LayerBoard({
                   width: 320,
                   height: 240,
                 },
-                "色块图层",
+                t("editors.layers.defaultRectangleLayer"),
               )
             }
             disabled={!document || busy}
           >
-            ▣ 色块
+            ▣ {t("editors.layers.addRectangle")}
           </button>
         </div>
         <div className="lb-body">
@@ -891,7 +918,7 @@ export function LayerBoard({
                     height: document.height * displayScale,
                   }}
                   tabIndex={0}
-                  aria-label="图层编辑画布"
+                  aria-label={t("editors.layers.canvasAria")}
                   onPointerDown={pointerDown}
                   onPointerMove={pointerMove}
                   onPointerUp={(event) => pointerEnd(event)}
@@ -900,7 +927,10 @@ export function LayerBoard({
                     if (gesture.current) pointerEnd(event, true);
                   }}
                 >
-                  <canvas ref={canvasRef} aria-label="图层合成预览" />
+                  <canvas
+                    ref={canvasRef}
+                    aria-label={t("editors.layers.previewAria")}
+                  />
                   {active?.visible && (
                     <svg
                       className="lb-selection"
@@ -948,28 +978,37 @@ export function LayerBoard({
                 </div>
               ) : (
                 <div className="lb-empty">
-                  {busy ? "正在读取本地图层…" : "无法打开图层文档"}
+                  {busy
+                    ? t("editors.layers.loading")
+                    : t("editors.layers.openFailed")}
                 </div>
               )}
             </div>
             <div className="lb-stage-footer">
               <span>
                 {document
-                  ? `${document.width} × ${document.height} · ${document.layers.length} 个图层`
-                  : "图层工作台"}
+                  ? t("editors.layers.sizeAndCount", {
+                      width: document.width,
+                      height: document.height,
+                      count: document.layers.length,
+                    })
+                  : t("editors.layers.title")}
               </span>
               <div>
                 <button
-                  aria-label="缩小图层视图"
+                  aria-label={t("editors.layers.zoomOut")}
                   onClick={() => setZoom((z) => Math.max(0.25, z / 1.25))}
                 >
                   −
                 </button>
-                <button onClick={() => setZoom(1)} title="适应视图">
+                <button
+                  onClick={() => setZoom(1)}
+                  title={t("editors.layers.fitView")}
+                >
                   {Math.round(displayScale * 100)}%
                 </button>
                 <button
-                  aria-label="放大图层视图"
+                  aria-label={t("editors.layers.zoomIn")}
                   onClick={() => setZoom((z) => Math.min(8, z * 1.25))}
                 >
                   +
@@ -977,10 +1016,14 @@ export function LayerBoard({
               </div>
             </div>
           </div>
-          <aside className="lb-inspector" aria-label="图层和属性">
+          <aside
+            className="lb-inspector"
+            aria-label={t("editors.layers.inspectorAria")}
+          >
             <section className="lb-layer-section">
               <h3>
-                图层 <span>从上到下合成</span>
+                {t("editors.layers.section.layers")}{" "}
+                <span>{t("editors.layers.section.layersHint")}</span>
               </h3>
               <div className="lb-layer-list">
                 {document &&
@@ -1023,7 +1066,15 @@ export function LayerBoard({
                     >
                       <button
                         className="lb-layer-visibility"
-                        aria-label={`${layer.visible ? "隐藏" : "显示"}图层 ${layer.name}`}
+                        aria-label={
+                          layer.visible
+                            ? t("editors.layers.hideLayer", {
+                                name: layer.name,
+                              })
+                            : t("editors.layers.showLayer", {
+                                name: layer.name,
+                              })
+                        }
                         aria-pressed={layer.visible}
                         onClick={() =>
                           patch(layer.id, { visible: !layer.visible }, true)
@@ -1052,17 +1103,27 @@ export function LayerBoard({
                           {layer.name}
                           <small>
                             {layer.mask.length
-                              ? `蒙版 · ${layer.mask.length} 笔`
+                              ? t("editors.layers.maskStrokes", {
+                                  count: layer.mask.length,
+                                })
                               : layer.content.kind === "image"
-                                ? "图片"
+                                ? t("editors.layers.kind.image")
                                 : layer.content.kind === "text"
-                                  ? "文字"
-                                  : "色块"}
+                                  ? t("editors.layers.kind.text")
+                                  : t("editors.layers.kind.rectangle")}
                           </small>
                         </span>
                       </button>
                       <button
-                        aria-label={`${layer.locked ? "解锁" : "锁定"}图层 ${layer.name}`}
+                        aria-label={
+                          layer.locked
+                            ? t("editors.layers.unlockLayer", {
+                                name: layer.name,
+                              })
+                            : t("editors.layers.lockLayer", {
+                                name: layer.name,
+                              })
+                        }
                         aria-pressed={layer.locked}
                         onClick={() =>
                           patch(layer.id, { locked: !layer.locked }, true)
@@ -1076,15 +1137,13 @@ export function LayerBoard({
                     </div>
                   ))}
                 {!document?.layers.length && (
-                  <p className="lb-hint">
-                    添加图片、文字或色块开始创作。支持拖入本地图片。
-                  </p>
+                  <p className="lb-hint">{t("editors.layers.emptyHint")}</p>
                 )}
               </div>
               <div className="lb-layer-actions">
                 <button
-                  title="上移一层"
-                  aria-label="上移图层"
+                  title={t("editors.layers.moveUpTitle")}
+                  aria-label={t("editors.layers.moveUpAria")}
                   disabled={!editable || busy}
                   onClick={() =>
                     update((doc) =>
@@ -1099,8 +1158,8 @@ export function LayerBoard({
                   ↑
                 </button>
                 <button
-                  title="下移一层"
-                  aria-label="下移图层"
+                  title={t("editors.layers.moveDownTitle")}
+                  aria-label={t("editors.layers.moveDownAria")}
                   disabled={!editable || busy}
                   onClick={() =>
                     update((doc) =>
@@ -1115,8 +1174,8 @@ export function LayerBoard({
                   ↓
                 </button>
                 <button
-                  title="置于顶层"
-                  aria-label="图层置顶"
+                  title={t("editors.layers.bringFrontTitle")}
+                  aria-label={t("editors.layers.bringFrontAria")}
                   disabled={!editable || busy}
                   onClick={() =>
                     update((doc) =>
@@ -1127,8 +1186,8 @@ export function LayerBoard({
                   ⇡
                 </button>
                 <button
-                  title="置于底层"
-                  aria-label="图层置底"
+                  title={t("editors.layers.sendBackTitle")}
+                  aria-label={t("editors.layers.sendBackAria")}
                   disabled={!editable || busy}
                   onClick={() =>
                     update((doc) => reorderLayer(doc, active!.id, 0))
@@ -1137,16 +1196,16 @@ export function LayerBoard({
                   ⇣
                 </button>
                 <button
-                  title="复制图层"
-                  aria-label="复制图层"
+                  title={t("editors.layers.duplicate")}
+                  aria-label={t("editors.layers.duplicate")}
                   disabled={!editable || busy}
                   onClick={() => duplicate()}
                 >
                   <CanvasIcon name="copy" size={15} />
                 </button>
                 <button
-                  title="删除图层"
-                  aria-label="删除图层"
+                  title={t("editors.layers.delete")}
+                  aria-label={t("editors.layers.delete")}
                   disabled={!editable || busy}
                   onClick={remove}
                 >
@@ -1156,11 +1215,16 @@ export function LayerBoard({
             </section>
             {active && (
               <section className="lb-properties">
-                <h3>图层属性 {active.locked && <span>已锁定</span>}</h3>
+                <h3>
+                  {t("editors.layers.properties.title")}{" "}
+                  {active.locked && (
+                    <span>{t("editors.layers.properties.locked")}</span>
+                  )}
+                </h3>
                 <label>
-                  名称
+                  {t("editors.layers.properties.name")}
                   <input
-                    aria-label="图层名称"
+                    aria-label={t("editors.layers.properties.nameAria")}
                     value={active.name}
                     maxLength={200}
                     disabled={!editable}
@@ -1172,9 +1236,10 @@ export function LayerBoard({
                   />
                 </label>
                 <label className="lb-opacity">
-                  不透明度 <output>{Math.round(active.opacity * 100)}%</output>
+                  {t("editors.layers.properties.opacity")}{" "}
+                  <output>{Math.round(active.opacity * 100)}%</output>
                   <input
-                    aria-label="图层不透明度"
+                    aria-label={t("editors.layers.properties.opacityAria")}
                     type="range"
                     min="0"
                     max="100"
@@ -1195,9 +1260,19 @@ export function LayerBoard({
                 <div className="lb-numbers">
                   {numeric("x", "X")}
                   {numeric("y", "Y")}
-                  {numeric("width", "宽度", 1, 100000)}
-                  {numeric("height", "高度", 1, 100000)}
-                  {numeric("rotation", "旋转", -36000, 36000)}
+                  {numeric("width", t("editors.layers.numeric.width"), 1, 100000)}
+                  {numeric(
+                    "height",
+                    t("editors.layers.numeric.height"),
+                    1,
+                    100000,
+                  )}
+                  {numeric(
+                    "rotation",
+                    t("editors.layers.numeric.rotation"),
+                    -36000,
+                    36000,
+                  )}
                 </div>
                 <div className="lb-transforms">
                   <button
@@ -1208,21 +1283,21 @@ export function LayerBoard({
                       })
                     }
                   >
-                    旋转 90°
+                    {t("editors.layers.transform.rotate")}
                   </button>
                   <button
                     disabled={!editable}
                     aria-pressed={active.flipX}
                     onClick={() => patch(active.id, { flipX: !active.flipX })}
                   >
-                    水平翻转
+                    {t("editors.layers.transform.flipX")}
                   </button>
                   <button
                     disabled={!editable}
                     aria-pressed={active.flipY}
                     onClick={() => patch(active.id, { flipY: !active.flipY })}
                   >
-                    垂直翻转
+                    {t("editors.layers.transform.flipY")}
                   </button>
                   <button
                     disabled={!editable}
@@ -1242,15 +1317,15 @@ export function LayerBoard({
                       });
                     }}
                   >
-                    适应画布
+                    {t("editors.layers.transform.fit")}
                   </button>
                 </div>
                 {active.content.kind === "text" && (
                   <>
                     <label>
-                      文字内容
+                      {t("editors.layers.text.content")}
                       <textarea
-                        aria-label="图层文字内容"
+                        aria-label={t("editors.layers.text.contentAria")}
                         maxLength={10000}
                         rows={3}
                         value={active.content.text}
@@ -1269,9 +1344,9 @@ export function LayerBoard({
                       />
                     </label>
                     <label>
-                      字号
+                      {t("editors.layers.text.fontSize")}
                       <input
-                        aria-label="文字字号"
+                        aria-label={t("editors.layers.text.fontSizeAria")}
                         type="number"
                         min="4"
                         max="1000"
@@ -1296,9 +1371,9 @@ export function LayerBoard({
                 )}
                 {active.content.kind !== "image" && (
                   <label>
-                    颜色
+                    {t("editors.layers.color")}
                     <input
-                      aria-label="图层颜色"
+                      aria-label={t("editors.layers.colorAria")}
                       type="color"
                       disabled={!editable}
                       value={active.content.color}
@@ -1317,27 +1392,28 @@ export function LayerBoard({
                   </label>
                 )}
                 <div className="lb-mask-info">
-                  <span>手绘蒙版 · {active.mask.length} 笔</span>
+                  <span>
+                    {t("editors.layers.mask.title", {
+                      count: active.mask.length,
+                    })}
+                  </span>
                   <button
                     disabled={!editable || !active.mask.length}
                     onClick={() => patch(active.id, { mask: [] })}
                   >
-                    清空蒙版
+                    {t("editors.layers.mask.clear")}
                   </button>
                 </div>
-                <p className="lb-hint">
-                  擦除隐藏区域，恢复找回原始像素。每一笔可撤销；透明区域不会填入
-                  AI 内容。
-                </p>
+                <p className="lb-hint">{t("editors.layers.mask.hint")}</p>
               </section>
             )}
             <section className="lb-document-properties">
-              <h3>画布</h3>
+              <h3>{t("editors.layers.document.title")}</h3>
               <div className="lb-numbers">
                 <label>
-                  宽
+                  {t("editors.layers.document.width")}
                   <input
-                    aria-label="画布宽度"
+                    aria-label={t("editors.layers.document.widthAria")}
                     type="number"
                     min="1"
                     max="8192"
@@ -1353,9 +1429,9 @@ export function LayerBoard({
                   />
                 </label>
                 <label>
-                  高
+                  {t("editors.layers.document.height")}
                   <input
-                    aria-label="画布高度"
+                    aria-label={t("editors.layers.document.heightAria")}
                     type="number"
                     min="1"
                     max="8192"
@@ -1378,20 +1454,22 @@ export function LayerBoard({
                 disabled={!document || busy}
                 onClick={() => {
                   try {
-                    assertLayerSize(canvasSize.width, canvasSize.height);
+                    assertLayerSize(canvasSize.width, canvasSize.height, t);
                     update((doc) => ({ ...doc, ...canvasSize }));
                   } catch (error) {
-                    setError(failure(error));
+                    setError(failure(error, t));
                   }
                 }}
               >
-                调整画布尺寸
+                {t("editors.layers.document.resize")}
               </button>
-              <p className="lb-hint">只调整边界；放大画布会留下透明区域。</p>
+              <p className="lb-hint">
+                {t("editors.layers.document.resizeHint")}
+              </p>
               <label>
-                背景
+                {t("editors.layers.document.background")}
                 <select
-                  aria-label="图层画布背景"
+                  aria-label={t("editors.layers.document.backgroundAria")}
                   value={document?.background ?? "transparent"}
                   disabled={!document}
                   onChange={(event) =>
@@ -1401,17 +1479,23 @@ export function LayerBoard({
                     }))
                   }
                 >
-                  <option value="transparent">透明</option>
-                  <option value="#ffffff">白色</option>
-                  <option value="#000000">黑色</option>
+                  <option value="transparent">
+                    {t("editors.layers.document.transparent")}
+                  </option>
+                  <option value="#ffffff">
+                    {t("editors.layers.document.white")}
+                  </option>
+                  <option value="#000000">
+                    {t("editors.layers.document.black")}
+                  </option>
                 </select>
               </label>
             </section>
             <section className="lb-ai-note">
               <CanvasIcon name="sparkle" size={16} />
               <div>
-                AI 图层分解、抠图与扩图
-                <p>尚未连接真实生成服务。这里的蒙版与图层操作由你手动完成。</p>
+                {t("editors.layers.ai.title")}
+                <p>{t("editors.layers.ai.hint")}</p>
               </div>
             </section>
           </aside>
@@ -1423,7 +1507,7 @@ export function LayerBoard({
           >
             {error || notice}
             <button
-              aria-label="关闭提示"
+              aria-label={t("editors.layers.notice.close")}
               onClick={() => {
                 setError("");
                 setNotice("");
@@ -1436,15 +1520,15 @@ export function LayerBoard({
         <footer className="lb-footer">
           <div>
             <button onClick={() => jsonRef.current?.click()} disabled={busy}>
-              打开图层文件
+              {t("editors.layers.openFile")}
             </button>
             <button
               onClick={() => void output("json")}
               disabled={!document || busy}
             >
-              保存图层文件
+              {t("editors.layers.saveFile")}
             </button>
-            <span>图层文件保留可编辑内容；应用将合成 PNG。</span>
+            <span>{t("editors.layers.fileHint")}</span>
           </div>
           <div>
             <button
@@ -1452,14 +1536,16 @@ export function LayerBoard({
               disabled={!document || busy}
             >
               <CanvasIcon name="download" size={16} />
-              导出 PNG
+              {t("editors.layers.exportPng")}
             </button>
             <button
               className="lb-primary"
               onClick={() => void output("apply")}
               disabled={!document || busy}
             >
-              {busy ? "处理中…" : "应用到画布"}
+              {busy
+                ? t("editors.layers.processing")
+                : t("editors.layers.apply")}
             </button>
           </div>
         </footer>
@@ -1485,7 +1571,7 @@ export function LayerBoard({
             event.target.value = "";
             if (!file) return;
             if (file.size > 128 * 1024 * 1024) {
-              setError("图层文件超过 128 MB，请使用较小的素材。");
+              setError(t("editors.layers.error.fileTooLarge128"));
               return;
             }
             const token = session.current;
@@ -1493,17 +1579,17 @@ export function LayerBoard({
             void file
               .text()
               .then(async (text) => {
-                const next = parseLayerDocument(text);
+                const next = parseLayerDocument(text, t);
                 await cache.current.images(next);
                 if (mounted.current && session.current === token) {
                   install(next);
                   setError("");
-                  setNotice("已打开可编辑图层文件。");
+                  setNotice(t("editors.layers.notice.openedJson"));
                 }
               })
               .catch((error) => {
                 if (mounted.current && session.current === token)
-                  setError(failure(error));
+                  setError(failure(error, t));
               })
               .finally(() => {
                 if (mounted.current && session.current === token)

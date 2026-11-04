@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../backend/api";
+import { useT } from "../i18n/I18nProvider";
 
 /** Names a project for creation, or renames an existing one. */
 export function ProjectNameDialog({
   initialName,
-  title = "新建画布项目",
-  submitLabel = "创建项目",
-  hint = "项目将保存到本地 projects 目录下的同名文件夹。",
+  title,
+  submitLabel,
+  hint,
   onClose,
   onSubmit,
 }: {
@@ -17,6 +18,10 @@ export function ProjectNameDialog({
   onClose: () => void;
   onSubmit: (name: string) => Promise<void>;
 }) {
+  const t = useT();
+  const dialogTitle = title ?? t("canvas.project.createTitle");
+  const submitText = submitLabel ?? t("canvas.project.createSubmit");
+  const hintText = hint ?? t("canvas.project.createHint");
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(initialName);
@@ -57,8 +62,10 @@ export function ProjectNameDialog({
           }
         }}
       >
-        <h2 id="project-dialog-title">{title}</h2>
-        <label htmlFor="canvas-project-name">项目名称</label>
+        <h2 id="project-dialog-title">{dialogTitle}</h2>
+        <label htmlFor="canvas-project-name">
+          {t("canvas.project.nameLabel")}
+        </label>
         <input
           ref={input}
           id="canvas-project-name"
@@ -68,9 +75,9 @@ export function ProjectNameDialog({
           disabled={busy}
           value={name}
           onChange={(event) => setName(event.target.value)}
-          placeholder="请输入项目名称"
+          placeholder={t("canvas.project.newNamePlaceholder")}
         />
-        <p>{hint}</p>
+        <p>{hintText}</p>
         {error && (
           <p className="cw-project-error" role="alert">
             {error}
@@ -78,14 +85,14 @@ export function ProjectNameDialog({
         )}
         <div className="cw-project-dialog-actions">
           <button type="button" disabled={busy} onClick={onClose}>
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className="cw-light-button"
             disabled={busy || !name.trim()}
             type="submit"
           >
-            {busy ? "正在保存…" : submitLabel}
+            {busy ? t("canvas.project.saving") : submitText}
           </button>
         </div>
       </form>

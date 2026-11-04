@@ -35,6 +35,8 @@ A timeline of source ranges is not a substitute for requested independent media 
 A command receipt is execution evidence, not quality approval. Preserve user constraints.
 Plans and prompt requests do not authorize generation. Never resubmit an unknown job.
 Use stable tool calls; report unsupported media editing/export capabilities honestly.
+Reply in the same language as the user's latest request. Keep project content, quoted text, model names,
+identifiers and code unchanged. If a tool error is shown in another language, explain it in the user's language.
 '''
 
 

@@ -40,7 +40,7 @@ const settings = {
 
 test("self-hosted resolution choices come from capabilities and block unsupported outputs", () => {
   assert.deepEqual(backendResolutions(settings, config), [
-    "自动",
+    "auto",
     "480P",
     "768P",
   ]);
@@ -54,10 +54,10 @@ test("self-hosted resolution choices come from capabilities and block unsupporte
     backendBlocker({ ...settings, resolution: "4K" }, [], [config])!,
     /分辨率/,
   );
-  assert.deepEqual(backendResolutions(settings, undefined), ["自动"]);
+  assert.deepEqual(backendResolutions(settings, undefined), ["auto"]);
   assert.deepEqual(
     backendResolutions({ ...settings, videoMode: "continuation" }, config),
-    ["自动"],
+    ["auto"],
   );
 });
 
@@ -99,13 +99,13 @@ test("image reference restrictions narrow Seedance choices", () => {
     { src: "data:image/png;base64,AA==", assetState: "ready" },
   );
   assert.deepEqual(backendResolutions(settings, seedance, [photo]), [
-    "自动",
+    "auto",
     "480P",
     "720P",
     "4K",
   ]);
   assert.deepEqual(backendResolutions(settings, seedance), [
-    "自动",
+    "auto",
     "480P",
     "720P",
     "1080P",
