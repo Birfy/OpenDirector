@@ -26,6 +26,7 @@ from opendirector.integrations.model_adapters import OpenAIImages, VllmOmniSegme
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--port', type=int, default=8019)
 parser.add_argument('--root', type=Path)
+parser.add_argument('--assistant-fixture', action='store_true', help='Use a gated assistant response without a real model')
 args = parser.parse_args()
 root = (args.root or Path(tempfile.mkdtemp(prefix='opendirector-creation-'))).resolve()
 if root.parent != Path(tempfile.gettempdir()).resolve() or not root.name.startswith('opendirector-creation-'):
@@ -120,6 +121,20 @@ class FixtureProvider:
 
 
 provider = FixtureProvider()
+assistant_gate = asyncio.Event()
+assistant_gate.set()
+assistant_contexts = []
+if args.assistant_fixture:
+    from opendirector_api import agent
+
+    async def fixture_agent(self, run):
+        assistant_contexts.append(run.messages)
+        yield {'type': 'delta', 'text': '已收到创作要求。'}
+        await assistant_gate.wait()
+        yield {'type': 'delta', 'text': '这是隔离测试回复。'}
+
+    agent.AgentRuntimes.stream = fixture_agent
+    agent.runtime_available = lambda runtime: runtime == 'default'
 tool_gate = asyncio.Event()
 tool_gate.set()
 tool_calls = []
@@ -149,7 +164,17 @@ app = create_app(store, generation_provider=provider)
 @app.get('/api/creation-test-health')
 def health():
     return dict(isolated=True, provider='fixture', root=str(root), calls=provider.calls, toolCalls=tool_calls,
-                selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls)
+                selectionCalls=selection_calls, selectionActive=selection_active, imageEditCalls=image_edit_calls,
+                assistantFixture=args.assistant_fixture, assistantContexts=assistant_contexts)
+
+
+@app.post('/api/creation-test-assistant-gate')
+async def gate_assistant(request: Request):
+    if (await request.json()).get('open') is True:
+        assistant_gate.set()
+    else:
+        assistant_gate.clear()
+    return dict(open=assistant_gate.is_set())
 
 
 @app.post('/api/creation-test-legacy-projects')

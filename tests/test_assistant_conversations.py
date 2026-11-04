@@ -91,6 +91,24 @@ def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):
         headers={'X-OpenDirector-Session': str(uuid4())}).status_code == 409
 
 
+def test_history_identifies_unsent_drafts_and_replays_creation_without_duplicates(assistant):
+    client, path, _ = assistant
+    first = client.get(path).json()['conversationId']
+    assert client.put(path + '/draft', json={'conversationId': first,
+        'draft': '海边短片草稿\n第二行', 'thinking': 'high'}).status_code == 200
+    second = str(uuid4())
+    created = client.post(path + '/conversations', json={'id': second}).json()
+    assert created['draft'] == '' and created['thinking'] == 'high'
+    assert client.post(path + '/conversations', json={'id': second}).json() == created
+    items = client.get(path + '/conversations').json()['items']
+    assert items == [
+        {'id': second, 'title': '新会话', 'messageCount': 0, 'hasDraft': False},
+        {'id': first, 'title': '海边短片草稿', 'messageCount': 0, 'hasDraft': True},
+    ]
+    restored = client.post(path + f'/conversations/{first}/activate').json()
+    assert restored['draft'] == '海边短片草稿\n第二行'
+
+
 def test_running_turn_blocks_switch_and_new_thread(assistant, monkeypatch):
     client, path, _ = assistant
     started, release = threading.Event(), threading.Event()
