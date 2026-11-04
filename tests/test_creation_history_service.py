@@ -1,10 +1,112 @@
 from uuid import uuid4
+import pytest
 
 from opendirector.application.creation_history import CreationHistory
 from opendirector.domain.creation.commands import parse_command
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
+
+
+def test_redo_follows_undo_order_and_new_edit_discards_redo_branch(project):
+    store, pid, session = project
+    item, _ = media(project)
+    history = CreationHistory(store)
+    moves = []
+    for x in (10, 20):
+        moves.append(send(store, pid, 'canvas.move', session=session, versions=[ver('canvas_item', item)],
+            items=[dict(itemId=item.id, position=dict(x=x, y=0))]).commandId)
+        item = store.snapshot(pid).canvasItems[0]
+    for target in reversed(moves):
+        assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', item)],
+            targetCommandId=target).status == 'applied'
+        item = store.snapshot(pid).canvasItems[0]
+    assert next(row['commandId'] for row in history.operations(pid) if row['state'] == 'undone') == moves[0]
+    for target, x in zip(moves, (10, 20)):
+        assert send(store, pid, 'history.redo', session=session, versions=[ver('canvas_item', item)],
+            targetCommandId=target).status == 'applied'
+        item = store.snapshot(pid).canvasItems[0]
+        assert item.position.x == x
+    assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', item)],
+        targetCommandId=moves[-1]).status == 'applied'
+    item = store.snapshot(pid).canvasItems[0]
+    assert send(store, pid, 'canvas.update', session=session, versions=[ver('canvas_item', item)],
+        itemId=item.id, title='New branch').status == 'applied'
+    assert not any(row['state'] == 'undone' for row in history.operations(pid))
+    item = store.snapshot(pid).canvasItems[0]
+    assert send(store, pid, 'history.redo', session=session, versions=[ver('canvas_item', item)],
+        targetCommandId=moves[-1]).status == 'rejected'
+    assert store.snapshot(pid).canvasItems[0].position.x == 10
+
+
+def test_history_index_preserves_already_accepted_replays_and_background_changes():
+    first, second = uuid4(), uuid4()
+    entries = [
+        dict(commandId=first, type='canvas.move', source='ui', cursor=1),
+        dict(commandId=uuid4(), type='history.undo', source='ui', cursor=2, targetCommandId=first),
+        dict(commandId=uuid4(), type='canvas.update', source='background', cursor=3),
+    ]
+    assert CreationHistory._entry_states(0, list(reversed(entries)))[first] == 'undone'
+    entries.extend([
+        dict(commandId=second, type='canvas.move', source='ui', cursor=4),
+        # Reconstruct accepted facts; do not retroactively erase a replay that
+        # was accepted before branch invalidation was enforced.
+        dict(commandId=uuid4(), type='history.redo', source='ui', cursor=5, targetCommandId=first),
+    ])
+    states = CreationHistory._entry_states(0, list(reversed(entries)))
+    assert list(reversed(states)) == [first, second]
+    assert states[first] == 'applied'
+
+
+def test_history_toolbar_and_undo_do_not_copy_the_full_commit_chain(project, monkeypatch):
+    from opendirector.infrastructure.creation_projects import CommitRecord
+    store, pid, session = project
+    item, _ = media(project)
+    for x in range(1, 20):
+        latest = send(store, pid, 'canvas.move', session=session, versions=[ver('canvas_item', item)],
+            items=[dict(itemId=item.id, position=dict(x=x, y=0))])
+        item = store.snapshot(pid).canvasItems[0]
+    copied = []
+    original = CommitRecord.model_copy
+    def copy_record(self, **kwargs):
+        copied.append(self.command.commandId)
+        return original(self, **kwargs)
+    monkeypatch.setattr(CommitRecord, 'model_copy', copy_record)
+    history = CreationHistory(store)
+    assert history.operations(pid)[0]['commandId'] == latest.commandId
+    assert copied == []
+    assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', item)],
+        targetCommandId=latest.commandId).status == 'applied'
+    assert len(copied) <= 2
+
+
+@pytest.mark.parametrize('verify_bytes', [False, True])
+def test_warm_writes_reuse_validated_history_and_keep_idempotent_receipts(project, monkeypatch, verify_bytes):
+    from opendirector.infrastructure.creation_projects import CommitRecord
+    store, pid, session = project
+    store._verify_record_bytes = verify_bytes
+    item, _ = media(project)
+    for x in range(1, 20):
+        send(store, pid, 'canvas.move', session=session, versions=[ver('canvas_item', item)],
+            items=[dict(itemId=item.id, position=dict(x=x, y=0))])
+        item = store.snapshot(pid).canvasItems[0]
+    store.history_index(pid)
+    parsed = []
+    for method in ('model_validate', 'model_validate_json'):
+        original = getattr(CommitRecord, method)
+        def decode(value, _original=original, **kwargs):
+            parsed.append(1)
+            return _original(value, **kwargs)
+        monkeypatch.setattr(CommitRecord, method, decode)
+    command = parse_command(dict(commandId=uuid4(), projectId=pid, type='canvas.move',
+        expectedVersions=[ver('canvas_item', item)],
+        payload=dict(items=[dict(itemId=item.id, position=dict(x=30, y=0))])))
+    receipt = store.execute(command, session=session)
+    assert receipt.status == 'applied'
+    assert parsed == []  # Existing ancestors are checked without re-parsing.
+    assert store.execute(command, session=session) == receipt
+    assert len(parsed) <= 1  # Only the newly published head needs decoding.
+    assert store.snapshot(pid).canvasItems[0].position.x == 30
 
 
 def test_field_scoped_undo_preserves_other_fields_and_rejects_same_field_conflict(project):

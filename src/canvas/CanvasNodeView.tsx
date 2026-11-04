@@ -80,7 +80,10 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
             onChange={(event) =>
               actions?.update(id, { text: event.target.value })
             }
-            onKeyDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || event.nativeEvent.isComposing)
+                event.stopPropagation();
+            }}
           />
         ) : (
           <div className="cw-text-display" aria-label={`${data.title}内容`}>

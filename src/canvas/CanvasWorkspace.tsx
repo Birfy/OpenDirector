@@ -1,4 +1,5 @@
 import { pinnedReferenceAssets } from "./pinnedReferenceAssets.ts";
+import { SaveQueue } from "./saveQueue.ts";
 import {
   Background,
   BackgroundVariant,
@@ -495,6 +496,8 @@ function Workspace() {
     createHistory(createDocument()),
   );
   const historyRef = useRef(history);
+  const historyReplayPending = useRef(false);
+  const [historyReplaying, setHistoryReplaying] = useState(false);
   historyRef.current = history;
   const doc = history.present;
   // The library's canvas tab shows the open document itself, so it never waits
@@ -691,7 +694,10 @@ function Workspace() {
     setComposerNodeId(id);
     setPresentationFocus((value) => value + 1);
   };
-  const saveQueue = useRef(Promise.resolve(true));
+  const saveQueue = useRef<SaveQueue<{
+    snapshot: CanvasDocument;
+    saveView: boolean;
+  }> | null>(null);
   const saveError = useRef("");
   const [zoom, setZoom] = useState(1);
   const spacePressed = useKeyPress("Space");
@@ -944,39 +950,47 @@ function Workspace() {
     if (issues.length) notify(`部分素材未能放入画布：${issues.join("；")}`);
   };
 
+  if (!saveQueue.current) {
+    saveQueue.current = new SaveQueue(async ({ snapshot, saveView }) => {
+      try {
+        const projection = workspaceProjection(snapshot.id);
+        // A preceding write can change the baseline while this save waits.
+        if (
+          saveView &&
+          projection.baseline &&
+          sameCanvasContent(snapshot, projection.baseline)
+        ) {
+          await projection.saveView(snapshot);
+        } else {
+          await saveWorkspaceDocument(snapshot, { saveView });
+        }
+        saveError.current = "";
+        if (historyRef.current.present === snapshot) {
+          const warning = workspaceProjection(snapshot.id).viewError;
+          setSaveStatus(
+            warning
+              ? `工程已保存；界面状态保存失败：${warning}`
+              : "已保存到本机",
+          );
+        }
+        return true;
+      } catch (error) {
+        saveError.current = errorMessage(error);
+        setSaveStatus(`保存失败：${String(error)}`);
+        return false;
+      }
+    });
+  }
   const persist = useCallback(
-    (snapshot: CanvasDocument, saveView = true): Promise<boolean> => {
-      saveQueue.current = saveQueue.current
-        .then(async () => {
-          const projection = workspaceProjection(snapshot.id);
-          // A preceding write can change the baseline while this save waits.
-          if (
-            saveView &&
-            projection.baseline &&
-            sameCanvasContent(snapshot, projection.baseline)
-          ) {
-            await projection.saveView(snapshot);
-          } else {
-            await saveWorkspaceDocument(snapshot, { saveView });
-          }
-          saveError.current = "";
-          if (historyRef.current.present === snapshot) {
-            const warning = workspaceProjection(snapshot.id).viewError;
-            setSaveStatus(
-              warning
-                ? `工程已保存；界面状态保存失败：${warning}`
-                : "已保存到本机",
-            );
-          }
-          return true;
-        })
-        .catch((error) => {
-          saveError.current = errorMessage(error);
-          setSaveStatus(`保存失败：${String(error)}`);
-          return false;
-        });
-      return saveQueue.current;
-    },
+    (
+      snapshot: CanvasDocument,
+      saveView = true,
+      automatic = false,
+    ): Promise<boolean> =>
+      saveQueue.current!.enqueue(
+        { snapshot, saveView },
+        automatic ? snapshot.id : undefined,
+      ),
     [],
   );
   const importLibrarySubjects = async (items: LibraryItem[]) => {
@@ -1195,10 +1209,20 @@ function Workspace() {
   };
 
   const replayHistory = (forward = false) => {
+    if (historyReplayPending.current) return;
+    historyReplayPending.current = true;
+    setHistoryReplaying(true);
+    const projectId = historyRef.current.present.id;
     void (async () => {
       if (!(await persist(historyRef.current.present))) return;
-      await creationClient(doc.id).undo(forward);
-    })().catch((error) => notify(errorMessage(error)));
+      if (historyRef.current.present.id !== projectId) return;
+      await creationClient(projectId).undo(forward);
+    })()
+      .catch((error) => notify(errorMessage(error)))
+      .finally(() => {
+        historyReplayPending.current = false;
+        setHistoryReplaying(false);
+      });
   };
 
   const installDocument = useCallback(
@@ -1414,15 +1438,16 @@ function Workspace() {
     };
   }, [installDocument, notify]);
   useEffect(() => {
-    if (!ready || switching || projectRenaming) return;
+    if (!ready || switching || projectRenaming || historyReplaying) return;
     const baseline = workspaceProjection(doc.id).baseline;
     const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
     if (contentChanged) setSaveStatus("保存中…");
     const timeout = setTimeout(() => {
-      if (!switchPending.current && !editorSaving.current) void persist(doc);
+      if (!switchPending.current && !editorSaving.current)
+        void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
-  }, [doc, ready, switching, projectRenaming, persist]);
+  }, [doc, ready, switching, projectRenaming, historyReplaying, persist]);
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),
@@ -1488,9 +1513,8 @@ function Workspace() {
       sequence = 0;
     const refresh = () => {
       const ticket = ++sequence;
-      void apiRequest<{ state: string }[]>(
-        `/creation/projects/${doc.id}/history`,
-      )
+      void creationClient(doc.id)
+        .history()
         .then((entries) => {
           if (active && sequence === ticket)
             setBusinessHistory({
@@ -2023,6 +2047,16 @@ function Workspace() {
   );
   const composerExpanded =
     hasComposer && expandedComposerId === composerNode?.id;
+  useEffect(() => {
+    if (!composerExpanded) return;
+    // Only an explicit expansion moves keyboard focus into the generator.
+    const frame = requestAnimationFrame(() =>
+      composerElement.current
+        ?.querySelector<HTMLElement>('[contenteditable="true"],textarea')
+        ?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [composerExpanded, composerNode?.id]);
   const composerRunning = Boolean(
     composerNode && generationByNode.has(composerNode.id),
   );
@@ -2564,7 +2598,7 @@ function Workspace() {
     const projectId = session.projection.client.id;
     editorSaving.current = true;
     try {
-      await saveQueue.current;
+      await saveQueue.current!.wait();
       if (historyRef.current.present.id !== projectId)
         throw new Error("项目已切换，编辑未提交。");
       if (!(await persist(historyRef.current.present)))
@@ -2607,7 +2641,7 @@ function Workspace() {
     if (editorSaving.current) throw Error("编辑结果正在保存。");
     editorSaving.current = true;
     try {
-      await saveQueue.current;
+      await saveQueue.current!.wait();
       const current = historyRef.current.present;
       if (current.id !== source.documentId)
         throw Error("项目已切换，结果未提交。");
@@ -4283,6 +4317,7 @@ function Workspace() {
               setSelectedEdges([]);
               setDismissedComposer(null);
               if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
+              root.current?.focus({ preventScroll: true });
               // Read modifiers from the gesture itself, including focus changes between clicks.
               if (event.shiftKey || event.metaKey || event.ctrlKey) {
                 const ids = new Set(selectionAtPointerDown.current);
@@ -4293,14 +4328,6 @@ function Workspace() {
               }
               setSelected([node.id]);
               focusSelection(node.id);
-              if (
-                !spacePressed &&
-                node.type === "text" &&
-                !lockedIds.has(node.id) &&
-                selectionAtPointerDown.current.length === 1 &&
-                selectionAtPointerDown.current[0] === node.id
-              )
-                setTextEditingId(node.id);
             }}
             onNodeDoubleClick={(event, node) => {
               if (
@@ -4767,7 +4794,7 @@ function Workspace() {
             label="撤销"
             shortcut={navigator.platform.includes("Mac") ? "⌘ Z" : "Ctrl Z"}
             tooltipDelay={0}
-            disabled={!businessHistory.undo}
+            disabled={!businessHistory.undo || historyReplaying}
             onClick={() => replayHistory()}
           />
           <IconButton
@@ -4777,7 +4804,7 @@ function Workspace() {
               navigator.platform.includes("Mac") ? "⌘ ⇧ Z" : "Ctrl Shift Z"
             }
             tooltipDelay={0}
-            disabled={!businessHistory.redo}
+            disabled={!businessHistory.redo || historyReplaying}
             onClick={() => replayHistory(true)}
           />
         </div>
@@ -5355,8 +5382,8 @@ function Workspace() {
           y={menu.y}
           mode={menu.mode ?? "context"}
           canPaste={Boolean(clipboard.current?.nodes.length)}
-          canUndo={businessHistory.undo}
-          canRedo={businessHistory.redo}
+          canUndo={businessHistory.undo && !historyReplaying}
+          canRedo={businessHistory.redo && !historyReplaying}
           onCreate={(kind) => addNode(kind, menu.world)}
           onAssets={() => {
             referenceTarget.current = null;

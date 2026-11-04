@@ -12,7 +12,14 @@ import type {
   ProjectSnapshot,
   ViewState,
 } from "../contracts/generated.ts";
-import { ApiError, headers, json, request, responseError } from "./api.ts";
+import {
+  ApiError,
+  headers,
+  json,
+  request,
+  responseError,
+  storageRequest,
+} from "./api.ts";
 import { abortable, resilientRead, type ReadOptions } from "./resilientRead.ts";
 
 export type CreationOperation = BatchPayloadInput["operations"][number];
@@ -60,6 +67,10 @@ export class CreationClient {
     "used" | "pending" | "unknown" | "unavailable"
   >();
   private queue: Promise<unknown> = Promise.resolve();
+  private historyRead?: {
+    cursor: number;
+    promise: Promise<{ commandId: string; state: "applied" | "undone" }[]>;
+  };
   private listeners = new Set<(snapshot: ProjectSnapshot) => void>();
   private subscription: AbortController | undefined;
   private media = new Map<string, Promise<string>>();
@@ -105,6 +116,7 @@ export class CreationClient {
   }
   async open() {
     this.viewState = undefined;
+    this.historyRead = undefined;
     for (let attempt = 0; ; attempt++) {
       try {
         this.install(
@@ -141,7 +153,7 @@ export class CreationClient {
     for (const listener of this.listeners) listener(snapshot);
   }
   async refresh() {
-    const projection = await request<{
+    const projection = await storageRequest<{
       snapshot: ProjectSnapshot;
       edges: {
         referenceId: string;
@@ -172,6 +184,22 @@ export class CreationClient {
     expectedPreview?: string,
     commandId?: string,
   ) {
+    return this.enqueue(
+      this.prepareCommand(type, payload, versions, expectedPreview, commandId),
+    );
+  }
+  private enqueue<T>(perform: () => Promise<T>) {
+    const pending = this.queue.then(perform, perform);
+    this.queue = pending;
+    return pending;
+  }
+  private prepareCommand(
+    type: CommandInput["type"],
+    payload: CommandInput["payload"],
+    versions: readonly ObjectVersion[] = [],
+    expectedPreview?: string,
+    commandId?: string,
+  ) {
     const intent =
       type === "generation.submit"
         ? `${type}:${(payload as { specId: string }).specId}`
@@ -189,14 +217,14 @@ export class CreationClient {
     const perform = async () => {
       let receipt: CommandReceipt;
       try {
-        receipt = await request<CommandReceipt>(
+        receipt = await storageRequest<CommandReceipt>(
           `${creationPath(this.id)}/commands`,
           json("POST", body),
         );
       } catch (error) {
         // A lost HTTP response is not permission to mint another paid request.
         try {
-          receipt = await request<CommandReceipt>(
+          receipt = await storageRequest<CommandReceipt>(
             `${creationPath(this.id)}/receipts/${body.commandId}`,
           );
         } catch {
@@ -218,9 +246,7 @@ export class CreationClient {
         throw new CreationCommandError(receipt);
       return receipt;
     };
-    const pending = this.queue.then(perform, perform);
-    this.queue = pending;
-    return pending;
+    return perform;
   }
   batch(operations: CreationOperation[], versions: readonly ObjectVersion[]) {
     return operations.length
@@ -503,36 +529,51 @@ export class CreationClient {
       ],
     );
   }
-  async undo(redo = false) {
-    const entries = await request<
+  history() {
+    const cursor = this.snapshot.eventCursor;
+    if (this.historyRead?.cursor === cursor) return this.historyRead.promise;
+    const promise = storageRequest<
       { commandId: string; state: "applied" | "undone" }[]
-    >(`${creationPath(this.id)}/history`);
-    const entry = entries.find(
-      (item) => item.state === (redo ? "undone" : "applied"),
-    );
-    if (!entry) return;
-    const snapshot = this.snapshot;
-    const versions = [
-      ...snapshot.canvasItems.map((o) => objectVersion("canvas_item", o)),
-      ...snapshot.generationSpecs.map((o) =>
-        objectVersion("generation_spec", o),
-      ),
-      ...snapshot.references.map((o) => objectVersion("reference", o)),
-      ...snapshot.editorDocuments.map((o) =>
-        objectVersion("editor_document", o),
-      ),
-    ];
-    await this.command(
-      redo ? "history.redo" : "history.undo",
-      { targetCommandId: entry.commandId },
-      versions,
-    );
+    >(`${creationPath(this.id)}/history`).catch((error) => {
+      if (this.historyRead?.promise === promise) this.historyRead = undefined;
+      throw error;
+    });
+    this.historyRead = { cursor, promise };
+    return promise;
+  }
+  undo(redo = false) {
+    // Resolve the target and versions inside the same queue as writes. Two
+    // rapid undo gestures must not both choose the same pre-write history.
+    return this.enqueue(async () => {
+      await this.refresh();
+      const entries = await this.history();
+      const entry = entries.find(
+        (item) => item.state === (redo ? "undone" : "applied"),
+      );
+      if (!entry) return;
+      const snapshot = this.snapshot;
+      const versions = [
+        ...snapshot.canvasItems.map((o) => objectVersion("canvas_item", o)),
+        ...snapshot.generationSpecs.map((o) =>
+          objectVersion("generation_spec", o),
+        ),
+        ...snapshot.references.map((o) => objectVersion("reference", o)),
+        ...snapshot.editorDocuments.map((o) =>
+          objectVersion("editor_document", o),
+        ),
+      ];
+      await this.prepareCommand(
+        redo ? "history.redo" : "history.undo",
+        { targetCommandId: entry.commandId },
+        versions,
+      )();
+    });
   }
   async view(value?: Partial<ViewState>) {
     const path = `${creationPath(this.id)}/views/${viewClientId}`;
-    if (!this.viewState) this.viewState = await request<ViewState>(path);
+    if (!this.viewState) this.viewState = await storageRequest<ViewState>(path);
     if (value)
-      this.viewState = await request<ViewState>(
+      this.viewState = await storageRequest<ViewState>(
         path,
         json("PUT", {
           ...this.viewState,

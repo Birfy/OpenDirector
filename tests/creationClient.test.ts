@@ -35,6 +35,108 @@ function empty(): ProjectSnapshot {
   };
 }
 
+test("history reads coalesce per cursor, invalidate after changes and retry failures", async () => {
+  const original = globalThis.fetch;
+  const snapshot = empty();
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  let reads = 0;
+  globalThis.fetch = async () => {
+    reads++;
+    if (reads === 2)
+      return Response.json({ detail: "temporary failure" }, { status: 503 });
+    return Response.json([]);
+  };
+  try {
+    await Promise.all([client.history(), client.history(), client.history()]);
+    client.install({ ...snapshot });
+    await client.history();
+    assert.equal(reads, 1);
+    client.install({ ...snapshot, eventCursor: 2 });
+    await assert.rejects(client.history());
+    await client.history();
+    assert.equal(reads, 3);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("rapid undo gestures choose consecutive targets and fresh revisions in the command queue", async () => {
+  const original = globalThis.fetch;
+  let snapshot = empty();
+  const id = crypto.randomUUID();
+  const item: CanvasItem = {
+    id,
+    projectId: snapshot.project.id,
+    revision: 1,
+    kind: "text",
+    title: "Node",
+    position: { x: 20, y: 0 },
+    width: 320,
+    height: 160,
+    locked: false,
+    visible: true,
+    zIndex: 0,
+    parentId: null,
+    tags: [],
+    editors: [],
+    binding: { role: "empty", draftSpec: null, manualText: "" },
+  };
+  snapshot = { ...snapshot, canvasItems: [item] };
+  const client = new CreationClient(snapshot.project.id);
+  client.install(snapshot);
+  const first = crypto.randomUUID(),
+    second = crypto.randomUUID();
+  const entries = [
+    { commandId: second, state: "applied" },
+    { commandId: first, state: "applied" },
+  ];
+  const sent: string[] = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith("/history")) return Response.json(entries);
+    if (String(url).endsWith("/commands")) {
+      const body = JSON.parse(options!.body as string);
+      const target = entries.find(
+        (entry) => entry.commandId === body.payload.targetCommandId,
+      )!;
+      assert.equal(target.state, "applied");
+      assert.equal(
+        body.expectedVersions[0].revision,
+        snapshot.canvasItems[0]!.revision,
+      );
+      target.state = "undone";
+      sent.push(target.commandId);
+      snapshot = {
+        ...snapshot,
+        eventCursor: snapshot.eventCursor + 1,
+        canvasItems: [
+          {
+            ...snapshot.canvasItems[0]!,
+            revision: snapshot.canvasItems[0]!.revision + 1,
+          },
+        ],
+      };
+      return Response.json({
+        commandId: body.commandId,
+        projectId: snapshot.project.id,
+        inputFingerprint: "a".repeat(64),
+        status: "applied",
+        changed: [],
+        jobIds: [],
+        issues: [],
+        eventCursor: snapshot.eventCursor,
+      });
+    }
+    return Response.json({ snapshot, edges: [] });
+  };
+  try {
+    await Promise.all([client.undo(), client.undo()]);
+    assert.deepEqual(sent, [second, first]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("visibility receipts reuse hydrated nodes but content and layout changes take a full projection read", async () => {
   const snapshot = empty();
   const node = createNode("text", { x: 10, y: 20 }, { text: "Saved text" });

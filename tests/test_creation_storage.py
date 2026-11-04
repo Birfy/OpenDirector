@@ -460,6 +460,62 @@ def test_returned_snapshots_and_history_cannot_mutate_record_cache(projects):
     assert projects.snapshot(created.projectId).editorDocuments[0].data.parameters == {'scale': 2}
 
 
+@pytest.mark.parametrize('victim', ['head', 'ancestor'])
+def test_byte_verified_cache_detects_rewrites_with_unchanged_file_signature(projects, monkeypatch, victim):
+    projects._verify_record_bytes = True  # Windows strategy, exercised on every OS.
+    created = create(projects)
+    renamed = rename(created)
+    projects.execute(renamed)
+    key = renamed.commandId if victim == 'head' else created.commandId
+    file = projects.root / 'Renamed' / 'commits' / f'{key}.json'
+    signature = creation_projects._file_signature(file)
+    original_signature = creation_projects._file_signature
+    monkeypatch.setattr(creation_projects, '_file_signature',
+        lambda path: signature if path == file else original_signature(path))
+    projects.history_index(created.projectId)
+    original = creation_projects.CommitRecord.model_validate_json
+    decoded = []
+    def decode(raw, **kwargs):
+        decoded.append(1)
+        return original(raw, **kwargs)
+    monkeypatch.setattr(creation_projects.CommitRecord, 'model_validate_json', decode)
+    projects.history_index(created.projectId)
+    assert decoded == []  # Warm Windows reads verify bytes without re-parsing snapshots.
+    raw = file.read_bytes()
+    original_name = b'Renamed' if victim == 'head' else b'Example'
+    assert original_name in raw
+    file.write_bytes(raw.replace(original_name, b'Corrupt', 1))
+    # ctime is creation time on Windows and mtime can be restored externally.
+    # A matching signature must not cause a stale cached record to be trusted.
+    with pytest.raises(ProjectError, match='缺失或损坏'):
+        if victim == 'head':
+            projects.snapshot(created.projectId)
+        else:
+            projects.history_index(created.projectId)
+
+
+def test_public_history_copies_do_not_hold_catalog_lock(projects, monkeypatch):
+    import threading
+    created = create(projects)
+    projects.execute(rename(created))
+    copying, release = threading.Event(), threading.Event()
+    original = creation_projects.CommitRecord.model_copy
+    def copy_record(self, **kwargs):
+        copying.set()
+        assert release.wait(3)
+        return original(self, **kwargs)
+    monkeypatch.setattr(creation_projects.CommitRecord, 'model_copy', copy_record)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = executor.submit(projects.history, created.projectId)
+        try:
+            assert copying.wait(3)
+            snapshot = executor.submit(projects.snapshot, created.projectId).result(timeout=1)
+            assert snapshot.project.name == 'Renamed'
+        finally:
+            release.set()
+        assert pending.result(timeout=3)[0].snapshot.project.name == 'Renamed'
+
+
 def test_storage_commit_checks_object_versions_and_replays_without_rerunning_service(projects):
     created = create(projects)
     session = str(uuid4())

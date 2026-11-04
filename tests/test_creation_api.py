@@ -98,6 +98,19 @@ def test_storage_reports_how_a_deleted_project_leaves_the_disk(api):
     assert response.json()['projectDelete'] in {'recycle_bin', 'permanent'}
 
 
+def test_lock_timeout_has_a_retryable_code_without_hiding_other_conflicts(api, monkeypatch):
+    from filelock import FileLock
+    client, local = api
+    path = local.state_dir / 'catalog.lock'
+    monkeypatch.setattr(local, 'lock', FileLock(path, timeout=.05))
+    with FileLock(path):
+        response = client.get('/api/creation/projects')
+    assert response.status_code == 409
+    assert response.json()['code'] == 'storage_busy'
+    assert response.headers['retry-after'] == '1'
+    assert client.get('/api/creation/projects').status_code == 200
+
+
 def test_unknown_and_legacy_projects_are_not_reinitialized(api):
     client, local = api
     legacy = legacy_project(local)

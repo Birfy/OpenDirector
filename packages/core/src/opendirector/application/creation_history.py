@@ -63,20 +63,45 @@ class CreationHistory:
         self.assets = assets or CreationAssets(projects)
 
     def states(self, project_id):
-        return self._states(self.projects.history(project_id))
+        cleared, entries = self.projects.history_index(project_id)
+        return self._entry_states(cleared, entries)
 
     @staticmethod
     def _states(records):
-        cleared = records[0].snapshot.undoClearedThrough
+        return CreationHistory._entry_states(records[0].snapshot.undoClearedThrough,
+            [dict(commandId=r.command.commandId, type=r.command.type, cursor=r.event.cursor,
+                  source=r.event.source, targetCommandId=getattr(r.command.payload, 'targetCommandId', None))
+             for r in records if r.event is not None])
+
+    @staticmethod
+    def _entry_states(cleared, entries):
         states = {}
-        for record in reversed(records):
-            if not record.event or record.event.cursor <= cleared:
+        future = set()
+        known = set()
+        for entry in reversed(entries):
+            if entry['cursor'] <= cleared:
                 continue
-            kind = record.command.type
-            if kind in UNDOABLE and record.event.source in {'ui', 'agent'}:
-                states[record.command.commandId] = 'applied'
+            kind = entry['type']
+            if kind in UNDOABLE and entry['source'] in {'ui', 'agent'}:
+                # A fresh edit starts a new branch; undone edits are no longer
+                # redo candidates. Background execution facts do not clear it.
+                for key in future:
+                    states.pop(key, None)
+                future.clear()
+                states[entry['commandId']] = 'applied'
+                known.add(entry['commandId'])
             elif kind in {'history.undo', 'history.redo'}:
-                states[record.command.payload.targetCommandId] = 'undone' if kind == 'history.undo' else 'applied'
+                target = entry['targetCommandId']
+                if target in known:
+                    # The latest transition owns the next undo/redo position.
+                    # Accepted replay events remain facts even when a new
+                    # replay of that target would no longer be offered.
+                    states.pop(target, None)
+                    states[target] = 'undone' if kind == 'history.undo' else 'applied'
+                    if kind == 'history.undo':
+                        future.add(target)
+                    else:
+                        future.discard(target)
         return states
 
     def reference_catalog(self, project_id):
@@ -109,9 +134,11 @@ class CreationHistory:
         return result
 
     def operations(self, project_id):
-        states = self.states(project_id)
-        return [dict(commandId=r.command.commandId, type=r.command.type, state=states[r.command.commandId], cursor=r.snapshot.eventCursor)
-                for r in self.projects.history(project_id) if r.command.commandId in states and r.command.type in UNDOABLE]
+        cleared, entries = self.projects.history_index(project_id)
+        states = self._entry_states(cleared, entries)
+        by_id = {entry['commandId']: entry for entry in entries}
+        return [dict(commandId=key, type=by_id[key]['type'], state=states[key], cursor=by_id[key]['cursor'])
+                for key in reversed(states)]
 
     def versions(self, project_id, spec_id):
         snapshot = self.projects.snapshot(project_id)
@@ -150,10 +177,9 @@ class CreationHistory:
             target_id = command.payload.targetCommandId
             if states.get(target_id) != expected:
                 raise ContractError('revision_conflict', '该操作不能撤销或重做，请刷新历史。', target_id)
-            records = self.projects.history(command.projectId)
-            target = next(r for r in records if r.command.commandId == target_id)
-            prior = next((r.snapshot for r in records if r.command.commandId == target.previousHead), None)
-            if prior is None or target.command.type not in UNDOABLE:
+            target, previous = self.projects.history_pair(command.projectId, target_id)
+            prior = previous.snapshot if previous else None
+            if target is None or prior is None or target.command.type not in UNDOABLE:
                 raise ContractError('role_restricted', '该操作不属于可撤销编辑。', target_id)
             old, new = prior.model_dump(mode='json'), target.snapshot.model_dump(mode='json')
             data = before.model_dump(mode='json')

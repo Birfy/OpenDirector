@@ -1,4 +1,11 @@
-import { ApiError, errorMessage, json, request, sessionId } from "./api.ts";
+import {
+  ApiError,
+  errorMessage,
+  json,
+  request,
+  sessionId,
+  storageRequest,
+} from "./api.ts";
 import { creationClient } from "./creationClient.ts";
 
 /** Canvas documents use the stable identity of an existing filesystem project. */
@@ -22,7 +29,10 @@ function keepAlive() {
       const projectId = active;
       // A pending renewal must finish before an explicit close or project switch.
       void serializeSessionChange(() =>
-        request(`/creation/sessions/${sessionId}`, json("PUT", { projectId })),
+        storageRequest(
+          `/creation/sessions/${sessionId}`,
+          json("PUT", { projectId }),
+        ),
       ).catch(() => {});
     }
   }, 15000);

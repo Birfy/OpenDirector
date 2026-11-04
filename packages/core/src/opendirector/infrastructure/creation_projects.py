@@ -10,6 +10,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
+from hashlib import sha256
 import os
 import threading
 import time
@@ -163,14 +164,24 @@ RECORD_CACHE_BYTES = 512 * 1024 * 1024
 CURRENT_CACHE_ENTRIES = 16
 
 
-def _head_signature(path, head):
+def _file_signature(file):
+    stat = file.stat(follow_symlinks=False)
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+def _head_signature(path, head, verify_bytes=False):
     """Cheap identity of a commit file, or None when it cannot be read."""
     file = child(directory(child(path, 'commits')), f'{head}.json')
     try:
-        stat = file.stat(follow_symlinks=False)
+        signature = _file_signature(file)
+        if verify_bytes:
+            content = sha256(file.read_bytes()).digest()
+            if _file_signature(file) != signature:
+                return None
+            return (*signature, content)
+        return signature
     except OSError:
         return None
-    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
 
 
 class CreationProjects:
@@ -189,6 +200,9 @@ class CreationProjects:
         self._invalid = []
         self._records_cache = OrderedDict()
         self._records_cache_bytes = 0
+        # Windows ctime is creation time. Verify bytes there before reusing a
+        # parsed record, including when an external writer restores its mtime.
+        self._verify_record_bytes = os.name == 'nt'
         self._current_cache: "OrderedDict[tuple, CommitRecord]" = OrderedDict()
         # Reads arrive on several threads; the dict is only ever touched here.
         self._cache_lock = threading.Lock()
@@ -255,26 +269,24 @@ class CreationProjects:
     def _record(self, path, head):
         file = child(directory(child(path, 'commits')), f'{head}.json')
         try:
-            def signature():
-                stat = file.stat(follow_symlinks=False)
-                return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
-
-            before = signature()
+            before = _file_signature(file)
+            raw = file.read_bytes() if self._verify_record_bytes else None
+            content = sha256(raw).digest() if raw is not None else None
+            if raw is not None and _file_signature(file) != before:
+                raise ValueError('Commit changed during read')
             cached = self._records_cache.get(file)
-            if cached and cached[0] == before:
+            if cached and cached[0] == before and cached[2] == content:
                 self._records_cache.move_to_end(file)
                 # Private repository records are read-only. Public query
                 # boundaries copy returned values, not every historical snapshot.
                 return cached[1]
             if cached:
                 self._records_cache_bytes -= self._records_cache.pop(file)[0][2]
-            record = CommitRecord.model_validate(read_json(file))
-            if signature() != before:
+            record = CommitRecord.model_validate_json(raw) if raw is not None else CommitRecord.model_validate(read_json(file))
+            if _file_signature(file) != before:
                 raise ValueError('Commit changed during read')
-            # Windows ctime can be file creation time rather than change time.
-            # Keep full reads there instead of trusting a restored mtime.
-            if os.name != 'nt' and before[2] <= 8 * 1024 * 1024:
-                self._records_cache[file] = (before, record)
+            if before[2] <= 8 * 1024 * 1024:
+                self._records_cache[file] = (before, record, content)
                 self._records_cache_bytes += before[2]
                 while len(self._records_cache) > RECORD_CACHE_ENTRIES or self._records_cache_bytes > RECORD_CACHE_BYTES:
                     _, removed = self._records_cache.popitem(last=False)
@@ -309,7 +321,7 @@ class CreationProjects:
         return path, manifest, records
 
     def _remember_current(self, path, record):
-        signature = _head_signature(path, record.command.commandId)
+        signature = _head_signature(path, record.command.commandId, self._verify_record_bytes)
         if signature is None:
             return
         key = (str(path), str(record.command.commandId), signature)
@@ -327,7 +339,7 @@ class CreationProjects:
         moves the head, and an outside rewrite changes the head file's
         signature, so both are noticed without trusting a bare timestamp.
         """
-        signature = _head_signature(path, manifest.head)
+        signature = _head_signature(path, manifest.head, self._verify_record_bytes)
         key = (str(path), str(manifest.head), signature)
         if signature is not None:
             with self._cache_lock:
@@ -486,7 +498,31 @@ class CreationProjects:
     def history(self, project_id):
         with self.local.transaction() as db:
             self._recover()
-            return tuple(record.model_copy(deep=True) for record in self._load(db, project_id)[2])
+            records = tuple(self._load(db, project_id)[2])
+        # Private records are never mutated. Copy for the public caller after
+        # releasing the global lock so large history reads do not block saves.
+        return tuple(record.model_copy(deep=True) for record in records)
+
+    def history_index(self, project_id):
+        """Small detached event metadata; toolbar queries need no snapshots."""
+        with self.local.transaction() as db:
+            self._recover()
+            records = self._load(db, project_id)[2]
+            return records[0].snapshot.undoClearedThrough, tuple(dict(
+                commandId=r.command.commandId, type=r.command.type,
+                cursor=r.event.cursor, source=r.event.source,
+                targetCommandId=getattr(r.command.payload, 'targetCommandId', None),
+            ) for r in records if r.event is not None)
+
+    def history_pair(self, project_id, command_id):
+        """Detached target and predecessor for a field-scoped history replay."""
+        with self.local.transaction() as db:
+            self._recover()
+            records = self._load(db, project_id)[2]
+            target = next((r for r in records if r.command.commandId == command_id), None)
+            prior = next((r for r in records if target and r.command.commandId == target.previousHead), None)
+        return (target.model_copy(deep=True) if target else None,
+                prior.model_copy(deep=True) if prior else None)
 
     def view(self, project_id, client_id, value=None, *, session=None):
         with self.local.transaction() as db:

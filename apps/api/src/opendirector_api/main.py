@@ -79,7 +79,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.exception_handler(Timeout)
     async def lock_error(request, error):
-        return JSONResponse({"detail": "项目存储正忙，请稍后重试。"}, status_code=409)
+        return JSONResponse({"detail": "项目存储正忙，请稍后重试。", "code": "storage_busy"},
+                            status_code=409, headers={"Retry-After": "1"})
 
     @app.middleware("http")
     async def local_requests(request: Request, call_next):

@@ -53,6 +53,15 @@ try {
       .getByRole("toolbar", { name: "画布创作工具" })
       .getByRole("button", { name: `添加${kind}`, exact: true })
       .click();
+    if (kind === "图片") {
+      const model = (await call("/api/model-configs")).find(
+        (model) => model.modelId === "Qwen/Qwen-Image-2.1",
+      );
+      assert.ok(model);
+      await page
+        .getByLabel("生成模型", { exact: true })
+        .selectOption(`config:${model.id}`);
+    }
     const editor = page.getByRole("textbox", {
       name: "生成提示词",
       exact: true,
@@ -238,12 +247,21 @@ try {
     await editor.press("@");
     await picker.waitFor();
     const belowCaret = await picker.evaluate((element) => {
-      const caret = document.getSelection().getRangeAt(0).getBoundingClientRect();
+      const caret = document
+        .getSelection()
+        .getRangeAt(0)
+        .getBoundingClientRect();
       const bounds = element.getBoundingClientRect();
-      return Math.abs(bounds.left - caret.left) < 2 &&
-        Math.abs(bounds.top - caret.bottom - 6) < 2;
+      return (
+        Math.abs(bounds.left - caret.left) < 2 &&
+        Math.abs(bounds.top - caret.bottom - 6) < 2
+      );
     });
-    assert.equal(belowCaret, true, "The expanded picker opens below the caret when it fits");
+    assert.equal(
+      belowCaret,
+      true,
+      "The expanded picker opens below the caret when it fits",
+    );
     await editor.press("Escape");
     await editor.press("Backspace");
     await editor.press("Control+End");

@@ -59,6 +59,45 @@ export function json(method: string, value: unknown): RequestInit {
   };
 }
 
+/** For reads and idempotent writes only. Replay the exact request after an
+ * explicit lock timeout; conflicts and unknown delivery outcomes still fail. */
+export async function storageRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request<T>(path, options);
+    } catch (error) {
+      if (
+        attempt >= 2 ||
+        options.signal?.aborted ||
+        !(error instanceof ApiError) ||
+        error.status !== 409 ||
+        error.code !== "storage_busy"
+      )
+        throw error;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const signal = options.signal;
+      const cancel = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+        reject(signal?.reason);
+      };
+      const timer = setTimeout(
+        () => {
+          signal?.removeEventListener("abort", cancel);
+          resolve();
+        },
+        1000 * 2 ** attempt,
+      );
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) cancel();
+    });
+  }
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "操作未完成，请重试。";
 }
