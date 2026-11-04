@@ -1489,10 +1489,14 @@ function Workspace() {
             viewport: current.viewport,
             settings: current.settings,
           };
+          // Compare authoritative identities, including hidden items that have
+          // never been visible. History replay and re-showing retain them.
+          const known = new Set(
+            (projection.basis?.canvasItems ?? []).map((item) => item.id),
+          );
           projection.baseline = merged;
           projection.basis = snapshot;
           setHistory((history) => ({ ...history, present: merged }));
-          const known = new Set(current.nodes.map((node) => node.id));
           const created = next.nodes.filter((node) => !known.has(node.id));
           if (created.length) requestAnimationFrame(() => {
             if (active && historyRef.current.present.id === current.id) revealCreatedNodes.current(created, next.nodes);
