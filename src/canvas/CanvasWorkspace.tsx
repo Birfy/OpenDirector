@@ -89,7 +89,7 @@ import {
   downloadFile,
   downloadFilename,
   exampleDocument,
-  EXAMPLE_PROJECT_TITLE,
+  exampleProjectTitle,
   studyImage,
 } from "./assets";
 import { AssistantPanel } from "./AssistantPanel";
@@ -5012,8 +5012,8 @@ function Workspace() {
                 void switchDocument(
                   () =>
                     openExampleWorkspaceProject(
-                      EXAMPLE_PROJECT_TITLE,
-                      exampleDocument,
+                      exampleProjectTitle(locale),
+                      () => exampleDocument(locale),
                     ),
                   true,
                 );

@@ -1,7 +1,7 @@
 {
-  "total": 169,
+  "total": 168,
   "counts": {
-    "src/canvas/assets.ts": 15,
+    "src/canvas/assets.ts": 14,
     "src/canvas/CanvasWorkspace.tsx": 1,
     "src/canvas/dataBoundary.ts": 3,
     "src/canvas/generationCatalog.ts": 16,

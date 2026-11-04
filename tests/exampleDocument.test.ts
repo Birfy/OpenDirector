@@ -48,6 +48,18 @@ test("example prepares raster images and distinguishes generation from assembly 
     );
     const subject = document.nodes.find((node) => node.type === "subject")!;
     assert.equal(subject.data.subject!.main!.src, images[0]!.data.src);
+
+    const english = await exampleDocument("en-US");
+    assert.equal(english.title, "Light and Mountain · Shot Study");
+    assert.equal(
+      english.nodes.find((node) => node.type === "text")!.data.title,
+      "Creative direction",
+    );
+    assert.equal(
+      english.nodes.find((node) => node.type === "timeline")!.data.timeline!
+        .tracks[0]!.title,
+      "Video track",
+    );
   } finally {
     globalThis.Image = previousImage;
     globalThis.document = previousDocument;

@@ -2,13 +2,77 @@ import { createDocument, createNode } from "./model.ts";
 import type { CanvasDocument } from "./model.ts";
 import { loadLayerImage } from "./layerRenderer.ts";
 import { dataUrlToBlob } from "./downloadAssets.ts";
-import { tNow } from "../i18n/messages.ts";
+import { getActiveLocale, tNow } from "../i18n/messages.ts";
+import type { Locale } from "../i18n/types.ts";
 export { downloadFilename } from "./downloadAssets.ts";
 
-export const EXAMPLE_PROJECT_TITLE = "光与山之间 · 镜头研究";
+type ExampleCopy = {
+  projectTitle: string;
+  imageTitles: readonly [string, string];
+  noteTitle: string;
+  noteText: string;
+  sceneTitle: string;
+  scenePrompt: string;
+  paletteTitle: string;
+  palettePrompt: string;
+  videoTitle: string;
+  videoPrompt: string;
+  timelineTitle: string;
+  trackTitle: string;
+  subjectTitle: string;
+  subjectDescription: string;
+};
+
+/** Sample content follows the interface language; it is created once and then stays user-editable. */
+const EXAMPLE_COPY: Record<Locale, ExampleCopy> = {
+  "zh-CN": {
+    projectTitle: "光与山之间 · 镜头研究",
+    imageTitles: ["光与山之间", "暮色抵达之前"],
+    noteTitle: "创作方向",
+    noteText:
+      "光与山之间\n\n清晨的薄雾，远山与一叶小舟。\n克制的色彩，留白的构图。\n\n① 环境与情绪\n② 角色进入画面\n③ 镜头缓慢推进",
+    sceneTitle: "场景 · 清晨",
+    scenePrompt: "清晨，远山与湖泊，薄雾，低饱和青绿色，电影感广角构图",
+    paletteTitle: "色彩 · 暖调",
+    palettePrompt: "参考场景结构，转为暮色暖调，保留静谧的氛围",
+    videoTitle: "镜头 01 · 缓慢推进",
+    videoPrompt: "以参考图为首帧，镜头缓慢向前推进，小船轻轻划过湖面。",
+    timelineTitle: "两幕 · 时间线",
+    trackTitle: "画面轨",
+    subjectTitle: "场景参考 · 山与湖",
+    subjectDescription: "远山、薄雾和一叶小舟。示例素材为本工程原创矢量插画。",
+  },
+  "en-US": {
+    projectTitle: "Light and Mountain · Shot Study",
+    imageTitles: ["Between Light and Mountain", "Before Dusk"],
+    noteTitle: "Creative direction",
+    noteText:
+      "Between light and mountain\n\nMorning mist, distant peaks, and a small boat.\nRestrained color, negative space.\n\n① Environment and mood\n② Character enters frame\n③ Camera pushes in slowly",
+    sceneTitle: "Scene · Morning",
+    scenePrompt:
+      "Morning, distant mountains and a lake, mist, low-saturation teal, cinematic wide shot",
+    paletteTitle: "Palette · Warm",
+    palettePrompt:
+      "Reference the scene structure, shift to warm dusk tones, keep the quiet mood",
+    videoTitle: "Shot 01 · Slow push-in",
+    videoPrompt:
+      "Use the reference image as the first frame; the camera pushes in slowly as the boat glides across the lake.",
+    timelineTitle: "Two acts · Timeline",
+    trackTitle: "Video track",
+    subjectTitle: "Scene reference · Mountain and lake",
+    subjectDescription:
+      "Distant mountains, mist, and a small boat. The example media is original vector art drawn for this project.",
+  },
+};
+
+export const EXAMPLE_PROJECT_TITLE = EXAMPLE_COPY["zh-CN"].projectTitle;
+
+export function exampleProjectTitle(locale: Locale = getActiveLocale()): string {
+  return EXAMPLE_COPY[locale].projectTitle;
+}
 
 /** Original vector study assets; these are illustrations, not AI results or remote media. */
-export function studyImage(seed = 0, title = "光与山之间"): string {
+export function studyImage(seed = 0, title = EXAMPLE_COPY["zh-CN"].imageTitles[0]): string {
   const palettes = [
     ["#b0c8be", "#446e64", "#1b413e", "#e5cdb0"],
     ["#c7b5ab", "#876d78", "#393545", "#edb497"],
@@ -31,10 +95,13 @@ export function studyImage(seed = 0, title = "光与山之间"): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-export async function exampleDocument(): Promise<CanvasDocument> {
+export async function exampleDocument(
+  locale: Locale = getActiveLocale(),
+): Promise<CanvasDocument> {
+  const copy = EXAMPLE_COPY[locale];
   const images = await Promise.all(
-    [studyImage(0), studyImage(1, "暮色抵达之前")].map(async (src) => {
-      const image = await loadLayerImage(src);
+    copy.imageTitles.map(async (title, index) => {
+      const image = await loadLayerImage(studyImage(index, title));
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
@@ -44,13 +111,13 @@ export async function exampleDocument(): Promise<CanvasDocument> {
       return canvas.toDataURL("image/png");
     }),
   );
-  const doc = createDocument(EXAMPLE_PROJECT_TITLE);
+  const doc = createDocument(copy.projectTitle);
   const notes = createNode(
     "text",
     { x: 80, y: 150 },
     {
-      title: "创作方向",
-      text: "光与山之间\n\n清晨的薄雾，远山与一叶小舟。\n克制的色彩，留白的构图。\n\n① 环境与情绪\n② 角色进入画面\n③ 镜头缓慢推进",
+      title: copy.noteTitle,
+      text: copy.noteText,
       prompt: "",
     },
   );
@@ -60,32 +127,32 @@ export async function exampleDocument(): Promise<CanvasDocument> {
     "image",
     { x: 460, y: 130 },
     {
-      title: "场景 · 清晨",
+      title: copy.sceneTitle,
       src: images[0]!,
       assetState: "ready",
       mimeType: "image/png",
       media: { width: 1200, height: 1000 },
-      prompt: "清晨，远山与湖泊，薄雾，低饱和青绿色，电影感广角构图",
+      prompt: copy.scenePrompt,
     },
   );
   const b = createNode(
     "image",
     { x: 930, y: 130 },
     {
-      title: "色彩 · 暖调",
+      title: copy.paletteTitle,
       src: images[1]!,
       assetState: "ready",
       mimeType: "image/png",
       media: { width: 1200, height: 1000 },
-      prompt: "参考场景结构，转为暮色暖调，保留静谧的氛围",
+      prompt: copy.palettePrompt,
     },
   );
   const video = createNode(
     "video",
     { x: 1400, y: 130 },
     {
-      title: "镜头 01 · 缓慢推进",
-      prompt: "以参考图为首帧，镜头缓慢向前推进，小船轻轻划过湖面。",
+      title: copy.videoTitle,
+      prompt: copy.videoPrompt,
       settings: {
         mode: "video",
         model: "Seedance 2.0 mini",
@@ -101,7 +168,7 @@ export async function exampleDocument(): Promise<CanvasDocument> {
     "timeline",
     { x: 80, y: 600 },
     {
-      title: "两幕 · 时间线",
+      title: copy.timelineTitle,
       timeline: {
         fps: 24,
         width: 1920,
@@ -110,7 +177,7 @@ export async function exampleDocument(): Promise<CanvasDocument> {
           {
             id: "visual",
             kind: "visual",
-            title: "画面轨",
+            title: copy.trackTitle,
             muted: false,
             clips: [a, b].map((node) => ({
               id: crypto.randomUUID(),
@@ -139,9 +206,9 @@ export async function exampleDocument(): Promise<CanvasDocument> {
     "subject",
     { x: 810, y: 600 },
     {
-      title: "场景参考 · 山与湖",
+      title: copy.subjectTitle,
       subject: {
-        description: "远山、薄雾和一叶小舟。示例素材为本工程原创矢量插画。",
+        description: copy.subjectDescription,
         category: "scene",
         auxiliaries: [],
         main: {
