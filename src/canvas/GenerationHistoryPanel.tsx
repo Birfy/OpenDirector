@@ -148,7 +148,14 @@ export function GenerationHistoryPanel({
             {job.createdAt
               ? new Date(job.createdAt).toLocaleString("zh-CN")
               : job.time}{" "}
-            · {labels[job.status]}
+            ·{" "}
+            {job.toolTask?.localState === "stopping"
+              ? "停止处理中"
+              : job.tool && job.status === "cancelled"
+                ? "本地已停止"
+                : job.tool && job.status === "interrupted"
+                  ? "执行中断"
+                  : labels[job.status]}
           </small>
           {job.message && <small>{job.message}</small>}
           {job.preview?.state === "pending" && <small>正在读取结果预览…</small>}
@@ -183,7 +190,7 @@ export function GenerationHistoryPanel({
                 disabled={pending.includes(job.id)}
                 onClick={() => void taskAction(job, "cancel")}
               >
-                取消云端任务
+                {job.tool ? "停止工具任务" : "取消云端任务"}
               </button>
             )}
             <button onClick={() => onLocate(job.nodeId)}>定位来源</button>

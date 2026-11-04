@@ -357,6 +357,8 @@ def test_interrupted_tasks_are_reported_after_restart(project):
     folder = child(directory, 'tool-tasks')
     folder.mkdir(exist_ok=True)
     (folder / f'{task_id}.json').write_text(json.dumps({'id': task_id, 'status': 'running', 'tool': 'outpaint'}))
+    assert tools.get(project_id, task_id)['status'] == 'running'
+    asyncio.run(tools.recover())
     assert tools.get(project_id, task_id)['status'] == 'interrupted'
 
 

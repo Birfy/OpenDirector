@@ -49,10 +49,13 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     async def lifespan(app):
         await creation_generation.start()
         try:
+            await creation_tools.start()
             yield
         finally:
-            await creation_tools.close()
-            await creation_generation.close()
+            try:
+                await creation_tools.close()
+            finally:
+                await creation_generation.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.0", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation))
@@ -236,7 +239,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
         @app.post(prefix + '/{task_id}/cancel')
         async def cancel(project_id: UUID, task_id: UUID, x_opendirector_session: str = Header()):
-            return await service.cancel(str(project_id), str(task_id), identifier(x_opendirector_session))
+            return await service.cancel(str(project_id), str(task_id), identifier(x_opendirector_session), wait=False)
 
         @app.post(prefix + '/{task_id}/placement')
         def placement(project_id: UUID, task_id: UUID, value: ToolPlacement, x_opendirector_session: str = Header()):

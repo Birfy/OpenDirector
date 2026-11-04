@@ -21,6 +21,8 @@ from opendirector.integrations.http_settings import MODEL_JOB_CONTEXT
 from opendirector.integrations.model_adapters import adapter_for, capabilities_of
 from opendirector.media import processing as media
 from opendirector.media.filenames import with_extension
+from opendirector.media.async_work import blocking
+from .tool_task_lifecycle import ToolTaskLifecycle
 
 ACTIVE = {'queued', 'running'}
 MAX_SOURCES = 20
@@ -44,15 +46,15 @@ def output_item_id(task, index, kind):
     return str(uuid5(UUID(task['id']), f'canvas-output-{index}'))
 
 
-class ToolTasks:
+class ToolTasks(ToolTaskLifecycle):
     def __init__(self, store, configs, assets, *, transport=None, poll_interval=3, concurrency=2, projects):
         self.store, self.configs, self.assets = store, configs, assets
         self.transport, self.poll_interval = transport, poll_interval
         self.jobs: dict[tuple[str, str], asyncio.Task] = {}
-        self.remote: dict[tuple[str, str], tuple[dict, str]] = {}
         self.limit = asyncio.Semaphore(concurrency)
         self.projects = projects
         self.accepting = set()
+        self._init_lifecycle()
 
     # Capabilities -------------------------------------------------------------
 
@@ -137,9 +139,10 @@ class ToolTasks:
 
     # Storage -------------------------------------------------------------------
 
-    def _folder(self, directory):
+    def _folder(self, directory, *, create=True):
         folder = child(directory, 'tool-tasks')
-        folder.mkdir(exist_ok=True)
+        if create:
+            folder.mkdir(exist_ok=True)
         return folder
 
     def _directory(self, project_id, session=None):
@@ -152,7 +155,7 @@ class ToolTasks:
             return path
 
     def list(self, project_id):
-        folder = self._folder(self._directory(project_id))
+        folder = self._folder(self._directory(project_id), create=False)
         tasks = [self._read_task(project_id, child(folder, path.name)) for path in folder.glob('*.json')]
         return sorted(tasks, key=lambda task: (task['createdAt'], task['id']), reverse=True)
 
@@ -160,20 +163,20 @@ class ToolTasks:
         # Serialize acknowledgement with task writes/project moves. This never
         # adopts a GenerationSpec result or changes a terminal execution state.
         with self.store.transaction():
-            directory = self._directory(project_id, session)
+            self._directory(project_id, session)
             task = self.get(project_id, task_id)
             if task['status'] in {'failed', 'cancelled', 'interrupted'} and state == 'unplaced':
                 return self._settle_terminal(project_id, task_id, session)
-            if task['status'] != 'succeeded':
+            explicit_retained = (state == 'placed' and policy == 'explicit' and task.get('outputs')
+                                 and task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('localState') == 'stopped')
+            if task['status'] != 'succeeded' and not explicit_retained:
                 raise ProjectError('工具任务尚未完成。', 409)
             if task.get('placement') == 'placed' and policy != 'explicit':
                 return task
             if state == 'placed':
                 from .creation_tool_drafts import publish_outputs
                 state = publish_outputs(self, task, session, policy)
-            task['placement'] = state
-            self._write(directory, task)
-            return task
+            return self._change(project_id, task_id, {'placement': state, 'outputs': task['outputs']})
 
     def _settle_terminal(self, project_id, task_id, session=None):
         # Project receipt precedes ledger acknowledgement. A crash between them
@@ -183,8 +186,7 @@ class ToolTasks:
             task = read_json(child(self._folder(directory), task_id + '.json'))
             if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
                 from .creation_tool_drafts import release_placeholder
-                task['placement'] = release_placeholder(self, task, session)
-                self._write(directory, task)
+                task = self._change(project_id, task_id, {'placement': release_placeholder(self, task, session)})
             return task
 
     def _write(self, directory, task):
@@ -193,23 +195,17 @@ class ToolTasks:
     def get(self, project_id, task_id, session=None):
         identifier(project_id)
         identifier(task_id)
-        path = child(self._folder(self._directory(project_id, session)), task_id + '.json')
+        path = child(self._folder(self._directory(project_id, session), create=False), task_id + '.json')
         return self._read_task(project_id, path, session)
 
     def _read_task(self, project_id, path, session=None):
-        task_id = identifier(path.stem)
+        identifier(path.stem)
         if not path.is_file():
             raise ProjectError('工具任务不存在。', 404)
         task = read_json(path)
         for index, output in enumerate(task.get('outputs', [])):
             # Canvas items and assets occupy different project identities.
             output.setdefault('canvasItemId', output_item_id(task, index, output['kind']))
-        if task['status'] in ACTIVE and (project_id, task_id) not in self.jobs and (project_id, task_id) not in self.accepting:
-            # The service restarted mid-run; the work cannot resume.
-            task.update(status='interrupted', phase=None, error='服务重启，任务已中断，请重新提交。', finishedAt=_now())
-            self._write(path.parent.parent, task)
-        if task['status'] in {'failed', 'cancelled', 'interrupted'} and task.get('placement') == 'pending':
-            task = self._settle_terminal(project_id, task_id, session)
         if 'sourceFingerprint' not in task and task.get('sourceAssetIds'):
             records = self.assets._records(path.parent.parent, project_id)
             source = records.get(task['sourceAssetIds'][0], {})
@@ -225,6 +221,9 @@ class ToolTasks:
             return self._prepare_locked(project_id, value, session)
 
     def _prepare_locked(self, project_id, value, session):
+        if self.closing:
+            raise ProjectError('工具服务正在关闭，请稍后查询原任务。', 503)
+        self._ensure_owner()
         identifier(project_id)
         task_id = identifier(str(value['id']))
         spec = TOOLS.get(value.get('tool'))
@@ -281,6 +280,8 @@ class ToolTasks:
                 'modelConfigIds': {item: config['id'] for item, config in models.items()},
                 'modelSnapshots': {item: {key: val for key, val in config.items() if key != 'apiKey'} for item, config in models.items()}, 'requestedModelConfigIds': chosen, 'requires': list(needs),
                 'outputs': [], 'error': None, 'createdAt': _now(), 'finishedAt': None,
+                'revision': 1, 'workerId': self.worker_id, 'localState': 'active',
+                'cancelRequested': False, 'modelCalls': [],
                 'canvas': canvas, 'sourceFingerprint': records[source_ids[0]]['fingerprint'],
                 'sourceKind': records[source_ids[0]]['kind'], 'placement': 'pending'}
         task.update(frozen)
@@ -290,45 +291,56 @@ class ToolTasks:
     async def submit(self, project_id, value, session):
         key = (project_id, identifier(str(value['id'])))
         self.accepting.add(key)
-        try:
-            task, directory, records = await asyncio.to_thread(self._prepare, project_id, value, session)
-            if records is not None and key not in self.jobs:
-                job = asyncio.create_task(self._run(task, directory, records))
-                self.jobs[key] = job
-                job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
-            return task
-        finally:
-            self.accepting.discard(key)
+        async def accept():
+            try:
+                task, directory, records = await blocking(self._prepare, project_id, value, session)
+                if records is not None and key not in self.jobs:
+                    job = asyncio.create_task(self._run(task, directory, records))
+                    self.jobs[key] = job
+                    job.add_done_callback(lambda done: self.jobs.pop(key, None) if self.jobs.get(key) is done else None)
+                return task
+            finally:
+                self.accepting.discard(key)
+        pending = asyncio.create_task(accept())
+        self.admissions.add(pending)
+        def accepted(done):
+            self.admissions.discard(done)
+            if not done.cancelled():
+                done.exception()
+        pending.add_done_callback(accepted)
+        return await asyncio.shield(pending)
 
     async def _update(self, directory, task, **changes):
-        task.update(changes)
-        # Cancelling to_thread does not stop the underlying write. Drain it before
-        # recording a terminal state, or a stale running receipt lands afterwards.
-        # The snapshot also keeps the writer from serializing a dict being mutated.
-        pending = asyncio.create_task(asyncio.to_thread(self._write, directory, dict(task)))
-        try:
-            await asyncio.shield(pending)
-            if task['status'] in {'failed', 'cancelled', 'interrupted'}:
-                settled = await asyncio.to_thread(self._settle_terminal, task['projectId'], task['id'])
-                task.update(settled)
-        except asyncio.CancelledError:
-            await pending
-            raise
+        def save():
+            with self.store.transaction():
+                current = self.get(task['projectId'], task['id'])
+                if current['status'] in {'succeeded', 'failed', 'cancelled', 'interrupted'} and changes.get('status') in ACTIVE:
+                    return current
+                if changes.get('status') == 'succeeded' and current.get('cancelRequested'):
+                    return current
+                return self._change(task['projectId'], task['id'], changes)
+        current = await blocking(save)
+        task.clear()
+        task.update(current)
+        if task['status'] in {'failed', 'cancelled', 'interrupted'}:
+            task.update(await blocking(self._settle_terminal, task['projectId'], task['id']))
 
     async def _run(self, task, directory, records):
-        key = (task['projectId'], task['id'])
         spec = TOOLS[task['tool']]
         trace_token = MODEL_JOB_CONTEXT.set((str(task['projectId']), str(task['id'])))
         try:
             async with self.limit:
+                current = self.get(task['projectId'], task['id'])
+                if self.closing or current.get('cancelRequested') or current['status'] not in ACTIVE:
+                    raise asyncio.CancelledError()
                 await self._update(directory, task, status='running', phase='准备素材')
 
                 def read(asset_id):
                     record = records[asset_id]
                     return Source(record['kind'], self.assets.read_bytes(task['projectId'], asset_id), record['name'])
-                sources = await asyncio.to_thread(lambda: [read(item) for item in task['sourceAssetIds']])
-                mask = (await asyncio.to_thread(read, task['maskAssetId'])).data if task['maskAssetId'] else None
-                annotation = (await asyncio.to_thread(read, task['annotationAssetId'])).data if task.get('annotationAssetId') else None
+                sources = await blocking(lambda: [read(item) for item in task['sourceAssetIds']])
+                mask = (await blocking(read, task['maskAssetId'])).data if task['maskAssetId'] else None
+                annotation = (await blocking(read, task['annotationAssetId'])).data if task.get('annotationAssetId') else None
 
                 async def progress(message):
                     await self._update(directory, task, phase=message)
@@ -344,40 +356,42 @@ class ToolTasks:
 
                 async def image_model(request):
                     config, adapter = frozen_model('image.edit' if request.image is not None else 'image.generate')
-                    return await adapter.image(config, request)
+                    return await self._model_call(task, 'image.edit' if request.image is not None else 'image.generate',
+                        lambda _: adapter.image(config, request))
 
                 async def video_model(request, submitted):
                     capability = 'video.first_frame' if request.first_frame is not None else 'video.generate'
                     config, adapter = frozen_model(capability)
 
-                    async def remember(external_id):
-                        self.remote[key] = (config, external_id)
-                        if submitted:
-                            await submitted(external_id)
-                    return await adapter.video(config, request, submitted=remember)
+                    async def invoke(remember):
+                        async def accepted(external_id):
+                            await remember(external_id)
+                            if submitted:
+                                await submitted(external_id)
+                        return await adapter.video(config, request, submitted=accepted)
+                    return await self._model_call(task, capability, invoke)
 
                 async def cutout_model(request):
                     config, adapter = frozen_model('image.cutout')
-                    return await adapter.cutout(config, request)
+                    return await self._model_call(task, 'image.cutout', lambda _: adapter.cutout(config, request))
 
                 async def edit_model(request, submitted):
                     config, adapter = frozen_model('video.edit')
 
-                    async def remember(external_id):
-                        self.remote[key] = (config, external_id)
-                    return await adapter.edit_video(config, request, submitted=remember)
+                    return await self._model_call(task, 'video.edit',
+                        lambda remember: adapter.edit_video(config, request, submitted=remember))
 
                 async def segment_model(request):
                     config, adapter = frozen_model('image.segment')
-                    return await adapter.segment(config, request)
+                    return await self._model_call(task, 'image.segment', lambda _: adapter.segment(config, request))
 
                 async def track_model(request):
                     config, adapter = frozen_model('video.matting')
-                    return await adapter.track(config, request)
+                    return await self._model_call(task, 'video.matting', lambda _: adapter.track(config, request))
 
                 async def depth_model(request):
                     config, adapter = frozen_model('video.motion_capture')
-                    return await adapter.depth(config, request)
+                    return await self._model_call(task, 'video.motion_capture', lambda _: adapter.depth(config, request))
 
                 keeps_layout, edit_max_images = True, 1
                 if 'image.edit' in task['requires']:
@@ -392,7 +406,7 @@ class ToolTasks:
                 if 'text.chat' in task['modelConfigIds']:
                     async def chat_model(request):
                         config, adapter = frozen_model('text.chat')
-                        return await adapter.chat(config, request)
+                        return await self._model_call(task, 'text.chat', lambda _: adapter.chat(config, request))
 
                 context = ToolContext(sources=sources, mask=mask, boxes=task['boxes'], parameters=task['parameters'],
                                       image_model=image_model, video_model=video_model, progress=progress, cutout_model=cutout_model,
@@ -401,57 +415,42 @@ class ToolTasks:
                                       annotation=annotation, edit_max_images=edit_max_images,
                                       segment_available='image.segment' in task['requires'], depth_model=depth_model)
                 outputs = await spec.recipe(context)
-                await progress('正在保存结果')
-                saved = []
-                for index, output in enumerate(outputs):
-                    asset_id = str(uuid5(UUID(task['id']), f'output-{index}'))
-                    if hasattr(self.assets, 'import_output'):
-                        asset = await asyncio.to_thread(self.assets.import_output, task, asset_id,
-                                                       with_extension(output.title, output.suffix), output.data)
-                    else:
-                        asset = await asyncio.to_thread(self.assets.import_file, task['projectId'], asset_id,
-                                                        with_extension(output.title, output.suffix), output.data, None, source='generated')
-                    saved.append({name: asset.get(name) for name in ('id', 'kind', 'name', 'type', 'width', 'height', 'durationMs')}
-                                 | {'title': output.title, 'canvasItemId': output_item_id(task, index, output.kind)})
-                await self._update(directory, task, status='succeeded', phase=None, outputs=saved, finishedAt=_now())
-        except asyncio.CancelledError:
-            remote = self.remote.get(key)
-            if remote:
-                config, external_id = remote
+                # Preserve already-produced bytes even if cancellation arrives
+                # during registration. Each asset is checkpointed independently.
+                async def preserve():
+                    await self._update(directory, task, phase='正在保存结果')
+                    saved = list(self.get(task['projectId'], task['id'])['outputs'])
+                    for index, output in enumerate(outputs):
+                        asset_id = str(uuid5(UUID(task['id']), f'output-{index}'))
+                        asset = await blocking(self.assets.import_output, task, asset_id,
+                                               with_extension(output.title, output.suffix), output.data)
+                        saved.append({name: asset.get(name) for name in ('id', 'kind', 'name', 'type', 'width', 'height', 'durationMs')}
+                                     | {'title': output.title, 'canvasItemId': output_item_id(task, index, output.kind)})
+                        await self._update(directory, task, outputs=list(saved))
+                saving = asyncio.create_task(preserve())
                 try:
-                    await adapter_for(config, self.transport).cancel_video(config, external_id)
-                except (ProjectError, GenerationError):
-                    pass
-            await self._update(directory, task, status='cancelled', phase=None, error='已取消。', finishedAt=_now())
+                    await asyncio.shield(saving)
+                except asyncio.CancelledError:
+                    await saving
+                    raise
+                await self._update(directory, task, status='succeeded', localState='stopped', phase=None, finishedAt=_now())
+                if task.get('cancelRequested'):
+                    await self._stopped(task['projectId'], task['id'])
+        except asyncio.CancelledError:
+            await self._stopped(task['projectId'], task['id'])
             raise
         except ProjectError as failure:
-            await self._update(directory, task, status='failed', phase=None, error=str(failure), finishedAt=_now())
+            current = self.get(task['projectId'], task['id'])
+            if current.get('cancelRequested'):
+                await self._stopped(task['projectId'], task['id'])
+            else:
+                await self._update(directory, task, status='failed', localState='stopped', phase=None, error=str(failure), finishedAt=_now())
         except Exception:  # noqa: BLE001 — a recipe bug must still end the task visibly.
-            await self._update(directory, task, status='failed', phase=None, error='工具执行出错，请检查素材和参数后重试。', finishedAt=_now())
+            current = self.get(task['projectId'], task['id'])
+            if current.get('cancelRequested') or self.closing:
+                await self._stopped(task['projectId'], task['id'])
+            else:
+                await self._update(directory, task, status='failed', localState='stopped', phase=None, error='工具执行出错，请检查素材和参数后重试。', finishedAt=_now())
             raise
         finally:
             MODEL_JOB_CONTEXT.reset(trace_token)
-            self.remote.pop(key, None)
-
-    async def cancel(self, project_id, task_id, session):
-        task = await asyncio.to_thread(self.get, project_id, task_id, session)
-        job = self.jobs.get((project_id, task_id))
-        if job and not job.done():
-            job.cancel()
-            try:
-                await job
-            except asyncio.CancelledError:
-                pass
-            except Exception:  # noqa: BLE001 — the failure is already recorded on the task.
-                pass
-            directory = self._directory(project_id, session)
-            saved = read_json(child(self._folder(directory), task_id + '.json'))
-            if saved['status'] in ACTIVE:
-                saved.update(status='cancelled', phase=None, error='已取消。', finishedAt=_now())
-                self._write(directory, saved)
-        return await asyncio.to_thread(self.get, project_id, task_id, session)
-
-    async def close(self):
-        for job in list(self.jobs.values()):
-            job.cancel()
-        await asyncio.gather(*self.jobs.values(), return_exceptions=True)

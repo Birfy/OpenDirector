@@ -286,6 +286,9 @@ def test_terminal_cleanup_recovers_project_commit_before_ledger_ack(prepared,mon
     committed=store.snapshot(pid)
     assert not committed.canvasItems[1].visible
     monkeypatch.setattr(service,'_write',original)
+    # Reads expose the pending acknowledgement without repairing it.
+    assert service.get(str(pid),task['id'],session)['placement']=='pending'
+    asyncio.run(service.recover())
     recovered=service.get(str(pid),task['id'],session)
     assert recovered['placement']=='unplaced'
     assert recovered['status']==status

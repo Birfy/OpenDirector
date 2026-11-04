@@ -5,7 +5,6 @@ them through whichever configured model offers them. Recipes never see a model
 name, protocol or endpoint, so swapping or adding models does not touch them.
 """
 
-import asyncio
 import io
 import json
 import math
@@ -19,6 +18,7 @@ from opendirector.domain.capabilities import (ChatRequest, CutoutRequest, DepthR
                                           Tracks, VideoEditRequest, VideoRequest)
 from opendirector.domain.projects import ProjectError
 from opendirector.media import processing as media
+from opendirector.media.async_work import blocking
 
 
 @dataclass(frozen=True)
@@ -563,7 +563,7 @@ async def _redraw_pieces(ctx: ToolContext, source: Source, prompt: str, picture,
     low, high = ctx.edit_seconds
     with media.Workspace() as work:
         path = work.write('source.mp4', source.data)
-        info = await asyncio.to_thread(media.video_info, path)
+        info = await blocking(media.video_info, path)
         duration = info['duration']
         if duration < low:
             raise ProjectError(f'视频至少需要 {low:g} 秒。', 422)
@@ -580,17 +580,17 @@ async def _redraw_pieces(ctx: ToolContext, source: Source, prompt: str, picture,
         done = []
         for index, (first, last) in enumerate(pieces):
             await ctx.progress(f'正在重绘（{index + 1}/{len(pieces)}）' if len(pieces) > 1 else '正在重绘')
-            clip = await asyncio.to_thread(media.conform, path, work.path / f'in-{index}.mp4', width=info['width'], height=info['height'],
+            clip = await blocking(media.conform, path, work.path / f'in-{index}.mp4', width=info['width'], height=info['height'],
                                            fps=info['fps'], start=first, end=last)
             local = (lambda mask: mask and EditMask(mask.level, mask.region, None if mask.start is None else mask.start - first,
                                                     None if mask.end is None else mask.end - first))
             drawn = await ctx.redraw(clip.read_bytes(), last - first, info['width'], info['height'], prompt, local(picture), local(sound))
-            done.append(await asyncio.to_thread(media.conform, work.write(f'drawn-{index}.mp4', drawn), work.path / f'out-{index}.mp4',
+            done.append(await blocking(media.conform, work.write(f'drawn-{index}.mp4', drawn), work.path / f'out-{index}.mp4',
                                                 width=info['width'], height=info['height'], fps=info['fps'], end=last - first))
         await ctx.progress('正在合成结果')
         if window:
-            return await asyncio.to_thread(media.splice, work, path, pieces[0][0], pieces[0][1], done[0])
-        return await asyncio.to_thread(media.concat, work, done)
+            return await blocking(media.splice, work, path, pieces[0][0], pieces[0][1], done[0])
+        return await blocking(media.concat, work, done)
 
 
 def _box_region(ctx: ToolContext, width, height, rows=36, columns=64):
@@ -610,7 +610,7 @@ def _box_region(ctx: ToolContext, width, height, rows=36, columns=64):
 
 async def _video_size(source: Source):
     with media.Workspace() as work:
-        info = await asyncio.to_thread(media.video_info, work.write('probe.mp4', source.data))
+        info = await blocking(media.video_info, work.write('probe.mp4', source.data))
     return info['width'], info['height']
 
 
@@ -649,20 +649,20 @@ async def video_matting(ctx: ToolContext):
     pairs = await ctx.concepts(ctx.text('prompt'), ('人物',))
     with media.Workspace() as work:
         raw = work.write('source', source.data)
-        info = await asyncio.to_thread(media.video_info, raw)
+        info = await blocking(media.video_info, raw)
         if info['duration'] * info['fps'] > MATTE_MAX_FRAMES:
             raise ProjectError(f'视频抠像单次最多处理 {MATTE_MAX_FRAMES} 帧（约 {MATTE_MAX_FRAMES / info["fps"]:.0f} 秒），请先裁剪视频。', 422)
         await ctx.progress('正在整理视频')
         # A constant-rate, even-sized clip decodes to the same frames for the tracker and ffmpeg.
-        clip = await asyncio.to_thread(media.conform, raw, work.path / 'clip.mp4', width=info['width'] - info['width'] % 2,
+        clip = await blocking(media.conform, raw, work.path / 'clip.mp4', width=info['width'] - info['width'] % 2,
                                        height=info['height'] - info['height'] % 2, fps=info['fps'])
         await ctx.progress(f"正在识别并跟踪「{'、'.join(label for _, label in pairs)}」")
         tracks = await ctx.track(clip.read_bytes(), tuple(concept for concept, _ in pairs))
         if not any(tracks.frames):
             raise ProjectError(f"视频中没有识别到「{'、'.join(label for _, label in pairs)}」，请换一种描述后重试。", 422)
         await ctx.progress('正在合成抠像视频')
-        await asyncio.to_thread(_write_mattes, tracks, work.path / 'mattes')
-        data, suffix = await asyncio.to_thread(media.matte, clip, str(work.path / 'mattes' / '%05d.png'), info['fps'],
+        await blocking(_write_mattes, tracks, work.path / 'mattes')
+        data, suffix = await blocking(media.matte, clip, str(work.path / 'mattes' / '%05d.png'), info['fps'],
                                                work.path / 'matted', background=background)
     return [Output('video', data, suffix, '视频抠像')]
 
@@ -683,7 +683,7 @@ async def depth_capture(ctx: ToolContext):
     resolution = ctx.choice('resolution', tuple(DEPTH_SHORT_EDGES), '480P')
     with media.Workspace() as work:
         raw = work.write('source', source.data)
-        info = await asyncio.to_thread(media.video_info, raw)
+        info = await blocking(media.video_info, raw)
         if not 0 < info['duration'] <= DEPTH_MAX_SECONDS + 0.05:
             raise ProjectError(f'深度动作捕捉需要不超过 {DEPTH_MAX_SECONDS} 秒的素材，请先裁剪视频。', 422)
         if info['duration'] * info['fps'] > DEPTH_MAX_FRAMES:
@@ -692,7 +692,7 @@ async def depth_capture(ctx: ToolContext):
         # The depth service returns the size it receives, so the clip is sized here; every
         # source frame is kept so depth frame i lines up with source frame i.
         width, height = _depth_size(info['width'], info['height'], DEPTH_SHORT_EDGES[resolution])
-        clip = await asyncio.to_thread(media.picture, raw, work.path / 'clip.mp4', width=width, height=height)
+        clip = await blocking(media.picture, raw, work.path / 'clip.mp4', width=width, height=height)
         await ctx.progress('正在估计每一帧的深度')
         data = await ctx.depth(clip.read_bytes())
     return [Output('video', data, 'mp4', f'深度动作捕捉 {resolution}')]
@@ -738,15 +738,15 @@ async def audio_separation(ctx: ToolContext):
     with media.Workspace() as work:
         suffix = source.name.rsplit('.', 1)[-1].lower() if '.' in source.name else ('mp4' if source.kind == 'video' else 'mp3')
         path = work.write(f'source.{suffix}', source.data)
-        if mode == 'backgroundSound' and not await asyncio.to_thread(media.is_stereo_with_side, path):
+        if mode == 'backgroundSound' and not await blocking(media.is_stereo_with_side, path):
             raise ProjectError('单声道音频无法在本地估计背景声，需要接入具备音轨分离能力的模型。', 422)
         await ctx.progress('正在分离音轨')
-        audio = await asyncio.to_thread(media.audio_track, path, work.path / 'track.mp3',
+        audio = await blocking(media.audio_track, path, work.path / 'track.mp3',
                                         mode={'all': 'all', 'voice': 'voice', 'backgroundSound': 'background'}[mode])
         outputs.append(Output('audio', audio, 'mp3', AUDIO_MODES[mode]))
         if mode == 'all' and source.kind == 'video':
             # Splitting a clip yields both halves: its soundtrack and the silent picture.
-            outputs.append(Output('video', await asyncio.to_thread(media.without_audio, path, work.path / 'silent.mp4'), 'mp4', '无声视频'))
+            outputs.append(Output('video', await blocking(media.without_audio, path, work.path / 'silent.mp4'), 'mp4', '无声视频'))
     return outputs
 
 
@@ -755,7 +755,7 @@ async def video_upscale(ctx: ToolContext):
     edge = {'2K': 2560, '4K': 3840}[ctx.choice('resolution', ('2K', '4K'), '4K')]
     await ctx.progress('正在放大视频')
     with media.Workspace() as work:
-        data = await asyncio.to_thread(media.upscale, work.write('source.mp4', source.data), edge, work.path / 'out.mp4')
+        data = await blocking(media.upscale, work.write('source.mp4', source.data), edge, work.path / 'out.mp4')
     return [Output('video', data, 'mp4', f'超清 {ctx.parameters.get("resolution", "4K")}')]
 
 
@@ -764,7 +764,7 @@ async def frame_interpolation(ctx: ToolContext):
     fps = int(ctx.choice('fps', (30, 60, '30', '60'), 60))
     await ctx.progress(f'正在补帧到 {fps} fps')
     with media.Workspace() as work:
-        data = await asyncio.to_thread(media.interpolate, work.write('source.mp4', source.data), fps, work.path / 'out.mp4')
+        data = await blocking(media.interpolate, work.write('source.mp4', source.data), fps, work.path / 'out.mp4')
     return [Output('video', data, 'mp4', f'补帧 {fps}fps')]
 
 

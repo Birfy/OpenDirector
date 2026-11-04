@@ -23,6 +23,7 @@ from opendirector.integrations.generation_errors import checked, protocol_failur
 from opendirector.integrations.http_settings import MODEL_HTTP_HOOKS, auth_headers, trust_environment
 from opendirector.integrations.volcengine import bounded, endpoint
 from opendirector.media import processing as media
+from opendirector.media.async_work import blocking
 
 
 def _client(adapter, config, timeout=240):
@@ -60,7 +61,11 @@ class ModelAdapter:
         raise ProjectError('所选模型不支持视频局部重绘。', 409)
 
     async def cancel_video(self, config, external_id):
-        return None
+        return 'unsupported'
+
+    async def video_status(self, config, external_id):
+        """Observe an existing call, without submitting or downloading a result."""
+        return 'unsupported'
 
     async def speech(self, config, request: SpeechRequest) -> MediaResult:
         raise ProjectError('所选模型不支持语音合成。', 409)
@@ -282,7 +287,7 @@ class VllmOmniVideo(ModelAdapter):
             raise ProjectError(f'单次视频局部重绘需要 4–{self.MAX_SECONDS} 秒的片段。', 422)
         frames = self.frames(request.seconds)
         width, height = self.canvas(request.width, request.height)
-        source = await asyncio.to_thread(self._conformed, request.source, width, height)
+        source = await blocking(self._conformed, request.source, width, height)
         fields = self._fields(config, request.prompt, frames, avoid=request.avoid)
         fields.update(size=f'{width}x{height}',
                       extra_params=json.dumps({'task': 't2va', 'aspect_ratio': self.ratio(width, height), 'duration': frames / self.FPS}))
@@ -296,8 +301,27 @@ class VllmOmniVideo(ModelAdapter):
             async with _client(self, config, timeout=15) as client:
                 async with client.stream('DELETE', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''),
                                          headers=auth_headers(config)) as response:
-                    await checked(response, stage='cancel', secrets=(config.get('apiKey', ''),))
-        await _call('cancel', work)
+                    body = await bounded(response, stage='cancel', secrets=(config.get('apiKey', ''),))
+                    # A successful DELETE may only acknowledge the request.
+                    value = json.loads(body) if body else {}
+                    if not isinstance(value, dict) or value.get('id') != external_id:
+                        return 'requested'
+                    return {'cancelled': 'confirmed', 'completed': 'completed', 'failed': 'failed',
+                            'expired': 'failed'}.get(value.get('status'), 'requested')
+        return await _call('cancel', work)
+
+    async def video_status(self, config, external_id):
+        async def work():
+            async with _client(self, config, timeout=15) as client:
+                async with client.stream('GET', endpoint(config['url'], '/videos') + '/' + quote(external_id, safe=''),
+                                         headers=auth_headers(config)) as response:
+                    value = json.loads(await bounded(response, stage='poll', secrets=(config.get('apiKey', ''),)))
+                    if not isinstance(value, dict) or value.get('id') != external_id:
+                        return 'unknown'
+                    return {'cancelled': 'cancelled', 'completed': 'succeeded', 'failed': 'failed',
+                            'expired': 'failed', 'queued': 'running', 'running': 'running',
+                            'in_progress': 'running'}.get(value.get('status'), 'unknown')
+        return await _call('poll', work)
 
 
 class OpenAISpeech(ModelAdapter):
@@ -460,7 +484,7 @@ class VllmOmniDepth(ModelAdapter):
             return base64.b64decode(value['video'], validate=True), meters
         data, meters = await _call('submit', work)
         if meters:
-            data = await asyncio.to_thread(self._inverse, data, *meters)
+            data = await blocking(self._inverse, data, *meters)
         return MediaResult(data, 'mp4')
 
     @staticmethod

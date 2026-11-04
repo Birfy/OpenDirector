@@ -71,6 +71,58 @@ export interface ToolTask {
   sourceKind?: "image" | "video" | "audio";
   placement?: "pending" | "placed" | "unplaced";
   parameters?: ToolParameters;
+  cancelRequested?: boolean;
+  cancelRequestedAt?: string;
+  localState?: "active" | "stopping" | "stopped";
+  remoteCancellation?:
+    | "not_applicable"
+    | "not_required"
+    | "not_requested"
+    | "requested"
+    | "confirmed"
+    | "unsupported"
+    | "unknown";
+  modelCalls?: {
+    externalTaskId?: string | null;
+    state:
+      | "submitting"
+      | "running"
+      | "succeeded"
+      | "failed"
+      | "cancelled"
+      | "unknown";
+  }[];
+}
+
+/** Stopping the local execution does not confirm a provider cancellation. */
+export function toolTaskMessage(task: ToolTask): string | undefined {
+  if (task.cancelRequested && task.localState !== "stopped")
+    return "停止处理中，等待当前操作安全收尾。";
+  if (task.cancelRequested) {
+    const remote = {
+      not_applicable: "尚未提交模型调用。",
+      not_required: "模型调用已结束；已有结果与执行记录已保留。",
+      not_requested: "尚未向远端发送取消请求。",
+      requested: "取消请求已发送，等待远端确认。",
+      confirmed: "远端已确认取消。",
+      unsupported: "远端不支持取消，可能继续执行。",
+      unknown: "远端取消结果未知，请核对原任务；不要直接重复生成。",
+    };
+    return `已停止本地处理。${remote[task.remoteCancellation ?? "unknown"]}`;
+  }
+  if (task.status === "cancelled")
+    return "历史记录标记为取消，未提供远端取消确认依据。";
+  if (task.status === "interrupted" && task.modelCalls?.length) {
+    const states = new Set(task.modelCalls.map((call) => call.state));
+    const detail =
+      states.has("unknown") || states.has("submitting")
+        ? "部分模型调用结果未知，请核对原任务。"
+        : states.has("running")
+          ? "远端任务仍在运行。"
+          : "模型调用已结束，执行记录及已登记结果已保留。";
+    return `执行已中断。${detail}不会自动重新生成。`;
+  }
+  return task.error ?? undefined;
 }
 
 export interface ToolCanvasOrigin {
@@ -347,7 +399,7 @@ export async function waitForToolTask(
       );
     if (!["queued", "running"].includes(task.status))
       throw new Error(
-        task.error ??
+        toolTaskMessage(task) ??
           (task.status === "cancelled" ? "任务已取消。" : "工具任务未完成。"),
       );
     await readDelay(2000, signal);
@@ -431,7 +483,7 @@ export async function toolHistoryJobs(
         durationKey: `tool:${task.tool}`,
         status: task.status === "queued" ? "running" : task.status,
         message:
-          task.error ??
+          toolTaskMessage(task) ??
           (unavailable
             ? transientReadFailure(outputFailure)
               ? "结果读取暂时失败，将自动重试。"
@@ -464,6 +516,17 @@ export async function toolHistoryJobs(
             }
           : undefined,
         toolTask: {
+          canCancel:
+            !task.cancelRequested &&
+            (["queued", "running"].includes(task.status) ||
+              !!task.modelCalls?.some(
+                (call) =>
+                  call.externalTaskId &&
+                  ["running", "unknown"].includes(call.state),
+              )),
+          cancelRequested: task.cancelRequested,
+          localState: task.localState,
+          remoteCancellation: task.remoteCancellation,
           placement: task.placement ?? "pending",
           sourceFingerprint: task.sourceFingerprint,
           outputIds: task.outputs.map((output) => output.canvasItemId),
@@ -481,6 +544,10 @@ export async function toolHistoryJobs(
         old.status === job.status &&
         old.message === job.message &&
         old.toolTask.placement === job.toolTask.placement &&
+        old.toolTask.canCancel === job.toolTask.canCancel &&
+        old.toolTask.cancelRequested === job.toolTask.cancelRequested &&
+        old.toolTask.localState === job.toolTask.localState &&
+        old.toolTask.remoteCancellation === job.toolTask.remoteCancellation &&
         old.toolTask.sourceFingerprint === job.toolTask.sourceFingerprint &&
         old.toolTask.unavailable === job.toolTask.unavailable &&
         old.toolTask.outputIds.join() === job.toolTask.outputIds.join() &&

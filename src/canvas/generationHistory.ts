@@ -66,6 +66,10 @@ export interface GenerationJob {
   targetTitle?: string;
   /** Execution and placement facts read from the independent tool ledger. */
   toolTask?: {
+    canCancel?: boolean;
+    cancelRequested?: boolean;
+    localState?: "active" | "stopping" | "stopped";
+    remoteCancellation?: string;
     placement: "pending" | "placed" | "unplaced";
     sourceFingerprint?: string;
     outputIds: string[];
@@ -244,7 +248,13 @@ export function reconcileGenerationJobs(
 /** These actions continue or stop existing jobs; they never repeat submission. */
 export function generationTaskActions(job: GenerationJob) {
   if (job.tool)
-    return { recover: false, cancel: !!job.taskId && job.status === "running" };
+    return {
+      recover: false,
+      cancel:
+        !!job.taskId &&
+        (job.toolTask?.canCancel ?? job.status === "running") &&
+        !job.toolTask?.cancelRequested,
+    };
   const remote =
     !!job.taskId &&
     ["interrupted", "failed"].includes(job.status) &&

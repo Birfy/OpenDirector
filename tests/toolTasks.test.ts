@@ -1,8 +1,68 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { creationClient } from "../src/backend/creationClient.ts";
-import { submitToolTask, waitForToolTask } from "../src/backend/tools.ts";
+import {
+  submitToolTask,
+  waitForToolTask,
+  toolTaskMessage,
+  type ToolTask,
+} from "../src/backend/tools.ts";
 import type { ProjectSnapshot } from "../src/contracts/generated.ts";
+
+test("tool cancellation messages distinguish stopping, remote acknowledgement and historical uncertainty", () => {
+  const task: ToolTask = {
+    id: "task",
+    tool: "outpaint",
+    status: "cancelled",
+    outputs: [],
+    phase: null,
+    error: "已取消。",
+  };
+  assert.match(toolTaskMessage(task)!, /历史记录.*未提供.*确认/);
+  const requested = {
+    ...task,
+    cancelRequested: true,
+    localState: "stopping" as const,
+  };
+  assert.match(toolTaskMessage(requested)!, /停止处理中/);
+  for (const [state, expected] of [
+    ["requested", "等待远端确认"],
+    ["confirmed", "远端已确认取消"],
+    ["unknown", "远端取消结果未知"],
+    ["unsupported", "远端不支持取消"],
+    ["not_applicable", "尚未提交模型调用"],
+    ["not_required", "已有结果与执行记录已保留"],
+    ["not_requested", "尚未向远端发送取消请求"],
+  ] as const)
+    assert.ok(
+      toolTaskMessage({
+        ...requested,
+        localState: "stopped",
+        remoteCancellation: state,
+      })!.includes(expected),
+    );
+});
+
+test("interrupted tool jobs report the original remote execution without suggesting resubmission", () => {
+  const task: ToolTask = {
+    id: "task",
+    tool: "outpaint",
+    status: "interrupted",
+    outputs: [],
+    phase: null,
+    error: null,
+    modelCalls: [{ state: "running" }],
+  };
+  assert.match(toolTaskMessage(task)!, /远端任务仍在运行/);
+  assert.match(
+    toolTaskMessage({ ...task, modelCalls: [{ state: "unknown" }] })!,
+    /结果未知.*核对原任务/,
+  );
+  assert.match(
+    toolTaskMessage({ ...task, modelCalls: [{ state: "succeeded" }] })!,
+    /已登记结果已保留/,
+  );
+});
 
 test("tool submission forwards the selected model with its saved source and editor versions", async () => {
   const fetch = globalThis.fetch;
