@@ -224,6 +224,8 @@ export interface CanvasDocument {
   hiddenNodes?: CanvasNode[];
   edges: CanvasEdge[];
   viewport: Viewport;
+  /** False when the server has no saved view for this client yet. */
+  viewPersisted?: boolean;
   settings: GenerationSettings;
 }
 

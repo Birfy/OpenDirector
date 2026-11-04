@@ -116,9 +116,6 @@ try {
   await workspace.focus();
   await page.keyboard.press("Control+z");
   release();
-  await count(2);
-  await until(() => undo.isEnabled());
-  await undo.click();
   await count(1);
   await until(() => redo.isEnabled());
   await redo.click();

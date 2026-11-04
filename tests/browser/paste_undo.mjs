@@ -45,7 +45,30 @@ try {
   assert.equal(await nodes.first().getAttribute("data-id"), source);
   const snapshot = await (await fetch(base + path, { headers })).json();
   assert.deepEqual(snapshot.canvasItems.filter(item => item.visible).map(item => item.id), [source]);
-  console.log("Two paste actions undo independently and preserve the source.");
+
+  await page.keyboard.press("Control+y");
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
+  let release, started;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const held = new Promise((resolve) => { started = resolve; });
+  await page.route("**/commands", async (route) => {
+    if (route.request().postDataJSON()?.type === "history.undo") {
+      started();
+      await gate;
+    }
+    await route.continue();
+  });
+  await page.keyboard.press("Control+z");
+  await held;
+  const redone = page.waitForResponse((response) =>
+    response.url().endsWith("/commands") &&
+    response.request().postDataJSON()?.type === "history.redo",
+  );
+  await page.keyboard.press("Control+y");
+  release();
+  assert.equal((await (await redone).json()).status, "applied");
+  await page.waitForFunction(() => document.querySelectorAll(".react-flow__node").length === 2);
+  console.log("Paste actions undo independently and rapid undo/redo keeps its order.");
 } finally {
   await browser.close();
 }

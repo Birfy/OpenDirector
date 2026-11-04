@@ -520,7 +520,7 @@ function Workspace() {
     createHistory(createDocument()),
   );
   const historyRef = useRef(history);
-  const historyReplayPending = useRef(false);
+  const historyReplayQueue = useRef<boolean[] | null>(null);
   const [historyReplaying, setHistoryReplaying] = useState(false);
   historyRef.current = history;
   const doc = history.present;
@@ -1273,18 +1273,25 @@ function Workspace() {
   };
 
   const replayHistory = (forward = false) => {
-    if (historyReplayPending.current) return;
-    historyReplayPending.current = true;
+    if (historyReplayQueue.current) {
+      historyReplayQueue.current.push(forward);
+      return;
+    }
+    const requests = [forward];
+    historyReplayQueue.current = requests;
     setHistoryReplaying(true);
     const projectId = historyRef.current.present.id;
     void (async () => {
       if (!(await persist(historyRef.current.present, false))) return;
-      if (historyRef.current.present.id !== projectId) return;
-      await creationClient(projectId).undo(forward);
+      for (const redo of requests) {
+        if (switchPending.current || historyRef.current.present.id !== projectId)
+          return;
+        await creationClient(projectId).undo(redo);
+      }
     })()
       .catch((error) => notify(errorMessage(error)))
       .finally(() => {
-        historyReplayPending.current = false;
+        historyReplayQueue.current = null;
         setHistoryReplaying(false);
       });
   };
@@ -1321,9 +1328,12 @@ function Workspace() {
       setZoomMenu(false);
       setHand(false);
       window.history.replaceState({}, "", `/${window.location.search}`);
+      const fitAll =
+        fit ||
+        (next.viewPersisted === false && next.nodes.length > 0);
       requestAnimationFrame(() => {
         void flow.setViewport(next.viewport);
-        if (fit)
+        if (fitAll)
           requestAnimationFrame(
             () =>
               void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }),

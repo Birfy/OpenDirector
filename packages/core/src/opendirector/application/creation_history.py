@@ -166,18 +166,19 @@ class CreationHistory:
     def execute(self, command, *, session=None, source='ui'):
         if command.type == 'asset.delete':
             return self._delete(command, session=session, source=source)
-        def apply(before):
+        def apply(before, records):
             if command.type == 'canvas.applyVersion':
                 from opendirector.application.creation_node_versions import apply_node_version
                 return apply_node_version(self, before, command)
             if command.type == 'generationSpec.restore':
                 return self._restore(before, command)
-            states = self.states(command.projectId)
+            states = self._states(records)
             expected = 'applied' if command.type == 'history.undo' else 'undone'
             target_id = command.payload.targetCommandId
             if states.get(target_id) != expected:
                 raise ContractError('revision_conflict', '该操作不能撤销或重做，请刷新历史。', target_id)
-            target, previous = self.projects.history_pair(command.projectId, target_id)
+            target = next((record for record in records if record.command.commandId == target_id), None)
+            previous = next((record for record in records if target and record.command.commandId == target.previousHead), None)
             prior = previous.snapshot if previous else None
             if target is None or prior is None or target.command.type not in UNDOABLE:
                 raise ContractError('role_restricted', '该操作不属于可撤销编辑。', target_id)
@@ -235,7 +236,7 @@ class CreationHistory:
                             raise ContractError('revision_conflict', '相关字段已被后续编辑修改，未覆盖新内容。', UUID(key))
                         put(actual, path, restore)
             return self._revisions(before, data)
-        return self.projects.commit(command, apply, session=session, source=source)
+        return self.projects.commit(command, apply, session=session, source=source, with_history=True)
 
     def version_counts(self, project_id):
         records = self.projects.history(project_id)

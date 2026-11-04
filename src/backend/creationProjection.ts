@@ -407,6 +407,7 @@ export class CreationProjection {
     };
     const view = await this.client.view();
     document.viewport = view.viewport;
+    document.viewPersisted = this.client.hasPersistedView();
     const visible = visibleItems(snapshot);
     document.nodes = await Promise.all(
       snapshot.canvasItems.map(async (item) => {

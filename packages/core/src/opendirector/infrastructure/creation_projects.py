@@ -514,17 +514,7 @@ class CreationProjects:
                 targetCommandId=getattr(r.command.payload, 'targetCommandId', None),
             ) for r in records if r.event is not None)
 
-    def history_pair(self, project_id, command_id):
-        """Detached target and predecessor for a field-scoped history replay."""
-        with self.local.transaction() as db:
-            self._recover()
-            records = self._load(db, project_id)[2]
-            target = next((r for r in records if r.command.commandId == command_id), None)
-            prior = next((r for r in records if target and r.command.commandId == target.previousHead), None)
-        return (target.model_copy(deep=True) if target else None,
-                prior.model_copy(deep=True) if prior else None)
-
-    def view(self, project_id, client_id, value=None, *, session=None):
+    def view(self, project_id, client_id, value=None, *, session=None, missing_ok=False):
         with self.local.transaction() as db:
             self._recover()
             path, _ = self._find(db, project_id)
@@ -538,7 +528,9 @@ class CreationProjects:
                 folder.mkdir(exist_ok=True)
                 durable_json(file, value.model_dump(mode='json'))
                 return value
-            return ViewState.model_validate(read_json(file)) if file.exists() else ViewState(projectId=project_id, clientId=client_id)
+            if file.exists():
+                return ViewState.model_validate(read_json(file))
+            return None if missing_ok else ViewState(projectId=project_id, clientId=client_id)
 
     def open(self, project_id, session):
         with self.local.transaction() as db:
@@ -667,7 +659,9 @@ class CreationProjects:
         sync_directory(self.root)
         return receipt
 
-    def commit(self, command: Command, apply: Callable[[ProjectSnapshot], ProjectSnapshot], *, session=None, source='ui', files=(), deletes=()):
+    def commit(self, command: Command,
+               apply: Callable[[ProjectSnapshot], ProjectSnapshot] | Callable[[ProjectSnapshot, tuple[CommitRecord, ...]], ProjectSnapshot], *,
+               session=None, source='ui', files=(), deletes=(), with_history=False):
         if source not in {'ui', 'agent', 'background', 'external'}:
             raise ProjectError('无效的命令来源。')
         with self.local.transaction() as db:
@@ -690,7 +684,8 @@ class CreationProjects:
                 validate_command(command, before)
                 # Revalidate the whole graph, even if an internal caller used model_copy.
                 draft = ProjectSnapshot.model_validate(before.model_dump(mode='json'))
-                snapshot = ProjectSnapshot.model_validate(apply(draft).model_dump(mode='json'))
+                edited = apply(draft, tuple(records)) if with_history else apply(draft)
+                snapshot = ProjectSnapshot.model_validate(edited.model_dump(mode='json'))
                 if snapshot.project.id != before.project.id or snapshot.eventCursor != before.eventCursor:
                     raise ContractError('invalid_input', 'Services cannot replace project identity or event cursors')
                 if snapshot.project.name != before.project.name and command.type != 'project.rename':
@@ -710,7 +705,7 @@ class CreationProjects:
             to_name = snapshot.project.name if command.type == 'project.rename' and changed else path.name
             return self._publish(CommitIntent(fromName=path.name, toName=to_name,
                                 beforeFingerprint=digest(before), record=record, files=files if changed and issue is None else (),
-                                deletes=deletes if changed and issue is None else ()))
+                                deletes=deletes if changed and issue is None else ()), validated_history=True)
 
     @staticmethod
     def _make_record(command, head, snapshot, changed, source, issue=None):
@@ -731,7 +726,7 @@ class CreationProjects:
         # paths short enough for the longer application name.
         return child(self.root, f'.opendirector-creation-{intent.record.command.projectId.hex}-{intent.record.command.commandId.hex}')
 
-    def _publish(self, intent):
+    def _publish(self, intent, *, validated_history=False):
         self.intents.mkdir(exist_ok=True)
         sync_directory(self.state_dir)
         temporary = self._temporary(intent)
@@ -742,7 +737,7 @@ class CreationProjects:
             raise ProjectError('工程已有待恢复的提交。', 409, code='storage_unavailable')
         durable_json(journal, intent.model_dump(mode='json'))
         self._checkpoint('journaled')
-        self._finish(intent)
+        self._finish(intent, validated_history=validated_history)
         return intent.record.receipt
 
     def _location(self, intent):
@@ -779,7 +774,7 @@ class CreationProjects:
             raise ProjectError('无法唯一定位待提交工程，原文件已保留。', 409, code='storage_unavailable')
         return locations[0]
 
-    def _finish(self, intent):
+    def _finish(self, intent, *, validated_history=False):
         self.local._check_root()
         path = self._location(intent)
         record = intent.record
@@ -787,8 +782,13 @@ class CreationProjects:
         if manifest_path.exists():
             manifest = self._manifest(path)
             if manifest.head == record.previousHead:
-                current = self._history(path, manifest)[0].snapshot
-                if digest(current) != intent.beforeFingerprint:
+                # Normal commits already verified ancestry under this lock.
+                # Recovery still checks the full chain before publishing.
+                previous = (self._record(path, manifest.head) if validated_history
+                            else self._history(path, manifest)[0])
+                current = previous.snapshot
+                if (previous.command.commandId != manifest.head or current.project.id != manifest.id
+                        or current.project.name != manifest.name or digest(current) != intent.beforeFingerprint):
                     raise ProjectError('工程在提交期间被外部修改，已阻止覆盖。', 409, code='storage_unavailable')
             elif manifest.name != record.snapshot.project.name:
                 raise ProjectError('已发布清单被外部修改，已阻止覆盖。', 409, code='storage_unavailable')

@@ -159,6 +159,7 @@ def test_views_queries_and_revision_scoped_history_do_not_replace_business_state
     cursor = projection['snapshot']['eventCursor']
     view_id = str(uuid4())
     view = dict(projectId=created['projectId'], clientId=view_id, viewport=dict(x=50, y=75, zoom=1.5), selectedItemIds=[item_id])
+    assert client.get(path + '/views/' + view_id).status_code == 204
     assert client.put(path + '/views/' + view_id, json=view).status_code == 200
     assert client.get(path + '/views/' + view_id).json()['viewport'] == view['viewport']
     assert client.get(path).json()['eventCursor'] == cursor

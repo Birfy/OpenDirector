@@ -174,7 +174,8 @@ def creation_routes(projects: CreationProjects, generation=None):
 
     @router.get('/projects/{project_id}/views/{client_id}', response_model=ViewState)
     def read_view(project_id: UUID, client_id: UUID):
-        return projects.view(project_id, client_id)
+        view = projects.view(project_id, client_id, missing_ok=True)
+        return Response(status_code=204) if view is None else view
 
     @router.put('/projects/{project_id}/views/{client_id}', response_model=ViewState)
     def save_view(project_id: UUID, client_id: UUID, value: ViewState, x_opendirector_session: UUID = Header()):

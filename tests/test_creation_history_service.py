@@ -58,7 +58,7 @@ def test_history_index_preserves_already_accepted_replays_and_background_changes
     assert states[first] == 'applied'
 
 
-def test_history_toolbar_and_undo_do_not_copy_the_full_commit_chain(project, monkeypatch):
+def test_history_toolbar_avoids_deep_copies_and_replay_reads_history_once(project, monkeypatch):
     from opendirector.infrastructure.creation_projects import CommitRecord
     store, pid, session = project
     item, _ = media(project)
@@ -75,9 +75,21 @@ def test_history_toolbar_and_undo_do_not_copy_the_full_commit_chain(project, mon
     history = CreationHistory(store)
     assert history.operations(pid)[0]['commandId'] == latest.commandId
     assert copied == []
+    scans = []
+    original_history = store._history
+    def read_history(path, manifest):
+        scans.append(manifest.head)
+        return original_history(path, manifest)
+    monkeypatch.setattr(store, '_history', read_history)
     assert send(store, pid, 'history.undo', session=session, versions=[ver('canvas_item', item)],
         targetCommandId=latest.commandId).status == 'applied'
-    assert len(copied) <= 2
+    assert len(scans) == 1
+    item = store.snapshot(pid).canvasItems[0]
+    scans.clear()
+    assert send(store, pid, 'history.redo', session=session, versions=[ver('canvas_item', item)],
+        targetCommandId=latest.commandId).status == 'applied'
+    assert len(scans) == 1
+    assert copied == []
 
 
 @pytest.mark.parametrize('verify_bytes', [False, True])

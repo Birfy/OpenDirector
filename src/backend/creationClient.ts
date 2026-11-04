@@ -80,6 +80,7 @@ export class CreationClient {
   private submissions: Promise<unknown> = Promise.resolve();
   private deliveries = new Map<string, Record<string, unknown>>();
   private viewState: ViewState | undefined;
+  private viewPersisted = false;
   readonly id: string;
   constructor(id: string) {
     this.id = id;
@@ -117,6 +118,7 @@ export class CreationClient {
   }
   async open() {
     this.viewState = undefined;
+    this.viewPersisted = false;
     this.historyRead = undefined;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -577,7 +579,11 @@ export class CreationClient {
     // Resolve the target and versions inside the same queue as writes. Two
     // rapid undo gestures must not both choose the same pre-write history.
     return this.enqueue(async () => {
-      await this.refresh();
+      // Replay only needs object versions and the cursor. The full canvas
+      // projection also checks media and model readiness for every node.
+      const latest = await storageRequest<ProjectSnapshot>(creationPath(this.id));
+      if (!this.snapshot || latest.eventCursor > this.snapshot.eventCursor)
+        this.install(latest);
       const entries = await this.history();
       const entry = entries.find(
         (item) => item.state === (redo ? "undone" : "applied"),
@@ -601,10 +607,26 @@ export class CreationClient {
       )();
     });
   }
+  hasPersistedView() {
+    return this.viewPersisted;
+  }
   async view(value?: Partial<ViewState>) {
     const path = `${creationPath(this.id)}/views/${viewClientId}`;
-    if (!this.viewState) this.viewState = await storageRequest<ViewState>(path);
-    if (value)
+    if (!this.viewState) {
+      // A 204 means this client has never saved a viewport for this project.
+      const stored = await storageRequest<ViewState | undefined>(path);
+      this.viewPersisted = stored !== undefined;
+      this.viewState = stored ?? {
+        projectId: this.id,
+        clientId: viewClientId,
+        viewport: { x: 0, y: 0, zoom: 1 },
+        selectedItemIds: [],
+        activeEditorId: null,
+        playheads: [],
+        generationCounts: {},
+      };
+    }
+    if (value) {
       this.viewState = await storageRequest<ViewState>(
         path,
         json("PUT", {
@@ -614,6 +636,8 @@ export class CreationClient {
           clientId: viewClientId,
         }),
       );
+      this.viewPersisted = true;
+    }
     return this.viewState;
   }
   close() {
