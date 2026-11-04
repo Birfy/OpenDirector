@@ -9,6 +9,7 @@ import "./assistant-panel.css";
 import "./assistant-experience.css";
 import { AttachmentStrip, AttachmentHover } from "./AssistantMedia";
 import { AssistantReply } from "./AssistantReply";
+import { AssistantConversations } from "./AssistantConversations";
 import { AgentPicker } from "./AgentPicker";
 import { ChoicePicker, ModelPicker } from "./AssistantPickers";
 import { SkillPicker } from "./SkillPicker";
@@ -142,6 +143,21 @@ export function AssistantPanel({
     (chat.sending && !chat.started);
   const referenceDisabled =
     !chat.loaded || chat.adding || checkingReferences || chat.sending;
+  const sessionDisabledReason = chat.changing ? "正在切换会话…"
+    : !chat.loaded ? "请等待对话加载完成"
+    : chat.sending ? "请先停止或等待当前回复结束，再切换会话"
+    : chat.adding || checkingReferences ? "正在添加参考，请稍候再切换会话" : "";
+  const changeConversation = async (id?: string, create = false) => {
+    if (sessionDisabledReason) return false;
+    confirming.current?.abort();
+    pendingReferences.cancel();
+    const changed = await chat.changeConversation(id, create);
+    if (changed) {
+      setSlashQuery(null);
+      nearBottom.current = true;
+    }
+    return changed;
+  };
   useEffect(() => {
     if (!open || chat.sending || !value.draftContent) return;
     const content = currentReferences(
@@ -154,7 +170,7 @@ export function AssistantPanel({
 
   useEffect(() => {
     if (open && chat.loaded) editor.current?.focus();
-  }, [open, chat.loaded]);
+  }, [open, chat.loaded, value.conversationId]);
   const displayedAssets = [
     ...new Map(
       [
@@ -190,6 +206,10 @@ export function AssistantPanel({
       owned.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [documentId, previewKey]);
+  useEffect(() => {
+    nearBottom.current = true;
+    if (log.current) log.current.scrollTop = log.current.scrollHeight;
+  }, [value.conversationId]);
   useEffect(() => {
     if (nearBottom.current && log.current)
       log.current.scrollTop = log.current.scrollHeight;
@@ -333,22 +353,20 @@ export function AssistantPanel({
       }}
     >
       {open && mediaPreview && hoveredAsset && <AttachmentHover key={hoveredAsset.id} projectId={documentId} asset={resolveAsset(hoveredAsset)} anchor={mediaPreview.anchor} />}
-      <header className="cw-assistant-header">
-        <h2 title={documentTitle}>
-          {value.messages.length ? "AI 对话" : "新会话"}
-        </h2>
-        <button
-          type="button"
-          className="cw-assistant-collapse"
-          aria-label="收起 AI 对话"
-          title="收起 AI 对话"
-          aria-controls="canvas-assistant"
-          aria-expanded="true"
-          onClick={onClose}
-        >
-          <CanvasIcon name="collapse" size={18} />
-        </button>
-      </header>
+      <AssistantConversations
+        key={`${documentId}:${open}`}
+        activeId={value.conversationId}
+        hasMessages={!!value.messages.length}
+        projectTitle={documentTitle}
+        items={chat.threads}
+        loading={chat.threadsLoading}
+        error={chat.threadsError}
+        disabledReason={sessionDisabledReason}
+        changing={chat.changing}
+        onRefresh={() => void chat.refreshConversations(chat.loaded && !chat.changing)}
+        onChange={changeConversation}
+        onClose={onClose}
+      />
       <div
         className="cw-assistant-log"
         role="log"
@@ -525,7 +543,7 @@ export function AssistantPanel({
             </div>
           )}
           <ChatReferenceEditor
-            key={documentId}
+            key={`${documentId}:${value.conversationId}`}
             ref={editor}
             onSlashChange={setSlashQuery}
             skillsEnabled={chat.runtimes.find((item) => item.id === value.runtime)?.supportsSkills !== false}
@@ -712,7 +730,7 @@ export function AssistantPanel({
         </form>
         <p className="cw-assistant-footnote">
           {!chat.loaded ? (
-            chat.error ? "对话加载失败" : "正在加载对话…"
+            chat.changing ? "正在切换会话…" : chat.error ? "对话加载失败" : "正在加载对话…"
           ) : chat.runtimes.find((item) => item.id === (value.runtime ?? "default"))?.status === "checking" ? (
             "正在检查当前引擎…"
           ) : chat.adding ? (

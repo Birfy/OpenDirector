@@ -111,8 +111,10 @@ class Conversations:
             return {'activeId': current['conversationId'], 'items': [
                 {'id': item['conversationId'],
                  'title': next((message['text'].strip().split('\n')[0][:48] or '素材对话'
-                                for message in item['messages'] if message['role'] == 'user'), '新对话'),
-                 'messageCount': len(item['messages'])}
+                                for message in item['messages'] if message['role'] == 'user'),
+                               (item.get('draft') or '').strip().split('\n')[0][:48] or '新会话'),
+                 'messageCount': len(item['messages']),
+                 'hasDraft': bool((item.get('draft') or '').strip() or item.get('assets') or item.get('skills'))}
                 for item in [current, *current.get('archivedConversations', [])]]}
 
     def activate(self, project_id: UUID, conversation_id: UUID, session: str, *, create=False) -> dict:

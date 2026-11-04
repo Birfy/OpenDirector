@@ -47,6 +47,7 @@ export interface ConversationSummary {
   id: string;
   title: string;
   messageCount: number;
+  hasDraft: boolean;
 }
 export interface ChatPlanEntry {
   content: string;
@@ -119,9 +120,10 @@ export interface ChatRequest {
 }
 
 const path = (id: string) => `/creation/projects/${id}/assistant`;
-export const conversations = (id: string) =>
+export const conversations = (id: string, signal?: AbortSignal) =>
   request<{ activeId: string; items: ConversationSummary[] }>(
     path(id) + "/conversations",
+    { signal },
   );
 export const activateConversation = (
   projectId: string,

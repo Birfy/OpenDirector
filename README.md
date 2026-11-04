@@ -267,6 +267,8 @@ Open **Generation history (生成历史)** at the top right to view task progres
 
 Click **Chat with AI (与 AI 对话)** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
+Use **New conversation (新建)** at the top of the panel to start a separate chat. **Conversation history (历史会话)** lets you search and switch between this canvas's conversations. Switching saves your draft and restores the selected conversation's messages, reference attachments, and model choices; the active conversation also survives a page reload. Wait for uploads or replies to finish, or stop the reply, before switching.
+
 - Press `Enter` to send, or `Shift+Enter` for a new line.
 - You can stop the response while it is being generated.
 - Click the collapse button at the top right to hide the chat panel. Drag its left edge to resize it.

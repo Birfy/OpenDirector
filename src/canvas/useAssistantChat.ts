@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { rememberAgentSelection, restoreAgentSelection } from "./agentPreferences";
 import { errorMessage } from "../backend/api";
 import {
@@ -49,6 +49,14 @@ const empty = (): Conversation => ({
   modelSelections: {},
 });
 
+function restoreConversation(projectId: string, saved: Conversation): Conversation {
+  return {
+    ...restoreAgentSelection(projectId, saved),
+    messages: saved.messages.map(message => message.status === "streaming"
+      ? { ...message, status: "interrupted" } : message),
+  };
+}
+
 export function useAssistantChat(
   projectId: string,
   catalog: BackendModels,
@@ -65,15 +73,18 @@ export function useAssistantChat(
   const [adding, setAdding] = useState(false);
   const [thinkingNow, setThinkingNow] = useState(false);
   const [threads, setThreads] = useState<ConversationSummary[]>([]);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadsError, setThreadsError] = useState("");
+  const [changing, setChanging] = useState(false);
   const switching = useRef(false);
   const [error, setError] = useState("");
   const alive = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const uploadController = useRef<AbortController | null>(null);
+  const listController = useRef<AbortController | null>(null);
   const submitting = useRef(false);
   const uploading = useRef(false);
   const turnId = useRef<string | null>(null);
-  const retryId = useRef<string | null>(null);
   const current = useRef(value);
   current.current = value;
   // Retain metadata for editor undo after a reference is removed from the draft.
@@ -105,6 +116,31 @@ export function useAssistantChat(
   const onEnd = useRef(onTurnEnd);
   onEnd.current = onTurnEnd;
 
+  const refreshConversations = useCallback(async (saveDraft = false) => {
+    listController.current?.abort();
+    const abort = new AbortController();
+    listController.current = abort;
+    setThreadsLoading(true);
+    setThreadsError("");
+    try {
+      if (saveDraft) {
+        rememberChat(projectId, current.current);
+        await flushChatDraft(projectId);
+        abort.signal.throwIfAborted();
+      }
+      const list = await conversations(projectId, abort.signal);
+      if (!abort.signal.aborted && alive.current) setThreads(list.items);
+    } catch (reason) {
+      if (!abort.signal.aborted && alive.current)
+        setThreadsError(`读取历史会话失败：${errorMessage(reason)}`);
+    } finally {
+      if (listController.current === abort && alive.current) {
+        listController.current = null;
+        setThreadsLoading(false);
+      }
+    }
+  }, [projectId]);
+
   useEffect(() => {
     alive.current = true;
     let cancelled = false;
@@ -121,19 +157,11 @@ export function useAssistantChat(
       .finally(() => {
         if (!cancelled) setRuntimesLoading(false);
       });
-    void Promise.all([conversation(projectId), conversations(projectId)])
-      .then(([saved, list]) => {
+    void refreshConversations();
+    void conversation(projectId)
+      .then((saved) => {
         if (cancelled) return;
-        setThreads(list.items);
-        const restored = restoreAgentSelection(projectId, saved);
-        setValue({
-          ...restored,
-          messages: saved.messages.map((message) =>
-            message.status === "streaming"
-              ? { ...message, status: "interrupted" }
-              : message,
-          ),
-        });
+        setValue(restoreConversation(projectId, saved));
         setLoaded(true);
       })
       .catch((reason) => {
@@ -144,8 +172,9 @@ export function useAssistantChat(
       alive.current = false;
       controller.current?.abort();
       uploadController.current?.abort();
+      listController.current?.abort();
     };
-  }, [projectId, loadAttempt]);
+  }, [projectId, loadAttempt, refreshConversations]);
 
   useEffect(() => {
     if (loaded && !runtimesLoading && runtimes.length && value.runtime &&
@@ -252,6 +281,7 @@ export function useAssistantChat(
   ) => {
     if (
       !loaded ||
+      switching.current ||
       uploading.current ||
       submitting.current ||
       externalSignal?.aborted
@@ -340,6 +370,7 @@ export function useAssistantChat(
   const send = async () => {
     if (
       !loaded ||
+      switching.current ||
       submitting.current ||
       uploading.current ||
       !canSend ||
@@ -441,34 +472,42 @@ export function useAssistantChat(
         setStopping(false);
         setThinkingNow(false);
         onEnd.current();
+        void refreshConversations();
       }
     }
   };
   const changeConversation = async (
     id: string = crypto.randomUUID(),
     create = false,
-  ) => {
+  ): Promise<boolean> => {
     if (!loaded || submitting.current || uploading.current || switching.current)
-      return;
+      return false;
+    if (!create && current.current.conversationId === id) return true;
     switching.current = true;
+    setChanging(true);
     setLoaded(false);
     setError("");
     try {
       rememberChat(projectId, current.current);
       await flushChatDraft(projectId);
-      const saved = restoreAgentSelection(projectId, await activateConversation(projectId, id, create));
-      if (!alive.current) return;
+      const saved = restoreConversation(projectId, await activateConversation(projectId, id, create));
+      if (!alive.current) return false;
+      knownAssets.current.clear();
       current.current = saved;
       rememberChat(projectId, saved);
       setValue(saved);
-      retryId.current = null;
       setThinkingNow(false);
-      setThreads((await conversations(projectId)).items);
+      void refreshConversations();
+      return true;
     } catch (reason) {
       if (alive.current) setError(errorMessage(reason));
+      return false;
     } finally {
       switching.current = false;
-      if (alive.current) setLoaded(true);
+      if (alive.current) {
+        setChanging(false);
+        setLoaded(true);
+      }
     }
   };
   const stop = async () => {
@@ -520,6 +559,10 @@ export function useAssistantChat(
     stopping,
     thinkingNow,
     threads,
+    threadsLoading,
+    threadsError,
+    refreshConversations,
+    changing,
     changeConversation,
     error,
     setError,
