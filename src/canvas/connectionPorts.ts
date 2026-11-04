@@ -21,7 +21,12 @@ export function referencePortMetrics(zoom: number) {
 }
 export const REFERENCE_PORT_MAX_DISTANCE = 12;
 export const REFERENCE_PORT_MIDPOINT_RADIUS = 36;
-const sides: readonly PortSide[] = ["top", "right", "bottom", "left"];
+export const REFERENCE_PORT_SIDES: readonly PortSide[] = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+];
 const normal = (side: PortSide) => ({
   x: side === "left" ? -1 : side === "right" ? 1 : 0,
   y: side === "top" ? -1 : side === "bottom" ? 1 : 0,
@@ -89,7 +94,7 @@ export function floatingReferencePort(
       start + Math.min(size / 2, inset),
       Math.min(start + size - Math.min(size / 2, inset), value),
     );
-  const candidates = sides
+  const candidates = REFERENCE_PORT_SIDES
     .filter((side) => {
       const midpoint = portPoint(bounds, side);
       const direction = normal(side);

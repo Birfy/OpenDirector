@@ -124,6 +124,7 @@ export function NodeFrame({
             type="button"
             className="cw-node-version-button nodrag nopan nowheel"
             aria-label={`历史版本，共 ${actions?.versionCount?.(id)} 个`}
+            aria-expanded={actions?.versionsOpen?.(id) ?? false}
             title="历史版本（含当前版本）"
             onPointerDown={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}

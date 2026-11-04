@@ -865,6 +865,7 @@
   min-height: 32px;
 }
 .cw-model-select {
+  --model-select-inset: 4px;
   position: relative;
   display: flex;
   align-items: center;
@@ -872,7 +873,6 @@
   min-width: 0;
   max-width: 100%;
   height: 28px;
-  padding: 0 4px;
   color: #c7c7d2;
   border-radius: 6px;
 }
@@ -885,14 +885,17 @@
 }
 .cw-composer-options .cw-model-select select {
   appearance: none;
+  align-items: center;
   min-width: 0;
   max-width: 180px;
   outline: none;
   border: 0;
   background: transparent;
   color: #d7d8e1;
-  padding: 4px 16px 4px 0;
+  height: 100%;
+  padding: 0 calc(16px + var(--model-select-inset)) 0 var(--model-select-inset);
   font-size: 12px;
+  line-height: normal;
   text-overflow: ellipsis;
   cursor: pointer;
 }
@@ -957,6 +960,14 @@
 .cw-generation-mode-controls input {
   width: 105px;
 }
+.cw-composer-options .cw-generation-mode-controls select {
+  align-items: center;
+  padding-block: 0;
+  line-height: normal;
+}
+.cw-generation-mode-controls select::picker-icon {
+  color: var(--cw-control-muted, #a3a5b0);
+}
 .cw-generation-mode-controls option {
   background: #292929;
   color: #e4e4e7;
@@ -1006,9 +1017,9 @@
   scrollbar-width: thin;
   font-family: inherit;
   cursor: default;
-  border: 1px solid #44464e;
+  border: 1px solid var(--cw-popover-border, #44464e);
   border-radius: 13px;
-  background: #2b2c32;
+  background: var(--cw-popover-surface, #2b2c32);
   box-shadow: 0 12px 38px #0006;
   color: #e1e2e8;
   padding: 14px;
@@ -1181,7 +1192,7 @@
     gap: 2px;
   }
   .cw-model-select {
-    padding: 0 2px;
+    --model-select-inset: 2px;
   }
   .cw-composer-options .cw-model-select select {
     max-width: 130px;
@@ -1575,8 +1586,9 @@
 .cw-subject-empty-material button:hover {
   color: #eee;
 }
-.cw-node-empty.cw-node-selected {
+.cw-node-empty.cw-node-selected:not(.cw-node-timeline):not(.cw-node-group):not(.cw-node-stack) {
   border-color: #f0f0f2;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 .cw-node:hover:not(.cw-node-selected) {
   border-color: #ffffff38;

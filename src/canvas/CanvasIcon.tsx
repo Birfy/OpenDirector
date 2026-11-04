@@ -351,6 +351,7 @@ const aliases: Record<string, string> = {
 };
 /** Small authored icons shared by the canvas controls and node views. */
 export function CanvasIcon({ name, size = 18, ...props }: CanvasIconProps) {
+  const icon = aliases[name] ?? name;
   return (
     <svg
       width={size}
@@ -362,9 +363,10 @@ export function CanvasIcon({ name, size = 18, ...props }: CanvasIconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      data-dropdown-chevron={icon === "chevronDown" ? "" : undefined}
       {...props}
     >
-      {icons[aliases[name] ?? name] ?? icons.file}
+      {icons[icon] ?? icons.file}
     </svg>
   );
 }

@@ -13,6 +13,7 @@ import {
   referencePortMetrics,
   restingReferencePort,
   REFERENCE_PORT_MIDPOINT_RADIUS,
+  REFERENCE_PORT_SIDES,
   type PortSide,
 } from "./connectionPorts";
 import { absolutePosition } from "./geometry";
@@ -322,31 +323,23 @@ export function useCanvasReferences(options: {
   const owner = options.disabled
     ? undefined
     : options.nodes.find((node) => node.id === (port?.nodeId ?? hoveredSource));
-  // An uploaded material only feeds downstream nodes, so its left edge offers no
-  // extra starting point; generated nodes keep both sides.
-  const sides: PortSide[] =
-    owner?.data.mediaRole === "asset" ? ["right"] : ["left", "right"];
-  if (port && port.side !== "left" && !sides.includes(port.side))
-    sides.push(port.side);
   const ports =
     owner && !options.locked.has(owner.id) && canStartReference(owner)
-      ? sides.map((side) => ({
-          ...(port?.nodeId === owner.id && port.side === side
-            ? port
-            : {
-                nodeId: owner.id,
-                ...restingReferencePort(
-                  {
-                    ...absolutePosition(owner, options.nodes),
-                    width: owner.width,
-                    height: owner.height,
-                  },
-                  side,
-                  options.zoom,
-                ),
-              }),
-          active: port?.nodeId === owner.id && port.side === side,
-        }))
+      ? port
+        ? [{ ...port, active: true }]
+        : REFERENCE_PORT_SIDES.map((side) => ({
+            nodeId: owner.id,
+            ...restingReferencePort(
+              {
+                ...absolutePosition(owner, options.nodes),
+                width: owner.width,
+                height: owner.height,
+              },
+              side,
+              options.zoom,
+            ),
+            active: false,
+          }))
       : [];
   return {
     disabled: options.disabled,

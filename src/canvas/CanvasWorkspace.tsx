@@ -391,6 +391,13 @@ const nodeTypes = {
   external: CanvasNodeView,
 };
 const edgeTypes = { reference: CanvasReferenceEdge };
+const referenceSideLabels: Record<PortSide, string> = {
+  top: "上",
+  right: "右",
+  bottom: "下",
+  left: "左",
+};
+
 const labels: Record<CanvasNodeKind, string> = {
   image: "图片",
   video: "视频",
@@ -3900,6 +3907,7 @@ function Workspace() {
       else if (n) setRename({ id, value: n.data.title });
     },
     versionCount: (id: string) => versionCounts[id] ?? 0,
+    versionsOpen: (id: string) => versionHistory?.itemId === id,
     showVersions: (id: string, anchor: DOMRect) => {
       const preparation = (async () => {
         // Let focused text fields commit their blur before flushing the canvas.
@@ -4552,7 +4560,7 @@ function Workspace() {
                     aria-label={
                       port.active
                         ? "添加下游参考节点"
-                        : `从${port.side === "left" ? "左" : "右"}侧添加下游参考节点`
+                        : `从${referenceSideLabels[port.side]}侧添加下游参考节点`
                     }
                     data-reference-source={port.nodeId}
                     data-side={port.side}
@@ -4817,6 +4825,7 @@ function Workspace() {
           <TooltipButton
             className="cw-zoom-button"
             label="缩放选项"
+            aria-expanded={zoomMenu}
             tooltipDelay={0}
             onClick={() => setZoomMenu(!zoomMenu)}
           >

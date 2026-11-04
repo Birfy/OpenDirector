@@ -12,6 +12,7 @@ export interface CanvasActions {
   changeNameDraft?: (value: string) => void;
   finishNameEdit?: (save: boolean) => void;
   versionCount?: (id: string) => number;
+  versionsOpen?: (id: string) => boolean;
   showVersions?: (id: string, anchor: DOMRect) => void;
   upload: (id: string) => void;
   preview: (id: string) => void;

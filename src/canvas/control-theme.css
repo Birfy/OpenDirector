@@ -7,6 +7,15 @@
   --cw-control-thumb: #f5edff;
   --cw-control-active: #a78bd424;
   --cw-control-highlight: #e0cff5;
+  --cw-popover-surface: #2b2c32;
+  --cw-popover-border: #44464e;
+  --cw-select-surface: var(--cw-popover-surface);
+  --cw-select-text: #e3e1e9;
+  --cw-select-border: var(--cw-popover-border);
+  --cw-select-selected: #35303d;
+  --cw-select-hover: #403849;
+  --cw-select-hover-text: #f5edff;
+  --cw-select-muted: #aa9eb7;
 }
 :root[data-theme="light"] {
   --cw-control-surface: #ffffff;
@@ -34,6 +43,92 @@
   --settings-input: #f8faff;
   --panel-bg: #ffffff;
   --text-primary: #263750;
+  --cw-select-surface: var(--cw-control-surface);
+  --cw-select-text: var(--cw-control-fg);
+  --cw-select-border: var(--cw-control-border);
+  --cw-select-selected: var(--cw-control-active);
+  --cw-select-hover: #d4e5ff;
+  --cw-select-hover-text: var(--cw-control-highlight);
+  --cw-select-muted: var(--cw-control-muted);
+}
+
+:root select :is(option, optgroup) {
+  background-color: var(--cw-select-surface);
+  color: var(--cw-select-text);
+}
+
+button[aria-expanded="true"] [data-dropdown-chevron] {
+  transform: rotate(180deg);
+}
+
+/* Use the browser's styleable picker so the OS selection color does not
+   override the active theme. Keep native controls as the fallback. */
+@supports (appearance: base-select) and selector(select::picker(select)) {
+  :root
+    select:where(:not([multiple], [size]:not([size="1"]))) {
+    /* Model and settings selects already use appearance: none for their arrows. */
+    appearance: base-select !important;
+    align-items: center;
+  }
+
+  :root
+    select:where(:not([multiple], [size]:not([size="1"])))::picker(select) {
+    appearance: base-select;
+    background: var(--cw-select-surface);
+    color: var(--cw-select-text);
+    border: 1px solid var(--cw-select-border);
+    border-radius: 8px;
+    padding: 4px;
+    max-inline-size: calc(100vw - 24px);
+    box-shadow: var(--cw-control-shadow, 0 8px 24px #0006);
+    justify-self: start;
+    min-inline-size: anchor-size(width);
+  }
+
+  :root select::picker-icon {
+    content: "";
+    width: 12px;
+    height: 12px;
+    align-self: center;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  :root select:open::picker-icon,
+  .cw-model-select select:open + [data-dropdown-chevron] {
+    transform: rotate(180deg);
+  }
+
+  .cw-model-select select::picker-icon {
+    display: none;
+  }
+
+  :root .cw-settings-dialog :is(.cw-settings-field, .cw-model-connection) select {
+    background-image: none;
+    padding-inline-end: 10px;
+  }
+
+  :root
+    select:where(:not([multiple], [size]:not([size="1"]))) option {
+    padding: 6px 9px;
+    border-radius: 5px;
+  }
+
+  :root select option:checked:not(:disabled) {
+    background: var(--cw-select-selected);
+    color: var(--cw-select-hover-text);
+  }
+
+  :root
+    select option:is(:hover, :focus-visible):not(:disabled) {
+    background: var(--cw-select-hover);
+    color: var(--cw-select-hover-text);
+  }
+
+  :root select option:disabled,
+  :root select optgroup {
+    color: var(--cw-select-muted);
+  }
 }
 
 /* Surfaces, including dialogs mounted outside .cw-workspace. */

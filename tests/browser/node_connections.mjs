@@ -187,9 +187,10 @@ try {
     await page.waitForTimeout(150);
     const source = page.locator(`.react-flow__node[data-id="${f.source}"]`),
       target = page.locator(`.react-flow__node[data-id="${f.target}"]`);
-    const showPort = async () => {
-      const r = await source.boundingBox();
-      await page.mouse.move(r.x + r.width + 7, r.y + r.height / 2);
+    const showPort = async (side = "right", node = source) => {
+      const r = await node.boundingBox();
+      const x = side === "left" ? r.x - 7 : r.x + r.width + 7;
+      await page.mouse.move(x, r.y + r.height / 2);
       const port = page.getByRole("button", {
         name: "添加下游参考节点",
         exact: true,
@@ -207,14 +208,16 @@ try {
           `.cw-node-reference-port[data-reference-source="${f.source}"]`,
         );
         await nodePorts.first().waitFor();
-        assert.equal(
-          await nodePorts.count(),
-          2,
-          "Node hover should reveal both side ports",
+        assert.deepEqual(
+          await nodePorts.evaluateAll((ports) =>
+            ports.map((port) => port.dataset.side).sort(),
+          ),
+          ["bottom", "left", "right", "top"],
+          "Node hover should reveal all four ports",
         );
         assert.equal(
           await nodePorts.filter({ has: page.locator("svg") }).count(),
-          2,
+          4,
         );
         assert.equal(
           await page
@@ -225,12 +228,23 @@ try {
         const dim = await nodePorts
           .first()
           .evaluate((element) => getComputedStyle(element).color);
+        const zoom = await page.locator(".react-flow__viewport").evaluate(
+          (element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a,
+        );
+        const diameter = Math.min(22 * zoom, 30);
         assert.ok(
-          Math.abs((await nodePorts.first().boundingBox()).width - 22.4) < 0.5,
+          Math.abs((await nodePorts.first().boundingBox()).width - diameter) < 0.5,
         );
         await page.screenshot({
           path: `.opendirector/node-ports-${theme}-dim.png`,
         });
+        for (const side of ["top", "bottom", "left", "right"]) {
+          await source.hover();
+          const resting = nodePorts.and(page.locator(`[data-side="${side}"]`));
+          await resting.hover();
+          await resting.and(page.locator('[data-active="true"]')).waitFor();
+          assert.equal(await nodePorts.count(), 1);
+        }
         const port = await showPort();
         await page.waitForFunction(
           ({ id, color }) => {
@@ -274,7 +288,7 @@ try {
           await page
             .locator('.cw-node-reference-port[data-active="false"]')
             .count(),
-          1,
+          0,
         );
         await page.screenshot({
           path: `.opendirector/node-ports-${theme}-active.png`,
@@ -322,7 +336,9 @@ try {
         kind + " menu " + type,
       );
     await page.keyboard.press("Escape");
-    const port = await showPort(),
+    const port = await showPort(
+        kind === "image" && targetKind === "subject" ? "left" : "right",
+      ),
       pr = await port.boundingBox(),
       tr = await target.boundingBox();
     await page.mouse.move(pr.x + pr.width / 2, pr.y + pr.height / 2);
@@ -341,6 +357,19 @@ try {
         document.querySelectorAll(".react-flow__edge").length === count,
       count,
     );
+    if (kind === "image" && targetKind === "subject") {
+      const inbound = await showPort("left", target);
+      const from = await inbound.boundingBox();
+      const to = await source.boundingBox();
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, {
+        steps: 15,
+      });
+      await page.mouse.up();
+      await page.getByText("素材节点不能接收生成参考，请连接生成节点").waitFor();
+      assert.equal(await page.locator(".react-flow__edge").count(), 1);
+    }
     if (!accepted) await page.locator(".cw-toast").waitFor();
     await page.waitForTimeout(900);
     const response = await page.request.get(
@@ -389,9 +418,9 @@ try {
     JSON.stringify({ passed: true, cases: rows.length, pageErrors: errors }),
   );
 } catch (e) {
-  await page.screenshot({
-    path: "/tmp/opendirector-node-connections-failure.png",
-  });
+  await page
+    .screenshot({ path: ".opendirector/node-connections-failure.png" })
+    .catch(() => {});
   throw e;
 } finally {
   await browser.close();

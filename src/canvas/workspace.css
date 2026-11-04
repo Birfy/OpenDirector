@@ -255,12 +255,13 @@
 }
 .cw-selection-bar select {
   height: 28px;
-  color: #ddd;
-  background: #262628;
-  border: 1px solid #ffffff20;
+  color: var(--cw-control-fg, #ddd);
+  background: var(--cw-control-fill, #262628);
+  border: 1px solid var(--cw-control-border, #ffffff20);
   border-radius: 5px;
   padding: 0 5px;
   font: inherit;
+  line-height: normal;
 }
 @media (prefers-reduced-motion: reduce) {
   .cw-edge-motion {
