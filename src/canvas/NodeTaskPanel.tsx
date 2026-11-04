@@ -15,6 +15,7 @@ import {
   type ToolParameters,
 } from "./toolCatalog";
 import { translateTool, translateToolText } from "./toolText.ts";
+import { displayNodeTitle } from "./nodeTitle.ts";
 import { useI18n } from "../i18n/I18nProvider";
 import "./node-task-panel.css";
 
@@ -101,7 +102,7 @@ export function NodeTaskPanel({
     >
       <header>
         <strong>{spec.title}</strong>
-        <span>{node.data.title}</span>
+        <span>{displayNodeTitle(node.type, node.data.title, locale)}</span>
         <TooltipButton
           label={t("tools.nodeTask.close", { title: spec.title })}
           onClick={onClose}

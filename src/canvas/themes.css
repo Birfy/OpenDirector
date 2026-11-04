@@ -39,6 +39,23 @@
 :root[data-theme="light"] .cw-topbar {
   background: linear-gradient(#f7f8faf5, #f7f8fa00);
 }
+:root[data-theme="light"] .cw-language-toggle {
+  border-color: #dfe2e7;
+  background: #ffffff;
+}
+:root[data-theme="light"] .cw-language-toggle button {
+  color: #6b7280;
+}
+:root[data-theme="light"] .cw-language-toggle button:hover {
+  color: #14171d;
+}
+:root[data-theme="light"] .cw-language-toggle button.is-active {
+  background: #e9edf3;
+  color: #14171d;
+}
+:root[data-theme="light"] .cw-language-toggle > span {
+  color: #c3c7cf;
+}
 :root[data-theme="light"] .cw-rail-mask {
   background: linear-gradient(90deg, #f7f8faf5 20%, #f7f8fad9 55%, #f7f8fa00);
 }

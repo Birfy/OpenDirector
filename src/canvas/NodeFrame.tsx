@@ -4,6 +4,7 @@ import type { CanvasNodeKind } from "./model";
 import { CanvasActionsContext } from "./CanvasActionsContext";
 import { CanvasIcon } from "./CanvasIcon";
 import { useI18n } from "../i18n/I18nProvider.tsx";
+import { displayNodeTitle } from "./nodeTitle.ts";
 
 /** Shared node chrome and title editing; each node renderer owns only its contents. */
 export function NodeFrame({
@@ -23,7 +24,8 @@ export function NodeFrame({
   busy: boolean;
   children: ReactNode;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const shownTitle = displayNodeTitle(kind, title, locale);
   const actions = useContext(CanvasActionsContext);
   const locked = Boolean(actions?.isLocked(id));
   const target = actions?.referenceTargetState?.(id);
@@ -40,8 +42,10 @@ export function NodeFrame({
       finished.current = false;
       input.current?.focus({ preventScroll: true });
       input.current?.select();
+      if (actions?.nameEdit?.value === title && shownTitle !== title)
+        actions?.changeNameDraft?.(shownTitle);
     }
-  }, [editing]);
+  }, [editing, title, shownTitle]);
   return (
     <div
       className={`cw-node cw-node-${kind}${target ? ` cw-node-reference-${target}` : ""}${empty ? " cw-node-empty" : ""}${selected ? " cw-node-selected" : ""}${locked ? " cw-node-locked" : ""}${busy ? " cw-node-generating" : ""}${actions?.isArriving(id) ? " cw-node-result-arrival" : ""}`}
@@ -101,8 +105,8 @@ export function NodeFrame({
             className="cw-node-title nodrag nopan"
             title={
               locked
-                ? title
-                : t("canvasNodes.nodeName.renameHint", { title })
+                ? shownTitle
+                : t("canvasNodes.nodeName.renameHint", { title: shownTitle })
             }
             tabIndex={0}
             onPointerDown={(event) => event.stopPropagation()}
@@ -119,7 +123,7 @@ export function NodeFrame({
               }
             }}
           >
-            {title}
+            {shownTitle}
           </span>
         )}
         {locked && <CanvasIcon name="lock" size={12} />}

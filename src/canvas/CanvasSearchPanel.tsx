@@ -3,6 +3,7 @@ import type { CanvasNode } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
+import { displayNodeTitle } from "./nodeTitle.ts";
 import {
   SEARCH_CATEGORIES,
   searchNodes,
@@ -118,7 +119,7 @@ export function CanvasSearchPanel({
               <button key={node.id} onClick={() => onSelect(node)}>
                 <CanvasIcon name={node.type} />
                 <span>
-                  {node.data.title}
+                  {displayNodeTitle(node.type, node.data.title)}
                   <small>
                     {node.data.prompt ||
                       node.data.text ||

@@ -152,7 +152,7 @@ export const assistant = {
   "assistant.modelPicker.label": "Model settings",
   "assistant.modelPicker.aria": "Model settings: {name}",
   "assistant.modelPicker.unconfiguredAgent": "No agent configured",
-  "assistant.modelPicker.mediaModels": "Media models",
+  "assistant.modelPicker.mediaModels": "Multimodal",
   "assistant.modelPicker.choose": "Select a model",
   "assistant.modelPicker.chooseHint": "Choose the agent, image, video and audio models",
   "assistant.modelPicker.chooseMediaHint": "Choose the image, video and audio models",

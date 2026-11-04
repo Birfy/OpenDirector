@@ -501,8 +501,13 @@ function incomingNodes(
   return incomingReferenceNodes(document, nodeId);
 }
 
+type SaveStatus =
+  | { state: "opening" | "saving" | "saved" }
+  | { state: "savedViewFailed"; warning: string }
+  | { state: "failed"; error: string };
+
 function Workspace() {
-  const { t, locale } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -590,7 +595,27 @@ function Workspace() {
   const connectionStarted = useRef<Point | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [saveStatus, setSaveStatus] = useState(t("canvas.workspace.save.opening"));
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({
+    state: "opening",
+  });
+  const saveStatusText = (() => {
+    switch (saveStatus.state) {
+      case "opening":
+        return t("canvas.workspace.save.opening");
+      case "saving":
+        return t("canvas.workspace.save.saving");
+      case "saved":
+        return t("canvas.workspace.save.saved");
+      case "savedViewFailed":
+        return t("canvas.workspace.save.savedViewFailed", {
+          warning: saveStatus.warning,
+        });
+      case "failed":
+        return t("canvas.workspace.save.failed", {
+          error: saveStatus.error,
+        });
+    }
+  })();
   const { notifications, notify, dismiss } = useCanvasNotifications();
   const [preview, setPreview] = useState<CanvasNode | null>(null);
   const [editing, setEditing] = useState<CanvasNode | null>(null);
@@ -1004,16 +1029,14 @@ function Workspace() {
           const warning = workspaceProjection(snapshot.id).viewError;
           setSaveStatus(
             warning
-              ? t("canvas.workspace.save.savedViewFailed", { warning })
-              : t("canvas.workspace.save.saved"),
+              ? { state: "savedViewFailed", warning }
+              : { state: "saved" },
           );
         }
         return true;
       } catch (error) {
         saveError.current = errorMessage(error);
-        setSaveStatus(
-          t("canvas.workspace.save.failed", { error: String(error) }),
-        );
+        setSaveStatus({ state: "failed", error: String(error) });
         return false;
       }
     });
@@ -1488,7 +1511,7 @@ function Workspace() {
     if (!ready || switching || projectRenaming || historyReplaying) return;
     const baseline = workspaceProjection(doc.id).baseline;
     const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
-    if (contentChanged) setSaveStatus(t("canvas.workspace.save.saving"));
+    if (contentChanged) setSaveStatus({ state: "saving" });
     const timeout = setTimeout(() => {
       if (!switchPending.current && !editorSaving.current)
         void persist(doc, true, true);
@@ -4787,12 +4810,35 @@ function Workspace() {
             onRenameProject={renameProject}
             onDeleteProject={deleteProject}
           />
+          <div
+            className="cw-language-toggle"
+            role="group"
+            aria-label={t("common.language")}
+          >
+            <button
+              type="button"
+              className={locale === "zh-CN" ? "is-active" : ""}
+              aria-pressed={locale === "zh-CN"}
+              onClick={() => setLocale("zh-CN")}
+            >
+              {t("common.chinese")}
+            </button>
+            <span aria-hidden="true">|</span>
+            <button
+              type="button"
+              className={locale === "en-US" ? "is-active" : ""}
+              aria-pressed={locale === "en-US"}
+              onClick={() => setLocale("en-US")}
+            >
+              {t("common.englishShort")}
+            </button>
+          </div>
           <NodeInfoButton nodes={doc.nodes} />
-          <span className="cw-save-status" title={saveStatus}>
-            <i className={saveStatus === t("canvas.workspace.save.saved") ? "saved" : ""} />
-            {saveStatus}
+          <span className="cw-save-status" title={saveStatusText}>
+            <i className={saveStatus.state === "saved" ? "saved" : ""} />
+            {saveStatusText}
           </span>
-          {saveStatus.startsWith(t("canvas.workspace.save.failedPrefix")) && (
+          {saveStatus.state === "failed" && (
             <div className="cw-save-conflict-actions">
               <button onClick={() => void exportDocument()}>
                 {t("canvas.workspace.save.exportCopy")}
@@ -4809,7 +4855,7 @@ function Workspace() {
                     .open()
                     .then((next) => {
                       installDocument(next);
-                      setSaveStatus(t("canvas.workspace.save.saved"));
+                      setSaveStatus({ state: "saved" });
                     })
                     .catch((error) => notify(errorMessage(error)));
                 }}

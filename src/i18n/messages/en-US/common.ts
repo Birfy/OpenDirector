@@ -26,6 +26,7 @@ export const common = {
   "common.languageHint": "Choose the application language",
   "common.chinese": "中文",
   "common.english": "English",
+  "common.englishShort": "EN",
   "common.theme": "Theme",
   "common.themeHint": "Choose a light or dark theme",
   "common.light": "Light",
