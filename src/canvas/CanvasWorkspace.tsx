@@ -3404,6 +3404,38 @@ function Workspace() {
     }
   }, [jobs]);
 
+  /** A job the service gives up on must say so: the node otherwise just stays
+   * empty and the prompt looks like it did nothing. Failures that predate this
+   * session are history, not news; a job we watched run always qualifies. */
+  const failureWatch = useRef({
+    mountedAt: Date.now(),
+    active: new Set<string>(),
+    reported: new Set<string>(),
+  });
+  useEffect(() => {
+    const watch = failureWatch.current;
+    for (const job of jobs) {
+      if (job.status === "running") watch.active.add(job.id);
+      if (job.status !== "failed" && job.status !== "interrupted") continue;
+      if (watch.reported.has(job.id)) continue;
+      const recent = (job.createdAt ?? 0) >= watch.mountedAt - 5_000;
+      if (!recent && !watch.active.has(job.id)) continue;
+      watch.reported.add(job.id);
+      const node = [...doc.nodes, ...(doc.hiddenNodes ?? [])].find(
+        (item) => item.id === job.nodeId,
+      );
+      const name = node?.data.title ?? job.targetTitle ?? job.title;
+      // Tool jobs keep their reason in `message`; generation jobs have a phase
+      // there, so only the explicit failure text may be shown.
+      const detail = (job.failure ?? (job.tool ? job.message : undefined))?.trim();
+      notify(
+        detail
+          ? t("generation.error.jobFailedDetail", { name, detail })
+          : t("generation.error.jobFailed", { name }),
+      );
+    }
+  }, [jobs, doc.nodes, doc.hiddenNodes, notify, t]);
+
   const toolPlacementQueue = useRef<Promise<unknown>>(Promise.resolve());
   const placingTools = useRef(new Set<string>());
   const placementRetryAfter = useRef(new Map<string, number>());

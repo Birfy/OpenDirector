@@ -359,9 +359,15 @@ def validate_generation(spec: GenerationSpec, model: ModelConfigPublic, referenc
             raise ValueError(f'{label}参考素材数量超过上限。')
     if spec.kind == 'image':
         from opendirector.domain.image_output import resolve_image_output
+        from opendirector.domain.projects import ProjectError
         if spec.parameters.preset != 'none':
             raise ValueError('当前服务不支持产品三视图预设，请使用自由创作。')
-        resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
+        # One stale size must not make the whole canvas unreadable: validation
+        # reports a ValueError so the node stays visible but cannot generate.
+        try:
+            resolve_image_output(model.model_dump(), rules.model_dump(), spec.parameters.model_dump())
+        except ProjectError as error:
+            raise ValueError(str(error)) from error
     if spec.kind == 'audio' and rules.profile == 'vllm-omni-music':
         if spec.parameters.creationType != 'music':
             raise ValueError('所选模型用于音乐生成，请切换为音乐生成。')

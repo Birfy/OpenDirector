@@ -133,3 +133,30 @@ test("a missing preview preserves the successful execution and available preview
   )!;
   assert.equal(refreshed.outputs, ready.outputs);
 });
+
+test("a failed job carries its service reason so the toast can show it", () => {
+  const { snapshot, active } = fixture();
+  const failure = {
+    code: "provider_error",
+    message: "远端模型返回 500，请稍后重试。",
+    category: "provider" as const,
+    suggestion: "稍后重试或更换模型。",
+    stage: "submit" as const,
+  };
+  const failed = {
+    ...active,
+    status: "failed" as const,
+    errorDetails: failure,
+  };
+  const row = creationJobs({ ...snapshot, jobs: [failed] }).find(
+    (j) => j.id === active.id,
+  )!;
+  assert.equal(row.status, "failed");
+  assert.equal(row.failure, failure.message);
+  // A succeeded job has no failure text, so nothing announces a phantom error.
+  const done = creationJobs({
+    ...snapshot,
+    jobs: [{ ...active, status: "succeeded" as const }],
+  }).find((j) => j.id === active.id)!;
+  assert.equal(done.failure, undefined);
+});

@@ -226,6 +226,8 @@ export const generation = {
   "generation.picker.duplicate": "That model is already selected.",
 
   "generation.error.sourceMissing": "The reference source no longer exists.",
+  "generation.error.jobFailed": "Generation failed for “{name}”. Check generation history before retrying.",
+  "generation.error.jobFailedDetail": "Generation failed for “{name}”: {detail}",
   "generation.error.batchNotInserted":
     "The node content or settings changed. The media remains in project assets, but this batch of references was not inserted.",
   "generation.error.batchRejected":

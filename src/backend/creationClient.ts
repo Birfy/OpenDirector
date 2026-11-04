@@ -404,8 +404,7 @@ export class CreationClient {
         body: blob,
       },
     );
-    if (!response.ok)
-      throw new Error(tNow("errors.backend.uploadFailed"));
+    if (!response.ok) throw await responseError(response);
     return this.registerUpload(handle, name, kind);
   }
   /** Copies another project's asset on the server; no bytes pass through the page. */

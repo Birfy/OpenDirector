@@ -23,6 +23,40 @@ def probe(data: bytes, suffix: str, kind: str, *, include_codecs=False):
         return probe_file(file, kind, include_codecs=include_codecs)
 
 
+def _packet_duration(file: Path) -> float:
+    """Derive duration from demuxed packet timestamps.
+
+    MediaRecorder WebM is written as a live stream and often has no duration in
+    its container or stream headers. The packets still carry timestamps, so use
+    the last packet end as a bounded fallback instead of rejecting valid media.
+    """
+    process = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe",
+        "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", str(file)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15, check=True)
+    if len(process.stdout) > 8 * 1024 * 1024:
+        raise ValueError()
+    end = last = None
+    for line in process.stdout.decode("utf-8", "replace").splitlines():
+        values = line.split(",")
+        try:
+            pts = float(values[0])
+        except (ValueError, IndexError):
+            continue
+        if not math.isfinite(pts):
+            continue
+        last = pts if last is None else max(last, pts)
+        try:
+            packet_end = pts + float(values[1])
+        except (ValueError, IndexError):
+            continue
+        if math.isfinite(packet_end):
+            end = packet_end if end is None else max(end, packet_end)
+    if end is not None and end > 0:
+        return end
+    # A final packet without a duration still has a useful presentation time.
+    return last + 0.001 if last is not None else 0
+
+
 def probe_file(file: Path, kind: str, *, include_container=False, include_codecs=False):
     """Inspect an existing staged file without copying it into memory."""
     require_ffprobe()
@@ -34,6 +68,8 @@ def probe_file(file: Path, kind: str, *, include_container=False, include_codecs
         value = json.loads(process.stdout)
         stream = next(item for item in value["streams"] if item["codec_type"] == kind)
         duration = float(value.get("format", {}).get("duration") or stream.get("duration") or 0)
+        if not math.isfinite(duration) or duration <= 0:
+            duration = _packet_duration(file)
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError()
         common = {"kind": kind, "durationMs": round(duration * 1000)}

@@ -34,6 +34,8 @@ export interface GenerationJob {
   outputKind?: "text" | "image" | "video" | "audio";
   activityPhase?: import("./generationActivity.ts").GenerationPhase;
   message?: string;
+  /** Service-reported reason for a failed or interrupted execution. */
+  failure?: string;
   taskId?: string;
   serviceTask?: {
     protocol?: string | null;

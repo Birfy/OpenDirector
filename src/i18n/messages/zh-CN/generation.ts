@@ -208,6 +208,8 @@ export const generation = {
   "generation.picker.duplicate": "这个模型已经选中了。",
 
   "generation.error.sourceMissing": "参考源已不存在。",
+  "generation.error.jobFailed": "「{name}」生成失败，请查看生成历史后重试。",
+  "generation.error.jobFailedDetail": "「{name}」生成失败：{detail}",
   "generation.error.batchNotInserted":
     "节点内容或参数已变化，素材保留在项目素材，本批引用未插入。",
   "generation.error.batchRejected": "本批引用未插入，请检查输入限制。",

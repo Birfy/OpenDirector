@@ -212,5 +212,8 @@ def apply_node_version(history, before, command):
         assets._reference(after, value.asset)
         assets.reference_available(command.projectId, value.asset.assetId)
     if model:
-        validate_generation(configured, model, resolved)
+        try:
+            validate_generation(configured, model, resolved)
+        except ValueError as error:
+            raise ContractError('invalid_input', str(error), item.id) from error
     return after

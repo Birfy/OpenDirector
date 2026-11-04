@@ -18,7 +18,7 @@ from opendirector.domain.creation.project import ProjectSnapshot
 from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.creation_files import upload_directory
 from opendirector.infrastructure.creation_projects import CreationProjects
-from opendirector.infrastructure.creation_uploads import CreationUploads, upload_asset_id
+from opendirector.infrastructure.creation_uploads import CreationUploads, inspect_file, upload_asset_id
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector_api.main import create_app
 
@@ -40,6 +40,19 @@ def storage(tmp_path):
     projects.execute(command(project_id, name='Assets'))
     projects.open(project_id, session)
     return projects, project_id, session
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg') or not shutil.which('ffprobe'), reason='requires local FFmpeg')
+def test_live_webm_without_container_duration_uses_packet_timestamps(tmp_path):
+    # MediaRecorder writes a live WebM: valid packets, but no duration header.
+    path = tmp_path / 'trim.webm'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x48:rate=24',
+                    '-t', '2', '-c:v', 'libvpx', '-live', '1', '-f', 'webm', str(path)], check=True)
+    kind, metadata = inspect_file(path, 'trim.webm', expected_kind='video')
+    assert kind == 'video'
+    assert metadata.mimeType == 'video/webm'
+    assert (metadata.width, metadata.height) == (64, 48)
+    assert 1.5 < metadata.durationSeconds < 2.5
 
 
 def upload(storage, name='frame.png', data=None):

@@ -6,7 +6,7 @@ import {
   generationPhase,
 } from "../canvas/generationActivity.ts";
 import { generationFailureMessage } from "../canvas/generationFailureText.ts";
-import { tNow } from "../i18n/messages.ts";
+import { getActiveLocale, tNow } from "../i18n/messages.ts";
 
 /** Activity is snapshot metadata: it must never wait for historical media. */
 export function creationJobs(
@@ -39,6 +39,9 @@ export function creationJobs(
           item.binding.objectRef.assetId === asset.id,
       );
     const phase = generationPhase(job);
+    const failureMessage = job.errorDetails
+      ? generationFailureMessage(job.errorDetails)
+      : undefined;
     return {
       id: job.id,
       nodeId: job.originItemId ?? spec.id,
@@ -57,10 +60,11 @@ export function creationJobs(
         preview ??
         (asset ? { assetId: asset.id, state: "pending" } : undefined),
       outputs: preview ? prior?.outputs : undefined,
+      failure: getActiveLocale() === "zh-CN"
+        ? job.errorDetails?.message ?? undefined
+        : failureMessage,
       message:
-        (job.errorDetails
-          ? generationFailureMessage(job.errorDetails)
-          : null) ??
+        failureMessage ??
         (preview?.state === "unavailable"
           ? tNow("errors.backend.resultMissing")
           : job.status === "succeeded"
