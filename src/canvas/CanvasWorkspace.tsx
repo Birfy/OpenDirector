@@ -1214,7 +1214,7 @@ function Workspace() {
     setHistoryReplaying(true);
     const projectId = historyRef.current.present.id;
     void (async () => {
-      if (!(await persist(historyRef.current.present))) return;
+      if (!(await persist(historyRef.current.present, false))) return;
       if (historyRef.current.present.id !== projectId) return;
       await creationClient(projectId).undo(forward);
     })()
@@ -1451,10 +1451,25 @@ function Workspace() {
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),
-      projection = workspaceProjection(doc.id);
+      projection = workspaceProjection(doc.id),
+      queue = saveQueue.current!;
     let active = true,
-      token = 0;
+      token = 0,
+      waitingForSave = false;
     const update = () => {
+      if (!active) return;
+      // A pending paste can make a later local delete look clean against
+      // the old baseline until the paste receipt reaches the save queue.
+      if (queue.busy) {
+        if (!waitingForSave) {
+          waitingForSave = true;
+          void queue.wait().then(() => {
+            waitingForSave = false;
+            update();
+          });
+        }
+        return;
+      }
       const current = historyRef.current.present;
       const clean =
         projection.baseline &&
@@ -1469,6 +1484,10 @@ function Workspace() {
       void projection
         .read(snapshot)
         .then((next) => {
+          if (active && queue.busy) {
+            update();
+            return;
+          }
           if (
             !active ||
             ticket !== token ||
@@ -1741,6 +1760,7 @@ function Workspace() {
       });
     command({ type: "batch", commands });
     setSelected([node.id]);
+    root.current?.focus({ preventScroll: true });
     focusSelection(node.id);
     setDismissedComposer(null);
     referenceTarget.current = null;
@@ -2267,18 +2287,23 @@ function Workspace() {
     notify(`已剪切 ${fragment.nodes.length} 个节点，可粘贴或撤销。`);
   };
   const paste = (duplicate = false) => {
+    const before = historyRef.current.present;
     const fragment = duplicate
-      ? copySelection(historyRef.current.present, selectedRef.current)
+      ? copySelection(before, selectedRef.current)
       : clipboard.current;
     if (!fragment?.nodes.length) return;
     const distance = 40 * (duplicate ? 1 : ++pasteCount.current);
-    const result = pasteFragment(historyRef.current.present, fragment, {
+    const result = pasteFragment(before, fragment, {
       x: distance,
       y: distance,
     });
     change(() => result.document);
+    // Keep each paste in its own durable undo step, even inside the autosave debounce.
+    void persist(before, false);
+    void persist(result.document, false);
     setSelected(result.ids);
     setMenu(null);
+    root.current?.focus({ preventScroll: true });
   };
   const group = () => {
     change((d) => groupSelection(d, selectedRef.current));
@@ -3708,16 +3733,20 @@ function Workspace() {
   };
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (!ready || switchPending.current) return;
+      if (event.defaultPrevented || !ready || switchPending.current) return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
       if (
         editing ||
         preview ||
-        (event.target as HTMLElement).closest("[role=dialog]")
+        (target !== document.body &&
+          target !== root.current &&
+          !target.closest(".react-flow"))
       )
         return;
       if (
-        (event.target as HTMLElement).closest(
-          "input,textarea,[contenteditable=true]",
+        target.closest(
+          "input,textarea,select,[contenteditable=true],[role=dialog]",
         )
       )
         return;
@@ -4321,6 +4350,8 @@ function Workspace() {
               setSelectedEdges([]);
               setDismissedComposer(null);
               if (assistantOpen) setAssistantSelectionRequest((n) => n + 1);
+              // Keep focus on the canvas when selecting a node. Autofocusing
+              // the prompt intercepts keyboard shortcuts for selected nodes.
               root.current?.focus({ preventScroll: true });
               // Read modifiers from the gesture itself, including focus changes between clicks.
               if (event.shiftKey || event.metaKey || event.ctrlKey) {

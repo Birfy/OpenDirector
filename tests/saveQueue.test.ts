@@ -13,11 +13,13 @@ test("slow saves keep only the latest unstarted automatic snapshot", async () =>
     if (value === 0) await gate;
     return true;
   });
+  assert.equal(queue.busy, false);
   const first = queue.enqueue(0, "project-a");
   await Promise.resolve(); // Start the first write; it cannot be replaced.
   const second = queue.enqueue(1, "project-a");
   const latest = queue.enqueue(2, "project-a");
   assert.equal(second, latest);
+  assert.equal(queue.busy, true);
   assert.deepEqual(seen, [0]);
   release();
   assert.deepEqual(await Promise.all([first, second, latest]), [
@@ -26,6 +28,7 @@ test("slow saves keep only the latest unstarted automatic snapshot", async () =>
     true,
   ]);
   assert.deepEqual(seen, [0, 2]);
+  assert.equal(queue.busy, false);
 });
 
 test("explicit saves and project changes are barriers to coalescing", async () => {
@@ -57,5 +60,6 @@ test("a failed write does not strand later saves or waiters", async () => {
   await assert.rejects(failed, /disk failure/);
   assert.equal(await next, false);
   assert.equal(await queue.wait(), false);
+  assert.equal(queue.busy, false);
   assert.equal(await queue.enqueue(3), true);
 });

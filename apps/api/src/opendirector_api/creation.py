@@ -7,6 +7,7 @@ from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from filelock import Timeout
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -148,13 +149,19 @@ def creation_routes(projects: CreationProjects, generation=None):
 
     @router.get('/projects/{project_id}/subscribe')
     async def subscribe(project_id: UUID, request: Request, after: int = Query(default=0, ge=0)):
-        await run_in_threadpool(projects.changes, project_id, after=after)
+        initial = await run_in_threadpool(projects.changes, project_id, after=after)
         # The persisted cursor is authoritative; reconnects never depend on a
         # process-local listener. Fetch clients carry the local request headers.
         async def events():
-            cursor = after
+            cursor, changes = after, initial
             while not await request.is_disconnected():
-                changes = await run_in_threadpool(projects.changes, project_id, after=cursor)
+                if changes is None:
+                    try:
+                        changes = await run_in_threadpool(projects.changes, project_id, after=cursor)
+                    except Timeout:
+                        # Resume this stream at the same cursor after contention.
+                        await asyncio.sleep(1)
+                        continue
                 if changes['events']:
                     for event in changes['events']:
                         yield json.dumps(event.model_dump(mode='json'), ensure_ascii=False) + '\n'
@@ -162,6 +169,7 @@ def creation_routes(projects: CreationProjects, generation=None):
                 else:
                     yield '\n'  # Keep-alive; no fabricated business event.
                     await asyncio.sleep(1)
+                changes = None
         return StreamingResponse(events(), media_type='application/x-ndjson', headers={'Cache-Control': 'no-store'})
 
     @router.get('/projects/{project_id}/views/{client_id}', response_model=ViewState)
