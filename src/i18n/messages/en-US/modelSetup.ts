@@ -13,13 +13,13 @@ export const modelSetup = {
 
   "modelSetup.welcomeTitle": "Welcome to OpenDirector",
   "modelSetup.welcomeDescription": "Start with an idea. Create your video together with AI.",
-  "modelSetup.welcomeConfigure": "Set up creative models",
+  "modelSetup.welcomeConfigure": "Set up models for creation",
   "modelSetup.welcomeSkip": "Explore first",
   "modelSetup.welcomeNote": "Connect your own model services, or set them up later in Settings.",
 
   "modelSetup.done": "Done",
   "modelSetup.overview": "Overview",
-  "modelSetup.title": "Set up creative models",
+  "modelSetup.title": "Set up models for creation",
   "modelSetup.intro": "Connect models to use the AI assistant and generate images, videos, or audio.",
   "modelSetup.hint": "Set up what you need now. Add other types later.",
   "modelSetup.agent": "Text model",
