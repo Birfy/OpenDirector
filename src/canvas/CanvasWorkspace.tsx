@@ -229,6 +229,7 @@ import {
 import { getNodeGenerationSettings, NodeComposer } from "./NodeComposer";
 import { NodeInfoButton } from "./NodeInfoButton";
 import { NodeSelectionToolbar } from "./NodeSelectionToolbar";
+import { TextNodeWindow } from "./TextNodeWindow";
 import { SelectionBarAnchor } from "./SelectionBarAnchor";
 import { NodeTaskPanel } from "./NodeTaskPanel";
 import {
@@ -571,6 +572,8 @@ function Workspace() {
   const [expandedComposerId, setExpandedComposerId] = useState<string | null>(
     null,
   );
+  // Text nodes also open in a large editor from the trailing toolbar control.
+  const [textWindowId, setTextWindowId] = useState<string | null>(null);
   // The assistant picker is read once per new node (see snapshotModel); it is
   // never consulted again for nodes already on the canvas.
   const [assistantModels, setAssistantModels] = useState<ModelSelections>({});
@@ -753,6 +756,13 @@ function Workspace() {
     selected.length === 1
       ? (doc.nodes.find((n) => n.id === selected[0]) ?? null)
       : null;
+  const textWindowNode = textWindowId
+    ? doc.nodes.find((node) => node.id === textWindowId)
+    : undefined;
+  useEffect(() => {
+    // Deleting the node elsewhere closes its editor instead of editing a ghost.
+    if (textWindowId && !textWindowNode) setTextWindowId(null);
+  }, [textWindowId, textWindowNode]);
   const selectedNodes =
     selected.length > 1
       ? doc.nodes.filter((node) => selected.includes(node.id))
@@ -1327,6 +1337,7 @@ function Workspace() {
       setSelected([]);
       setComposerNodeId(null);
       setTextEditingId(null);
+      setTextWindowId(null);
       setDismissedComposer(null);
       setInteracting(false);
       pointerGesture.current.cancel();
@@ -3796,7 +3807,7 @@ function Workspace() {
     // These components own their keyboard shortcuts and cancellation lifecycle.
     if (
       el.closest(
-        ".cw-composer-dock,.cw-composer-popover,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
+        ".cw-composer-dock,.cw-composer-popover,.cw-text-window-backdrop,.cw-node-toolbar-anchor,.cw-domain-dialog,.cw-selection-menu,.cw-action-media-host,.cw-project-selector,.cw-project-dialog,.cw-settings-dialog,.cw-assistant-panel,.cw-context-menu,.cw-node-title-input,.cw-subject-description",
       )
     )
       return;
@@ -5351,6 +5362,11 @@ function Workspace() {
             onPreview={() => setPreview(single)}
             onDownload={() => downloadNode(single)}
             onAssistant={showAssistant}
+            onExpand={
+              single.type === "text"
+                ? () => setTextWindowId(single.id)
+                : undefined
+            }
             onDuplicate={() => paste(true)}
           />
         </div>
@@ -6308,6 +6324,23 @@ function Workspace() {
         }}
       />
       <CanvasNotifications notifications={notifications} onDismiss={dismiss} />
+      {textWindowNode && (
+        <TextNodeWindow
+          key={textWindowNode.id}
+          node={textWindowNode}
+          locked={lockedIds.has(textWindowNode.id)}
+          onUpdate={(text) =>
+            command({
+              type: "update-node",
+              id: textWindowNode.id,
+              patch: { data: { text } },
+            })
+          }
+          onClose={() => setTextWindowId(null)}
+          onBeginEdit={begin}
+          onEndEdit={end}
+        />
+      )}
       {preview && (
         <div
           className="cw-modal-backdrop cw-preview"
