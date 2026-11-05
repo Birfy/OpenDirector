@@ -59,7 +59,10 @@ def main():
         api = subprocess.Popen([sys.executable, "-m", "opendirector_api.server", "--port", str(args.port), "--log-level", args.log_level], cwd=ROOT, env=environment)
         processes.append(api)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        for _ in range(100):
+        # Startup snapshots every project to recover unfinished jobs, so a large
+        # history legitimately outlasts a few seconds; a dead process still fails
+        # immediately below instead of waiting out the whole budget.
+        for _ in range(600):
             if api.poll() is not None:
                 raise RuntimeError("本地 API 启动失败（进程已退出）。请查看上方错误输出；"
                                    "若提示地址已被占用，请用 --port 换一个端口后重试。")

@@ -21,7 +21,8 @@ def connect() -> socket.socket:
 
 
 def main() -> None:
-    for line in sys.stdin:
+    # Keep JSON-RPC in UTF-8 regardless of the local Windows code page.
+    for line in sys.stdin.buffer:
         request = json.loads(line)
         if "id" not in request:
             continue
@@ -33,8 +34,8 @@ def main() -> None:
             connection.sendall((json.dumps(payload) + "\n").encode())
             with connection.makefile("rb") as reader:
                 response = reader.readline(64 * 1024 * 1024)
-        sys.stdout.write(response.decode())
-        sys.stdout.flush()
+        sys.stdout.buffer.write(response)
+        sys.stdout.buffer.flush()
 
 
 if __name__ == "__main__":

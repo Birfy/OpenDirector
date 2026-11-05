@@ -1,8 +1,12 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import socket
+import subprocess
 import sys
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -14,6 +18,7 @@ from opendirector.agent import native
 from opendirector.agent.skills import skills
 from opendirector.agent.runtime import AgentRuntimes
 from opendirector.agent.context import RunContext
+from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
@@ -73,6 +78,30 @@ def project(client):
     return path
 
 
+def test_mcp_bridge_preserves_utf8_with_legacy_stdio_encoding():
+    request = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'text': '场景𠮷'}}
+    response = {'jsonrpc': '2.0', 'id': 1, 'result': {'content': [{'type': 'text', 'text': '场景𠮷'}]}}
+    wire_response = (json.dumps(response, ensure_ascii=False) + '\n').encode()
+    with socket.socket() as listener, ThreadPoolExecutor() as pool:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        listener.settimeout(5)
+
+        def respond():
+            with listener.accept()[0] as connection, connection.makefile('rb') as stream:
+                assert json.loads(stream.readline()) == {'token': 'test', 'request': request}
+                connection.sendall(wire_response)
+
+        server = pool.submit(respond)
+        result = subprocess.run([sys.executable, str(native.ROOT / 'scripts/agent-mcp.py')],
+            input=(json.dumps(request, ensure_ascii=False) + '\n').encode(),
+            env={**os.environ, 'PYTHONIOENCODING': 'cp936', 'OPENDIRECTOR_AGENT_TOKEN': 'test',
+                'OPENDIRECTOR_AGENT_HOST': '127.0.0.1', 'OPENDIRECTOR_AGENT_PORT': str(listener.getsockname()[1])},
+            capture_output=True, check=True, timeout=10)
+        server.result()
+    assert result.stdout == wire_response
+
+
 @pytest.mark.parametrize('runtime', ['default', 'opencode', 'codex', 'claude'])
 def test_native_events_real_mcp_and_shared_write(tmp_path, monkeypatch, runtime):
     local = LocalProjects(tmp_path)
@@ -124,6 +153,7 @@ def test_native_events_real_mcp_and_shared_write(tmp_path, monkeypatch, runtime)
 
 def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(native, "executable", lambda _: sys.executable)
+    monkeypatch.setattr(native, 'codex_isolation_flags', lambda _: ('--ignore-user-config', '--ignore-rules', '--ephemeral'))
     for runtime in ('default', 'opencode', 'codex', 'claude'):
         work = tmp_path / runtime
         work.mkdir()
@@ -144,6 +174,37 @@ def test_native_commands_keep_auth_and_restrict_tools(tmp_path, monkeypatch):
             assert 'steps' not in config['agent']['opendirector']
             assert config['permission']['*'] == 'deny'
             assert config['skills']['paths'] == [str(work / '.agents/skills')]
+
+
+def test_codex_only_passes_supported_isolation_flags(tmp_path, monkeypatch):
+    binary = str(tmp_path / 'codex')
+    monkeypatch.setattr(native, 'executable', lambda _: binary)
+    monkeypatch.setattr(native, '_CODEX_ISOLATION', {})
+    monkeypatch.setattr(native.subprocess, 'run', lambda *args, **kwargs:
+        SimpleNamespace(stdout=b'Options:\n      --ephemeral\n', stderr=b''))
+    args, _ = native.command('codex', tmp_path, '', 'token', None, '', [])
+    assert '--ephemeral' in args
+    assert '--ignore-user-config' not in args
+    assert '--ignore-rules' not in args
+
+
+def test_codex_inherits_windows_system_proxy_without_overriding_explicit_proxy(monkeypatch):
+    monkeypatch.setattr(native, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(native, 'getproxies', lambda: {'https': 'http://127.0.0.1:8001'})
+    monkeypatch.delenv('HTTPS_PROXY', raising=False)
+    monkeypatch.delenv('ALL_PROXY', raising=False)
+    assert native.codex_environment()['HTTPS_PROXY'] == 'http://127.0.0.1:8001'
+    assert 'HTTPS_PROXY' not in os.environ
+    monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:8002')
+    assert native.codex_environment()['HTTPS_PROXY'] == 'http://127.0.0.1:8002'
+
+
+def test_codex_reconnect_does_not_end_turn():
+    assert native.text_events('codex', {'type': 'error', 'message': 'Reconnecting...'}) == []
+    assert native.text_events('codex', {'type': 'item.completed', 'item': {
+        'type': 'agent_message', 'text': 'Connected'}}) == [{'type': 'delta', 'text': 'Connected'}]
+    with pytest.raises(ProjectError):
+        native.text_events('codex', {'type': 'turn.failed'})
 
 
 @pytest.mark.parametrize("runtime", ["default"])
