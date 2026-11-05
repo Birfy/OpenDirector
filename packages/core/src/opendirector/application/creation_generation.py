@@ -292,7 +292,8 @@ class CreationGeneration(GenerationRuntime):
                 spec_data['purpose'] = 'generation'
             # Promote every owner of this draft together, including hidden ones.
             for item in data['canvasItems']:
-                if item['binding'].get('draftSpec', {}).get('id') == spec_data['id']:
+                # An empty binding serialises draftSpec as null, not absent.
+                if (item['binding'].get('draftSpec') or {}).get('id') == spec_data['id']:
                     item['binding'] = dict(role='generation', objectRef=dict(objectType='generation_spec', id=spec_data['id']))
                     item['revision'] += 1
             old = next(s for s in before.generationSpecs if s.id == command.payload.specId)

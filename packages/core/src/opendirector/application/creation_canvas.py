@@ -572,7 +572,8 @@ class CreationCanvas:
                     raise ContractError('invalid_input', '参考标识已使用。', payload.reference.id)
                 spec['purpose'] = 'generation'
                 for item in data['canvasItems']:
-                    if item['binding'].get('draftSpec', {}).get('id') == spec['id']:
+                    # An empty binding serialises draftSpec as null, not absent.
+                    if (item['binding'].get('draftSpec') or {}).get('id') == spec['id']:
                         item['binding'] = {'role': 'generation', 'objectRef': {'objectType': 'generation_spec', 'id': spec['id']}}
                 data['references'].append(ref)
             else:
