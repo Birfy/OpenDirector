@@ -68,8 +68,11 @@ def _adapter_rules(config):
         elif seedance:
             # The 2.0 family shares one adapter: mini and fast serve 480P/720P,
             # the full model adds 1080P and 4K. All accept 4–15 seconds.
+            # Omni reference takes up to 9 images, 3 videos and 3 audios; the
+            # videos are capped at 15 s in total, which reference_inputs enforces.
             lite = seedance != 'full'
-            rules.update(profile='seedance-2.0', allowedKinds=['text', 'image', 'audio'], maxImages=9, maxAudios=3, imageBytes=30 * 1024 * 1024,
+            rules.update(profile='seedance-2.0', allowedKinds=['text', 'image', 'video', 'audio'], maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
+                         videoBytes=200 * 1024 * 1024,
                          requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference'],
                          outputResolutions=['480P', '720P'] if lite else ['480P', '720P', '1080P', '4K'],
                          referenceImageResolutions=['480P', '720P'] if lite else ['480P', '720P', '4K'])

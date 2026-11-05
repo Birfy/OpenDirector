@@ -148,7 +148,7 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
         elif source_kind == 'video':
             duration = meta.get('durationMs')
             if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:
-                raise ProjectError('参考视频需为不超过 50 MB 的 MP4 或 MOV。')
+                raise ProjectError(f'参考视频需为不超过 {rules["videoBytes"] // (1024 * 1024)} MB 的 MP4 或 MOV。')
             if duration is None or not 0 < duration <= 15000:
                 raise ProjectError('参考视频需为不超过 15 秒的有效视频。')
             total_video_ms += duration
