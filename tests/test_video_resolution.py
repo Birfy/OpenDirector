@@ -203,3 +203,28 @@ def test_seedance_resolution_is_forwarded_in_the_provider_json(tmp_path):
         assert await provider.generate(config, task, submitted) == ('mp4', b'fixture-video')
     asyncio.run(run())
     assert len(posts) == 1 and posts[0]['resolution'] == '4k'
+
+
+def test_seedance_sends_whole_seconds_because_ark_rejects_floats(tmp_path):
+    # The editor stores durationSeconds as 4.0; Ark answers InvalidParameter for
+    # that JSON number, so the adapter has to submit 4.
+    store = LocalProjects(tmp_path)
+    config = {'kind': 'video', 'protocol': 'volcengine', 'modelId': 'doubao-seedance-2.0-mini',
+              'url': 'https://ark.cn-beijing.volces.com/api/plan/v3', 'apiKey': 'fixture-key'}
+    task = {'kind': 'video', 'projectId': str(uuid4()), 'prompt': '小猫奔跑',
+            'referenceIds': [], 'videoMode': 'reference',
+            'parameters': {'duration': 4.0, 'ratio': '16:9', 'generate_audio': True, 'watermark': False}}
+    posts = []
+    def handle(request):
+        if request.method == 'POST':
+            import json
+            posts.append(json.loads(request.content))
+            return httpx.Response(200, json={'id': 'task-1'})
+        if request.url.host == 'cdn.test': return httpx.Response(200, content=b'fixture-video')
+        return httpx.Response(200, json={'status': 'succeeded', 'content': {'video_url': 'https://cdn.test/result'}})
+    async def run():
+        async def submitted(value): assert value == 'task-1'
+        provider = GenerationProviders(store, httpx.MockTransport(handle), poll_interval=0)
+        assert await provider.generate(config, task, submitted) == ('mp4', b'fixture-video')
+    asyncio.run(run())
+    assert posts[0]['duration'] == 4 and type(posts[0]['duration']) is int

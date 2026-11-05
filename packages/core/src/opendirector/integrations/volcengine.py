@@ -145,7 +145,14 @@ class VolcengineGeneration:
                         role = 'reference_image' if task.get('videoMode') == 'reference' else 'first_frame'
                         content.extend({'type': 'image_url', 'image_url': {'url': image}, 'role': role} for image in refs)
                         content.extend({'type': 'audio_url', 'audio_url': {'url': audio}, 'role': 'reference_audio'} for audio in prepared['audios'])
-                        payload = {'model': config['modelId'], 'content': content, **task['parameters']}
+                        parameters = dict(task['parameters'])
+                        # Ark accepts whole seconds only, while the editor stores
+                        # durationSeconds as a float (4.0) and rejects it as
+                        # InvalidParameter instead of rounding.
+                        seconds = parameters.get('duration')
+                        if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and float(seconds).is_integer():
+                            parameters['duration'] = int(seconds)
+                        payload = {'model': config['modelId'], 'content': content, **parameters}
                         request_size(payload, prepared['rules']['requestBytes'])
                         async with client.stream("POST", url, headers=headers, json=payload) as response:
                             external_id = json.loads(await bounded(response, stage=stage, secrets=secrets))["id"]
