@@ -5003,9 +5003,14 @@ function Workspace() {
           <h1>{t("canvas.workspace.empty.title")}</h1>
           <p>{t("canvas.workspace.empty.hint")}</p>
           <div>
-            <button onClick={() => addNode("image")}>
-              <CanvasIcon name="plus" size={15} />
-              {t("canvas.workspace.empty.imageNode")}
+            <button
+              onClick={() => {
+                setSettingsCategory("models");
+                setSettingsOpen(true);
+              }}
+            >
+              <CanvasIcon name="model" size={15} />
+              {t("canvas.workspace.empty.configureModels")}
             </button>
             <button
               onClick={() => {
@@ -6550,9 +6555,6 @@ function Workspace() {
                 ),
               )}
             </dl>
-            <p className="cw-panel-note">
-              {t("canvas.workspace.help.storage")}
-            </p>
           </section>
         </div>
       )}
