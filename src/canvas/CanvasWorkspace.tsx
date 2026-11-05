@@ -39,6 +39,7 @@ import {
 import { currentAsset } from "../backend/creationClient";
 import {
   creationClient,
+  CreationCommandError,
   itemSpec,
   objectVersion,
   visibleItems,
@@ -1041,8 +1042,13 @@ function Workspace() {
         }
         return true;
       } catch (error) {
-        saveError.current = errorMessage(error);
-        setSaveStatus({ state: "failed", error: String(error) });
+        const message =
+          error instanceof CreationCommandError &&
+          error.receipt.issues.some((issue) => issue.code === "revision_conflict")
+            ? t("errors.backend.saveConflict")
+            : errorMessage(error);
+        saveError.current = message;
+        setSaveStatus({ state: "failed", error: message });
         return false;
       }
     });
