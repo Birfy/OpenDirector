@@ -60,7 +60,7 @@ export interface AssetPreviewQueryInput extends QueryBaseInput {
 }
 
 export interface AssetProvenanceInput extends ContractInput {
-  readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered";
+  readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered" | "imported";
   readonly jobId?: string | null;
   readonly toolTaskId?: string | null;
   readonly sourceItemId?: string | null;
@@ -72,6 +72,7 @@ export interface AssetProvenanceInput extends ContractInput {
   readonly agentRuntime?: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | null;
   readonly modelSnapshot?: ModelSnapshotInput | null;
   readonly prompt?: string | null;
+  readonly importedFrom?: "generated" | "edited" | null;
 }
 
 export interface AssetRefInput extends ContractInput {
@@ -1506,7 +1507,7 @@ export interface AssetPreviewQuery extends QueryBase {
 }
 
 export interface AssetProvenance extends Contract {
-  readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered";
+  readonly source: "upload" | "manual" | "agent_written" | "generated" | "edited" | "rendered" | "imported";
   readonly jobId: string | null;
   readonly toolTaskId: string | null;
   readonly sourceItemId: string | null;
@@ -1518,6 +1519,7 @@ export interface AssetProvenance extends Contract {
   readonly agentRuntime: "opencode" | "codex" | "claude" | "jiuwenswarm" | "deepseek" | null;
   readonly modelSnapshot: ModelSnapshot | null;
   readonly prompt: string | null;
+  readonly importedFrom: "generated" | "edited" | null;
 }
 
 export interface AssetRef extends Contract {

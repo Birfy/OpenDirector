@@ -102,6 +102,9 @@ export class CreationProjection {
     identity?: string;
     fresh?: boolean;
     previous?: AssetRef;
+    /** Archive provenance: the backend records an imported source instead of
+     * treating the upload as a plain user file. */
+    importedFrom?: "generated" | "edited";
   }) {
     const existing = resource.src && this.client.assetForSource(resource.src);
     if (existing && !resource.fresh) return assetReference(existing);
@@ -111,7 +114,12 @@ export class CreationProjection {
         (asset) => asset.id === resource.id && asset.kind === resource.kind,
       );
     if (retained && !resource.src) return assetReference(retained);
-    const key = `${resource.identity ?? ""}:${resource.previous?.assetId ?? ""}:${resource.kind}:${resource.src ?? resource.text ?? ""}`;
+    // The archive source only widens the key when set: `editorData` seeds this
+    // cache with `::<kind>:<src>`, so the plain form must stay byte-identical.
+    const base = `${resource.identity ?? ""}:${resource.previous?.assetId ?? ""}:${resource.kind}:${resource.src ?? resource.text ?? ""}`;
+    const key = resource.importedFrom
+      ? `${base}:${resource.importedFrom}`
+      : base;
     let pending = this.imported.get(key);
     if (!pending) {
       pending = (async () => {
@@ -131,7 +139,13 @@ export class CreationProjection {
           : `${resource.title}.${suffix}`;
         const handle = this.importHandles.get(key) ?? crypto.randomUUID();
         this.importHandles.set(key, handle);
-        return this.client.importBlob(blob, name, resource.kind, handle);
+        return this.client.importBlob(
+          blob,
+          name,
+          resource.kind,
+          handle,
+          resource.importedFrom,
+        );
       })().catch((error) => {
         this.imported.delete(key);
         throw error;
@@ -142,6 +156,20 @@ export class CreationProjection {
     if (resource.src && !resource.identity)
       this.client.rememberSource(resource.src, imported.assetId);
     return imported;
+  }
+
+  /** The archive source a generation node's media carries, if any.
+   * Without it the media is imported as a plain upload and the generation
+   * binding would claim an output the project has no evidence for. */
+  private archiveSource(
+    node: CanvasNode,
+  ): "generated" | "edited" | undefined {
+    const evidence = node.data.generationProvenance;
+    if (!evidence) return undefined;
+    if (evidence.source === "generated") return "generated";
+    if (evidence.source === "edited" || evidence.source === "rendered")
+      return "edited";
+    return undefined;
   }
 
   private maskSource(ref: AssetRef) {
@@ -467,6 +495,22 @@ export class CreationProjection {
           node.data.backendAssetId = asset.id;
           node.data.mediaRole =
             item.binding.role === "material" ? "asset" : "generation";
+          // Export records this so an imported generation node can be rebuilt
+          // with real provenance instead of a fabricated one.
+          const evidence = asset.provenance;
+          node.data.generationProvenance = {
+            source: evidence.source,
+            ...(evidence.jobId ? { jobId: evidence.jobId } : {}),
+            ...(evidence.inputFingerprint
+              ? { inputFingerprint: evidence.inputFingerprint }
+              : {}),
+            ...(evidence.editorDocumentId
+              ? { editorDocumentId: evidence.editorDocumentId }
+              : {}),
+            ...(evidence.editorRevision != null
+              ? { editorRevision: evidence.editorRevision }
+              : {}),
+          };
           node.data.media = {
             width: asset.metadata.width ?? undefined,
             height: asset.metadata.height ?? undefined,
@@ -1114,7 +1158,10 @@ export class CreationProjection {
       ...document.nodes,
       ...(document.hiddenNodes ?? []).filter((node) => !items.has(node.id)),
     ];
-    for (const node of writableNodes) {
+    // A child names its parent group, so the group has to exist first. The
+    // document order is visual, not structural, and a batch is applied in
+    // order: creating a member before its group fails with missing_object.
+    for (const node of parentsFirst(writableNodes)) {
       const old = oldNodes.get(node.id),
         item = items.get(node.id);
       if (
@@ -1188,6 +1235,11 @@ export class CreationProjection {
                     ? node.id
                     : undefined,
                 previous: previous ? assetReference(previous) : undefined,
+                // A canvas archive carried this generation node's picture in
+                // with the source it was exported from. Declaring it here lets
+                // the backend keep the generation binding without inventing a
+                // job, which a plain upload could never justify.
+                importedFrom: this.archiveSource(node),
               });
           if (layerEdit && source) {
             editedOutputs.set(node.id, {
@@ -1223,7 +1275,10 @@ export class CreationProjection {
           const cloneGeneration =
             !item &&
             binding?.role === "material" &&
-            node.data.mediaRole === "generation";
+            node.data.mediaRole === "generation" &&
+            // Only an archive that recorded where the picture came from may
+            // rebuild the generation binding; a bare upload cannot be one.
+            !!this.archiveSource(node);
           if (
             binding?.role !== "material" ||
             configureText ||
@@ -1247,6 +1302,9 @@ export class CreationProjection {
               });
             }
             if (cloneGeneration && binding?.role === "material")
+              // The node is shown with this binding, so it must already be the
+              // generation one: the backend refuses to convert a material item
+              // afterwards ("素材节点不能直接改为生成节点").
               binding = {
                 role: "generation",
                 objectRef: { objectType: "generation_spec", id: spec.id },
@@ -1903,4 +1961,26 @@ export class CreationProjection {
       this.viewError = error instanceof Error ? error.message : String(error);
     }
   }
+}
+
+/** Orders nodes so every parent precedes the children that name it.
+ * Documents store nodes in visual order, but a batch applies operations in
+ * sequence, so a member created before its group fails as a missing object.
+ * Cycles fall back to the original order rather than dropping nodes. */
+function parentsFirst(nodes: CanvasNode[]): CanvasNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const ordered: CanvasNode[] = [];
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (node: CanvasNode) => {
+    if (state.get(node.id) === "done") return;
+    // A cycle would otherwise recurse forever; the backend rejects it anyway.
+    if (state.get(node.id) === "visiting") return;
+    state.set(node.id, "visiting");
+    const parent = node.parentId ? byId.get(node.parentId) : undefined;
+    if (parent) visit(parent);
+    state.set(node.id, "done");
+    ordered.push(node);
+  };
+  for (const node of nodes) visit(node);
+  return ordered.length === nodes.length ? ordered : nodes;
 }

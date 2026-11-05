@@ -91,10 +91,13 @@ class ProjectSnapshot(Contract):
                 spec = specs.get(item.binding.objectRef.id)
                 if spec is None or spec.kind != item.kind or spec.purpose != 'generation':
                     raise ValueError('Generation node points to a missing or wrong-kind spec')
-                # Retained images are verified generation outputs or published edits.
+                # Retained images are verified generation outputs, published
+                # edits, or outputs a canvas archive carried in with their own
+                # recorded source. A bare upload still cannot claim to be one.
                 if item.kind == 'image' and item.binding.materialOverride:
                     output = assets[item.binding.materialOverride.assetId]
-                    if output.provenance.source not in {'generated', 'edited'} or (output.provenance.source == 'edited' and not output.provenance.sources):
+                    retained = output.provenance.source in {'generated', 'edited', 'imported'}
+                    if not retained or (output.provenance.source == 'edited' and not output.provenance.sources):
                         raise ValueError('Image overrides require recorded generation or edit provenance')
             elif item.binding.role == 'empty' and item.binding.draftSpec:
                 spec_id = item.binding.draftSpec.id

@@ -119,7 +119,7 @@ test("canvas archive separates media files from the document and names itself .c
   const manifest = JSON.parse(decode(entries[0]!));
   assert.deepEqual(manifest, {
     magic: "opendirector-canvas",
-    formatVersion: 1,
+    formatVersion: 2,
     name: "断不了情根",
     exportedAt: "2026-11-02T01:30:18.000Z",
     document: "canvas.json",
@@ -350,6 +350,94 @@ test("an exported archive imports back with its media, settings and edges", asyn
   const contents = await readCanvasArchive(archive.blob);
   assert.equal(contents.assets, 2);
   assert.deepEqual(contents.document, document);
+});
+
+test("a generation node keeps the provenance its picture was exported with", async () => {
+  const document = createDocument("生成节点往返");
+  // The node the importer used to fabricate a materialOverride for.
+  const generated = createNode(
+    "image",
+    { x: 0, y: 0 },
+    {
+      src: "data:image/png;base64,aGVsbG8=",
+      mimeType: "image/png",
+      title: "图片生成.png",
+      mediaRole: "generation",
+      generationProvenance: {
+        source: "generated",
+        jobId: "6f1d1f3e-0000-4000-8000-000000000000",
+        inputFingerprint: "a".repeat(64),
+      },
+    },
+  );
+  // A plain upload must not pick up someone else's provenance.
+  const uploaded = createNode(
+    "image",
+    { x: 400, y: 0 },
+    {
+      src: "data:image/jpeg;base64,d29ybGQ=",
+      mimeType: "image/jpeg",
+      title: "素材.jpg",
+      mediaRole: "asset",
+    },
+  );
+  document.nodes = [generated, uploaded];
+  const archive = await buildCanvasArchive(document, {
+    read: async (src) =>
+      new Blob(
+        [Uint8Array.from(atob(src.split(",")[1]!), (c) => c.charCodeAt(0))],
+        { type: /^data:([^;]+)/.exec(src)![1] },
+      ),
+  });
+  const contents = await readCanvasArchive(archive.blob);
+
+  const generatedUrl = (contents.document.nodes[0]!.data as { src: string }).src;
+  const uploadedUrl = (contents.document.nodes[1]!.data as { src: string }).src;
+  assert.deepEqual(contents.provenance.get(generatedUrl), {
+    source: "generated",
+    jobId: "6f1d1f3e-0000-4000-8000-000000000000",
+    inputFingerprint: "a".repeat(64),
+  });
+  assert.equal(contents.provenance.has(uploadedUrl), false);
+});
+
+test("a version 1 archive still imports, without inventing provenance", async () => {
+  const document = createDocument("旧包");
+  document.nodes = [
+    createNode("image", { x: 0, y: 0 }, {
+      src: "data:image/png;base64,aGVsbG8=",
+      mimeType: "image/png",
+      title: "旧图.png",
+      mediaRole: "generation",
+    }),
+  ];
+  const archive = await buildCanvasArchive(document, {
+    read: async (src) =>
+      new Blob(
+        [Uint8Array.from(atob(src.split(",")[1]!), (c) => c.charCodeAt(0))],
+        { type: /^data:([^;]+)/.exec(src)![1] },
+      ),
+  });
+  // Rewrite the manifest the way a v1 exporter would have written it.
+  const files = await readZip(archive.blob);
+  const manifest = JSON.parse(
+    new TextDecoder().decode(files.get("manifest.json")!),
+  );
+  manifest.formatVersion = 1;
+  for (const asset of manifest.assets) delete asset.provenance;
+  const rebuilt = await createZip(
+    [
+      { path: "manifest.json", data: new TextEncoder().encode(JSON.stringify(manifest)), compress: true },
+      { path: "canvas.json", data: files.get("canvas.json")! },
+      ...[...files.entries()]
+        .filter(([path]) => path.startsWith("assets/"))
+        .map(([path, data]) => ({ path, data })),
+    ],
+    new Date(),
+  );
+  const contents = await readCanvasArchive(rebuilt);
+  assert.equal(contents.assets, 1);
+  assert.equal(contents.provenance.size, 0);
 });
 
 test("import reports missing assets, foreign archives and newer formats", async () => {

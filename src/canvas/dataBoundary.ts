@@ -54,6 +54,34 @@ const SETTINGS_KEYS = [
   "modelConfigId",
 ] as const;
 
+/** Where a node's media came from, as recorded by a canvas archive.
+ * Unknown sources are rejected so a crafted file cannot claim a provenance
+ * the importer would then hand to the backend. */
+export function isGenerationProvenance(
+  value: unknown,
+): value is NonNullable<CanvasNodeData["generationProvenance"]> {
+  if (!record(value)) return false;
+  if (
+    ![
+      "generated",
+      "edited",
+      "rendered",
+      "upload",
+      "manual",
+      "agent_written",
+      "imported",
+    ].includes(String(value.source))
+  )
+    return false;
+  return (
+    optionalString(value.jobId) &&
+    optionalString(value.inputFingerprint) &&
+    optionalString(value.editorDocumentId) &&
+    (value.editorRevision === undefined ||
+      Number.isSafeInteger(value.editorRevision))
+  );
+}
+
 export function isGenerationSettings(
   value: unknown,
 ): value is GenerationSettings {
@@ -512,6 +540,8 @@ export function parseNodeData(
     (value.mediaRole !== undefined &&
       value.mediaRole !== "asset" &&
       value.mediaRole !== "generation") ||
+    (value.generationProvenance !== undefined &&
+      !isGenerationProvenance(value.generationProvenance)) ||
     (value.settings !== undefined && !isGenerationSettings(value.settings))
   )
     return { ok: false, error: tNow("errors.data.node") };
@@ -592,6 +622,14 @@ export function parseNodeData(
     if (typeof value[key] === "string") result[key] = value[key];
   if (value.assetState) result.assetState = value.assetState;
   if (value.mediaRole) result.mediaRole = value.mediaRole;
+  // Dropping this would lose the only evidence that an imported generation
+  // node is one, and the importer falls back to a plain material.
+  if (value.generationProvenance !== undefined)
+    result.generationProvenance = {
+      ...(value.generationProvenance as NonNullable<
+        CanvasNodeData["generationProvenance"]
+      >),
+    };
   if (value.agentSettings !== undefined) {
     const agent = value.agentSettings;
     if (

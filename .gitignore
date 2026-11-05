@@ -10,6 +10,7 @@ dist/
 /start-dev.cmd
 /start.cmd
 /build.cmd
+/start.ps1
 
 # Machine-local Windows installer generated for this machine.
 /scripts/setup-windows.ps1

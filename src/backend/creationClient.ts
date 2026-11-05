@@ -186,9 +186,17 @@ export class CreationClient {
     versions: readonly ObjectVersion[] = [],
     expectedPreview?: string,
     commandId?: string,
+    importedFrom?: "generated" | "edited",
   ) {
     return this.enqueue(
-      this.prepareCommand(type, payload, versions, expectedPreview, commandId),
+      this.prepareCommand(
+        type,
+        payload,
+        versions,
+        expectedPreview,
+        commandId,
+        importedFrom,
+      ),
     );
   }
   private enqueue<T>(perform: () => Promise<T>) {
@@ -202,11 +210,17 @@ export class CreationClient {
     versions: readonly ObjectVersion[] = [],
     expectedPreview?: string,
     commandId?: string,
+    importedFrom?: "generated" | "edited",
   ) {
     const intent =
       type === "generation.submit"
         ? `${type}:${(payload as { specId: string }).specId}`
         : JSON.stringify({ type, payload });
+    // Archive provenance is delivered as a header, not a payload field: the
+    // backend only accepts it on asset.import from a trusted entrypoint.
+    const extra: Record<string, string> = importedFrom
+      ? { "X-Canvas-Import": importedFrom }
+      : {};
     const body = (!commandId && this.deliveries.get(intent)) || {
       commandId: commandId ?? crypto.randomUUID(),
       projectId: this.id,
@@ -222,7 +236,7 @@ export class CreationClient {
       try {
         receipt = await storageRequest<CommandReceipt>(
           `${creationPath(this.id)}/commands`,
-          json("POST", body),
+          json("POST", body, extra),
         );
       } catch (error) {
         // A lost HTTP response is not permission to mint another paid request.
@@ -391,6 +405,7 @@ export class CreationClient {
     name: string,
     kind: Asset["kind"],
     handle: string = crypto.randomUUID(),
+    importedFrom?: "generated" | "edited",
   ) {
     const response = await fetch(
       `/api${creationPath(this.id)}/uploads/${handle}`,
@@ -405,7 +420,7 @@ export class CreationClient {
       },
     );
     if (!response.ok) throw await responseError(response);
-    return this.registerUpload(handle, name, kind);
+    return this.registerUpload(handle, name, kind, importedFrom);
   }
   /** Copies another project's asset on the server; no bytes pass through the page. */
   async copyAsset(
@@ -422,12 +437,20 @@ export class CreationClient {
     handle: string,
     name: string,
     kind: Asset["kind"],
+    importedFrom?: "generated" | "edited",
   ) {
-    const receipt = await this.command("asset.import", {
-      uploadHandle: handle,
-      name,
-      expectedKind: kind,
-    });
+    const receipt = await this.command(
+      "asset.import",
+      {
+        uploadHandle: handle,
+        name,
+        expectedKind: kind,
+      },
+      [],
+      undefined,
+      undefined,
+      importedFrom,
+    );
     const asset = this.snapshot.assets.find((asset) =>
       receipt.changed.some(
         (v) => v.objectType === "asset" && v.id === asset.id,

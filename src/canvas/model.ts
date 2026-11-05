@@ -172,6 +172,22 @@ export interface CanvasNodeData extends Record<string, unknown> {
   /** Imported/derived assets have editing controls, not an automatic generator.
    * Omitted in older documents; keep their existing generator behavior. */
   mediaRole?: "asset" | "generation";
+  /** Where this node's media came from, carried so archives round-trip a
+   * generation node with real provenance instead of a fabricated one. */
+  generationProvenance?: {
+    source:
+      | "generated"
+      | "edited"
+      | "rendered"
+      | "upload"
+      | "manual"
+      | "agent_written"
+      | "imported";
+    jobId?: string;
+    inputFingerprint?: string;
+    editorDocumentId?: string;
+    editorRevision?: number;
+  };
   settings?: GenerationSettings;
   agentSettings?: AgentNodeSettings;
   generationEvidence?: { output: string; references: Record<string, string> };

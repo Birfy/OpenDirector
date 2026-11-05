@@ -572,14 +572,16 @@ class CreationProjects:
             return dict(events=events, nextCursor=events[-1].cursor if events else after,
                         currentCursor=cursor, hasMore=bool(events and events[-1].cursor < cursor))
 
-    def execute(self, command: Command, *, session=None, source='ui'):
+    def execute(self, command: Command, *, session=None, source='ui', imported_from=None):
         if command.type == 'project.trash':
             return self._trash(command, source)
         if command.type == 'project.restore':
             raise ProjectError('回收目录中的工程暂不支持在应用内恢复。', 501, code='capability_unsupported')
         if command.type in {'asset.import', 'asset.writeText', 'asset.updateMetadata'}:
             from opendirector.application.creation_assets import CreationAssets
-            return CreationAssets(self).execute(command, session=session, source=source)
+            return CreationAssets(self).execute(command, session=session, source=source, imported_from=imported_from)
+        if imported_from is not None:
+            raise ProjectError('只有素材导入可以声明归档来源。', 400, code='invalid_input')
         if command.type == 'project.create':
             return self._create(command, source)
         if command.type in {'history.undo', 'history.redo', 'generationSpec.restore', 'canvas.applyVersion', 'asset.delete'}:

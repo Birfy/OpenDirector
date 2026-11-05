@@ -512,7 +512,8 @@
               "agent_written",
               "generated",
               "edited",
-              "rendered"
+              "rendered",
+              "imported"
             ],
             "title": "Source",
             "type": "string"
@@ -669,6 +670,23 @@
             "default": null,
             "description": "Generation prompt text.",
             "title": "Prompt"
+          },
+          "importedFrom": {
+            "anyOf": [
+              {
+                "enum": [
+                  "generated",
+                  "edited"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Original source recorded by a canvas archive this asset was imported from.",
+            "title": "Importedfrom"
           }
         },
         "required": [
@@ -14565,7 +14583,8 @@
               "agent_written",
               "generated",
               "edited",
-              "rendered"
+              "rendered",
+              "imported"
             ],
             "title": "Source",
             "type": "string"
@@ -14722,6 +14741,23 @@
             "default": null,
             "description": "Generation prompt text.",
             "title": "Prompt"
+          },
+          "importedFrom": {
+            "anyOf": [
+              {
+                "enum": [
+                  "generated",
+                  "edited"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Original source recorded by a canvas archive this asset was imported from.",
+            "title": "Importedfrom"
           }
         },
         "required": [
@@ -14736,7 +14772,8 @@
           "agentRunId",
           "agentRuntime",
           "modelSnapshot",
-          "prompt"
+          "prompt",
+          "importedFrom"
         ],
         "title": "AssetProvenance",
         "type": "object"

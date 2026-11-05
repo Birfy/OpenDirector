@@ -62,7 +62,8 @@ def creation_routes(projects: CreationProjects, generation=None):
         return {'ok': True}
 
     @router.post('/projects/{project_id}/commands', response_model=CommandReceipt)
-    async def execute(project_id: UUID, value: Command, x_opendirector_session: UUID | None = Header(default=None)):
+    async def execute(project_id: UUID, value: Command, x_opendirector_session: UUID | None = Header(default=None),
+                      x_canvas_import: str | None = Header(default=None)):
         # Source is selected by the trusted entrypoint, never by a payload flag.
         if value.projectId != project_id:
             raise ProjectError('命令不属于当前工程。')
@@ -71,11 +72,16 @@ def creation_routes(projects: CreationProjects, generation=None):
             raise ProjectError('产物发布需要服务端执行上下文，不能通过路径直接访问本机文件。', 403)
         if value.type == 'job.checkpoint':
             raise ProjectError('任务执行事实只能由后台写入。', 403)
+        if x_canvas_import is not None and value.type != 'asset.import':
+            raise ProjectError('归档来源只能随素材导入声明。', 400)
+        imported_from = x_canvas_import if x_canvas_import in {'generated', 'edited'} else None
+        if x_canvas_import is not None and imported_from is None:
+            raise ProjectError('归档来源必须是 generated 或 edited。', 400)
         if value.type in {'generation.submit', 'job.cancel', 'job.recover'}:
             if generation is None:
                 raise ProjectError('任务服务不可用。', 503)
             return await generation.execute(value, session=session)
-        return await run_in_threadpool(projects.execute, value, session=session)
+        return await run_in_threadpool(projects.execute, value, session=session, imported_from=imported_from)
 
     @router.get('/projects/{project_id}/canvas/{item_id}/status')
     async def item_status(project_id: UUID, item_id: UUID, wait_seconds: float = Query(default=0, ge=0, le=30)):

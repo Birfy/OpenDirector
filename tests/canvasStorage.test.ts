@@ -103,3 +103,61 @@ test("temporary blob media is rejected explicitly instead of pretending it will 
   if (!serialized.ok) assert.equal(serialized.error.code, "transient-media");
   assert.equal(document.nodes[0]!.data.src, "blob:local-session");
 });
+
+test("a node keeps its archive provenance through a document round trip", () => {
+  // Losing this field is what made an imported generation node fall back to a
+  // plain material: the reader dropped it and the importer had no evidence.
+  const document = createDocument("来源往返");
+  document.nodes = [
+    createNode(
+      "image",
+      { x: 0, y: 0 },
+      {
+        src: "data:image/png;base64,aGVsbG8=",
+        mimeType: "image/png",
+        title: "图片生成.png",
+        mediaRole: "generation",
+        generationProvenance: {
+          source: "generated",
+          jobId: "6f1d1f3e-0000-4000-8000-000000000000",
+          inputFingerprint: "a".repeat(64),
+        },
+      },
+    ),
+  ];
+  const serialized = serializeDocument(document);
+  assert.equal(serialized.ok, true);
+  if (!serialized.ok) return;
+  const parsed = parseDocument(serialized.value);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.value.nodes[0]!.data.generationProvenance, {
+    source: "generated",
+    jobId: "6f1d1f3e-0000-4000-8000-000000000000",
+    inputFingerprint: "a".repeat(64),
+  });
+});
+
+test("an unknown provenance source is rejected rather than trusted", () => {
+  const document = createDocument("非法来源");
+  document.nodes = [
+    createNode(
+      "image",
+      { x: 0, y: 0 },
+      {
+        src: "data:image/png;base64,aGVsbG8=",
+        mimeType: "image/png",
+        title: "伪造.png",
+        mediaRole: "generation",
+      },
+    ),
+  ];
+  const serialized = serializeDocument(document);
+  assert.equal(serialized.ok, true);
+  if (!serialized.ok) return;
+  const raw = JSON.parse(serialized.value) as {
+    nodes: { data: Record<string, unknown> }[];
+  };
+  raw.nodes[0]!.data.generationProvenance = { source: "forged" };
+  assert.equal(parseDocument(raw).ok, false);
+});

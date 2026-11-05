@@ -30,6 +30,7 @@
         "source": "upload",
         "jobId": null,
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -38,7 +39,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     },
     {
@@ -64,6 +65,7 @@
         "source": "upload",
         "jobId": null,
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -72,7 +74,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     },
     {
@@ -98,6 +100,7 @@
         "source": "upload",
         "jobId": null,
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -106,7 +109,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     },
     {
@@ -132,6 +135,7 @@
         "source": "upload",
         "jobId": null,
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -140,7 +144,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     },
     {
@@ -166,6 +170,7 @@
         "source": "upload",
         "jobId": null,
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -174,7 +179,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     },
     {
@@ -200,6 +205,7 @@
         "source": "generated",
         "jobId": "00000000-0000-0000-0000-000000000046",
         "toolTaskId": null,
+        "sourceItemId": null,
         "editorDocumentId": null,
         "editorRevision": null,
         "sources": [],
@@ -208,7 +214,7 @@
         "agentRuntime": null,
         "modelSnapshot": null,
         "prompt": null,
-        "sourceItemId": null
+        "importedFrom": null
       }
     }
   ],

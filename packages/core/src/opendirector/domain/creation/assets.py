@@ -53,7 +53,7 @@ class UploadInfo(Contract):
 
 
 class AssetProvenance(Contract):
-    source: Literal['upload', 'manual', 'agent_written', 'generated', 'edited', 'rendered'] = Field(description='Input source or recorded provenance.')
+    source: Literal['upload', 'manual', 'agent_written', 'generated', 'edited', 'rendered', 'imported'] = Field(description='Input source or recorded provenance.')
     jobId: UUID | None = Field(default=None, description='Generation job ID.')
     toolTaskId: UUID | None = Field(default=None, description='Tool execution ID.')
     sourceItemId: UUID | None = Field(default=None, description='Source canvas item ID.')
@@ -65,11 +65,16 @@ class AssetProvenance(Contract):
     agentRuntime: Literal['opencode', 'codex', 'claude', 'jiuwenswarm', 'deepseek'] | None = Field(default=None, description='Native Agent runtime that produced this asset.')
     modelSnapshot: ModelSnapshot | None = Field(default=None, description='Fixed model connection recorded for provenance.')
     prompt: str | None = Field(default=None, max_length=20000, description='Generation prompt text.')
+    importedFrom: Literal['generated', 'edited'] | None = Field(default=None, description='Original source recorded by a canvas archive this asset was imported from.')
 
     @model_validator(mode='after')
     def evidence(self):
         if self.source == 'generated' and (self.jobId is None or self.inputFingerprint is None):
             raise ValueError('Generated assets require job and input identity')
+        if self.source == 'imported' and self.importedFrom is None:
+            raise ValueError('Imported assets record the source they were exported from')
+        if self.source != 'imported' and self.importedFrom is not None:
+            raise ValueError('Only imported assets carry an archive source')
         if self.source == 'agent_written' and (self.agentRunId is None or
                 not ((self.modelSnapshot is not None and self.modelSnapshot.kind == 'agent') or self.agentRuntime is not None)):
             raise ValueError('Agent-written documents require a run and an agent model or native runtime')

@@ -820,6 +820,7 @@ test("reference replacement and hiding preserve the intended project relationshi
       agentRuntime: null,
       modelSnapshot: null,
       prompt: null,
+      importedFrom: null,
     },
   };
   const spec: TextGenerationSpec = {

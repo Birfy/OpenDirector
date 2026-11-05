@@ -8,7 +8,9 @@ import { tNow } from "../i18n/messages.ts";
  * `canvas.json` is the document and `assets/` holds the media bytes. Keeps the
  * document readable and stops embedded base64 from bloating a single file. */
 export const CANVAS_ARCHIVE_MAGIC = "opendirector-canvas";
-export const CANVAS_ARCHIVE_VERSION = 1;
+/** v2 records each asset's provenance so generation nodes survive a round trip.
+ * v1 archives still import; their generation nodes fall back to plain material. */
+export const CANVAS_ARCHIVE_VERSION = 2;
 export const CANVAS_DOCUMENT_ENTRY = "canvas.json";
 export const CANVAS_ASSET_DIRECTORY = "assets";
 
@@ -82,6 +84,45 @@ interface Asset {
   mimeType: string;
   byteSize: number;
   sha256?: string;
+  /** Where the bytes came from. A generation node's picture must keep its
+   * provenance across export/import, or the importer cannot restore the
+   * generation binding the backend insists on. */
+  provenance?: ArchiveProvenance;
+}
+
+/** Provenance the archive carries so imported generation nodes stay valid.
+ * `jobId` and `inputFingerprint` are the original execution identity; the
+ * importer records them as an imported generation rather than a live job. */
+export interface ArchiveProvenance {
+  source: "generated" | "edited" | "rendered" | "upload" | "manual";
+  jobId?: string;
+  inputFingerprint?: string;
+  editorDocumentId?: string;
+  editorRevision?: number;
+}
+
+/** Narrows an untrusted node field into archive provenance, if it fits. */
+function asProvenance(value: unknown): ArchiveProvenance | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const source = record.source;
+  if (
+    source !== "generated" &&
+    source !== "edited" &&
+    source !== "rendered" &&
+    source !== "upload" &&
+    source !== "manual"
+  )
+    return undefined;
+  const provenance: ArchiveProvenance = { source };
+  if (typeof record.jobId === "string") provenance.jobId = record.jobId;
+  if (typeof record.inputFingerprint === "string")
+    provenance.inputFingerprint = record.inputFingerprint;
+  if (typeof record.editorDocumentId === "string")
+    provenance.editorDocumentId = record.editorDocumentId;
+  if (typeof record.editorRevision === "number")
+    provenance.editorRevision = record.editorRevision;
+  return provenance;
 }
 
 /** Media lives in `assets/`; the document keeps a relative reference to it. */
@@ -100,6 +141,7 @@ export async function buildCanvasArchive(
     src: string,
     title: string,
     mimeType: string,
+    provenance?: ArchiveProvenance,
   ): Promise<string> => {
     const known = paths.get(src);
     if (known) return known;
@@ -117,6 +159,7 @@ export async function buildCanvasArchive(
         mimeType: type,
         byteSize: bytes.length,
         sha256: digest,
+        provenance,
       });
       if (digest) byDigest.set(digest, path);
       return path;
@@ -129,20 +172,24 @@ export async function buildCanvasArchive(
     value: unknown,
     title: string,
     mimeType: string,
+    provenance?: ArchiveProvenance,
   ): Promise<void> => {
     if (!value || typeof value !== "object") return;
     const record = value as Record<string, unknown>;
     const ownTitle = typeof record.title === "string" ? record.title : title;
     const ownType =
       typeof record.mimeType === "string" ? record.mimeType : mimeType;
+    // A node states where its own picture came from; descendants inherit it.
+    const ownProvenance = asProvenance(record.generationProvenance) ?? provenance;
     for (const [key, entry] of Object.entries(record)) {
       if (
         MEDIA_FIELDS.has(key) &&
         typeof entry === "string" &&
         /^(data|blob):/i.test(entry)
       )
-        record[key] = await register(entry, ownTitle, ownType);
-      else if (typeof entry === "object") await visit(entry, ownTitle, ownType);
+        record[key] = await register(entry, ownTitle, ownType, ownProvenance);
+      else if (typeof entry === "object")
+        await visit(entry, ownTitle, ownType, ownProvenance);
     }
   };
 
@@ -163,6 +210,7 @@ export async function buildCanvasArchive(
       mimeType: asset.mimeType,
       byteSize: asset.byteSize,
       ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
+      ...(asset.provenance ? { provenance: asset.provenance } : {}),
     })),
   };
   const entries: ZipEntry[] = [
@@ -189,13 +237,16 @@ export interface CanvasArchiveContents {
   document: CanvasDocument;
   /** Number of media files restored from `assets/`. */
   assets: number;
+  /** Provenance per inline media data URL, for v2 archives. The importer uses
+   * this to restore generation bindings instead of inventing one. */
+  provenance: Map<string, ArchiveProvenance>;
 }
 
 interface ArchiveManifest {
   magic?: unknown;
   formatVersion?: unknown;
   document?: unknown;
-  assets?: { path?: unknown; mimeType?: unknown }[];
+  assets?: { path?: unknown; mimeType?: unknown; provenance?: unknown }[];
 }
 
 function base64(bytes: Uint8Array): string {
@@ -251,10 +302,16 @@ export async function readCanvasArchive(
   if (!parsed.ok) throw new Error(parsed.error.message);
   const document = parsed.value;
   const mimeTypes = new Map<string, string>();
+  const provenances = new Map<string, ArchiveProvenance>();
   for (const asset of manifest.assets ?? [])
-    if (typeof asset?.path === "string" && typeof asset.mimeType === "string")
+    if (typeof asset?.path === "string" && typeof asset.mimeType === "string") {
       mimeTypes.set(asset.path, asset.mimeType);
+      const provenance = asProvenance(asset.provenance);
+      if (provenance) provenances.set(asset.path, provenance);
+    }
   const restored = new Set<string>();
+  // Keyed by the inline data URL the document ends up holding.
+  const provenance = new Map<string, ArchiveProvenance>();
   const visit = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     const record = value as Record<string, unknown>;
@@ -271,10 +328,13 @@ export async function readCanvasArchive(
       if (!bytes)
         throw new Error(tNow("errors.archive.missingMedia", { entry }));
       const type = mimeTypes.get(entry) || "application/octet-stream";
-      record[key] = `data:${type};base64,${base64(bytes)}`;
+      const url = `data:${type};base64,${base64(bytes)}`;
+      record[key] = url;
       restored.add(entry);
+      const known = provenances.get(entry);
+      if (known) provenance.set(url, known);
     }
   };
   visit(document);
-  return { document, assets: restored.size };
+  return { document, assets: restored.size, provenance };
 }

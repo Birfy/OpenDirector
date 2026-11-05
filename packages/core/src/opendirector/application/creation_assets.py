@@ -56,12 +56,18 @@ class CreationAssets:
                 raise ContractError('reference_invalid', '空白文本不能作为参考。', asset.id)
         return asset
 
-    def execute(self, command, *, session=None, source='ui', provenance=None):
+    def execute(self, command, *, session=None, source='ui', provenance=None, imported_from=None):
         replay = self.projects.replay(command)
         if replay is not None:
             return replay
         if command.type == 'asset.import':
+            if provenance is None and imported_from is not None:
+                # A canvas archive carried this media in with its own recorded
+                # source. Mark it as imported rather than fabricating a job.
+                provenance = AssetProvenance(source='imported', importedFrom=imported_from)
             return self.register(command, session=session, source=source, provenance=provenance)
+        if imported_from is not None:
+            raise ProjectError('只有素材导入可以声明归档来源。', 400, code='invalid_input')
         if command.type == 'asset.writeText':
             return self.write_text(command, session=session, source=source, provenance=provenance)
         if command.type == 'asset.updateMetadata':

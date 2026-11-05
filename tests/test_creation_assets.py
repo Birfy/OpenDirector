@@ -615,3 +615,21 @@ def test_media_read_basis_cannot_cross_projects(storage):
     snapshot = projects.snapshot(pid)
     with pytest.raises(ProjectError, match='不属于'):
         CreationAssets(projects).open_media(uuid4(), asset.id, snapshot=snapshot)
+
+
+def test_imported_assets_record_the_archive_source_they_came_from():
+    """An archive is evidence: it may say the bytes were generated, but the
+    claim has to be explicit and cannot leak onto ordinary assets."""
+    imported = AssetProvenance(source='imported', importedFrom='generated')
+    assert imported.importedFrom == 'generated'
+    assert AssetProvenance(source='imported', importedFrom='edited').importedFrom == 'edited'
+
+    # Without the original source the record would be an unexplained import.
+    with pytest.raises(ValueError, match='record the source'):
+        AssetProvenance(source='imported')
+    # Only imported assets may carry an archive source.
+    with pytest.raises(ValueError, match='Only imported'):
+        AssetProvenance(source='upload', importedFrom='generated')
+    # A generated asset still needs real job evidence, not just a claim.
+    with pytest.raises(ValueError, match='job and input identity'):
+        AssetProvenance(source='generated', importedFrom='generated')

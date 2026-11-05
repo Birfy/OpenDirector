@@ -56,10 +56,14 @@ export async function request<T>(
   return (await response.json()) as T;
 }
 
-export function json(method: string, value: unknown): RequestInit {
+export function json(
+  method: string,
+  value: unknown,
+  extra: Record<string, string> = {},
+): RequestInit {
   return {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...extra },
     body: JSON.stringify(value),
   };
 }
