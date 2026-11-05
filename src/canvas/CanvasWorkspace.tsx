@@ -1542,6 +1542,11 @@ function Workspace() {
   }, [installDocument, notify]);
   useEffect(() => {
     if (!ready || switching || projectRenaming || historyReplaying) return;
+    // An open editing transaction (inline text, layer and other drag edits) must
+    // not be flushed mid-gesture. Saving each keystroke rewrote the text asset,
+    // moved the item's binding and re-rendered the field, which dropped the
+    // caret and split IME composition. finishTextEdit flushes when the edit ends.
+    if (historyRef.current.transaction) return;
     const baseline = workspaceProjection(doc.id).baseline;
     const contentChanged = !baseline || !sameCanvasContent(doc, baseline);
     if (contentChanged) setSaveStatus({ state: "saving" });
@@ -1550,7 +1555,7 @@ function Workspace() {
         void persist(doc, true, true);
     }, contentChanged ? 450 : 900);
     return () => clearTimeout(timeout);
-  }, [doc, ready, switching, projectRenaming, historyReplaying, persist]);
+  }, [doc, ready, switching, projectRenaming, historyReplaying, persist, textEditingId]);
   useEffect(() => {
     if (!ready) return;
     const client = creationClient(doc.id),
@@ -4283,8 +4288,11 @@ function Workspace() {
     endEdit: end,
     isTextEditing: (id: string) => textEditingId === id,
     finishTextEdit: () => {
+      // Autosave is suspended while the transaction is open, so the finished
+      // edit is written here instead of on a timer.
       end();
       setTextEditingId(null);
+      void persist(historyRef.current.present);
     },
   };
   const contextItems = (children: ReactNode) => (

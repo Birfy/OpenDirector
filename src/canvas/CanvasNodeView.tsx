@@ -84,7 +84,7 @@ function CanvasNodeContents({ id, data, selected }: NodeProps<CanvasFlowNode>) {
             spellCheck={false}
             readOnly={locked}
             autoFocus
-            value={data.text ?? ""}
+            defaultValue={data.text ?? ""}
             onFocus={() => actions?.beginEdit?.(id)}
             onBlur={() => actions?.finishTextEdit()}
             onChange={(event) =>
