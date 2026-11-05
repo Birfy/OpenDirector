@@ -3422,7 +3422,7 @@ function Workspace() {
       if (!recent && !watch.active.has(job.id)) continue;
       watch.reported.add(job.id);
       const node = [...doc.nodes, ...(doc.hiddenNodes ?? [])].find(
-        (item) => item.id === job.nodeId,
+        (item) => item.id === (job.targetNodeId ?? job.nodeId),
       );
       const name = node?.data.title ?? job.targetTitle ?? job.title;
       // Tool jobs keep their reason in `message`; generation jobs have a phase
