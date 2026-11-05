@@ -1,0 +1,3 @@
+interface:
+  display_name: "安装 OpenDirector / Install OpenDirector"
+  short_description: "检查依赖、安装并构建 / Check, install, and build OpenDirector"
