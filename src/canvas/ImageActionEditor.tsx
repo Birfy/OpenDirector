@@ -164,7 +164,9 @@ export function ImageActionEditor({
     ...(tool === "cutout" ? { selectionMode: "manual" } : {}),
   }));
   const [editMode, setEditMode] = useState<"annotation" | "selection">(
-    "annotation",
+    initialDraft.current?.parameters.editMode === "selection"
+      ? "selection"
+      : "annotation",
   );
   const [selectionTool, setSelectionTool] = useState<"paint" | "quick" | "box">(
     "paint",
@@ -187,6 +189,7 @@ export function ImageActionEditor({
   const [ink, setInk] = useState<ImageInkStroke | null>(null);
   const inkRef = useRef<ImageInkStroke | null>(null);
   const pointerId = useRef<number | null>(null);
+  const brushCursor = useRef<HTMLDivElement | null>(null);
   const [activeInk, setActiveInk] = useState<ImageInkTool>("brush");
   const [brushSize, setBrushSize] = useState(tool === "cutout" ? 32 : 24);
   const [color, setColor] = useState("#a78bfa");
@@ -229,6 +232,7 @@ export function ImageActionEditor({
     autoSelect: tool === "cutout",
   });
   const hasMask = selection.hasMask;
+  const needsSelection = tool === "smart-edit" && maskMode && !hasMask;
   const modelMissing =
     Boolean(parameters.imageModelConfigId) &&
     !models.some((model) => model.id === parameters.imageModelConfigId);
@@ -406,6 +410,7 @@ export function ImageActionEditor({
 
   const makeTask = (): CanvasToolTask => {
     let values = { ...parameters };
+    if (tool === "smart-edit") values.editMode = editMode;
     if (!size) return createCanvasToolTask(tool, [node.id], values);
     if (annotation)
       values.annotationDocument = writeImageInk(history.current, node.id, size);
@@ -458,7 +463,7 @@ export function ImageActionEditor({
       }
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [parameters, history.current, selection.mask, ready]);
+  }, [parameters, editMode, history.current, selection.mask, ready]);
   const withTask = (run: (task: CanvasToolTask) => void) => {
     try {
       const task = makeTask();
@@ -502,6 +507,24 @@ export function ImageActionEditor({
   const redo = maskMode ? selection.redo : redoAnnotation;
   const canUndo = maskMode ? selection.canUndo : history.past.length > 0;
   const canRedo = maskMode ? selection.canRedo : history.future.length > 0;
+  // Round brushes show their footprint instead of a crosshair so the size slider
+  // has a visible effect before the first stroke.
+  const roundBrush = maskMode
+    ? selectionTool === "paint" &&
+      (activeInk === "brush" || activeInk === "erase")
+    : activeInk === "brush" || activeInk === "erase";
+  const brushFootprint =
+    size && rect ? Math.max(2, (brushSize * rect.width) / size.width) : 0;
+  const trackBrush = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const node = brushCursor.current;
+    if (!node) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    node.style.opacity = "1";
+    node.style.transform = `translate(${event.clientX - bounds.left}px, ${event.clientY - bounds.top}px) translate(-50%, -50%)`;
+  };
+  const hideBrush = () => {
+    if (brushCursor.current) brushCursor.current.style.opacity = "0";
+  };
   const pointerPoint = (
     event: ReactPointerEvent<HTMLCanvasElement>,
   ): ImagePoint => {
@@ -816,7 +839,7 @@ export function ImageActionEditor({
               <canvas
                 ref={canvas}
                 tabIndex={0}
-                className={`iae-ink ${maskMode ? "iae-ink-mask" : ""}`}
+                className={`iae-ink ${maskMode ? "iae-ink-mask" : ""}${roundBrush ? " iae-ink-brush" : ""}`}
                 aria-label={
                   maskMode
                     ? t("tools.imageEditor.ink.ariaMask")
@@ -829,10 +852,29 @@ export function ImageActionEditor({
                   height: rect.height,
                 }}
                 onPointerDown={startInk}
-                onPointerMove={moveInk}
+                onPointerEnter={roundBrush ? trackBrush : undefined}
+                onPointerMove={(event) => {
+                  if (roundBrush) trackBrush(event);
+                  moveInk(event);
+                }}
+                onPointerLeave={roundBrush ? hideBrush : undefined}
                 onPointerUp={(event) => finishInk(event, true)}
                 onPointerCancel={(event) => finishInk(event, false)}
                 onLostPointerCapture={(event) => finishInk(event, false)}
+              />
+            )}
+            {drawing && roundBrush && rect && brushFootprint > 0 && (
+              <div
+                ref={brushCursor}
+                className="iae-brush-cursor"
+                aria-hidden="true"
+                style={{
+                  left: rect.x,
+                  top: rect.y,
+                  width: brushFootprint,
+                  height: brushFootprint,
+                  opacity: 0,
+                }}
               />
             )}
             {boxDrag && rect && size && (
@@ -1051,8 +1093,10 @@ export function ImageActionEditor({
                   },
                   {
                     tool: "erase",
-                    label: t("tools.imageEditor.brush.erase"),
-                    icon: "minus",
+                    label: maskMode
+                      ? t("tools.imageEditor.brush.eraseSelection")
+                      : t("tools.imageEditor.brush.erase"),
+                    icon: "eraser",
                   },
                 ],
                 ...(!maskMode
@@ -1060,7 +1104,7 @@ export function ImageActionEditor({
                       {
                         tool: "arrow",
                         label: t("tools.imageEditor.brush.arrow"),
-                        icon: "arrowRight",
+                        icon: "arrowUpRight",
                       },
                       {
                         tool: "text",
@@ -1113,7 +1157,7 @@ export function ImageActionEditor({
                     disabled={!onPreviewSelection}
                     onClick={() => setSelectionTool("box")}
                   >
-                    <CanvasIcon name="crop" size={17} />
+                    <CanvasIcon name="marquee" size={17} />
                   </TooltipButton>
                   <TooltipButton
                     label={t("tools.imageEditor.brush.describe")}
@@ -1633,9 +1677,11 @@ export function ImageActionEditor({
                     : !onGenerate
                       ? (unavailableReason ??
                         t("tools.imageEditor.service.connect"))
-                      : hasMask
-                        ? t("tools.imageEditor.service.localEdit")
-                        : ""}
+                      : needsSelection
+                        ? t("tools.imageEditor.service.selectToEdit")
+                        : maskMode && hasMask
+                          ? t("tools.imageEditor.service.localEdit")
+                          : ""}
           </span>
           <div className="iae-actions">
             <TooltipButton
@@ -1753,6 +1799,7 @@ export function ImageActionEditor({
                 publishing ||
                 !ready ||
                 selection.pending ||
+                needsSelection ||
                 (tool === "cutout"
                   ? !hasMask
                   : localOnly

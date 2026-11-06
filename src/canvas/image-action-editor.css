@@ -340,6 +340,19 @@
   touch-action: none;
   cursor: crosshair;
 }
+/* Round brushes draw their own footprint; the system crosshair would hide it. */
+.iae-ink-brush {
+  cursor: none;
+}
+.iae-brush-cursor {
+  position: absolute;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #00000073;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
 .iae-expansion {
   position: absolute;
   border: 1.5px solid #b39aff;

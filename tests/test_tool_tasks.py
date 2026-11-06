@@ -635,21 +635,27 @@ def test_cutout_uses_sam_when_no_rgba_editor_is_configured(project):
     assert output_rgba(store, project_id, task).getpixel((5, 5))[3] == 0
 
 
-def test_smart_edit_uses_visual_annotation_and_keeps_unselected_pixels(project):
+@pytest.mark.parametrize('mode', [None, 'annotation', 'selection'])
+def test_smart_edit_uses_the_active_mode_and_retains_legacy_combined_edits(project, mode):
     store, project_id, session = project
     source = upload(store, project_id, session, 'blue.png', png())
     annotation = upload(store, project_id, session, 'marked.png', png(color='green'))
     mask = upload(store, project_id, session, 'mask.png', base64.b64decode(box_mask((64, 48), (10, 8, 30, 32))))
     calls = []
+    parameters = {'prompt': '改成红色', 'annotationDocument': json.dumps({'strokes': [{'tool': 'text', 'text': '画笔说明'}]})}
+    if mode is not None:
+        parameters['editMode'] = mode
     task = run(store, configure(store, ('image', 'http://gpu:8210/v1', 'Qwen/Qwen-Image-2.1')),
                httpx.MockTransport(images_server(calls)), project_id, session,
                {'tool': 'smart-edit', 'sourceAssetIds': [source], 'maskAssetId': mask,
-                'annotationAssetId': annotation, 'parameters': {'prompt': '改成红色'}})
+                'annotationAssetId': annotation, 'parameters': parameters})
     assert task['status'] == 'succeeded', task['error']
-    assert calls[0].count(b'name="image"') == 2 and '第二张图'.encode() in calls[0]
+    assert calls[0].count(b'name="image"') == (1 if mode == 'selection' else 2)
+    assert ('画笔说明'.encode() in calls[0]) == (mode != 'selection')
     result = output_rgba(store, project_id, task)
     assert result.getpixel((20, 20)) == (255, 0, 0, 255)
-    assert result.getpixel((9, 8)) == (0, 0, 255, 255) and result.getpixel((30, 20)) == (0, 0, 255, 255)
+    outside = (255, 0, 0, 255) if mode == 'annotation' else (0, 0, 255, 255)
+    assert result.getpixel((9, 8)) == outside and result.getpixel((30, 20)) == outside
 
 
 def test_smart_edit_reads_editor_text_strokes_and_honours_selected_model(project):

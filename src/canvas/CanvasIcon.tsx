@@ -106,11 +106,21 @@ const icons: Record<string, ReactNode> = {
     <path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z" />
   ),
   minus: <path d="M5 12h14" />,
+  /** Rubber eraser: tilted block over the stroke it removes. */
+  eraser: (
+    <>
+      <path d="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21" />
+      <path d="M22 21H7M5 11l9 9" />
+    </>
+  ),
   close: <path d="m6 6 12 12M6 18 18 6" />,
   check: <path d="m5 12 4 4L19 6" />,
   pencil: (
     <>
-      <path d="m14 5 5 5M4 20l4-1 12-12a2.1 2.1 0 0 0-3-3L5 16Z" />
+      {/* Sharp graphite tip and a band near the blunt end; a flat cut at the
+          nib read as an eyedropper at toolbar sizes. */}
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
     </>
   ),
   edit: (
@@ -137,6 +147,7 @@ const icons: Record<string, ReactNode> = {
   ),
   arrowUp: <path d="M12 20V4m-6 6 6-6 6 6" />,
   arrowRight: <path d="M4 12h16m-6-6 6 6-6 6" />,
+  arrowUpRight: <path d="M7 17 17 7M7 7h10v10" />,
   arrowLeft: <path d="M20 12H4m6-6-6 6 6 6" />,
   swapHorizontal: <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
@@ -184,6 +195,19 @@ const icons: Record<string, ReactNode> = {
   crop: (
     <>
       <path d="M6 2v16h16M2 6h16v16M10 6h8M6 10v8" />
+    </>
+  ),
+  /** Marquee selection: a dashed frame, distinct from the crop handles. */
+  marquee: (
+    <>
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="1.5"
+        strokeDasharray="3.5 3"
+      />
     </>
   ),
   /** Duration trim: two facing brackets with the playhead between them. */

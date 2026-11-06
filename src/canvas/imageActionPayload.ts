@@ -9,7 +9,12 @@ export async function imageAnnotationPayload(
   src: string,
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  if (task.tool !== "smart-edit" || !task.parameters.annotationDocument) return;
+  if (
+    task.tool !== "smart-edit" ||
+    task.parameters.editMode === "selection" ||
+    !task.parameters.annotationDocument
+  )
+    return;
   const image = await loadLayerImage(src);
   signal.throwIfAborted();
   const size = { width: image.naturalWidth, height: image.naturalHeight };

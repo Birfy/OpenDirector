@@ -247,19 +247,23 @@ async def _extend(ctx: ToolContext, image: Image.Image, pads, prompt: str) -> Im
 
 async def smart_edit(ctx: ToolContext):
     image = _source_image(ctx)
+    mode = ctx.choice('editMode', ('annotation', 'selection', 'combined'), 'combined')
+    if mode == 'selection' and not ctx.mask:
+        raise ProjectError('请先涂抹或识别需要修改的区域。', 422)
     prompt = ctx.text('prompt')
     notes = []
-    try:
-        document = json.loads(ctx.parameters.get('annotationDocument') or '{}')
-        notes = [stroke.get('text', '').strip() for stroke in document.get('strokes', []) if stroke.get('tool') == 'text']
-    except (ValueError, AttributeError):
-        pass
+    if mode != 'selection':
+        try:
+            document = json.loads(ctx.parameters.get('annotationDocument') or '{}')
+            notes = [stroke.get('text', '').strip() for stroke in document.get('strokes', []) if stroke.get('tool') == 'text']
+        except (ValueError, AttributeError):
+            pass
     instruction = '；'.join(item for item in [prompt, *notes] if item)
     if not instruction:
         raise ProjectError('请描述要如何修改图片。', 422)
     await ctx.progress('正在按描述改图')
     input_image, references = image, ()
-    if ctx.annotation:
+    if mode != 'selection' and ctx.annotation:
         marked = media.open_image(ctx.annotation)
         if marked.size != image.size:
             raise ProjectError('标注图片尺寸必须与原图一致。', 422)
@@ -271,7 +275,7 @@ async def smart_edit(ctx: ToolContext):
             instruction += '。图上的笔画、箭头与文字是编辑指示'
         instruction += '，完成修改后移除这些辅助标记'
     edited = await ctx.edit(input_image, instruction + '。保持未提及的内容不变', 0.78, references=references)
-    if ctx.mask:
+    if mode != 'annotation' and ctx.mask:
         # A selection is an exact editing boundary: pixels outside it stay original.
         edited = media.blend(image, edited, media.mask_from(ctx.mask, image.size))
     return [image_output(edited, '智能改图')]
