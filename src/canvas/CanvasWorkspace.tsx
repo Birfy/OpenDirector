@@ -127,6 +127,7 @@ import {
 import {
   REFERENCE_PORT_ICON_SIZE,
   REFERENCE_PORT_SIZE,
+  referencePortIcon,
   referencePortMetrics,
 } from "./connectionPorts";
 import {
@@ -4866,7 +4867,14 @@ function Workspace() {
                       event.stopPropagation();
                     }}
                   >
-                    <CanvasIcon name="plus" size={REFERENCE_PORT_ICON_SIZE} />
+                    <CanvasIcon
+                      name={referencePortIcon(
+                        port.side,
+                        doc.nodes.find((node) => node.id === port.nodeId)?.data
+                          .mediaRole === "asset",
+                      )}
+                      size={REFERENCE_PORT_ICON_SIZE}
+                    />
                   </button>
                 ))}
             </ViewportPortal>

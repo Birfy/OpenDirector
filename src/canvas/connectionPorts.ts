@@ -3,8 +3,22 @@ import type { Point, Rect } from "./model.ts";
 export type PortSide = "top" | "right" | "bottom" | "left";
 export const REFERENCE_PORT_SIZE = 22;
 export const REFERENCE_PORT_MAX_SIZE = 30;
-/** Drawn size of the plus mark inside the port circle. */
+/** Drawn size of the direction icon inside the port circle. */
 export const REFERENCE_PORT_ICON_SIZE = 15;
+
+/** Asset ports point outwards; editable nodes show the edge's two directions. */
+export function referencePortIcon(side: PortSide, sourceOnly: boolean) {
+  if (sourceOnly)
+    return {
+      top: "arrowUp",
+      right: "arrowRight",
+      bottom: "arrowDown",
+      left: "arrowLeft",
+    }[side];
+  return side === "top" || side === "bottom"
+    ? "referenceArrowsVertical"
+    : "referenceArrowsHorizontal";
+}
 
 /** Apply one scale to the circle, border and icon, including at the screen-size cap. */
 export function referencePortMetrics(zoom: number) {

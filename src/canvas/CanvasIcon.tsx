@@ -146,10 +146,13 @@ const icons: Record<string, ReactNode> = {
     </>
   ),
   arrowUp: <path d="M12 20V4m-6 6 6-6 6 6" />,
+  arrowDown: <path d="M12 4v16m-6-6 6 6 6-6" />,
   arrowRight: <path d="M4 12h16m-6-6 6 6-6 6" />,
   arrowUpRight: <path d="M7 17 17 7M7 7h10v10" />,
   arrowLeft: <path d="M20 12H4m6-6-6 6 6 6" />,
   swapHorizontal: <path d="M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4" />,
+  referenceArrowsHorizontal: <path d="M3 9h18l-5-4M21 15H3l5 4" />,
+  referenceArrowsVertical: <path d="M9 21V3L5 8M15 3v18l4-5" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronRight: <path d="m9 6 6 6-6 6" />,
   camera: (
