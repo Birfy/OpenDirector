@@ -270,16 +270,21 @@ class CreationProjects:
         file = child(directory(child(path, 'commits')), f'{head}.json')
         try:
             before = _file_signature(file)
-            raw = file.read_bytes() if self._verify_record_bytes else None
-            content = sha256(raw).digest() if raw is not None else None
-            if raw is not None and _file_signature(file) != before:
-                raise ValueError('Commit changed during read')
             cached = self._records_cache.get(file)
-            if cached and cached[0] == before and cached[2] == content:
+            # A commit file is immutable after publication; a rewrite changes the
+            # signature (ctime/mtime/size/inode). Re-reading and re-hashing every
+            # historical commit on each read cost ~13 s per history query for a
+            # project with hundreds of commits, holding the catalog lock past the
+            # 15 s contention budget of unrelated saves.
+            if cached and cached[0] == before:
                 self._records_cache.move_to_end(file)
                 # Private repository records are read-only. Public query
                 # boundaries copy returned values, not every historical snapshot.
                 return cached[1]
+            raw = file.read_bytes() if self._verify_record_bytes else None
+            content = sha256(raw).digest() if raw is not None else None
+            if raw is not None and _file_signature(file) != before:
+                raise ValueError('Commit changed during read')
             if cached:
                 self._records_cache_bytes -= self._records_cache.pop(file)[0][2]
             record = CommitRecord.model_validate_json(raw) if raw is not None else CommitRecord.model_validate(read_json(file))
@@ -495,24 +500,42 @@ class CreationProjects:
         with self.local.transaction() as db:
             return self._find(db, project_id)[1].head
 
-    def history(self, project_id):
+    def _read_manifest(self, project_id):
+        """Resolve the current head under the catalog lock.
+
+        Commit files are immutable once published, so the chain behind this head
+        can be walked without holding the lock: a slow read only delays itself,
+        not the saves and status polls that share the catalog.
+        """
         with self.local.transaction() as db:
             self._recover()
-            records = tuple(self._load(db, project_id)[2])
+            return self._find(db, project_id)
+
+    def records(self, project_id):
+        """Private commit records for read-only scans; callers must not mutate them.
+
+        history() deep-copies every snapshot for callers that keep the records
+        around. Scans that only count versions or owners would copy hundreds of
+        megabytes for long histories, so they read the shared records directly.
+        """
+        path, manifest = self._read_manifest(project_id)
+        return tuple(self._history(path, manifest))
+
+    def history(self, project_id):
+        records = self.records(project_id)
         # Private records are never mutated. Copy for the public caller after
         # releasing the global lock so large history reads do not block saves.
         return tuple(record.model_copy(deep=True) for record in records)
 
     def history_index(self, project_id):
         """Small detached event metadata; toolbar queries need no snapshots."""
-        with self.local.transaction() as db:
-            self._recover()
-            records = self._load(db, project_id)[2]
-            return records[0].snapshot.undoClearedThrough, tuple(dict(
-                commandId=r.command.commandId, type=r.command.type,
-                cursor=r.event.cursor, source=r.event.source,
-                targetCommandId=getattr(r.command.payload, 'targetCommandId', None),
-            ) for r in records if r.event is not None)
+        path, manifest = self._read_manifest(project_id)
+        records = self._history(path, manifest)
+        return records[0].snapshot.undoClearedThrough, tuple(dict(
+            commandId=r.command.commandId, type=r.command.type,
+            cursor=r.event.cursor, source=r.event.source,
+            targetCommandId=getattr(r.command.payload, 'targetCommandId', None),
+        ) for r in records if r.event is not None)
 
     def view(self, project_id, client_id, value=None, *, session=None, missing_ok=False):
         with self.local.transaction() as db:

@@ -8,6 +8,30 @@ from opendirector.infrastructure.local_projects import LocalProjects
 from test_creation_canvas_service import project, media, send, text_material, ver
 
 
+def test_history_reads_take_the_catalog_lock_only_to_resolve_the_head(project, monkeypatch):
+    store, pid, session = project
+    item, _ = media(project)
+    for x in (10, 20):
+        send(store, pid, 'canvas.move', session=session, versions=[ver('canvas_item', item)],
+             items=[dict(itemId=item.id, position=dict(x=x, y=0))])
+        item = store.snapshot(pid).canvasItems[0]
+    locks = []
+    original = store.local.transaction
+    def tracking():
+        locks.append(1)
+        return original()
+    monkeypatch.setattr(store.local, 'transaction', tracking)
+    cleared, entries = store.history_index(pid)
+    # Reading hundreds of immutable commits used to hold the catalog lock for
+    # longer than the 15 s contention budget, so unrelated saves were reported
+    # as "storage busy"; only the head lookup may take it now.
+    assert len(locks) == 1
+    assert cleared == 0 and len(entries) >= 4
+    locks.clear()
+    records = store.history(pid)
+    assert len(locks) == 1 and len(records) >= 4
+
+
 def test_redo_follows_undo_order_and_new_edit_discards_redo_branch(project):
     store, pid, session = project
     item, _ = media(project)
@@ -284,7 +308,7 @@ def test_asset_list_batches_history_and_tool_dependencies_without_stale_usage(pr
     monkeypatch.setattr(history_module, 'read_json', reading)
     service = CreationHistory(store)
     listing = service.asset_list(pid)
-    assert len(history_reads) == 1 and len(loads) == 2
+    assert len(history_reads) == 1 and len(loads) == 1
     assert ledger_reads == [ledger]
     assert listing['eventCursor'] == snapshot.eventCursor
     assert [row['asset'].id for row in listing['items']] == [unused.id, tool_input.id, material.id]

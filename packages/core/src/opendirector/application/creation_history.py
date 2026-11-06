@@ -239,7 +239,9 @@ class CreationHistory:
         return self.projects.commit(command, apply, session=session, source=source, with_history=True)
 
     def version_counts(self, project_id):
-        records = self.projects.history(project_id)
+        # Counting only reads snapshots; copying every record here made the
+        # badge refresh cost ~20 s on projects with hundreds of commits.
+        records = self.projects.records(project_id)
         snapshot = records[0].snapshot
         families = {i.id: set() for i in snapshot.canvasItems if i.kind in {'text', 'image', 'video', 'audio'}}
         owners = {}

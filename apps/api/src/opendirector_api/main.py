@@ -338,6 +338,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
             return FileResponse(dist / "index.html")
 
         # The canvas restores its project from these client-side addresses.
+        @app.get("/ai-canvas/{path:path}")
         @app.get("/ai-tool/{path:path}")
         def canvas_route(path: str):
             return FileResponse(dist / "index.html")

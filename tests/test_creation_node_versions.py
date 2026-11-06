@@ -350,12 +350,12 @@ def test_listing_and_counts_load_history_once_and_recheck_changed_files(project,
     assert send(store, pid, 'canvas.materialize', session=session, versions=versions(store.snapshot(pid)),
         itemId=node.id, asset=asset_ref(second)).status == 'applied'
     history = CreationHistory(store)
-    original = store._load
+    original = store._history
     calls = []
-    def load(*args):
+    def read(*args):
         calls.append(1)
         return original(*args)
-    monkeypatch.setattr(store, '_load', load)
+    monkeypatch.setattr(store, '_history', read)
     listing = history.node_versions(pid, node.id)
     assert len(calls) == 1
     assert all(row['available'] for row in listing['versions'])
