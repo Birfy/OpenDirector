@@ -246,8 +246,30 @@ export async function recordLocalVideoRange(
         () => stop(new Error(tNow("errors.media.timeout"))),
         (end - start) * 1000 + 20000,
       );
+      // Animation frames and `timeupdate` both stop while the tab is hidden or
+      // the decoder stalls. Relying on them alone let the recorder run to the
+      // end of the source, so an 8 s selection was published as an 18 s clip.
+      // The wall clock bounds the recording to the requested range regardless.
+      const backstop = setTimeout(
+        () => stop(),
+        (end - start) * 1000 + 750,
+      );
+      // Playback that stops advancing is an interruption, not a shorter clip:
+      // report it instead of publishing frozen frames.
+      let lastProgress = video.currentTime;
+      const stalled = setInterval(() => {
+        if (stopping || settled) return;
+        if (video.currentTime > lastProgress + 0.05) {
+          lastProgress = video.currentTime;
+          return;
+        }
+        if (video.paused) return;
+        stop(new Error(tNow("errors.media.stalled")));
+      }, 2500);
       releaseListeners = () => {
         clearTimeout(deadline);
+        clearTimeout(backstop);
+        clearInterval(stalled);
         signal.removeEventListener("abort", cancel);
         video.removeEventListener("ended", ended);
         video.removeEventListener("error", failed);

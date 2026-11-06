@@ -400,6 +400,8 @@ export const errors = {
     "Drawing the video frame failed; no crop was produced.",
   "errors.media.timeout":
     "Video playback or recording timed out. Check the media and try again.",
+  "errors.media.stalled":
+    "Video playback stalled; nothing was produced. Please try again.",
   "errors.media.reencodeFailed": "Video re-encoding failed.",
   "errors.videoAction.options":
     "Choose an option supported by this operation.",

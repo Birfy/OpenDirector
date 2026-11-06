@@ -284,6 +284,7 @@ export const errors = {
   "errors.media.paused": "录制期间播放已暂停，处理已停止。",
   "errors.media.drawFailed": "视频画幅绘制失败，未生成裁剪结果。",
   "errors.media.timeout": "视频播放或录制超时，请检查素材后重试。",
+  "errors.media.stalled": "视频播放停滞，未生成结果，请重试。",
   "errors.media.reencodeFailed": "视频重编码失败。",
   "errors.videoAction.options": "请选择当前操作支持的选项。",
   "errors.videoAction.duration": "请等待视频时长读取完成，并选择有效范围。",
