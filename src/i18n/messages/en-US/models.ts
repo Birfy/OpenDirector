@@ -1,5 +1,9 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.service.proxyMode": "Network connection mode",
+  "models.service.proxySystem": "Use system proxy",
+  "models.service.proxyDirect": "Direct connection",
+  "models.service.proxyNote": "Applies to this model service's requests and result downloads. Use a direct connection if a proxy causes timeouts or disconnections.",
   "models.readFailed": "Could not read model settings.",
   "models.reload": "Reload",
   "models.categories": "Model categories",

@@ -817,6 +817,7 @@ export interface ModelConnectionInput extends ContractInput {
   readonly connectionType: "api" | "self_hosted";
   readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
+  readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
   readonly videoCapabilities?: VideoCapabilitiesInput | null;
@@ -829,6 +830,7 @@ export interface ModelSnapshotInput extends ContractInput {
   readonly url: string;
   readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
+  readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter?: "auto" | "fasth3" | "minimax_h3" | "standard";
   readonly inputRules?: InputRulesInput | null;
@@ -2263,6 +2265,7 @@ export interface ModelConnection extends Contract {
   readonly connectionType: "api" | "self_hosted";
   readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly authMode: "none" | "bearer";
+  readonly proxyMode: "system" | "direct";
   readonly inputModalities: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
   readonly videoCapabilities: VideoCapabilities | null;
@@ -2275,6 +2278,7 @@ export interface ModelSnapshot extends Contract {
   readonly url: string;
   readonly protocol: "openai" | "volcengine" | "minimax_video_v2" | "vllm_omni" | "vllm_omni_segmentation" | "vllm_omni_music" | "vllm_omni_depth" | "vllm_omni_score";
   readonly connectionType: "api" | "self_hosted";
+  readonly proxyMode?: "system" | "direct";
   readonly inputModalities?: ReadonlyArray<"text" | "image"> | null;
   readonly videoAdapter: "auto" | "fasth3" | "minimax_h3" | "standard";
   readonly inputRules: InputRules | null;

@@ -28,7 +28,8 @@ def test_self_hosted_origin_is_direct_for_vpn_lan_and_public_services(base, equi
     assert trust_environment('http://8.92.9.154:9000/v1', config={**config, 'url': 'http://8.92.9.154:8094/v1'}) is True
 
 
-def test_non_loopback_self_hosted_host_works_with_broken_system_proxy(monkeypatch):
+@pytest.mark.parametrize('connection_type,proxy_mode', [('self_hosted', 'system'), ('api', 'direct')])
+def test_non_loopback_service_works_with_broken_system_proxy(monkeypatch, connection_type, proxy_mode):
     """Use a local DNS alias to exercise real HTTPX proxy selection, without VPN."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
@@ -49,11 +50,11 @@ def test_non_loopback_self_hosted_host_works_with_broken_system_proxy(monkeypatc
         monkeypatch.setenv(name, 'http://127.0.0.1:1')
     monkeypatch.setenv('NO_PROXY', '')
     monkeypatch.setenv('no_proxy', '')
-    config = {'connectionType': 'self_hosted', 'url': f'http://model.test:{server.server_port}/v1'}
+    config = {'connectionType': connection_type, 'proxyMode': proxy_mode, 'url': f'http://model.test:{server.server_port}/v1'}
     async def run():
         async with httpx.AsyncClient(trust_env=trust_environment(config['url'], config=config)) as client:
             assert (await client.get(config['url'])).text == 'ok'
-        api = {**config, 'connectionType': 'api'}
+        api = {**config, 'connectionType': 'api', 'proxyMode': 'system'}
         async with httpx.AsyncClient(trust_env=trust_environment(api['url'], config=api), timeout=2) as client:
             with pytest.raises((httpx.ConnectError, httpx.ConnectTimeout)):
                 await client.get(api['url'])

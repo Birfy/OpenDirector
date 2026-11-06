@@ -7934,6 +7934,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -8079,6 +8089,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -8213,6 +8233,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -8326,6 +8356,16 @@
               "self_hosted"
             ],
             "title": "Connectiontype",
+            "type": "string"
+          },
+          "proxyMode": {
+            "default": "system",
+            "description": "Network routing selected when the job was accepted.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
             "type": "string"
           },
           "inputModalities": {
@@ -22312,6 +22352,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -22374,6 +22424,7 @@
           "connectionType",
           "protocol",
           "authMode",
+          "proxyMode",
           "inputModalities",
           "videoAdapter",
           "videoCapabilities",
@@ -22446,6 +22497,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -22514,6 +22575,7 @@
           "connectionType",
           "protocol",
           "authMode",
+          "proxyMode",
           "inputModalities",
           "videoAdapter",
           "videoCapabilities",
@@ -22584,6 +22646,16 @@
             "title": "Authmode",
             "type": "string"
           },
+          "proxyMode": {
+            "default": "system",
+            "description": "Use the system proxy or connect directly to the model service.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
+            "type": "string"
+          },
           "inputModalities": {
             "anyOf": [
               {
@@ -22636,6 +22708,7 @@
           "connectionType",
           "protocol",
           "authMode",
+          "proxyMode",
           "inputModalities",
           "videoAdapter",
           "videoCapabilities"
@@ -22700,6 +22773,16 @@
               "self_hosted"
             ],
             "title": "Connectiontype",
+            "type": "string"
+          },
+          "proxyMode": {
+            "default": "system",
+            "description": "Network routing selected when the job was accepted.",
+            "enum": [
+              "system",
+              "direct"
+            ],
+            "title": "Proxymode",
             "type": "string"
           },
           "inputModalities": {

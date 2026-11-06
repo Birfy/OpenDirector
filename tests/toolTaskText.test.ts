@@ -23,6 +23,9 @@ test("tool progress messages are localized, including counters", () => {
 
 test("tool task errors never leak persisted Chinese", () => {
   setActiveLocale("en-US");
+  const unknownSubmission = "生成请求的提交结果不明。 请先核对供应商是否已接收请求，避免重复生成。 不会自动重新提交。";
+  assert.match(toolTaskError(unknownSubmission)!, /acceptance is unknown/);
+  assert.doesNotMatch(toolTaskError(unknownSubmission)!, /Try again/);
   assert.equal(
     toolTaskError("服务重启，任务已中断，请重新提交。"),
     "The service restarted and the task was interrupted. Submit it again.",

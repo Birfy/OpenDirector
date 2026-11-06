@@ -201,7 +201,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     def save_model_batch(value: ModelBatchInput):
         return model_configs.save_many(value.kind, value.url, value.modelIds, value.apiKey.get_secret_value(),
                                        str(value.configId) if value.configId else None, connection_type=value.connectionType,
-                                       protocol=value.protocol, auth_mode=value.authMode, video_adapter=value.videoAdapter,
+                                       protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode, video_adapter=value.videoAdapter,
                                        video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
                                        input_modalities=value.inputModalities,
                                        model_options={key: item.model_dump(exclude_unset=True) for key, item in value.modelOptions.items()},
@@ -210,7 +210,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.post('/api/model-configs/discover')
     async def discover_models(value: ModelDiscoveryRequest):
         config = {**model_fields(value.url, value.modelId or 'discovery', value.apiKey.get_secret_value()),
-                  'kind': value.kind, **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode)}
+                  'kind': value.kind, **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode, value.proxyMode)}
         if config['authMode'] == 'bearer' and not config['apiKey']:
             existing = await run_in_threadpool(model_configs.resolve, str(value.configId), value.kind) if value.configId else None
             if not existing or existing['url'] != config['url'] or not existing['apiKey']:
@@ -222,7 +222,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
     @app.post('/api/model-configs/test-agent')
     async def test_agent_model(value: AgentModelTest):
         config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': 'agent',
-                  **connection_fields('agent', value.connectionType, value.protocol, value.authMode)}
+                  **connection_fields('agent', value.connectionType, value.protocol, value.authMode, value.proxyMode)}
         if config['authMode'] == 'bearer' and not config['apiKey']:
             existing = await run_in_threadpool(model_configs.agent, str(value.configId)) if value.configId else None
             if not existing or existing['url'] != config['url'] or not existing['apiKey']:
@@ -245,7 +245,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.post("/api/model-configs", response_model=ModelConfigPublic)
     def create_model_config(value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode,
+        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                                   video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
                                   capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
 
@@ -254,7 +254,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
         if value.kind != 'video':
             raise ProjectError('能力配置仅适用于视频模型。')
         config = {**model_fields(value.url, value.modelId, value.apiKey.get_secret_value()), 'kind': value.kind,
-                  **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode), 'videoAdapter': value.videoAdapter or 'auto'}
+                  **connection_fields(value.kind, value.connectionType, value.protocol, value.authMode, value.proxyMode), 'videoAdapter': value.videoAdapter or 'auto'}
         if value.source == 'preset':
             return {'videoCapabilities': input_rules(config).get('videoCapabilities')}
         if config['authMode'] == 'bearer' and not config['apiKey']:
@@ -266,7 +266,7 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     @app.patch("/api/model-configs/{config_id}", response_model=ModelConfigPublic)
     def update_model_config(config_id: UUID, value: ModelConfigInput):
-        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode,
+        return model_configs.save(value.kind, value.url, value.modelId, value.apiKey.get_secret_value(), str(config_id), connection_type=value.connectionType, protocol=value.protocol, auth_mode=value.authMode, proxy_mode=value.proxyMode,
                                   video_adapter=value.videoAdapter, video_capabilities=value.videoCapabilities.model_dump(exclude_none=True) if value.videoCapabilities else None,
                                   capabilities_supplied='videoCapabilities' in value.model_fields_set, input_modalities=value.inputModalities)
 

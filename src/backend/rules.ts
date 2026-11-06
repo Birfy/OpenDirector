@@ -61,6 +61,7 @@ export interface ModelConfig {
     | "vllm_omni_score"
     | null;
   authMode: "none" | "bearer" | null;
+  proxyMode?: "system" | "direct";
   inputRules: InputRules;
   inputModalities?: ("text" | "image")[] | null;
   videoAdapter?: VideoAdapter;

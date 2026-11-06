@@ -30,7 +30,7 @@ def test_four_categories_survive_restart_without_exposing_secrets(api):
         response = client.post("/api/model-configs", json=payload(kind))
         assert response.status_code == 200
         assert "test-secret" not in response.text
-        assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities", "inputModalities"}
+        assert set(response.json()) == {"id", "kind", "url", "modelId", "inputRules", "connectionType", "protocol", "authMode", "proxyMode", "videoAdapter", "videoCapabilities", "inputModalities"}
         configs.append(response.json())
     assert len({item["id"] for item in configs}) == 5
     assert client.get("/api/model-configs").json() == configs
@@ -61,6 +61,36 @@ def test_edit_preserves_blank_key_and_stable_id_then_delete(api):
     assert client.delete(path).status_code == 204
     assert client.get("/api/model-configs").json() == []
     assert client.patch(path, json=payload()).status_code == 404
+
+
+def test_direct_proxy_mode_survives_restart_and_edits_without_changing_credentials(api):
+    client, store = api
+    config = client.post('/api/model-configs', json=payload('image', proxyMode='direct')).json()
+    assert config['proxyMode'] == 'direct'
+    path = f"/api/model-configs/{config['id']}"
+    edited = client.patch(path, json=payload('image', modelId='updated-image', apiKey='')).json()
+    assert edited['proxyMode'] == 'direct'
+    saved = ModelConfigs(store.repository).resolve(config['id'], 'image')
+    assert saved['proxyMode'] == 'direct' and saved['apiKey'] == 'test-secret'
+    assert client.patch(path, json=payload('image', apiKey='', proxyMode='system')).json()['proxyMode'] == 'system'
+    before = (store.state_dir / 'models.json').read_bytes()
+    assert client.patch(path, json=payload('image', proxyMode='invalid')).status_code == 422
+    assert (store.state_dir / 'models.json').read_bytes() == before
+
+
+def test_batch_service_applies_and_preserves_proxy_mode_for_its_models(api):
+    client, store = api
+    data = {**payload('image', proxyMode='direct'), 'modelIds': ['image-a', 'image-b']}
+    response = client.post('/api/model-configs/batch', json=data)
+    assert response.status_code == 200
+    configs = response.json()
+    assert {config['proxyMode'] for config in configs} == {'direct'}
+    data.pop('proxyMode')
+    data.update(configId=configs[0]['id'], apiKey='')
+    updated = client.post('/api/model-configs/batch', json=data)
+    assert updated.status_code == 200
+    assert {config['proxyMode'] for config in updated.json()} == {'direct'}
+    assert all(config['proxyMode'] == 'direct' for config in ModelConfigs(store.repository).list())
 
 
 def test_validation_and_save_failures_preserve_file_and_hide_request_values(api, monkeypatch):

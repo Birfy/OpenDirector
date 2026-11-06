@@ -12,6 +12,8 @@ from pydantic import JsonValue
 
 
 def trust_environment(url, *, config=None):
+    if config and config.get('proxyMode') == 'direct':
+        return False
     target = urlsplit(url)
     if config and config.get('connectionType') == 'self_hosted':
         base = urlsplit(config.get('url', ''))

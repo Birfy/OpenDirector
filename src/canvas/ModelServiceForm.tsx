@@ -1,5 +1,5 @@
 import { ProviderPicker } from "./ProviderPicker";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../backend/api.ts";
 import {
   MODEL_KINDS,
@@ -83,6 +83,7 @@ export function ModelServiceForm({
   onClose: () => void;
 }) {
   const t = useT();
+  const connectionFieldId = useId();
   const [connection, setConnection] = useState(existing);
   const [presetId, setPresetId] = useState(
     existing
@@ -110,6 +111,7 @@ export function ModelServiceForm({
         ? "vllm_omni_segmentation"
         : (existing?.protocol ?? PROTOCOLS[kind][0][0]),
     authMode: existing?.authMode ?? "none",
+    proxyMode: existing ? (existing.proxyMode ?? "system") : "direct",
     videoAdapter: existing?.videoAdapter ?? "auto",
     inputModalities:
       kind === "agent" ? (existing ? existing.inputModalities ?? ["text"] : ["text", "image"]) : undefined,
@@ -292,6 +294,7 @@ export function ModelServiceForm({
       protocol: preset?.protocol ?? PROTOCOLS[kind][0][0],
       connectionType: preset?.connectionType ?? "self_hosted",
       authMode: preset?.authMode ?? "none",
+      proxyMode: "direct",
     });
   };
   const reuseConnection = (model: ModelConfig) => {
@@ -306,6 +309,7 @@ export function ModelServiceForm({
       videoCapabilities: model.videoCapabilities,
       protocol: model.protocol ?? PROTOCOLS[kind][0][0],
       authMode: model.authMode ?? "bearer",
+      proxyMode: model.proxyMode ?? "system",
       apiKey: "",
     });
     const peers = catalog.models.filter(
@@ -412,20 +416,47 @@ export function ModelServiceForm({
             aria-label={t("models.service.connectionInfo")}
             disabled={locked}
           >
-            <label>
-              {t("models.service.url")}
-              <input
-                type="url"
-                required
-                maxLength={2048}
-                value={value.url}
-                placeholder={placeholders[0]}
-                onChange={(event) => update({ url: event.target.value })}
-              />
-            </label>
-            <p className="cw-model-note">
-              {t("models.service.urlNote")}
-            </p>
+            <div className="cw-model-connection-field">
+              <label>
+                {t("models.service.url")}
+                <input
+                  type="url"
+                  required
+                  maxLength={2048}
+                  value={value.url}
+                  placeholder={placeholders[0]}
+                  aria-describedby={`${connectionFieldId}-url-note`}
+                  onChange={(event) => update({ url: event.target.value })}
+                />
+              </label>
+              <p className="cw-model-note" id={`${connectionFieldId}-url-note`}>
+                {t("models.service.urlNote")}
+              </p>
+            </div>
+            <div className="cw-model-connection-field">
+              <label>
+                {t("models.service.proxyMode")}
+                <select
+                  value={value.proxyMode}
+                  aria-describedby={`${connectionFieldId}-proxy-note`}
+                  onChange={(event) =>
+                    update({
+                      proxyMode: event.target.value as "system" | "direct",
+                    })
+                  }
+                >
+                  <option value="system">
+                    {t("models.service.proxySystem")}
+                  </option>
+                  <option value="direct">
+                    {t("models.service.proxyDirect")}
+                  </option>
+                </select>
+              </label>
+              <p className="cw-model-note" id={`${connectionFieldId}-proxy-note`}>
+                {t("models.service.proxyNote")}
+              </p>
+            </div>
           </fieldset>
         </details>
         <fieldset

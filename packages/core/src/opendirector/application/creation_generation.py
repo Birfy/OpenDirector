@@ -315,7 +315,7 @@ class CreationGeneration(GenerationRuntime):
             self.provider.validate(spec.kind, config)
             snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
                 model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,
-                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'videoAdapter')}), references=resolved)
+                    **{k: getattr(public, k) for k in ('kind', 'modelId', 'url', 'protocol', 'connectionType', 'proxyMode', 'videoAdapter')}), references=resolved)
             # Use the same rendering, protocol validation and parameter resolver
             # as the established adapters, with immutable media from the facade.
             stub = Job(id=uuid5(command.commandId, 'job'), projectId=command.projectId, inputSnapshot=snapshot,
@@ -561,6 +561,8 @@ class CreationGeneration(GenerationRuntime):
                     task.update(status='interrupted', recovery='review', resumeAllowed=False)
                     await asyncio.to_thread(self.checkpoint, project_id, task, pinned)
                     return job
+        if config is not None:
+            config = {**config, 'proxyMode': job.inputSnapshot.model.proxyMode}
         self._launch(task, pinned, config, mode)
         return job
 

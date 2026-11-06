@@ -18,7 +18,7 @@ from opendirector.infrastructure.local_projects import child, read_json, write_j
 MODEL_KINDS = ("agent", "image", "video", "audio", "vision")
 
 
-def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None):
+def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None):
     if connection_type not in {'api', 'self_hosted'}:
         raise ProjectError('无效的接入方式。')
     protocol = protocol or ('openai' if kind == 'agent' or connection_type == 'self_hosted' and kind not in {'video', 'vision'}
@@ -27,9 +27,10 @@ def connection_fields(kind, connection_type='api', protocol=None, auth_mode=None
                'video': {'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
     auth_mode = auth_mode or ('none' if connection_type == 'self_hosted' else 'bearer')
-    if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'}:
+    proxy_mode = proxy_mode if proxy_mode is not None else 'system'
+    if protocol not in allowed.get(kind, set()) or auth_mode not in {'bearer', 'none'} or proxy_mode not in {'system', 'direct'}:
         raise ProjectError('接口协议或鉴权方式与模型类别不兼容。')
-    return {'connectionType': connection_type, 'protocol': protocol, 'authMode': auth_mode}
+    return {'connectionType': connection_type, 'protocol': protocol, 'authMode': auth_mode, 'proxyMode': proxy_mode}
 
 
 def model_fields(url: str, model_id: str, api_key: str) -> dict:
@@ -79,14 +80,14 @@ class ModelConfigs:
                     item.update(services[item['providerId']])
             seen = set()
             for item in value["models"]:
-                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'videoAdapter', 'videoCapabilities', 'providerId', 'inputModalities'}:
+                if not {'id', 'kind', 'url', 'modelId', 'apiKey'} <= set(item) or set(item) - {'id', 'kind', 'url', 'modelId', 'apiKey', 'connectionType', 'protocol', 'authMode', 'proxyMode', 'videoAdapter', 'videoCapabilities', 'providerId', 'inputModalities'}:
                     raise ValueError()
                 identifier(item["id"])
                 if item["id"] in seen or item["kind"] not in MODEL_KINDS:
                     raise ValueError()
                 seen.add(item["id"])
                 fields = model_fields(item["url"], item["modelId"], item["apiKey"])
-                item.update(connection_fields(item['kind'], item.get('connectionType', 'api'), item.get('protocol'), item.get('authMode')))
+                item.update(connection_fields(item['kind'], item.get('connectionType', 'api'), item.get('protocol'), item.get('authMode'), item.get('proxyMode')))
                 # Old /videos entries used the FastH3 request shape for every name.
                 # Pin that adapter while new configurations use explicit detection.
                 if 'videoAdapter' not in item:
@@ -102,7 +103,7 @@ class ModelConfigs:
 
     @staticmethod
     def _public(item: dict) -> dict:
-        return {**({'providerId': item['providerId']} if 'providerId' in item else {}), **{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "videoAdapter", "videoCapabilities", "inputModalities")}, 'inputRules': input_rules(item)}
+        return {**({'providerId': item['providerId']} if 'providerId' in item else {}), **{key: item[key] for key in ("id", "kind", "url", "modelId", "connectionType", "protocol", "authMode", "proxyMode", "videoAdapter", "videoCapabilities", "inputModalities")}, 'inputRules': input_rules(item)}
 
     def list(self) -> list[dict]:
         with self.lock:
@@ -119,14 +120,16 @@ class ModelConfigs:
                 raise ProjectError("所选模型不存在或类别不符，请在设置中配置并重新选择。", 409)
             return dict(item)
 
-    def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None, video_adapter=None, video_capabilities=None, capabilities_supplied=False, input_modalities=None) -> dict:
+    def save(self, kind: str, url: str, model_id: str, api_key: str, config_id: str | None = None, *, connection_type='api', protocol=None, auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, capabilities_supplied=False, input_modalities=None) -> dict:
         if kind not in MODEL_KINDS:
             raise ProjectError("无效的模型类别。")
         fields = model_fields(url, model_id, api_key)
-        connection = connection_fields(kind, connection_type, protocol, auth_mode)
+        connection = connection_fields(kind, connection_type, protocol, auth_mode, proxy_mode)
         with self.lock:
             models = self._read()
             existing = next((item for item in models if item["id"] == config_id), None)
+            if proxy_mode is None and existing:
+                connection['proxyMode'] = existing['proxyMode']
             if config_id and not existing:
                 raise ProjectError("模型配置已被删除，请重新加载。", 404)
             # An old standalone SAM entry may be edited through either media
@@ -156,7 +159,7 @@ class ModelConfigs:
                 item['providerId'] = existing['providerId']
                 for peer in models:
                     if peer.get('providerId') == item['providerId']:
-                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode')})
+                        peer.update({key: item[key] for key in ('url', 'apiKey', 'connectionType', 'authMode', 'proxyMode')})
             self._write(models)
             return self._public(item)
 
@@ -180,19 +183,21 @@ class ModelConfigs:
 
     def save_many(self, kind: str, url: str, model_ids: list[str], api_key: str,
                   config_id: str | None = None, *, connection_type='api', protocol=None,
-                  auth_mode=None, video_adapter=None, video_capabilities=None, input_modalities=None, model_options=None, capabilities_supplied=False) -> list[dict]:
+                  auth_mode=None, proxy_mode=None, video_adapter=None, video_capabilities=None, input_modalities=None, model_options=None, capabilities_supplied=False) -> list[dict]:
         if kind not in MODEL_KINDS or not 1 <= len(model_ids) <= 200:
             raise ProjectError('请选择 1—200 个模型。')
         model_options = model_options or {}
         if set(model_options) - set(model_ids):
             raise ProjectError('模型能力配置必须属于本次选择的模型。')
-        connection = connection_fields(kind, connection_type, protocol, auth_mode)
+        connection = connection_fields(kind, connection_type, protocol, auth_mode, proxy_mode)
         fields = [model_fields(url, model_id, api_key) for model_id in model_ids]
         if len({item['modelId'] for item in fields}) != len(fields):
             raise ProjectError('模型列表不能重复。')
         with self.lock:
             models = self._read()
             existing = next((item for item in models if item['id'] == config_id), None)
+            if proxy_mode is None and existing:
+                connection['proxyMode'] = existing['proxyMode']
             if config_id and not existing:
                 raise ProjectError('模型配置已被删除，请重新加载。', 404)
             legacy_segmentation = existing and existing['kind'] == 'vision' and kind in {'image', 'video'}
@@ -228,7 +233,7 @@ class ModelConfigs:
             remaining = [item for item in models if item not in previous]
             for item in remaining:
                 if item.get('providerId') == provider_id:
-                    item.update(url=fields[0]['url'], apiKey=key, connectionType=connection['connectionType'], authMode=connection['authMode'])
+                    item.update(url=fields[0]['url'], apiKey=key, connectionType=connection['connectionType'], authMode=connection['authMode'], proxyMode=connection['proxyMode'])
             self._write(remaining + saved)
             return [self._public(item) for item in saved]
 

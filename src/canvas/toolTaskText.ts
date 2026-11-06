@@ -114,5 +114,7 @@ export function toolTaskError(
 ): string | undefined {
   if (!text) return undefined;
   if (!CJK.test(text)) return text;
+  if (text.startsWith("生成请求的提交结果不明。"))
+    return t("errors.tools.error.submissionUnknown");
   return t(ERROR[text] ?? "errors.tools.error.generic");
 }

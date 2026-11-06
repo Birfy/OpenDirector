@@ -195,7 +195,8 @@
   font-weight: 600;
 }
 .cw-model-connection > label,
-.cw-model-connection-grid > label {
+.cw-model-connection-grid > label,
+.cw-model-connection-field > label {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -203,6 +204,15 @@
   margin: 0 0 16px;
   font-size: var(--settings-label-size);
   color: var(--settings-text);
+}
+.cw-model-connection-field + .cw-model-connection-field {
+  margin-top: 16px;
+}
+.cw-model-connection-field > label {
+  margin-bottom: 0;
+}
+.cw-model-connection-field > .cw-model-note {
+  margin-top: 4px;
 }
 .cw-model-connection-grid {
   display: grid;
