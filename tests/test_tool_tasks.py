@@ -119,6 +119,8 @@ def test_catalog_reports_availability_by_capability(project):
     assert not tools['layer-decompose']['available'] and '图像分割' in tools['layer-decompose']['reason']
     assert {'image.edit', 'video.first_frame', 'audio.speech', 'text.chat'} <= set(configured['capabilities'])
     assert any(field['key'] == 'preset' and field['options'] for field in tools['image-presets']['fields'])
+    preset_field = next(field for field in tools['image-presets']['fields'] if field['key'] == 'preset')
+    assert [option['label'] for option in preset_field['options']] == ['人物三视图', '面部三视图', '产品三视图', '分镜', '多机位']
 
 
 def test_outpaint_keeps_original_pixels_and_returns_requested_size(project):
@@ -213,6 +215,35 @@ def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project)
     task = run(store, configs, None, project_id, session,
                {'tool': 'image-hd', 'sourceAssetIds': [source], 'parameters': {'kind': 'normal', 'resolution': '2K'}})
     assert task['status'] == 'succeeded' and output_image(store, project_id, task).size == (2048, 1536)
+
+
+@pytest.mark.parametrize('preset,count,size', [
+    ('three-view', 1, (2048, 1152)),
+    ('face-three-view', 1, (2688, 1152)),
+    ('product-three-view', 1, (2048, 1152)),
+    ('storyboard', 4, (2048, 1152)),
+    ('multi-camera', 4, (2048, 1152)),
+])
+def test_image_presets_reframe_portrait_reference_and_register_each_result(project, preset, count, size):
+    store, project_id, session = project
+    configs = configure(store, ZIMAGE)
+    original = png((64, 96))
+    source = upload(store, project_id, session, 'portrait.png', original)
+    calls = []
+    task = run(store, configs, httpx.MockTransport(images_server(calls)), project_id, session,
+               {'tool': 'image-presets', 'sourceAssetIds': [source], 'parameters': {'preset': preset}})
+    assert task['status'] == 'succeeded', task.get('error')
+    assert len(calls) == len(task['outputs']) == count
+    assert all(output_image(store, project_id, task, index).size == size for index in range(count))
+    assert CreationToolAssets(store).read_bytes(project_id, source) == original
+    for body in calls:
+        rendered_size = body.split(b'name="size"\r\n\r\n', 1)[1].split(b'\r\n', 1)[0].decode()
+        width, height = map(int, rendered_size.split('x'))
+        assert width / height == pytest.approx(size[0] / size[1], abs=.04)
+    if preset == 'face-three-view':
+        assert '左侧90度'.encode() in calls[0] and '右侧90度'.encode() in calls[0]
+    elif preset == 'product-three-view':
+        assert '近正交投影'.encode() in calls[0]
 
 
 def test_submission_rejects_tools_without_a_capable_model(project):

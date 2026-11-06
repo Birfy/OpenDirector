@@ -1,4 +1,7 @@
 export const tools = {
+  "tools.nodeTask.presetTitle": "Generate preset images",
+  "tools.nodeTask.presetNote":
+    "The selected model service will process this. Results will connect to this node.",
   "tools.nodeTask.panelAria": "{title} panel",
   "tools.nodeTask.close": "Exit {title}",
   "tools.nodeTask.productReference": "Product reference",

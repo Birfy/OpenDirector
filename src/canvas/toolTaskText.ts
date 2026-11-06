@@ -2,6 +2,8 @@
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import type { MessageKey, MessageParams } from "../i18n/types.ts";
 import { defaultTranslate } from "./assistantTranslate.ts";
+import { getActiveLocale } from "../i18n/messages.ts";
+import { translateToolText } from "./toolText.ts";
 
 const CJK = /[\u3400-\u9fff]/;
 
@@ -70,7 +72,7 @@ function phaseParts(text: string): { key: MessageKey; params: MessageParams } | 
   if (match)
     return {
       key: "errors.tools.phase.generateTitle",
-      params: { title: match[1]!, current: match[2]!, total: match[3]! },
+      params: { title: translateToolText(getActiveLocale(), match[1]!), current: match[2]!, total: match[3]! },
     };
   match = /^正在重绘（(\d+)\/(\d+)）$/.exec(text);
   if (match)

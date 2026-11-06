@@ -17,6 +17,9 @@ test("tool progress messages are localized, including counters", () => {
   assert.equal(toolTaskPhase("正在识别并跟踪「猫、狗」"), 'Detecting and tracking "猫、狗"');
   assert.equal(toolTaskPhase("provider custom text"), "provider custom text");
   assert.equal(toolTaskPhase(null), undefined);
+  assert.equal(toolTaskPhase("正在生成人物三视图（1/1）"), "Generating Character three-view (1/1)");
+  assert.equal(toolTaskPhase("正在生成面部三视图（1/1）"), "Generating Face three-view (1/1)");
+  assert.equal(toolTaskPhase("正在生成产品三视图（1/1）"), "Generating Product three-view (1/1)");
   setActiveLocale("zh-CN");
   assert.equal(toolTaskPhase("准备素材"), "准备素材");
 });

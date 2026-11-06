@@ -1,5 +1,7 @@
 /** Tool catalog, tool editors and local media tools. */
 export const tools = {
+  "tools.nodeTask.presetTitle": "生成预设图片",
+  "tools.nodeTask.presetNote": "由已选的模型服务处理，结果会连接到当前节点。",
   "tools.nodeTask.panelAria": "{title}面板",
   "tools.nodeTask.close": "退出{title}",
   "tools.nodeTask.productReference": "商品参考图",

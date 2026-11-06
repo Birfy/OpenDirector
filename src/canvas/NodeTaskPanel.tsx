@@ -19,12 +19,13 @@ import { displayNodeTitle } from "./nodeTitle.ts";
 import { useI18n } from "../i18n/I18nProvider";
 import "./node-task-panel.css";
 
-/** A single source-bound operation. Model-provided presets stay unknown until connected. */
+/** A single source-bound operation using the service's capability catalog. */
 export function NodeTaskPanel({
   node,
   nodes,
   tool,
   draft,
+  initialParameters,
   onDraftChange,
   onImportResults,
   onClose,
@@ -36,6 +37,7 @@ export function NodeTaskPanel({
   nodes: readonly CanvasNode[];
   tool: CanvasToolId;
   draft?: CanvasToolTask;
+  initialParameters?: ToolParameters;
   onDraftChange: (task: CanvasToolTask) => void;
   onImportResults: (task: CanvasToolTask) => void;
   onClose: () => void;
@@ -53,9 +55,10 @@ export function NodeTaskPanel({
     draft?.tool === tool && draft.sourceNodeIds[0] === node.id
       ? draft
       : undefined;
-  const [edits, setParameters] = useState<ToolParameters>(
-    saved?.parameters ?? {},
-  );
+  const [edits, setParameters] = useState<ToolParameters>({
+    ...saved?.parameters,
+    ...initialParameters,
+  });
   // Catalog options may arrive after the panel opens. Defaults follow the catalog;
   // explicit user/saved values remain intact so unavailable choices are reported.
   const parameters = { ...initialToolParameters(spec, capability), ...edits };
@@ -88,6 +91,59 @@ export function NodeTaskPanel({
     setParameters((current) => ({ ...current, [key]: value }));
     setNotice("");
   };
+  if (tool === "image-presets") {
+    const preset = capability?.fields
+      ?.find((field) => field.key === "preset")
+      ?.options?.find((option) => option.value === parameters.preset);
+    const note =
+      errors[0] ??
+      (runnable
+        ? t("tools.nodeTask.presetNote")
+        : (capability?.reason ?? t("tools.nodeTask.notConnected")));
+    const model = capability?.models?.["image.edit"]?.find(
+      (item) => item.id === parameters.imageModelConfigId,
+    );
+    return (
+      <section
+        className="cw-node-task-panel cw-preset-task-panel"
+        aria-label={t("tools.nodeTask.presetTitle")}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }
+        }}
+      >
+        <strong>{t("tools.nodeTask.presetTitle")}</strong>
+        <span className="cw-preset-task-name">
+          {translateToolText(
+            locale,
+            preset?.label ?? String(parameters.preset ?? ""),
+          )}
+        </span>
+        <span
+          className="cw-preset-task-note"
+          role="status"
+          title={model ? `${note} (${model.label})` : note}
+        >
+          {note}
+        </span>
+        <button
+          type="button"
+          className="cw-node-task-primary"
+          disabled={!runnable || errors.length > 0}
+          title={!runnable || errors.length ? note : undefined}
+          onClick={() => {
+            onDraftChange(task);
+            onGenerate?.(task);
+          }}
+        >
+          {t("tools.nodeTask.generate")}
+        </button>
+      </section>
+    );
+  }
   return (
     <section
       className="cw-node-task-panel"
@@ -168,7 +224,9 @@ export function NodeTaskPanel({
                     }
                   >
                     {!field.options?.length && (
-                      <option value="">{t("tools.nodeTask.connectToChoose")}</option>
+                      <option value="">
+                        {t("tools.nodeTask.connectToChoose")}
+                      </option>
                     )}
                     {field.options?.map((option) => (
                       <option key={option.value} value={option.value}>

@@ -29,6 +29,8 @@ export interface NodeSelectionToolbarProps {
   className?: string;
   /** Opens this operation's dedicated source-bound editing session. */
   onTool?: (tool: CanvasToolId) => void;
+  presets?: readonly { value: string | number; label: string }[];
+  onPreset?: (preset: string) => void;
   onEdit?: (mode: SelectionEditorMode) => void;
   onCaptureFrame?: (position: "first" | "last") => void;
   onGridSplit?: (rows: number, columns: number) => void;
@@ -99,6 +101,8 @@ export function NodeSelectionToolbar({
   style,
   className = "",
   onTool,
+  presets = [],
+  onPreset,
   onEdit,
   onCaptureFrame,
   onGridSplit,
@@ -170,14 +174,25 @@ export function NodeSelectionToolbar({
   if (node.type === "image") {
     for (const [tool, labelKey, icon] of imageTools)
       addTool(tool, t(labelKey), icon);
-    addMenu("image-presets", t("canvas.selection.presets"), "sparkle", [
-      toolOption(
-        "image-presets",
-        t("canvas.selection.choosePreset"),
-        "sparkle",
-        t("canvas.selection.presetHint"),
-      ),
-    ]);
+    addMenu(
+      "image-presets",
+      t("canvas.selection.presets"),
+      "sparkle",
+      presets.map(({ value, label }) => ({
+        id: String(value),
+        label,
+        icon:
+          value === "multi-camera"
+            ? "camera"
+            : value === "storyboard"
+              ? "grid"
+              : value === "product-three-view"
+                ? "image"
+                : "subject",
+        run: () => onPreset?.(String(value)),
+        disabled: !onPreset,
+      })),
+    );
     addTool("view-control", t("canvas.selection.multiAngle"), "rotate");
     addTool("lighting", t("canvas.selection.lighting"), "palette");
     addMenu("marketing", t("canvas.selection.marketing"), "palette", [

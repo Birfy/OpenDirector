@@ -628,7 +628,7 @@ function Workspace() {
   const editorSession = useRef<CreationEditorSession | null>(null);
   const editorSaving = useRef(false);
   const [actionSession, setActionSession] = useState<
-    (ResultSource & { tool: CanvasToolId; token: string }) | null
+    (ResultSource & { tool: CanvasToolId; token: string; parameters?: ToolParameters }) | null
   >(null);
   const actionSessionRef = useRef(actionSession);
   actionSessionRef.current = actionSession;
@@ -3009,7 +3009,7 @@ function Workspace() {
     setActionSession(null);
     root.current?.focus({ preventScroll: true });
   };
-  const openNodeAction = (tool: CanvasToolId, source = single) => {
+  const openNodeAction = (tool: CanvasToolId, source = single, parameters?: ToolParameters) => {
     if (!source) return;
     const origin = sourceFor(source);
     const valid = validateNodeActionSource(historyRef.current.present, origin);
@@ -3060,7 +3060,7 @@ function Workspace() {
     }
     setEditing(null);
     editorOrigin.current = null;
-    setActionSession({ ...origin, tool, token: crypto.randomUUID() });
+    setActionSession({ ...origin, tool, token: crypto.randomUUID(), parameters });
     focusSelection(source.id);
   };
   const saveActionDraft = (session: ResultSource, task: CanvasToolTask) => {
@@ -5381,6 +5381,18 @@ function Workspace() {
             locked={lockedIds.has(single.id)}
             style={{ maxWidth: selectionPresentation.toolbarMaxWidth }}
             onTool={openNodeAction}
+            presets={toolCatalog.capabilities["image-presets"]?.fields
+              ?.find((field) => field.key === "preset")?.options
+              ?.map((option) => ({ ...option, label: translateToolText(locale, option.label) }))}
+            onPreset={(preset) => {
+              const models = toolCatalog.capabilities["image-presets"]?.models?.["image.edit"] ?? [];
+              const selected = snapshotModel("image").settings?.modelConfigId;
+              const model = models.find((item) => item.id === selected) ?? models[0];
+              openNodeAction("image-presets", single, {
+                preset,
+                ...(model ? { imageModelConfigId: model.id } : {}),
+              });
+            }}
             onCaptureFrame={(position) =>
               void runQuickAction(
                 async (source, signal) => [
@@ -5577,6 +5589,7 @@ function Workspace() {
                 nodes={doc.nodes}
                 tool={activeAction.tool}
                 draft={actionNode.data.taskDraft}
+                initialParameters={activeAction.parameters}
                 onDraftChange={(task) => saveActionDraft(activeAction, task)}
                 onImportResults={(task) =>
                   importActionResults(activeAction, task)

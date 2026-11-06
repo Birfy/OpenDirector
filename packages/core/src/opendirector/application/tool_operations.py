@@ -477,27 +477,55 @@ async def panorama(ctx: ToolContext):
     return [image_output(media.resize(result, edge, edge // 2), '720 全景')]
 
 
+@dataclass(frozen=True)
+class ImagePreset:
+    title: str
+    prompts: tuple[str, ...]
+    size: tuple[int, int] = (2048, 1152)
+
+
 PRESETS = {
     # Written as edit instructions: editing models follow imperatives, not captions.
-    'three-view': ('三视图', ['把画面改成主体的三视图设定图：正面、侧面、背面三个全身视图并排，纯白背景，三者比例和设计细节完全一致']),
-    'storyboard': ('分镜', ['把镜头拉远成远景建立镜头，完整交代周围环境，主体在画面中较小',
+    'three-view': ImagePreset('人物三视图', (
+        '以参考图中的人物为唯一身份依据，生成同一人物的全身三视图设定板。'
+        '横版画面分为三个等宽区域，从左至右严格排列：正面全身、右侧90度全身、背面全身。'
+        '三个视图保持同一身份、年龄、体型、头身比、发型、服装、配色、材质及配饰，衣服结构与细节相互对应。'
+        '全部自然站立、双臂放松，同一高度与地面基线，完整呈现头顶到鞋底，不裁头、不切脚、不遮挡、不重叠。'
+        '若原图仅有半身，依据可见服装合理补全下半身，补全部分在三个视角保持一致。'
+        '保持参考图画风，纯净浅灰背景、均匀柔光、弱透视，无剧情场景、文字、标签、水印、分割线或额外视图。',)),
+    'face-three-view': ImagePreset('面部三视图', (
+        '以参考图人物的面部为唯一身份依据，生成同一人物的面部三视图参考板。'
+        '超宽横版画面分为三个等宽区域，从左至右严格排列：正面、左侧90度、右侧90度。'
+        '每个视图只呈现完整头部至肩颈，头顶、下巴、耳朵均完整，不出现背面或全身视图。'
+        '保持同一身份、年龄、脸型、骨相、五官比例、肤色、发际线、发型及识别性细节，左右侧面符合真实结构。'
+        '三个头部大小一致、眼睛基线对齐、中性表情、视线随朝向自然变化，面部不被头发遮挡。'
+        '保持参考图画风，纯净浅灰背景、均匀柔光，无美颜改脸、夸张透视、文字、标签、水印或额外人物。',), (2688, 1152)),
+    'product-three-view': ImagePreset('产品三视图', (
+        '以参考图中的产品为唯一设计依据，生成同一产品的工业设计三视图参考板。'
+        '横版画面分为三个等宽区域，从左至右严格排列：正视图、右侧90度侧视图、后视图。'
+        '采用近正交投影、无广角畸变，同一比例尺、同一高度与底部基线，完整展示产品外轮廓，不裁切、不重叠。'
+        '三个视图保持结构、尺寸关系、材质、颜色、表面纹理、接口、按钮、接缝及标识一致，细节在视角之间符合物理对应关系。'
+        '不可见部位依据已知结构作合理且一致的补全，不增加功能件或改变产品设计。'
+        '产品独立展示，纯白背景、均匀棚拍光，无人物、手、包装道具、剧情场景、说明文字、尺寸标注、水印或额外视图；保留原有品牌标识。',)),
+    'storyboard': ImagePreset('分镜', ('把镜头拉远成远景建立镜头，完整交代周围环境，主体在画面中较小',
                            '改为中景镜头，主体占画面一半高度，动作清晰',
                            '改为近景镜头，镜头推近到主体胸口以上，突出表情',
-                           '改为特写镜头，只拍主体面部或关键细节，背景虚化']),
-    'multi-camera': ('多机位', ['把机位移到主体正前方，平视拍摄',
+                            '改为特写镜头，只拍主体面部或关键细节，背景虚化')),
+    'multi-camera': ImagePreset('多机位', ('把机位移到主体正前方，平视拍摄',
                                '把机位向左绕到主体左前方约45度，从左侧斜角拍摄，透视随之改变',
                                '把机位向右绕到主体右前方约45度，从右侧斜角拍摄，透视随之改变',
-                               '把机位升高到主体上方，高角度俯拍']),
+                                '把机位升高到主体上方，高角度俯拍')),
 }
 
 
 async def image_presets(ctx: ToolContext):
     image = _source_image(ctx)
-    title, prompts = PRESETS[ctx.choice('preset', PRESETS)]
+    preset = PRESETS[ctx.choice('preset', PRESETS)]
+    title, prompts = preset.title, preset.prompts
     outputs = []
     for index, instruction in enumerate(prompts, 1):
         await ctx.progress(f'正在生成{title}（{index}/{len(prompts)}）')
-        edited = await ctx.edit(image, instruction + '，保持主体外观与风格一致', 0.82)
+        edited = await ctx.reframe(image, *preset.size, instruction + '，保持主体外观与风格一致')
         outputs.append(image_output(edited, f'{title} {index}' if len(prompts) > 1 else title))
     return outputs
 
@@ -811,7 +839,7 @@ TOOLS: dict[str, ToolSpec] = {item.id: item for item in [
     ToolSpec('panorama', ('image',), _needs('image.edit'), panorama,
              (_select('resolution', '清晰度', [('2K', '2K'), ('4K', '4K')], '2K'),)),
     ToolSpec('image-presets', ('image',), _needs('image.edit'), image_presets,
-             (_select('preset', '预设', [(key, value[0]) for key, value in PRESETS.items()], 'three-view'),)),
+             (_select('preset', '预设', [(key, value.title) for key, value in PRESETS.items()], 'three-view'),)),
     ToolSpec('multi-size', ('image',), _needs('image.edit'), multi_size),
     ToolSpec('product-replacement', ('image',), _needs('image.edit'), product_replacement),
     ToolSpec('dynamic-poster', ('image',), _needs('video.first_frame'), dynamic_poster),
