@@ -29,6 +29,8 @@ macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统�
 
 前端测试、Python 测试、契约生成检查和构建分别验证不同边界，任意一项不能替代其他相关检查。修改契约时同步更新自动生成文件，再执行一致性检查，不手工维护第二份契约。`scripts/generate_contracts.py` 同时写出 `src/contracts/ruleFacts.generated.ts`。共享的比例、时长、字节上限和菜单推导以 `packages/core/src/opendirector/domain/rule_facts.py` 为准。
 
+Consult the [development lessons](lessons.md) when selecting relevant scenarios, and verify against the current code and tests. For model capability or parameter changes, trace representative input from the entry point through backend validation to the provider request, and check that rejected input does not create a job. For imports, references, navigation, or asynchronous tasks, inspect persisted identities and actual execution inputs after conversion or recovery.
+
 ## 按风险选择验证
 
 | 修改范围 | 应核对的重点 |
@@ -93,6 +95,7 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 - 实际执行的命令、场景、退出结果及必要日志。
 - 使用模型替身还是真实服务，是否验证真实媒体文件。
 - 未覆盖范围、已知限制和失败原因。
+- If a relevant check also fails on the baseline, record the baseline revision and comparison result, and link an existing issue or create one when appropriate. A baseline failure does not mean the check passed.
 - 性能比较的素材、操作、基线及测量方式；没有可比测量时不报告提升比例。
 
 “节点出现”“引用标签显示”“文件下载成功”不能单独证明执行输入正确、结构已保存或媒体可用。关键检查应关联持久化对象、输入快照和实际输出。日志不得包含密钥、用户私有素材或开发机临时路径作为他人的必需依赖。
