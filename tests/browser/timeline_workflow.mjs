@@ -315,24 +315,14 @@ try {
   });
   page.setDefaultTimeout(20000);
   const errors = [];
-  let browserSession;
-  page.on("request", (request) => {
-    const session = request.headers()["x-opendirector-session"];
-    if (session) browserSession = session;
-  });
   page.on("pageerror", (e) => errors.push(e.message));
   let url = base + `/ai-tool/ai-canvas/${pid}`;
   const saved = () => page.getByText("Saved on this device", { exact: true }).waitFor();
   async function releaseEditSession() {
-    assert.ok(browserSession);
-    const status = await page.evaluate(async (session) => {
-      const response = await fetch(`/api/creation/sessions/${session}`, {
-        method: "DELETE",
-        headers: { "X-OpenDirector-Request": "1" },
-      });
-      return response.status;
-    }, browserSession);
-    assert.equal(status, 200);
+    // Drain queued renewals and prevent any renewal after release.
+    await page.evaluate(async () => {
+      await (await import("/src/backend/projects.ts")).releaseBackendProject();
+    });
   }
 
   const state = () => call(`/api/creation/projects/${pid}`);

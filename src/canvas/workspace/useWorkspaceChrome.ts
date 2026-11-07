@@ -39,7 +39,6 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
     }
   }, [backendCatalog.connected, backendCatalog.models]);
   const showAssistant = () => {
-    setPanel(null);
     setAssistantOpen(true);
     if (selected.length) setAssistantSelectionRequest((n) => n + 1);
   };
@@ -79,7 +78,6 @@ export function useWorkspaceChrome(rt: WorkspaceRuntime) {
     };
   }, []);
   const togglePanel = (value: Panel) => {
-    setAssistantOpen(false);
     referenceTarget.current = null;
     setPanel((p) => (p === value ? null : value));
     setMenu(null);
