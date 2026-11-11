@@ -100,6 +100,16 @@ export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
 }
 
+export function conversationIsEmpty(value: Conversation) {
+  return (
+    value.messages.length === 0 &&
+    !value.draft.trim() &&
+    value.assets.length === 0 &&
+    !(value.skills && value.skills.length) &&
+    !(value.draftContent && value.draftContent.length)
+  );
+}
+
 export type ChatEvent =
   | { type: "start"; conversation: Conversation }
   | { type: "thinking" }

@@ -74,11 +74,92 @@ def test_threads_keep_drafts_history_and_independent_context(assistant):
     assert [(item['id'], item['status'], item['textOffset']) for item in tools] == [('a', 'complete', 4), ('b', 'failed', 4)]
 
 
+def test_create_reuses_an_empty_active_session_instead_of_accumulating(assistant):
+    """#246: New conversation is idempotent while the current session is empty."""
+    client, path, _ = assistant
+    first = client.get(path).json()
+    assert first['messages'] == []
+    assert first['draft'] == ''
+    first_id = first['conversationId']
+    again = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert again.status_code == 200, again.text
+    assert again.json()['conversationId'] == first_id
+    assert again.json()['messages'] == []
+    third = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert third.status_code == 200, third.text
+    assert third.json()['conversationId'] == first_id
+    listing = client.get(path + '/conversations').json()
+    assert listing['activeId'] == first_id
+    assert listing['items'] == [
+        {'id': first_id, 'title': '新会话', 'messageCount': 0, 'hasDraft': False},
+    ]
+    # Whitespace-only draft is still an empty session and must be reused.
+    assert client.put(path + '/draft', json={'conversationId': first_id,
+        'draft': '   \n\t'}).status_code == 200
+    reused = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert reused.status_code == 200
+    assert reused.json()['conversationId'] == first_id
+    # A real draft is kept and archived when starting a new session.
+    assert client.put(path + '/draft', json={'conversationId': first_id,
+        'draft': '要保留的草稿'}).status_code == 200
+    created = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+    assert created['conversationId'] != first_id
+    items = client.get(path + '/conversations').json()['items']
+    assert [item['id'] for item in items] == [created['conversationId'], first_id]
+    assert items[1]['hasDraft'] is True
+    # After a turn, New must still open a distinct session.
+    assert frames(send(client, path, created['conversationId'], '正式提问'))[-1]['error'] is None
+    next_id = str(uuid4())
+    started = client.post(path + '/conversations', json={'id': next_id}).json()
+    assert started['conversationId'] == next_id
+    assert len(client.get(path + '/conversations').json()['items']) == 3
+
+
+
+
+def test_empty_current_session_can_be_reused_when_history_is_full(assistant):
+    """New should not 409 when the active session is empty even at the 100-session cap."""
+    client, path, _ = assistant
+    current_id = client.get(path).json()['conversationId']
+    for index in range(99):
+        assert client.put(path + '/draft', json={'conversationId': current_id,
+            'draft': f'归档草稿{index}'}).status_code == 200
+        created = client.post(path + '/conversations', json={'id': str(uuid4())})
+        assert created.status_code == 200, created.text
+        current_id = created.json()['conversationId']
+    listing = client.get(path + '/conversations').json()
+    assert len(listing['items']) == 100
+    assert listing['activeId'] == current_id
+    reused = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert reused.status_code == 200, reused.text
+    assert reused.json()['conversationId'] == current_id
+    assert len(client.get(path + '/conversations').json()['items']) == 100
+    assert client.put(path + '/draft', json={'conversationId': current_id,
+        'draft': '不能再开'}).status_code == 200
+    blocked = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert blocked.status_code == 409, blocked.text
+
+
+def test_conversation_is_empty_ignores_runtime_settings():
+    base = {'messages': [], 'draft': '  ', 'assets': [], 'skills': [],
+            'thinking': 'high', 'runtime': 'default', 'modelSelections': {'agent': 'x'}}
+    assert agent.conversation_is_empty(base)
+    assert not agent.conversation_is_empty({**base, 'messages': [{'role': 'user', 'text': 'hi'}]})
+    assert not agent.conversation_is_empty({**base, 'draft': '还没发送'})
+    assert not agent.conversation_is_empty({**base, 'assets': [{'id': 'a'}]})
+    assert not agent.conversation_is_empty({**base, 'skills': ['s']})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': '引用'}]})
+
+
 def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):
     client, path, contexts = assistant
     old_id = client.get(path).json()['conversationId']
+    # The first session must have content; an empty current session is reused, not archived.
+    assert client.put(path + '/draft', json={'conversationId': old_id, 'draft': '先留着'}).status_code == 200
     new_id = str(uuid4())
-    assert client.post(path + '/conversations', json={'id': new_id}).status_code == 200
+    created = client.post(path + '/conversations', json={'id': new_id})
+    assert created.status_code == 200, created.text
+    assert created.json()['conversationId'] == new_id
     for old in ({'conversationId': old_id}, {}):
         assert client.put(path + '/draft', json={**old, 'draft': '旧草稿'}).status_code == 409
     result = frames(send(client, path, old_id, '迟到的消息'))[-1]

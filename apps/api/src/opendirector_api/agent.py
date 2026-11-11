@@ -58,6 +58,15 @@ class Turn(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=1)
 
 
+def conversation_is_empty(value):
+    """A session with no messages or unsent content can be reused by New."""
+    return (not value.get('messages')
+            and not (value.get('draft') or '').strip()
+            and not value.get('assets')
+            and not value.get('skills')
+            and not value.get('draftContent'))
+
+
 class Conversations:
     def __init__(self, projects):
         self.projects = projects
@@ -137,6 +146,8 @@ class Conversations:
             if target is None:
                 if not create:
                     raise ProjectError('对话不存在。', 404)
+                if conversation_is_empty(current):
+                    return current
                 if len(archives) >= 99:
                     raise ProjectError('项目对话已达 100 个，暂不能继续新建。', 409)
                 target = {'messages': [], **Draft().model_dump(mode='json'),
