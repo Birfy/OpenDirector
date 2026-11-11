@@ -121,6 +121,7 @@ export interface AudioExecutionInput extends ContractInput {
   readonly instrumental?: boolean;
   readonly maxDurationSeconds?: number | null;
   readonly scoreMode?: "melody" | "full" | null;
+  readonly seed?: number | null;
 }
 
 export interface AudioGenerationSpecInput extends GenerationSpecBaseInput {
@@ -1693,6 +1694,7 @@ export interface AudioExecution extends Contract {
   readonly instrumental?: boolean;
   readonly maxDurationSeconds?: number | null;
   readonly scoreMode?: "melody" | "full" | null;
+  readonly seed?: number | null;
 }
 
 export interface AudioGenerationSpec extends GenerationSpecBase {
