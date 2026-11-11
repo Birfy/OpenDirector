@@ -85,9 +85,9 @@ The privileged workflow only checks out the PR base commit, never the contributo
 
 ## Model-assisted PR labels / 大模型自动标签
 
-The reviewer workflow classifies open, non-draft PRs on opened, synchronize and ready-for-review events before requesting reviewers. Configure the upstream repository Actions Secret `wtc_github` with the API key; never commit its value. `.github/auto-labels.json` selects `https://api.deepseek.com`, model `deepseek-flash`, and confidence threshold 0.8. Title, body, filenames and bounded patches are sent to DeepSeek; familiar sensitive-file patterns omit patches, but this is not a guarantee of secret detection. Do not include credentials in PRs.
+The reviewer workflow classifies open, non-draft PRs on opened, synchronize and ready-for-review events before requesting reviewers. Title, body, filenames and bounded patches are sent to DeepSeek; familiar sensitive-file patterns omit patches, but this is not a guarantee of secret detection. Do not include credentials in PRs.
 
-审查工作流在PR创建、新提交和转为可审查时，先分类再邀请审查人，跳过草稿。在上游仓库配置Actions Secret `wtc_github`保存API Key，不提交真实值。`.github/auto-labels.json`配置DeepSeek地址、`deepseek-flash`模型及0.8置信度阈值。标题、正文、文件名和限量diff会发送给DeepSeek；常见敏感文件名不发送patch，但不保证自动识别所有秘密，PR中不得包含凭据。
+审查工作流在PR创建、新提交和转为可审查时，先分类再邀请审查人，跳过草稿。标题、正文、文件名和限量diff会发送给DeepSeek；常见敏感文件名不发送patch，但不保证自动识别所有秘密，PR中不得包含凭据。
 
 Only existing `type:*`, `area:*`, `modality:*` and `provider:*` labels from the allowed catalog may be added. The classifier cannot set priority, ready or process-status labels, create labels, remove manual labels or replace an existing type. Invalid responses, missing credentials and provider failures use conservative path rules; unmatched changes retain normal fallback reviewer routing. New commits may add labels but do not remove earlier labels or reviewer requests. Manual label changes do not call the model or immediately re-add removed labels.
 
