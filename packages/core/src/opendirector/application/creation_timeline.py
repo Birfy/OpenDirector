@@ -31,7 +31,10 @@ def validate_timeline_resources(data: TimelineData, snapshot: ProjectSnapshot, a
         for clip in track.clips:
             asset = assets._reference(snapshot, clip.resource.asset)
             duration = asset.metadata.durationSeconds
-            if asset.kind != 'image' and (duration is None or clip.outPoint > duration + 1e-6):
+            # An unknown probed duration is not a violation: the client and TimelineClip.source_interval
+            # both let it through, so rejecting it here fails a document the editor itself accepted
+            # (for example a canvas archive round trip). Only a known duration bounds the clip.
+            if asset.kind != 'image' and duration is not None and clip.outPoint > duration + 1e-6:
                 raise ContractError('invalid_input', '时间线片段超出实际素材时长。', asset.id)
     text_by_font = {}
     for overlay in data.overlays:
