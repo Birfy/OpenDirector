@@ -65,9 +65,80 @@ The range command checks committed changes from the merge base to HEAD, excludin
 
 Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug statements, file endings, mixed line endings, trailing whitespace and GitHub Actions workflow syntax. Markdown hard line breaks are preserved. actionlint disables optional shellcheck/pyflakes integrations to avoid extra platform toolchains. GPU/CUDA, Buildkite, model-specific checks, commit sign-off rewriting and repository-wide typing/style migrations are excluded.
 
-本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。这是提前反馈入口，不替代现有 CI 或按风险选择的测试；本次只提供本地配置与使用约定，服务端复核、PR ready 分层与合并队列由 #273 后续任务接入。
+本地 hook 可未安装或被绕过，不能保证阻止 GitHub 上所有 PR 的创建。PR 与 main push 的 Release checks 在独立 static job 中安装 `requirements-static.txt` 并执行同一配置。PR 检查 base 到测试用合并提交的差异，push 检查 before 到 HEAD 的差异；只有需要范围比较的 static checkout 拉取完整历史，其他 job 保持浅克隆。手动或首次 push 的全仓审计无需完整历史。
 
-Local hooks can be absent or bypassed and cannot prevent every PR from being created on GitHub. They provide early feedback and do not replace existing CI or risk-based testing. This change supplies local configuration and instructions; server-side verification, PR ready selection and merge queue integration remain follow-up work under #273.
+Local hooks can be absent or bypassed. PR and main Release checks run the same configuration in a separate static job. PRs compare base to tested merge HEAD; pushes compare before to HEAD. Only the static checkout needing a range comparison fetches full history; other jobs use shallow checkouts. Manual/initial-push full-file audits do not need full history.
+
+静态通过后并行运行 Python（导入、契约、全量 pytest、bundled OpenCode 回归）、前端/构建/wheel 和浏览器检查。浏览器 isolated、voice、assistant 分为三个独立 matrix job，`fail-fast: false`，一条失败不取消其余旅程。每个 runner 独立安装依赖，复用现有 pip/npm 缓存；这会增加 runner 分钟数，墙钟耗时改善须以实际 CI 为准。
+
+After static success, Python (imports, contracts, full pytest and bundled OpenCode), frontend/build/wheel and browser checks run in parallel. Browser isolated, voice and assistant journeys use separate matrix jobs with fail-fast disabled. Each runner installs its own dependencies using existing pip/npm caches. This increases runner minutes; wall-clock improvements require actual CI measurements.
+
+最终 `checks` 汇总 job 保留现有必需检查名称，并始终读取各检查线结果；任何失败、取消、意外跳过或缺失回执均失败。只有调用方显式关闭静态检查时，static 的 skipped 才允许通过。静态失败不会启动重测试，但最终汇总仍失败，不能把依赖跳过误判为通过。
+
+The final `checks` aggregate preserves the existing required-check name and always evaluates all lane results. Failure, cancellation, unexpected skips or missing receipts fail closed. A skipped static job is allowed only when the caller explicitly disabled static checks. Static failure prevents heavy test jobs from starting and still fails the aggregate.
+
+可复用工作流的 `static-checks` 默认关闭，由 `ci.yml` 开启；nightly 不新增重复静态检查。CI 不提交自动修复：hook 修改文件视为失败，需在本地修复。当前静态 job 上限 10 分钟，Python、前端和每个浏览器 job 各 30 分钟，汇总 job 5 分钟；这是各 job 的限额，不是整个工作流的总上限。当前仍跑全量，暂不采用 PR ready 子集的 15 分钟目标；待子集切换或并行运行有足够耗时证据后再收紧。
+
+The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly adds no duplicate static pass. CI never commits automatic fixes. Static has a 10-minute timeout; Python, frontend and each browser job have 30 minutes; the aggregate has 5 minutes. These are per-job limits, not a workflow-wide deadline. Full suites still run, so the 15-minute PR-ready target is deferred until subset activation or sufficient timing evidence from parallel runs.
+
+## Python 分层与迁移 / Python layers and transition
+
+### 耗时证据 / Timing evidence
+
+Python CI 为全量套件和独立 bundled OpenCode 回归分别保存 JUnit XML、`--durations=50` 日志，以及 `--ci-profile` 生成的 JSON/Markdown；从运行的 `python-test-evidence-<attempt>` artifact 下载，保存 14 天。JSON 记录 SHA、系统、Python/pytest 版本、筛选条件、逐用例 setup/call/teardown 耗时、结果、显式层级与未标记默认归属，不记录 stdout、失败正文或局部变量。
+
+Python CI saves separate JUnit XML, `--durations=50` logs and opt-in `--ci-profile` JSON/Markdown for the main suite and bundled OpenCode regression. Download `python-test-evidence-<attempt>` from the run; retention is 14 days. JSON records SHA, OS, Python/pytest versions, selection, per-test setup/call/teardown timings, outcomes, explicit layers and transitional defaults. It excludes stdout, failure text and local variables.
+
+```sh
+python -m pytest tests -q -ra --durations=50 --junitxml=test-results/python.xml --ci-profile=test-results/python.json
+```
+
+先按关键能力确定 PR 必留代表用例，再审查最耗时模块的完整矩阵是否适合 merge；慢不是移走的充分理由，flake 也不是扩大 nightly 的充分理由。用例在模块级和函数级只能有一个有效 CI mark；冲突会在报告中显示为 `conflict`，不自动替调用方改标记或改变 pytest 筛选。
+
+First identify mandatory PR representatives for each critical capability, then review costly modules for broader merge coverage. Slowness alone does not justify moving a test, nor does flakiness justify removing essential regression coverage. Conflicting module/function layer marks appear as `conflict` in the report; profiling never rewrites marks or changes pytest selection.
+
+[`tests/ci_ready_contract.json`](../../tests/ci_ready_contract.json) 维护 PR 代表用例：命令重放与版本冲突、提交恢复、Agent 授权、素材范围、参考版本、生成采用、编辑锁、撤销重做、时间线发布、真实媒体校验和共享契约；浏览器另保留 MP4 导出 gate。这是最低保护清单，不等于其他未列出用例都可以移走，也不能代替完整 UI/Agent 或视频输出验收。
+
+[`tests/ci_ready_contract.json`](../../tests/ci_ready_contract.json) owns the minimum PR representatives for replay/conflicts, recovery, agent authorization, asset scope, reference versions, adoption, editing locks, undo/redo, timeline publication, actual media validation and shared contracts, plus browser MP4 export. It is a minimum floor, not permission to move every unlisted test or a substitute for complete UI/agent and output acceptance.
+
+```sh
+# Full collection only: verify selection accounting without claiming execution.
+python -m pytest tests --collect-only -qq --ci-profile=test-results/inventory.json
+python scripts/ci/check_test_layers.py --profile test-results/inventory.json
+# After a completed full run: also require all PR representatives to have passed.
+python scripts/ci/check_test_layers.py --profile test-results/python.json --require-executed
+```
+
+分层核对要求完整、无 `-m` / `-k` 的 `tests/` 清单，校验所有 ID 唯一、三层无重叠且未标记归 ready、每项代表仍存在且属于 ready，并核对导出脚本仍在浏览器 gate。只有要求执行证据时才把代表用例的 skip / 未执行判为失败。当前 CI 对默认全量调用运行该核对；后续切换子集时必须保留独立的完整收集核对，不能拿子集清单证明全量覆盖守恒。
+
+The audit requires a full tests/ inventory without `-m` or `-k`, rejects duplicate/missing IDs and overlapping marks, retains unmarked cases in ready, checks each representative and the export browser gate. Requiring execution evidence also rejects skipped/unexecuted representatives. CI audits the current full/default invocation; future subset activation must retain a separate full-collection audit rather than claim whole-suite conservation from a subset.
+
+只用 `complete: true`、`exit_status: 0` 且平台、运行阶段和环境可比的样本分析正常耗时；保留失败和不完整样本作诊断，不把它们当成提速证据。全量和独立 CLI 回归分开分析，不能把同一用例的 skip 与另一次执行混为一条。安装耗时从 CI 步骤读取，不包含在 pytest 的模块累计时间里。被硬超时终止的运行可能只留下 `complete: false` 的初始清单，甚至来不及上传，不能按零耗时计算。
+
+Use complete, successful profiles with comparable platforms, phases and environments for normal timing analysis. Retain failed/incomplete samples for diagnosis, never as speedup evidence. Analyze the main suite and dedicated CLI run separately; do not conflate a skip in one with execution in the other. Installation time comes from CI steps, outside pytest module totals. Hard timeouts may leave only an incomplete inventory or prevent upload entirely; missing measurements are never zero-time results.
+
+CI 层 mark 在 `pyproject.toml` 注册为 `ready`、`merge`、`nightly`。它们与 `requires_ffmpeg`、`requires_posix` 能力门禁不同；目录名不是 mark，浏览器 lane 仍只由 manifest 定义。每个用例至多属于一个 CI 层；模块级 mark 与函数级 mark 会累加，不能用函数 mark 覆盖模块 mark。
+
+CI-layer marks are registered in `pyproject.toml`: `ready`, `merge`, `nightly`. They are separate from capability gates such as `requires_ffmpeg` and `requires_posix`. Directories are not marks; browser lanes remain owned by the manifest. Assign at most one CI layer per test: function marks accumulate with module marks rather than replacing them.
+
+`release-checks.yml` 接受 `python-mark-expression` 字符串，通过环境变量作为单个 `-m` 参数传给 pytest，不作为 shell 代码执行。默认空值保留全量；本阶段 PR、main 和 nightly 的调用均保持默认，尚未减少任何现有测试。后续必须在合并队列完整门禁可用后，才切换 PR 子集并移除 main 重跑。
+
+`release-checks.yml` accepts a `python-mark-expression` string, passed through an environment variable as a single pytest `-m` argument, never evaluated as shell code. Empty selects all tests; PR, main and nightly callers currently keep that default. No existing test coverage is removed. Switching PRs to a subset and removing main reruns requires a functioning full merge-queue gate first.
+
+```sh
+# Current default / 当前默认：full collection, existing skip gates still apply
+python -m pytest tests -q -ra -m ""
+# Future PR selection / 后续 PR 筛选：unmarked tests remain ready during migration
+python -m pytest tests -q -ra -m "ready or (not merge and not nightly)"
+# Future full pre-merge gate / 后续合并前完整门禁
+python -m pytest tests -q -ra -m "not nightly"
+# Future nightly-only selection / 后续 nightly 专属筛选
+python -m pytest tests -q -ra -m nightly
+```
+
+初始分类：CLI 安装发现的确定性测试为 ready；native runtime 子进程/网关集成为 merge；显式安装的 DeepSeek/JiuwenSwarm 引擎和媒体验收为 nightly，原有环境变量 skip 保留。bundled OpenCode 使用本地模拟模型的独立回归步骤继续运行，不因 mark 改变。其他未标记用例留在迁移 ready 子集中；watchlist 原样保留，不能从一个示例模块推断整个套件已完成分类。
+
+Initial classification: deterministic CLI discovery is ready; native-runtime subprocess/gateway integration is merge; opt-in installed DeepSeek/JiuwenSwarm engine and media acceptance is nightly, retaining existing environment skips. The dedicated bundled OpenCode regression against a local mock model remains unchanged regardless of marks. Unmarked cases stay in the transitional ready subset and the flake watchlist is unchanged; these initial modules do not establish completed suite-wide classification.
 
 ## 按风险选择验证
 
@@ -133,7 +204,7 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 ## Nightly 检查
 
-[`nightly.yml`](../../.github/workflows/nightly.yml) 在 `main` HEAD 上按 `0 18 * * *` UTC（次日凌晨 02:00 Asia/Shanghai）运行，支持 `workflow_dispatch` 手动触发；发布前可对候选 SHA 手动重跑同一套。它与 PR 门禁共用可复用的 [`release-checks.yml`](../../.github/workflows/release-checks.yml)（Release checks 唯一实现，PR 与 nightly 不允许出现第二份漂移副本）；其中各检查步骤相互独立，一条检查失败不会掩盖其余检查的结果。
+[`nightly.yml`](../../.github/workflows/nightly.yml) 在 `main` HEAD 上按 `0 18 * * *` UTC（次日凌晨 02:00 Asia/Shanghai）运行，支持 `workflow_dispatch` 手动触发；发布前可对候选 SHA 手动重跑同一套。它与 PR 门禁共用可复用的 [`release-checks.yml`](../../.github/workflows/release-checks.yml)（Release checks 唯一实现，PR 与 nightly 不允许出现第二份漂移副本）；静态门禁通过（或调用方明确关闭）后，各测试线独立运行；汇总 job 统一判断，不因一条测试线失败而隐藏其他测试线结果。
 
 ### 五级测试体系
 
@@ -141,8 +212,8 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 | 级别 | 范围与重点 | 频率 | 预算 | 实现 |
 | --- | --- | --- | --- | --- |
-| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | 整个 job ≤30 min | Release checks 中浏览器阶段之前的各检查步骤 |
-| L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 与 L1 同一 job | Release checks 浏览器阶段（含 Assistant auxiliary panels 独立 fixture 阶段） |
+| L1 单元、静态与构建 | 前端单元测试、Python 单元套件、双语词条检查、浏览器清单检查、分层导入检查、契约一致性、生产构建 | 每个 PR；push 到 main | static ≤10 min；Python / 前端各 ≤30 min | Release checks 的 static、python、frontend 检查线 |
+| L2 浏览器 E2E（模型替身） | 隔离服务与模型替身下的核心旅程：画布、参考、导出、助手、时间线 | 每个 PR；push 到 main | 每个浏览器 job ≤30 min | Release checks browser matrix：isolated、voice、assistant |
 | L3 main HEAD 复核与扩展覆盖 | 与 L1+L2 相同门槛在 main HEAD 重跑（gate parity）；Python 套件失败分类与已知时序敏感用例观测（flake triage）；PR 门禁未覆盖的全部浏览器脚本（extended） | 每晚定时；发布前可手动触发 | gate parity 与 L1+L2 相同；extended ≤60 min | nightly 的 gate-parity、pytest-flake-triage、browser-extended |
 | L4 生产构建、性能与输出 | 以生产构建（`vite preview` 服务 `dist`）运行核心旅程；MP4 落盘后 ffprobe 校验时长、流与帧数；帧延迟、长任务诊断采样与 CPU profile。同一次 nightly 之后另跑固定可对比基准（存储微基准 + 复用上述采样） | 每晚定时；发布前对候选 SHA 手动触发 | production ≤45 min；perf ≤30 min；daily benchmark ≤30 min | nightly 的 browser-production、perf-outputs、daily-benchmark |
 | L5 稳定性与恢复（规划中） | 进程中断重启、工程重开恢复、长时运行稳定性；需要新的场景编写 | 每周；发布前 | 待定 | 未建设，作为后续工作跟踪 |
