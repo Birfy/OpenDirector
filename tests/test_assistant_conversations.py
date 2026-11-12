@@ -117,7 +117,82 @@ def test_create_reuses_an_empty_active_session_instead_of_accumulating(assistant
 
 
 
+
+def test_reused_create_id_stays_bound_after_draft_and_restart(tmp_path, monkeypatch):
+    """A create id that resolved to an empty session must replay to that session."""
+    from opendirector.infrastructure.model_configs import ModelConfigs
+    monkeypatch.setattr(agent.AgentRuntimes, 'stream', lambda self, run: iter(()))
+    monkeypatch.setattr(agent, 'runtime_available', lambda _: True)
+    monkeypatch.setattr(agent, 'skills', empty_skills)
+    monkeypatch.setattr(ModelConfigs, 'resolve', lambda *args: {'id': str(uuid4()), 'modelId': 'test-model'})
+    pid = str(uuid4())
+    path = f'/api/creation/projects/{pid}/assistant'
+    reuse_id = str(uuid4())
+    headers = {'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}
+
+    def open_client():
+        return TestClient(create_app(LocalProjects(tmp_path)), headers=headers)
+
+    with open_client() as client:
+        assert client.post(f'/api/creation/projects/{pid}/commands', json={
+            'type': 'project.create', 'projectId': pid, 'commandId': str(uuid4()),
+            'payload': {'name': '复用幂等'}}).status_code == 200
+        assert client.post(f'/api/creation/projects/{pid}/open').status_code == 200
+        first_id = client.get(path).json()['conversationId']
+        reused = client.post(path + '/conversations', json={'id': reuse_id})
+        assert reused.status_code == 200, reused.text
+        assert reused.json()['conversationId'] == first_id
+        assert 'reusedCreateIds' not in reused.json()
+        assert client.put(path + '/draft', json={'conversationId': first_id,
+            'draft': '干预后的草稿'}).status_code == 200
+        replayed = client.post(path + '/conversations', json={'id': reuse_id})
+        assert replayed.status_code == 200, replayed.text
+        assert replayed.json()['conversationId'] == first_id
+        assert replayed.json()['draft'] == '干预后的草稿'
+        listing = client.get(path + '/conversations').json()
+        assert listing['activeId'] == first_id
+        assert [item['id'] for item in listing['items']] == [first_id]
+
+    # A new process / app reads the persisted alias after restart.
+    with open_client() as client:
+        restarted = client.post(path + '/conversations', json={'id': reuse_id})
+        assert restarted.status_code == 200, restarted.text
+        assert restarted.json()['conversationId'] == first_id
+        assert restarted.json()['draft'] == '干预后的草稿'
+        assert len(client.get(path + '/conversations').json()['items']) == 1
+        other = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+        assert other['conversationId'] != first_id
+        # Replaying the bound id still activates the original session, not a third one.
+        back = client.post(path + '/conversations', json={'id': reuse_id}).json()
+        assert back['conversationId'] == first_id
+        assert back['draft'] == '干预后的草稿'
+        assert [item['id'] for item in client.get(path + '/conversations').json()['items']] == [
+            first_id, other['conversationId']]
+
+
+def test_whitespace_only_structured_draft_is_reused(assistant):
+    """HTTP clients that persist blank text-only draftContent must not accumulate sessions."""
+    client, path, _ = assistant
+    first_id = client.get(path).json()['conversationId']
+    payload = {'conversationId': first_id, 'draft': '  \n',
+               'draftContent': [{'type': 'text', 'text': '  \n'}]}
+    assert client.put(path + '/draft', json=payload).status_code == 200
+    created = client.post(path + '/conversations', json={'id': str(uuid4())})
+    assert created.status_code == 200, created.text
+    assert created.json()['conversationId'] == first_id
+    assert len(client.get(path + '/conversations').json()['items']) == 1
+    # A reference or skill part is real unsent content and must be archived.
+    assert client.put(path + '/draft', json={'conversationId': first_id, 'draft': '  ',
+        'draftContent': [{'type': 'text', 'text': '  '},
+                         {'type': 'reference', 'assetId': 'a', 'name': 'clip'}]}).status_code == 200
+    started = client.post(path + '/conversations', json={'id': str(uuid4())}).json()
+    assert started['conversationId'] != first_id
+    items = client.get(path + '/conversations').json()['items']
+    assert [item['id'] for item in items] == [started['conversationId'], first_id]
+
+
 def test_empty_current_session_can_be_reused_when_history_is_full(assistant):
+
     """New should not 409 when the active session is empty even at the 100-session cap."""
     client, path, _ = assistant
     current_id = client.get(path).json()['conversationId']
@@ -149,6 +224,10 @@ def test_conversation_is_empty_ignores_runtime_settings():
     assert not agent.conversation_is_empty({**base, 'assets': [{'id': 'a'}]})
     assert not agent.conversation_is_empty({**base, 'skills': ['s']})
     assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': '引用'}]})
+    assert agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': '  \n'}]})
+    assert agent.conversation_is_empty({**base, 'draftContent': []})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [
+        {'type': 'text', 'text': '  '}, {'type': 'skill', 'name': 'lookup'}]})
 
 
 def test_stale_draft_and_stale_turn_cannot_modify_active_thread(assistant):

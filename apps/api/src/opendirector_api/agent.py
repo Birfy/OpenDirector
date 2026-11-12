@@ -58,13 +58,36 @@ class Turn(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=1)
 
 
+def draft_content_is_empty(content):
+    """Blank text-only structured drafts are empty; reference or skill parts are not."""
+    if not content:
+        return True
+    for part in content:
+        kind = part.get('type') if isinstance(part, dict) else None
+        if kind == 'text':
+            if (part.get('text') or '').strip():
+                return False
+        else:
+            return False
+    return True
+
+
 def conversation_is_empty(value):
     """A session with no messages or unsent content can be reused by New."""
     return (not value.get('messages')
             and not (value.get('draft') or '').strip()
             and not value.get('assets')
             and not value.get('skills')
-            and not value.get('draftContent'))
+            and draft_content_is_empty(value.get('draftContent')))
+
+
+def public_conversation(value):
+    return {key: item for key, item in value.items()
+            if key not in {'archivedConversations', 'reusedCreateIds'}}
+
+
+def reused_ids(value):
+    return [str(item) for item in (value.get('reusedCreateIds') or [])]
 
 
 class Conversations:
@@ -112,7 +135,7 @@ class Conversations:
                 changed = True
             if changed:
                 durable_json(file, value)
-            return {key: item for key, item in value.items() if key != 'archivedConversations'}
+            return public_conversation(value)
 
     def list(self, project_id: UUID) -> dict:
         directory = self.path(project_id)
@@ -140,22 +163,29 @@ class Conversations:
             current = read_json(file) if file.exists() else {'messages': [], **Draft().model_dump(mode='json')}
             current['conversationId'] = current.get('conversationId') or str(uuid5(project_id, 'assistant'))
             archives = current.pop('archivedConversations', [])
-            if current['conversationId'] == str(conversation_id):
-                return current
-            target = next((item for item in archives if item['conversationId'] == str(conversation_id)), None)
+            requested = str(conversation_id)
+            if current['conversationId'] == requested or requested in reused_ids(current):
+                return public_conversation(current)
+            target = next((item for item in archives
+                           if item['conversationId'] == requested or requested in reused_ids(item)), None)
             if target is None:
                 if not create:
                     raise ProjectError('对话不存在。', 404)
                 if conversation_is_empty(current):
-                    return current
+                    aliases = reused_ids(current)
+                    if requested not in aliases:
+                        aliases.append(requested)
+                    current['reusedCreateIds'] = aliases
+                    durable_json(file, {**current, 'archivedConversations': archives})
+                    return public_conversation(current)
                 if len(archives) >= 99:
                     raise ProjectError('项目对话已达 100 个，暂不能继续新建。', 409)
                 target = {'messages': [], **Draft().model_dump(mode='json'),
                           **{key: current[key] for key in ('runtime', 'runtimeModel', 'harnessModels', 'thinking', 'builtinModelThinking', 'modelSelections') if key in current},
-                          'conversationId': str(conversation_id)}
-            archives = [item for item in archives if item['conversationId'] != str(conversation_id)]
+                          'conversationId': requested}
+            archives = [item for item in archives if item['conversationId'] != target['conversationId']]
             durable_json(file, {**target, 'archivedConversations': [current, *archives]})
-            return target
+            return public_conversation(target)
 
 
 class ConversationCreate(BaseModel):

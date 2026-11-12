@@ -100,13 +100,22 @@ export interface Conversation extends ChatDraft {
   messages: ChatMessage[];
 }
 
+export function draftContentIsEmpty(
+  content: Conversation["draftContent"] | undefined,
+) {
+  if (!content || content.length === 0) return true;
+  return content.every(
+    (part) => part.type === "text" && !part.text.trim(),
+  );
+}
+
 export function conversationIsEmpty(value: Conversation) {
   return (
     value.messages.length === 0 &&
     !value.draft.trim() &&
     value.assets.length === 0 &&
     !(value.skills && value.skills.length) &&
-    !(value.draftContent && value.draftContent.length)
+    draftContentIsEmpty(value.draftContent)
   );
 }
 

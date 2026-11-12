@@ -22,4 +22,10 @@ test("messages, drafts, assets, skills, or draft content make a session reusable
   assert.equal(conversationIsEmpty({...empty(), skills: ["lookup"]}), false);
   assert.equal(conversationIsEmpty({...empty(), draftContent: [{type: "text", text: "引用"}]}),
     false);
+  assert.equal(conversationIsEmpty({...empty(), draftContent: [{type: "text", text: "  \n"}]}),
+    true);
+  assert.equal(conversationIsEmpty({...empty(), draftContent: [
+    {type: "text", text: "  "}, {type: "skill", name: "lookup"}]}), false);
+  assert.equal(conversationIsEmpty({...empty(), draftContent: [
+    {type: "text", text: "  "}, {type: "reference", assetId: "a", name: "clip"}]}), false);
 });
