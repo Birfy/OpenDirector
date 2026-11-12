@@ -95,6 +95,10 @@ On MOSS Open Platform, select the stable `moss-tts-1.5-flash` or `moss-tts-1.0-p
 
 Choose **Create voice** to upload a local recording, name it, and review its playback, format, size and duration before submitting. vLLM-Omni requires the consent recording ID; adapters such as Drama3 also require the recording transcript. MOSS-TTS-Nano needs a registered voice with reference audio: a listed `default` voice is insufficient. This upload registers the voice with the selected service without adding a canvas reference node.
 
+On Zhipu BigModel Open Platform, select `glm-tts`. The library lists the seven documented system voices and the voices cloned on that account. To clone a voice, upload a 3–30 second MP3 or WAV recording of at most 10 MB; the recording transcript is optional but improves similarity. OpenDirector deletes the uploaded sample from the account after registration. Each request reads at most 1,024 characters, and references are not accepted. Cloned voices can be deleted from the library.
+
+The same provider also offers conversation models: select the Agent category and the preset preselects the supported GLM chat models without contacting the service, as described under model connections.
+
 Selected voices are saved in the project; favorites are saved as browser preferences. Both are scoped to the configured service and account. Compatible models sharing a service can retain the selection; another service or account requires its own registered voice. Use a voice’s secondary menu to copy its provider ID or delete an uploaded voice where supported. Deletion requires confirmation; MOSS deletion is unavailable until its API supports it. Service errors are shown without credentials; an unsupported model keeps its existing voice controls.
 
 Agents use the same validation through `voice_list`, `voice_create`, and `voice_delete`. The [business CLI](cli.md) also exposes `voice list`, `voice create`, and `voice delete`.
@@ -109,6 +113,10 @@ Open **Generation history** at the top right to view task progress, results, and
 - After changing the service URL, model, or protocol, you may no longer be able to query older tasks.
 
 ## Chat with AI
+
+Codex web search citations appear as numbered source links when the search result supplies a matching source. Copying a reply keeps those links in Markdown. Saved replies can recover sources from their corresponding local run traces without changing the original text; if the trace or source is unavailable, the reply shows **Source unavailable**. Incomplete citations remain hidden while a reply is streaming and show that message if the reply ends without a complete citation. Literal examples inside code remain unchanged.
+
+Click a source number to view its full URL in a bordered information card, then choose **Copy link** or **Open link**. Close the card with the button at its top right, by pressing `Esc`, or by clicking outside it.
 
 Click **Chat with AI** at the bottom right, select a chat model, and describe what you want to create. You can upload, drag and drop, or paste assets, or type `@` to reference canvas content. The assistant can save text as requested and call configured generation models to create assets.
 
