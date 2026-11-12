@@ -298,6 +298,79 @@ node tests/browser/first_last_frame_connections.mjs
 
 ### 提供商与模型设置
 
+HEIC/HEIF imports and MiniMax H3 image editing:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_minimax_image.py tests/test_creation_assets.py -q
+node tests/browser/heif_import.mjs
+```
+
+The browser script uses the isolated API and Vite above. It checks real HEVC-encoded
+HEIC/HEIF fixtures through upload and mixed-format drag and drop, oriented pixels,
+project reload, both display languages, corrupt/oversized upload rejection, original
+downloads and canvas archive round trips, cross-project paste with an unavailable source, and
+both MiniMax model submissions with fixture results. Python tests exercise Agent
+artifact import and preview, and run the real MiniMax adapter against mocked HTTP through UI
+and Agent command sources, checking original bytes, ordered frozen inputs, result
+adoption, rejection before submission and request-size limits. These tests do not
+call MiniMax, verify model quality, or exercise a live Agent conversation. Camera
+HDR profiles and platform wheel installation require separate validation.
+
+HEIF regression coverage also includes conditional browser-image reads (304 without
+decoding, while still checking original-file integrity), localized decoder errors,
+standalone thumbnail registration, alpha compositing, multi-image rejection and
+full-resolution display at the 25-million-pixel limit. Timeline package tests preserve
+HEIF bytes and extensions through export/import; the browser check covers FCPXML
+media ZIP output and refuses an orphaned preview download in both languages.
+
+HEIC 上传恢复与相机样本 / HEIC upload recovery and camera sample:
+
+```sh
+node tests/browser/heif_upload_recovery.mjs
+# Optional: download and unpack the review attachment locally first.
+HEIF_REVIEW_FILE=/absolute/path/IMG_8066.HEIC node tests/browser/heif_upload_recovery.mjs
+```
+
+该脚本可连接上文的隔离 API 和 Vite，也可通过 `CREATION_WEB_URL` 指向 `npm run build` 后的 `npm run preview`（使用相同 `OPENDIRECTOR_API_URL`）。它在中英界面验证普通上传、拖拽、刚创建图片节点的替换上传、图片和视频节点的参考图上传、保存后重开及原始字节。用受控延迟让首次保存回执落在上传期间；注入预览 404 时，必须显示错误、保留已注册原件，且不能创建空白生成节点或误报成功。
+
+This script supports the isolated API and Vite above, or `npm run preview` after a build via `CREATION_WEB_URL` (with the same `OPENDIRECTOR_API_URL`). In both languages it checks upload, drop, replacement in a fresh image node, image/video reference uploads, reopening and original bytes. Controlled delays put the first save acknowledgement inside the upload. An injected preview 404 must report failure and retain the registered original without creating an empty generation item or claiming success.
+
+2026-11-12 使用 [reviewer 提供的 IMG_8066.HEIC](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5868923062) 在 macOS 27.2、Chrome 157.0.8103.52 的正式构建上验证：显示尺寸为 3024×4032，保存后重开正常，原件字节不变。另通过可见 Chrome 的系统文件选择器手动导入并刷新验证。原始相机文件和 EXIF 不纳入仓库。受控故障证明了错误处理路径，不能证明 reviewer 当时预览请求失败的具体原因；其他平台及 HDR 色彩准确性仍需单独验收。
+
+On 2026-11-12, the reviewer's linked `IMG_8066.HEIC` was checked in the production build on macOS 27.2 / Chrome 157.0.8103.52: 3024×4032 decoded pixels, successful reopening and unchanged original bytes. Import through the visible Chrome system file picker and refresh were also verified. The original camera file and EXIF are not committed. The injected failure proves the error path, not the cause of the reviewer's preview request failure. Other platforms and HDR color accuracy require separate acceptance.
+
+同日补测 pillow-heif 的两张实拍样本：[小米 `xiaomi.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/xiaomi.heic)（2592×1944）和 [三星 `aux_YCbCr.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/aux_YCbCr.heic)（4000×1848）。两张均通过上述六种模式的中英文检查，显示尺寸与已保存媒体信息一致，原件字节不变；可见 Chrome 中将三张一起导入同一画布并刷新，均正常显示。
+
+Two additional camera samples from pillow-heif passed the same six modes in both languages that day: Xiaomi `xiaomi.heic` (2592×1944) and Samsung `aux_YCbCr.heic` (4000×1848), linked above. Display dimensions matched persisted media facts and original bytes were unchanged. All three photos were also imported into one canvas through visible Chrome and remained visible after refresh.
+
+本地补充手动测试：三张 HEIC 图片导入同一画布，保存并刷新后正常显示。
+
+Additional local manual test: three HEIC images imported into one canvas remain visible after saving and refreshing.
+
+![Local HEIC test after refresh / 本地 HEIC 测试刷新后](images/heif-282/local-heic-test.png)
+
+HEIF 色彩配置回归 / HEIF color-profile regression:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_creation_assets.py tests/test_tool_tasks.py -q
+```
+
+2026-11-12 按 [P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) 复核发现两条独立路径丢失 ICC：素材库 JPEG，以及资产预览、版本历史和 Agent 预览使用的 WebP。修复后，`IMG_8066.HEIC` 的 536 字节 Display P3 配置在浏览器 PNG、WebP 和 JPEG 中均与原件完全相同。PNG 保持 3024×4032（14,103,756 字节）；360×480 WebP 为 43,812 字节，JPEG 为 51,744 字节。原件下载字节不变；浏览器 PNG 的 ETag 升级，旧预览缓存会重新获取，新缓存继续支持 304。新增用例覆盖带／不带配置的 HEIC、通用 HEIF 和灰度转换；125 项相关测试通过。灰度等非 RGB 像素转换后不继续附带原通道配置，这不是通用色彩空间归一化。
+
+The P3 review above exposed two independent ICC omissions: library JPEGs and the WebP used by asset previews, version history and Agent previews. After the fix, the sample's 536-byte Display P3 profile is byte-identical in browser PNG, WebP and JPEG. PNG remains 3024×4032 (14,103,756 bytes); 360×480 WebP is 43,812 bytes and JPEG is 51,744 bytes. Original downloads are unchanged; the browser PNG ETag is versioned so old renditions are refreshed while current ones retain 304 support. New cases cover profiled/unprofiled HEIC, generic HEIF and grayscale conversion; 125 focused tests passed. Profiles for non-RGB channels are not retained after RGB conversion; this is not general color-space normalization.
+
+本地可见 Chrome 测试：通过系统文件选择器上传同一张 `IMG_8066.HEIC`，再用“替换素材”重新上传以产生两个真实上传版本；核对画布、悬浮资产预览和版本历史。未调用模型生成。
+
+Local visible-Chrome test: upload `IMG_8066.HEIC` through the system file picker, then upload it again with Replace asset to produce two actual upload versions. Inspect the canvas, hover asset preview and version history. No model generation is involved.
+
+![Local canvas test / 本地画布测试](images/heif-282/local-p3-canvas.png)
+![Local asset preview test / 本地资产预览测试](images/heif-282/local-p3-asset-preview.png)
+![Local version history test / 本地版本历史测试](images/heif-282/local-p3-version-history.png)
+
+`browser-image` 同时供裁剪、蒙版和图像编辑读取原始像素尺寸，因此本次没有直接将长边限制为 2048；单独的显示缩略版本需要与编辑输入区分。首次全尺寸 PNG 传输仍约 14 MB。没有复验其他平台、HDR 准确性或完整 Python 测试集。
+
+`browser-image` also supplies the pixel dimensions for cropping, masks and image editing, so this patch does not impose a 2048-pixel limit on that shared route. A bounded display rendition must be separate from editing inputs. The first full-resolution PNG transfer remains about 14 MB. Other platforms, HDR accuracy and the full Python suite were not revalidated.
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh
