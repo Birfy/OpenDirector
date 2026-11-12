@@ -111,7 +111,10 @@ export function draftContentIsEmpty(
 ) {
   if (!content || content.length === 0) return true;
   return content.every(
-    (part) => part.type === "text" && !part.text.trim(),
+    (part) =>
+      part.type === "text" &&
+      typeof part.text === "string" &&
+      !part.text.trim(),
   );
 }
 

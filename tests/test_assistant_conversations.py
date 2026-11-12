@@ -227,6 +227,25 @@ def test_whitespace_only_structured_draft_is_reused(assistant):
     assert [item['id'] for item in items] == [started['conversationId'], first_id]
 
 
+def test_non_string_draft_content_text_does_not_500_on_new(assistant):
+    """Accepted non-string text parts must not crash New or be treated as blank."""
+    client, path, _ = assistant
+    for value in (123, True, {'x': 1}):
+        current_id = client.get(path).json()['conversationId']
+        saved = client.put(path + '/draft', json={
+            'conversationId': current_id, 'draft': '',
+            'draftContent': [{'type': 'text', 'text': value}],
+        })
+        assert saved.status_code == 200, saved.text
+        new_id = str(uuid4())
+        created = client.post(path + '/conversations', json={'id': new_id})
+        assert created.status_code == 200, created.text
+        assert created.json()['conversationId'] == new_id
+        listing = client.get(path + '/conversations').json()
+        assert listing['activeId'] == new_id
+        assert current_id in {item['id'] for item in listing['items']}
+
+
 def test_empty_current_session_can_be_reused_when_history_is_full(assistant):
 
     """New should not 409 when the active session is empty even at the 100-session cap."""
@@ -264,6 +283,12 @@ def test_conversation_is_empty_ignores_runtime_settings():
     assert agent.conversation_is_empty({**base, 'draftContent': []})
     assert not agent.conversation_is_empty({**base, 'draftContent': [
         {'type': 'text', 'text': '  '}, {'type': 'skill', 'name': 'lookup'}]})
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': 123}])
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': True}])
+    assert not agent.draft_content_is_empty([{'type': 'text', 'text': {'x': 1}}])
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': 123}]})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': True}]})
+    assert not agent.conversation_is_empty({**base, 'draftContent': [{'type': 'text', 'text': {'x': 1}}]})
 def test_saved_citations_load_trace_sources_on_read_without_rewriting_conversation(assistant, tmp_path):
     client, path, _ = assistant
     cid = client.get(path).json()['conversationId']

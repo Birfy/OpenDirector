@@ -60,13 +60,22 @@ class Turn(BaseModel):
 
 
 def draft_content_is_empty(content):
-    """Blank text-only structured drafts are empty; reference or skill parts are not."""
+    """Blank text-only structured drafts are empty; reference or skill parts are not.
+
+    Non-string text values are treated as present content so New does not raise,
+    and an accepted non-text or non-string part is not silently reused away.
+    """
     if not content:
         return True
     for part in content:
-        kind = part.get('type') if isinstance(part, dict) else None
+        if not isinstance(part, dict):
+            return False
+        kind = part.get('type')
         if kind == 'text':
-            if (part.get('text') or '').strip():
+            text_value = part.get('text')
+            if not isinstance(text_value, str):
+                return False
+            if text_value.strip():
                 return False
         else:
             return False
