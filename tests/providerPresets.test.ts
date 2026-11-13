@@ -248,6 +248,24 @@ test("MiniMax H3 image preset exposes both models in both display languages", ()
   }
 });
 
+test("MiniMax speech preset and saved identity follow the display language", () => {
+  const previous = getActiveLocale();
+  try {
+    const preset = PROVIDER_PRESETS.find(item => item.id === "minimax-speech")!;
+    assert.equal(preset.url, "https://api.minimax.cn/v1");
+    assert.deepEqual(preset.kinds, ["audio"]);
+    assert.deepEqual(preset.modelsByKind?.audio, ["speech-2.8-hd", "speech-2.8-turbo"]);
+    for (const [locale, name] of [["zh-CN", "MiniMax 官方语音"], ["en-US", "MiniMax Official Speech"]] as const) {
+      setActiveLocale(locale);
+      assert.equal(providerOptions("audio").find(item => item.id === preset.id)?.name, name);
+      const model: ModelConfig = { ...preset, id: "saved-minimax", kind: "audio", modelId: "speech-2.8-hd",
+        inputRules: { profile: "minimax-speech", allowedKinds: [], maxImages: 0, maxVideos: 0, maxAudios: 0, videoModes: [] } };
+      assert.equal(providerPresetFor(model), preset.id);
+      assert.equal(providerPresetFor({ ...model, url: "https://api.minimax.io/v1" }), "custom");
+    }
+  } finally { setActiveLocale(previous); }
+});
+
 test("a saved Zhipu GLM-TTS connection reopens with its provider identity", () => {
   const preset = PROVIDER_PRESETS.find((item) => item.id === "zhipu")!;
   const model: ModelConfig = { ...preset, id: "saved", kind: "audio", modelId: "glm-tts", url: `${preset.url}/`,
