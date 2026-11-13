@@ -13,6 +13,7 @@ import { MediaPublication } from "../../backend/mediaPublication";
 import { CreationEditorSession } from "../../backend/creationEditorSession";
 import { captureEditorSource } from "../linkedResults";
 import { TimelinePackageImport, exportTimelinePackage as exportNativeTimelinePackage } from "../../backend/timelinePackages";
+import { readLocalResource } from "../timelineExport.ts";
 import { timelinePublication } from "../../backend/timelinePublication";
 import { acknowledgeToolPlacement, cancelToolTask } from "../../backend/tools.ts";
 import { createWorkspaceProject, listWorkspaceProjects, openExampleWorkspaceProject, openWorkspaceProject, saveWorkspaceDocument, workspaceProjection } from "../../backend/workspace";
@@ -55,6 +56,7 @@ import { LocalMediaEditor } from "../LocalMediaEditor";
 import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
+import { pinnedPrecheckNodes } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -120,6 +122,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
     composerExpanded,
     composerIncoming,
     composerNode,
+    submissionAssets,
     composerRunning,
     confirmSubjectImport,
     connect,
@@ -1611,6 +1614,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 key={`${composerNode.id}:${toolRevision}`}
                 selectedNode={composerNode}
                 incomingNodes={composerIncoming}
+                pinnedPrecheck={pinnedPrecheckNodes({
+                  node: composerNode,
+                  incoming: composerIncoming,
+                  assets: typeof submissionAssets === "function" ? submissionAssets() : [],
+                })}
                 referenceControls={generationReferenceControls(composerNode)}
                 onUpdate={(patch) =>
                   command({
@@ -1630,6 +1638,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 }}
                 running={composerRunning}
                 backendModels={backendCatalog.models}
+                removeWatermark={backendCatalog.settings?.removeWatermark}
               />
             )}
           </div>
@@ -2368,6 +2377,11 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               },
             };
           }}
+          onReadMediaResource={(resource, signal) =>
+            ["image/heic", "image/heif"].includes(resource.mimeType ?? "")
+              ? creationClient(doc.id).originalMedia(resource.src ?? "", resource.mimeType, signal)
+              : readLocalResource(resource, signal)
+          }
           onApply={(timeline) => commitEditorData({ timeline })}
           onExportEditablePackage={async (timeline) => {
             await commitEditorData({ timeline });
