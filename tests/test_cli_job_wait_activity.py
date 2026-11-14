@@ -98,7 +98,7 @@ def test_job_wait_polls_collapse_into_one_failed_activity(transport):
         row = rows[0]
         assert row['name'].endswith('job wait')
         assert row['status'] == 'failed'
-        assert 'Provider rejected the video task (1027).' in row['error']
+        assert row['error'] == 'Job failed: Provider rejected the video task (1027).'
         assert json.loads(row['result'])['status'] == 'failed'
     asyncio.run(scenario())
 
@@ -133,7 +133,7 @@ def test_job_wait_other_unsuccessful_endings_fail_the_activity(transport, status
         assert code == 1
         rows = collapse(drain(queue))
         assert len(rows) == 1 and rows[0]['status'] == 'failed'
-        assert status in rows[0]['error']
+        assert rows[0]['error'] == f'Job {status}.'
     asyncio.run(scenario())
 
 

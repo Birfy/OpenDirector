@@ -43,7 +43,12 @@ def activity(request):
 
 
 def unsuccessful_job(name, arguments, value):
-    """Describe a job read that ended without success, for a job wait activity."""
+    """Describe a job read that ended without success, for a job wait activity.
+
+    The wording is the stable receipt. The assistant renders it from
+    `assistant.activity.jobWait*` in zh-CN and en-US; keep these sentences
+    aligned with that catalog.
+    """
     if name != 'query' or not isinstance(arguments, dict) or arguments.get('type') != 'job.get':
         return None
     job = value.get('job', value) if isinstance(value, dict) else None
