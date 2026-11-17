@@ -14,7 +14,9 @@ const SHORT_ZH = "导演台 1 · 动作预演";
 const base = process.env.CREATION_WEB_URL ?? "http://127.0.0.1:5179";
 const browser = await launchBrowser();
 const page = await browser.newPage({
-  locale: "zh-CN",
+  // Chromium language only. The fixture switches zh-CN / en-US itself via
+  // setActiveLocale; this script does not assert Playwright-selected UI copy.
+  locale: "en-US",
   viewport: { width: 1100, height: 900 },
 });
 page.setDefaultTimeout(10000);
