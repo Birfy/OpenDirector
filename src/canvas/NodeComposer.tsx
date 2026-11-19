@@ -2,7 +2,7 @@ import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasNode, CanvasNodeData, GenerationSettings } from "./model";
 import { LOCAL_DEMO_MODEL } from "./model";
 import { CanvasIcon } from "./CanvasIcon";
@@ -117,8 +117,9 @@ export function NodeComposer({
     ...(referenceControls?.pinned ?? []),
     ...(referenceControls?.assets ?? []),
   ]);
-  const pinnedFrameKey = JSON.stringify(
-    [...new Set(pinnedFrames.map((frame) => frame.assetId))].sort(),
+  const pinnedAssetIds = useMemo(
+    () => [...new Set(pinnedFrames.map((frame) => frame.assetId))].sort(),
+    [pinnedFrames.map((frame) => frame.assetId).slice().sort().join("\0")],
   );
   const projectId = referenceControls?.projectId;
   const [pinnedPreviews, setPinnedPreviews] = useState<Record<string, string>>(
@@ -126,10 +127,13 @@ export function NodeComposer({
   );
   useEffect(() => {
     let active = true;
-    if (!projectId) return;
+    if (!projectId) {
+      setPinnedPreviews({});
+      return;
+    }
     const client = creationClient(projectId);
     void Promise.all(
-      (JSON.parse(pinnedFrameKey) as string[]).map(async (id) => {
+      pinnedAssetIds.map(async (id) => {
         try {
           return [id, await client.mediaUrl(id)] as const;
         } catch {
@@ -145,7 +149,7 @@ export function NodeComposer({
     return () => {
       active = false;
     };
-  }, [projectId, pinnedFrameKey]);
+  }, [projectId, pinnedAssetIds]);
 
   if (
     !selectedNode ||

@@ -29,7 +29,10 @@ import {
   pinnedFrameCandidates,
   swapFramePatch,
 } from "../src/canvas/frameReferences.ts";
-import { generationDefaults } from "../src/canvas/generationCatalog.ts";
+import {
+  changeGenerationSettings,
+  generationDefaults,
+} from "../src/canvas/generationCatalog.ts";
 import {
   copyGenerationSettings,
   isGenerationSettings,
@@ -275,24 +278,42 @@ test("a slot holds either a node or a fixed asset", () => {
   };
   assert.equal(frameSlotValue(settings, "first"), "node-a");
   assert.equal(frameSlotValue(settings, "last"), "");
-  const pinned = { ...settings, ...frameSlotPatch("first", PINNED_FRAME_PREFIX + "r1") };
+  const pinnedPatch = frameSlotPatch("first", PINNED_FRAME_PREFIX + "r1");
+  assert.equal(JSON.parse(JSON.stringify(pinnedPatch)).firstFrameNodeId, "");
+  const pinned = changeGenerationSettings(settings, pinnedPatch);
   assert.equal(pinned.firstFrameNodeId, undefined);
   assert.equal(pinned.firstFrameReferenceId, "r1");
   assert.equal(frameSlotValue(pinned, "first"), PINNED_FRAME_PREFIX + "r1");
-  const node = { ...pinned, ...frameSlotPatch("first", "node-b") };
+  const node = changeGenerationSettings(pinned, frameSlotPatch("first", "node-b"));
   assert.equal(node.firstFrameNodeId, "node-b");
   assert.equal(node.firstFrameReferenceId, undefined);
-  const cleared = { ...pinned, ...frameSlotPatch("first", "") };
+  const cleared = changeGenerationSettings(pinned, frameSlotPatch("first", ""));
   assert.equal(frameSlotValue(cleared, "first"), "");
-  const swapped = {
-    ...pinned,
-    lastFrameNodeId: "node-c",
-    ...swapFramePatch({ ...pinned, lastFrameNodeId: "node-c" }),
-  };
+  assert.equal(cleared.firstFrameNodeId, undefined);
+  assert.equal(cleared.firstFrameReferenceId, undefined);
+  const swapped = changeGenerationSettings(
+    { ...pinned, lastFrameNodeId: "node-c" },
+    swapFramePatch({ ...pinned, lastFrameNodeId: "node-c" }),
+  );
   assert.equal(swapped.firstFrameNodeId, "node-c");
   assert.equal(swapped.lastFrameReferenceId, "r1");
   assert.equal(swapped.firstFrameReferenceId, undefined);
   assert.equal(swapped.lastFrameNodeId, undefined);
+});
+
+test("a JSON-serialized slot patch still clears the other field on merge", () => {
+  const settings = {
+    ...generationDefaults("video"),
+    videoMode: "first-last" as const,
+    firstFrameNodeId: "node-a",
+  };
+  const raw = frameSlotPatch("first", PINNED_FRAME_PREFIX + "r1");
+  const serialized = JSON.parse(JSON.stringify(raw)) as typeof raw;
+  assert.ok(Object.hasOwn(serialized, "firstFrameNodeId"));
+  const next = changeGenerationSettings(settings, serialized);
+  assert.equal(next.firstFrameNodeId, undefined);
+  assert.equal(next.firstFrameReferenceId, "r1");
+  assert.ok(isGenerationSettings(next));
 });
 
 test("removing the fixed image from the prompt empties its slot", () => {

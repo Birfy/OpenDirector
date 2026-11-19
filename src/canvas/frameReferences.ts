@@ -190,15 +190,17 @@ export function frameSlotValue(settings: GenerationSettings, slot: FrameSlot) {
   );
 }
 
-/** Settings patch for choosing a slot value; a slot holds one kind of frame. */
+/** Settings patch for choosing a slot value; a slot holds one kind of frame.
+ * Cleared fields are empty strings so the clear survives JSON serialization
+ * and a partial settings merge can drop the previous value. */
 export function frameSlotPatch(
   slot: FrameSlot,
   value: string,
 ): Partial<GenerationSettings> {
   const [node, reference] = SLOT_FIELDS[slot];
   return value.startsWith(PINNED_FRAME_PREFIX)
-    ? { [node]: undefined, [reference]: value.slice(PINNED_FRAME_PREFIX.length) }
-    : { [node]: value || undefined, [reference]: undefined };
+    ? { [node]: "", [reference]: value.slice(PINNED_FRAME_PREFIX.length) }
+    : { [node]: value, [reference]: "" };
 }
 
 /** Exchange the first and last frame, whichever kind each slot holds. */
@@ -206,11 +208,34 @@ export function swapFramePatch(
   settings: GenerationSettings,
 ): Partial<GenerationSettings> {
   return {
-    firstFrameNodeId: settings.lastFrameNodeId,
-    lastFrameNodeId: settings.firstFrameNodeId,
-    firstFrameReferenceId: settings.lastFrameReferenceId,
-    lastFrameReferenceId: settings.firstFrameReferenceId,
+    firstFrameNodeId: settings.lastFrameNodeId ?? "",
+    lastFrameNodeId: settings.firstFrameNodeId ?? "",
+    firstFrameReferenceId: settings.lastFrameReferenceId ?? "",
+    lastFrameReferenceId: settings.firstFrameReferenceId ?? "",
   };
+}
+
+const FRAME_SLOT_FIELDS = [
+  "firstFrameNodeId",
+  "lastFrameNodeId",
+  "firstFrameReferenceId",
+  "lastFrameReferenceId",
+] as const;
+
+/** Drop empty frame-slot fields from a merged settings object. Empty strings
+ * are explicit clears in a patch; stored settings omit the key instead. */
+export function clearEmptyFrameSlots(
+  settings: GenerationSettings,
+  patch?: Partial<GenerationSettings>,
+): GenerationSettings {
+  let next = settings;
+  for (const key of FRAME_SLOT_FIELDS) {
+    if ((patch ? Object.hasOwn(patch, key) : true) && !next[key]) {
+      if (next === settings) next = { ...settings };
+      delete next[key];
+    }
+  }
+  return next;
 }
 
 /** Mode-change default for fixed images, after connected nodes had their turn:

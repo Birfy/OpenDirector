@@ -1,7 +1,10 @@
 import { RULE_FACTS } from "../contracts/ruleFacts.generated.ts";
 import type { CanvasNode, GenerationSettings } from "./model.ts";
 import { subjectReferenceNodes } from "./subjectReferences.ts";
-import { frameImageLimitIssue } from "./frameReferences.ts";
+import {
+  clearEmptyFrameSlots,
+  frameImageLimitIssue,
+} from "./frameReferences.ts";
 import type { Translate } from "../i18n/I18nProvider.tsx";
 import { defaultTranslate } from "./assistantTranslate.ts";
 
@@ -195,7 +198,7 @@ export function changeGenerationSettings(
     next.resolution = "2K";
     next.count = 1;
   }
-  return next;
+  return clearEmptyFrameSlots(next, patch);
 }
 
 export function generationReferenceRole(
