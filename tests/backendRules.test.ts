@@ -330,7 +330,7 @@ test("FastH3 preserves supported reference mode for text-only generation", () =>
   assert.equal(backendBlocker(settings, [], [fast]), null);
 });
 
-test("reading service names unused image references without treating them as model inputs", () => {
+test("reading service keeps unsupported kinds distinct from unused allowed references", () => {
   const speech = {
     ...config("audio", {
       profile: "openai-speech",
@@ -350,6 +350,19 @@ test("reading service names unused image references without treating them as mod
     prompt: "朗读这段文字",
   };
   const image = media("image");
-  assert.match(backendReferenceIssue(image, settings, speech)!, /不使用该参考/);
-  assert.deepEqual(backendReferences(settings, [image], speech), []);
+  const video = media("video");
+  assert.match(backendReferenceIssue(image, settings, speech)!, /不接收/);
+  assert.doesNotMatch(backendReferenceIssue(image, settings, speech)!, /不使用该参考/);
+  assert.match(backendReferenceIssue(video, settings, speech)!, /视频参考/);
+  assert.doesNotMatch(backendReferenceIssue(video, settings, speech)!, /不使用该参考/);
+  assert.deepEqual(backendReferences(settings, [image, video], speech), []);
+
+  const speechWithImage = {
+    ...speech,
+    inputRules: { ...speech.inputRules, allowedKinds: ["image" as const], maxImages: 1 },
+  };
+  assert.match(backendReferenceIssue(image, settings, speechWithImage)!, /不使用该参考/);
+  assert.match(backendReferenceIssue(video, settings, speechWithImage)!, /视频参考/);
+  assert.doesNotMatch(backendReferenceIssue(video, settings, speechWithImage)!, /不使用该参考/);
+  assert.deepEqual(backendReferences(settings, [image], speechWithImage), []);
 });

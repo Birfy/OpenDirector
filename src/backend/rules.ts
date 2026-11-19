@@ -245,9 +245,9 @@ export function backendReferenceIssue(
   if (kind === "text")
     return rules.allowedKinds.includes("text")
       ? node.data.text?.trim()
-        ? null
+        ? (unusedInReading ?? null)
         : tNow("errors.rules.textEmpty")
-      : (unusedInReading ?? tNow("errors.rules.textReference"));
+      : tNow("errors.rules.textReference");
   const continuation =
     settings.mode === "video" && settings.videoMode === "continuation";
   if (kind === "video" && !continuation && !rules.maxVideos)
@@ -255,12 +255,10 @@ export function backendReferenceIssue(
       ? tNow("errors.rules.videoContinuation")
       : tNow("errors.rules.videoReference");
   if (!rules.allowedKinds.includes(kind))
-    return (
-      unusedInReading ??
-      tNow("errors.rules.kindReference", {
-        kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
-      })
-    );
+    return tNow("errors.rules.kindReference", {
+      kind: tNow(LABELS[kind] ?? "errors.rules.kindImage"),
+    });
+  if (unusedInReading) return unusedInReading;
   return node.data.src && node.data.assetState !== "missing"
     ? null
     : tNow("errors.rules.mediaMissing");

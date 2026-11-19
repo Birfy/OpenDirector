@@ -20,7 +20,7 @@ export function composerReferenceVisibility(
   return {
     showStrip:
       canManage && (input.mode === "video" || input.incomingCount > 0),
-    showEmptyAdd: canManage && input.incomingCount === 0,
+    showEmptyAdd: canManage && input.incomingCount === 0 && !input.reading,
     showMention: !input.reading && !input.music,
     showReadingContextNote: input.reading && input.incomingCount > 0,
   };

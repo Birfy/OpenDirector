@@ -170,9 +170,10 @@ try {
     await page.locator('[data-reference-role="reading-context"]').count(),
     0,
   );
-  await page
-    .getByRole("button", { name: "添加参考素材", exact: true })
-    .waitFor({ state: "visible" });
+  assert.equal(
+    await page.getByRole("button", { name: "添加参考素材", exact: true }).count(),
+    0,
+  );
 
   const after = await page.evaluate(async (projectId) => {
     const { creationClient } = await import("/src/backend/creationClient.ts");

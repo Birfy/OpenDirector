@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { composerReferenceVisibility } from "../src/canvas/composerReferenceVisibility.ts";
 
-test("reading mode still shows connected references and does not hide the add control", () => {
+test("reading mode shows connected references and hides the empty add control", () => {
   const withRef = composerReferenceVisibility({
     firstLast: false,
     reading: true,
@@ -28,7 +28,7 @@ test("reading mode still shows connected references and does not hide the add co
   });
   assert.deepEqual(empty, {
     showStrip: false,
-    showEmptyAdd: true,
+    showEmptyAdd: false,
     showMention: false,
     showReadingContextNote: false,
   });
