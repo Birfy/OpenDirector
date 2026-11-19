@@ -1,5 +1,9 @@
 /** Model connection and service forms. */
 export const models = {
+  "models.protocolOption.bigmodelVideo": "智谱 BigModel 视频接口（CogVideoX-3）",
+  "models.service.bigmodelVideoSummary": "文生视频 / 单图生视频 / 首尾帧",
+  "models.service.bigmodelVideoReferences": "PNG 或 JPEG，单张最多 5 MB。提示词最多 512 字符；选择像素尺寸和 5 或 10 秒时长。",
+
   "models.service.proxyMode": "网络连接方式",
   "models.service.proxySystem": "跟随系统代理",
   "models.service.proxyDirect": "直连（不使用代理）",
@@ -63,6 +67,8 @@ export const models = {
   "models.service.show": "显示",
   "models.service.urlNote":
     "自部署服务通常填写 /v1 地址；通过 SSH 隧道连接时填写本地转发地址。",
+  "models.service.beijingWorkspaceUrl":
+    "使用北京地域的 API Key。如需使用业务空间专属地址，请将 https://<workspace-id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 中的 <workspace-id> 替换为你的业务空间 ID。",
   "models.service.inputCapabilities": "输入能力",
   "models.service.referenceOutput": "参考与输出能力",
   "models.service.textInput": "文本",
@@ -86,6 +92,7 @@ export const models = {
   "models.service.videoAdapter": "视频适配方式",
   "models.service.adapterAuto": "自动识别已知模型；其他使用通用首帧接口",
   "models.service.adapterFastH3": "FastH3-Omni（8 步、多素材参考）",
+  "models.service.adapterFastH3Dual": "FastH3-Omni（首尾帧锚点）",
   "models.service.adapterMiniMaxH3": "原生 MiniMax-H3（首帧、素材参考、接续）",
   "models.service.adapterStandard": "通用 /videos（文本、单张首帧）",
   "models.service.loadPreset": "载入适配预设",

@@ -13,8 +13,9 @@ from opendirector.domain.rule_facts import SERVICE_VOICE_PATTERN
 from .base import Contract
 
 ModelKind = Literal['agent', 'image', 'video', 'audio', 'vision']
-Protocol = Literal['openai', 'volcengine', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
+Protocol = Literal['openai', 'volcengine', 'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'vllm_omni_segmentation', 'vllm_omni_music', 'vllm_omni_depth', 'vllm_omni_score']
 VideoMode = Literal['first_frame', 'reference', 'continuation']
+ImageQuality = Literal['auto', 'low', 'medium', 'high']
 Count = Annotated[int, Field(strict=True, ge=0)]
 
 
@@ -30,7 +31,7 @@ class ImageOutput(Contract):
 
 
 class VoiceLibraryCapabilities(Contract):
-    provider: Literal['vllm_omni', 'moss', 'zhipu'] = Field(description='Voice registry protocol.')
+    provider: Literal['vllm_omni', 'moss', 'minimax', 'zhipu'] = Field(description='Voice registry protocol.')
     connectionId: str = Field(min_length=1, max_length=200, description='Opaque service, endpoint and account identity.')
     requiresTranscript: bool = Field(description='Registered voice must have a reference transcript.')
     acceptsTranscript: bool = Field(default=False, description='Registry stores an optional reference transcript when one is supplied.')
@@ -46,6 +47,7 @@ class VoiceLibraryCapabilities(Contract):
 
 
 class InputRules(Contract):
+    fractionalDuration: bool = Field(default=False, exclude_if=lambda value: not value, description="Accept fractional video seconds within each output duration range.")
     profile: str = Field(min_length=1, max_length=100, description='Model capability profile.')
     voiceLibrary: VoiceLibraryCapabilities | None = Field(default=None, exclude_if=lambda value: value is None,
         description='Supported voice registry and adapter requirements; omitted for unsupported models.')
@@ -66,6 +68,8 @@ class InputRules(Contract):
     requestBytes: Count = Field(description='Maximum aggregate reference bytes per request.')
     videoModes: tuple[VideoMode, ...] = Field(description='Supported video generation modes.')
     imageOutputs: tuple[ImageOutput, ...] = Field(default=(), description='Supported image aspect ratios and sizes.')
+    imageQualities: tuple[ImageQuality, ...] | None = Field(default=None, exclude_if=lambda value: value is None,
+        description='Supported image rendering qualities; omitted for models without quality control.')
     outputResolutions: tuple[str, ...] = Field(default=(), description='Supported output resolution values.')
     referenceImageResolutions: tuple[str, ...] | None = Field(default=None, description='Supported reference image resolution values.')
     videoCapabilities: VideoCapabilities | None = Field(default=None, description='Supported video generation capabilities.')
@@ -132,7 +136,7 @@ class ModelConnection(Contract):
     @model_validator(mode='after')
     def connection(self):
         allowed = {'agent': {'openai'}, 'image': {'openai', 'volcengine', 'vllm_omni_segmentation'},
-                   'video': {'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
+                   'video': {'bigmodel_video', 'kling_video', 'minimax_video_v2', 'vllm_omni', 'volcengine', 'vllm_omni_segmentation', 'vllm_omni_depth'},
                    'audio': {'openai', 'volcengine', 'vllm_omni_music', 'vllm_omni_score'}, 'vision': {'vllm_omni'}}
         if self.protocol not in allowed[self.kind]:
             raise ValueError('Protocol is incompatible with model category')
