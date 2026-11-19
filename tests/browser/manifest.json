@@ -1,6 +1,22 @@
 {
   "scripts": [
     {
+      "file": "image_quality_test.mjs",
+      "previewSafe": true,
+      "lanes": ["extended", "production"]
+    },
+    {
+      "file": "heif_upload_recovery.mjs",
+      "lanes": ["extended", "production"],
+      "previewSafe": true,
+      "note": "HEIF upload, drop, fresh-node/reference save acknowledgement, preview failure and reload in both languages. Optional HEIF_REVIEW_FILE supplies a local camera sample."
+    },
+    {
+      "file": "heif_import.mjs",
+      "lanes": ["extended"],
+      "note": "Real HEIC/HEIF import, orientation, reload, bilingual errors and original export; fixture generation. Imports /src through Vite."
+    },
+    {
       "file": "kling_video.mjs",
       "lanes": [
         "extendedFixture"
@@ -99,6 +115,11 @@
       ]
     },
     {
+      "file": "canvas_text_markdown.mjs",
+      "lanes": ["gate"],
+      "note": "Markdown blocks, native inline composition, fullscreen selection/scroll handoff and resize commits. Uses /src through Vite."
+    },
+    {
       "file": "canvas_switch.mjs",
       "previewSafe": true,
       "lanes": [
@@ -145,6 +166,12 @@
       ]
     },
     {
+      "file": "creation_ripple.mjs",
+      "lanes": [
+        "extended"
+      ]
+    },
+    {
       "file": "creation_asset_list.mjs",
       "lanes": [
         "extended"
@@ -153,10 +180,7 @@
     {
       "file": "creation_history.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "creation_journey.mjs",
@@ -175,10 +199,7 @@
     {
       "file": "default_entry.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "double_shift_chat.mjs",
@@ -206,10 +227,7 @@
     {
       "file": "first_last_frame_connections.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "generation_feedback.mjs",
@@ -328,10 +346,7 @@
     {
       "file": "paste_undo.mjs",
       "previewSafe": true,
-      "lanes": [
-        "extended",
-        "production"
-      ]
+      "lanes": ["extended", "production"]
     },
     {
       "file": "project_list_overflow.mjs",
@@ -340,6 +355,13 @@
         "gate",
         "production"
       ]
+    },
+    {
+      "file": "session_lease.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "note": "Reload after a lost lease release reopens at once; a second window is refused with project_open_elsewhere (#277)."
     },
     {
       "file": "project_title_enter.mjs",
@@ -485,9 +507,22 @@
       ]
     },
     {
+      "file": "kimi_real.mjs",
+      "helper": true,
+      "note": "Manual acceptance against a real Kimi chat endpoint; KIMI_ROUTE=open needs MOONSHOT_API_KEY, KIMI_ROUTE=coding needs KIMI_CODING_API_KEY. Both incur charges, so no lane runs it."
+    },
+    {
       "file": "zhipu_real.mjs",
       "helper": true,
       "note": "Manual acceptance against the real Zhipu BigModel service; needs ZHIPU_API_KEY and incurs charges, so no lane runs it."
+    },
+    {
+      "file": "timeline_node_output.mjs",
+      "lanes": [
+        "gate"
+      ],
+      "previewSafe": false,
+      "note": "Canvas timeline output button and shortcut publish real MP4 results in both locales without opening the editor."
     }
   ]
 }

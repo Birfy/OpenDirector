@@ -33,6 +33,39 @@ macOS 使用 README 中的 `python3.12` 环境准备命令，避免误用系统�
 
 Consult the [development lessons](lessons.md) when selecting relevant scenarios, and verify against the current code and tests. For model capability or parameter changes, trace representative input from the entry point through backend validation to the provider request, and check that rejected input does not create a job. For imports, references, navigation, or asynchronous tasks, inspect persisted identities and actual execution inputs after conversion or recovery.
 
+## CI 阶段契约 / CI stage contract
+
+以下是 [#273](https://github.com/ThinkFlowLab/OpenDirector/issues/273) 的目标契约。文档发布不等于工作流、筛选或仓库规则已启用；切换前遵守下方过渡约束。L1–L5 表示覆盖范围，以下阶段表示运行时机，两者分别判断。默认自动化使用模型替身，不调用付费服务或真实 GPU；现有明确启用的 bundled CLI 回归仍使用本地模型替身。
+
+This is the target contract for [#273](https://github.com/ThinkFlowLab/OpenDirector/issues/273). Publishing it does not activate workflows, selection or repository rules; retain the transition safeguards below. L1–L5 describes coverage, while the stages below describe execution timing. Default automation uses model stubs, with no paid-provider or real-GPU calls. The explicitly enabled bundled CLI regression continues to use local model stubs.
+
+| Stage / 阶段 | Trigger / 触发 | Responsibility / 职责 | Target budget / 目标预算 |
+| --- | --- | --- | --- |
+| Local / 本地 | Before commit and PR creation / 提交及提出 PR 前 | One `.pre-commit-config.yaml` for staged-file hooks and an explicit whole-PR diff check, shared by users and agents. No ready tests. / 同一配置用于暂存文件 hook 和覆盖整个 PR 差异的显式检查，用户与 agent 共用；不跑 ready。 | Fast static feedback; measure warm runs separately from setup / 快速静态反馈，暖运行与初始化分别计时 |
+| PR | Open, reopen and update, including drafts / 提出、重开及更新，包含 draft | CI repeats the same static configuration before ready: frontend units, Python ready, i18n, browser locale/manifest, imports, generated contracts, production build, wheel verification and browser gate including voice and assistant auxiliary panels. Every PR also runs security scanning. / 静态复核通过后跑 ready：前端单元、Python ready、国际化、浏览器语言与清单、分层导入、生成契约、构建、wheel 和包含语音及助手辅助面板的浏览器 gate；每个 PR 另跑安全扫描。 | Entire PR gate ≤30 min / 整个 PR 门禁 ≤30 分钟 |
+| Merge queue / 合并队列 | `merge_group: checks_requested`, before main changes / main 更新前 | Test latest main plus preceding queued PRs and this PR. Repeat PR checks and add Python merge; all required checks must succeed before merging. / 验证最新 main、前序排队 PR 与当前 PR 的组合；复跑 PR 检查并增加 Python merge，必需检查全部成功后才能合入。 | Entire queue gate ≤30 min / 整个队列门禁 ≤30 分钟 |
+| main | Push after successful queue merge / 队列成功合并后的 push | Collect merged SHA, successful queue checks and artifacts; prove they correspond to merged content. No routine full-suite rerun. Missing or unprovable evidence blocks release and requires checks on the exact main SHA. / 归集合并 SHA、成功队列检查与产物，证明其对应合并内容；常规不重跑完整套件。证据缺失或无法对应时阻止发布，对准确 main SHA 补跑。 | Evidence collection / 证据归集 |
+| Nightly / 夜间 | `0 18 * * *` UTC, next day 02:00 Asia/Shanghai; manual dispatch / 定时或手动 | Python nightly, flake watchlist, browser extended/extendedFixture, production, perf and daily benchmark. Advisory failures are tracked; no automatic tags. Do not repeat PR/queue suites except intentional watchlist reruns. / 运行 Python nightly、flake watchlist、浏览器扩展与独立 fixture、生产、性能及每日基准；advisory 失败须跟踪，不自动打 tag；除明确的 watchlist 重跑外，不重复 PR/队列套件。 | Extended ≤60; production ≤45; perf and benchmark each ≤30 min / 扩展 ≤60、生产 ≤45、性能与基准各 ≤30 分钟 |
+
+预算针对相应阶段的墙钟耗时，不是并行 job 上限之和，也不是允许降低覆盖的理由。L1+L2 只由 [`release-checks.yml`](../../.github/workflows/release-checks.yml) 实现；调用方传递 Python 筛选参数，不复制命令清单。Python 层级、迁移表达式和命令见下方「Python 分层与迁移」；目标机型轴落地后，PR 选择 `cpu and ready`，队列选择 `cpu and (not nightly)`，nightly 选择 `cpu and nightly`，迁移期的未标记用例仍须保留。
+
+Budgets measure stage wall time, not the sum of parallel job limits, and never justify losing coverage. [`release-checks.yml`](../../.github/workflows/release-checks.yml) remains the sole L1+L2 implementation; callers supply Python selection rather than duplicating command lists. See “Python layers and transition” below for commands and migration expressions. After hardware tagging lands, the target selections are `cpu and ready` for PRs, `cpu and (not nightly)` for the queue and `cpu and nightly` for nightly; transitional unmarked cases must remain included.
+
+### 过渡与必需检查 / Transition and required checks
+
+当前 [`ci.yml`](../../.github/workflows/ci.yml) 对 PR 和 main push 开启静态门禁；纯文档 PR 按下方白名单跳过重检查，其余仍跑全量 Python。[`nightly.yml`](../../.github/workflows/nightly.yml) 保留 gate-parity 和全量 Python flake 分诊。已注册 CI 层 mark，安全扫描见下方独立工作流；机型轴、合并队列与 main 证据归集仍是后续交付。当前 job 限额见下方静态检查说明；PR 和队列各 30 分钟是阶段目标，不代表已强制端到端总上限。
+
+Currently [`ci.yml`](../../.github/workflows/ci.yml) enables static checks on PRs and main pushes. Documentation-only PRs use the allowlist below to skip heavy checks; other changes retain full Python selection. [`nightly.yml`](../../.github/workflows/nightly.yml) retains gate parity and full-suite Python flake triage. CI-layer marks are registered. Security scanning uses the independent workflow below; hardware tagging, the merge queue and main evidence collection remain follow-up delivery. Current job limits are documented below; 30 minutes each for PR and queue are stage targets, not enforced end-to-end deadlines.
+
+- 本地 hook 可未安装或被绕过，不能在 GitHub 上普遍阻止 PR 创建。必需 CI 必须复核同一配置；静态失败阻止启动重测试，并使稳定汇总检查失败。/ Local hooks can be absent or bypassed and cannot universally prevent PR creation. Required CI repeats the same configuration; static failure blocks heavy jobs and fails the stable aggregate.
+- 纯文档变更可跳过重 Python/浏览器任务，但必须保留稳定的必需检查，报告跳过依据并成功结束。合并队列按整个 merge-group 差异判断，不能只看最后一个 PR；无法确定范围时执行完整门禁。/ Documentation-only changes may skip heavy Python/browser jobs, but a stable required check must report the reason and succeed. Queue filtering covers the whole merge-group diff, not only its last PR; uncertain scope runs the full gate.
+- 所有必需工作流，包括静态、安全和按路径运行的插件检查，先支持 `merge_group` 并返回有效结果，再通过仓库保护规则强制合并队列和必需检查，禁止常规直接 push 或绕过。先确认平台支持和管理权限。/ All required workflows, including static, security and path-filtered plugin checks, must support `merge_group` and return a valid result before repository rules enforce the queue and required statuses, preventing routine direct pushes or bypasses. Confirm platform support and administrative access first.
+- 在并发 PR 组合、失败阻止合入及纯文档组合都验证通过、且规则已强制生效之前，保留 main 的完整门槛和 nightly gate-parity；之后才启用 PR ready 子集、main 证据归集及 nightly 去重。无法启用队列时保留当前门槛并记录阻塞，不静默退回合并后测试。/ Retain the full main bar and nightly gate parity until concurrent PR combinations, failed-merge prevention and documentation-only groups are validated and enforcement is active. Only then activate PR ready selection, main evidence collection and nightly deduplication. If the queue cannot be enabled, keep the existing bar and record the blocker rather than silently accepting post-merge testing.
+
+浏览器 lane 只由 [`tests/browser/manifest.json`](../../tests/browser/manifest.json) 管理，插件保持按路径运行。真实引擎、服务及 GPU 车道属于后续计划；人工 UX smoke、质量样例和 manual 浏览器检查不进入默认 CI。L5 仍是每周或发布前的后续稳定性工作。
+
+Browser lanes are owned only by [`tests/browser/manifest.json`](../../tests/browser/manifest.json); plugin checks remain path-filtered. Real-engine, provider and GPU lanes are follow-up plans. Human UX smoke, quality samples and manual browser checks stay outside default CI. L5 remains follow-up stability work for weekly or pre-release execution.
+
 ## PR 前轻量静态检查 / Lightweight checks before a PR
 
 静态工具独立安装，不需要安装应用、模型、ffmpeg 或浏览器。使用 Python 3.11+；Windows 可将下方 `python` 替换为 `.venv/Scripts/python.exe`。在仓库根目录执行：
@@ -69,17 +102,54 @@ Checks cover YAML/JSON/TOML and Python syntax, conflict markers, Python debug st
 
 Local hooks can be absent or bypassed. PR and main Release checks run the same configuration in a separate static job. PRs compare base to tested merge HEAD; pushes compare before to HEAD. Only the static checkout needing a range comparison fetches full history; other jobs use shallow checkouts. Manual/initial-push full-file audits do not need full history.
 
-静态通过后并行运行 Python（导入、契约、全量 pytest、bundled OpenCode 回归）、前端/构建/wheel 和浏览器检查。浏览器 isolated、voice、assistant 分为三个独立 matrix job，`fail-fast: false`，一条失败不取消其余旅程。每个 runner 独立安装依赖，复用现有 pip/npm 缓存；这会增加 runner 分钟数，墙钟耗时改善须以实际 CI 为准。
+静态通过后，范围检查仅对 PR 比较 base 与测试用合并 HEAD 的 merge-base 差异，保留整个 PR 的变更。只有非空差异全部属于根目录 `README.md`、`README.zh-CN.md`、`CONTRIBUTING.md`、`CHANGELOG.md`，或 `docs/` 内的 Markdown、PNG/JPEG/GIF/WebP，才跳过 Python、前端/构建/wheel 和全部 browser matrix。重命名同时检查旧、新路径；文档目录内的代码/配置、AGENTS/skill、工作流、测试、混合变更、空差异或比较失败都跑完整门禁。分类不会访问 PR API，路径使用 NUL 分隔，含空格或中文不会截断。
 
-After static success, Python (imports, contracts, full pytest and bundled OpenCode), frontend/build/wheel and browser checks run in parallel. Browser isolated, voice and assistant journeys use separate matrix jobs with fail-fast disabled. Each runner installs its own dependencies using existing pip/npm caches. This increases runner minutes; wall-clock improvements require actual CI measurements.
+After static success, scope selection compares the PR base and tested merge HEAD from their merge base, retaining the whole PR diff. Heavy Python, frontend/build/wheel and all browser matrix jobs are skipped only for a nonempty diff entirely within root `README.md`, `README.zh-CN.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, or Markdown/PNG/JPEG/GIF/WebP under `docs/`. Renames check both old and new paths. Code/configuration under docs, AGENTS/skills, workflows, tests, mixed changes, empty diffs and unavailable comparisons keep the full gate. Selection needs no PR API; NUL-delimited paths preserve spaces and non-ASCII names.
 
-最终 `checks` 汇总 job 保留现有必需检查名称，并始终读取各检查线结果；任何失败、取消、意外跳过或缺失回执均失败。只有调用方显式关闭静态检查时，static 的 skipped 才允许通过。静态失败不会启动重测试，但最终汇总仍失败，不能把依赖跳过误判为通过。
+main push、手动运行和 nightly 保持完整检查；本次不启用 `merge_group`，也不切换 Python ready 筛选。需要重检查时，Python（导入、契约、全量 pytest、bundled OpenCode）、前端/构建/wheel 和浏览器并行执行，browser `fail-fast: false`；一条失败不取消其余旅程。
 
-The final `checks` aggregate preserves the existing required-check name and always evaluates all lane results. Failure, cancellation, unexpected skips or missing receipts fail closed. A skipped static job is allowed only when the caller explicitly disabled static checks. Static failure prevents heavy test jobs from starting and still fails the aggregate.
+Main pushes, manual runs and nightly retain full checks. This change enables neither `merge_group` nor Python ready selection. When heavy checks are required, Python (imports, contracts, full pytest and bundled OpenCode), frontend/build/wheel and browser jobs run in parallel with browser fail-fast disabled; one failure does not cancel other journeys.
 
-可复用工作流的 `static-checks` 默认关闭，由 `ci.yml` 开启；nightly 不新增重复静态检查。CI 不提交自动修复：hook 修改文件视为失败，需在本地修复。当前静态 job 上限 10 分钟，Python、前端和每个浏览器 job 各 30 分钟，汇总 job 5 分钟；这是各 job 的限额，不是整个工作流的总上限。当前仍跑全量，暂不采用 PR ready 子集的 15 分钟目标；待子集切换或并行运行有足够耗时证据后再收紧。
+最终 `checks` 汇总保留现有必需检查名称并始终执行。只有 static 成功且提供明确的 `docs_only`、正数变更路径数、PR 事件和跳过决定时，才接受三条重检查线的 skipped；汇总会报告依据。任何失败、取消、意外跳过、无效决定或缺失回执仍失败。只有调用方显式关闭静态检查时，static 自身才允许 skipped，且此时必须跑重检查。静态失败造成的依赖跳过不能通过汇总。
 
-The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly adds no duplicate static pass. CI never commits automatic fixes. Static has a 10-minute timeout; Python, frontend and each browser job have 30 minutes; the aggregate has 5 minutes. These are per-job limits, not a workflow-wide deadline. Full suites still run, so the 15-minute PR-ready target is deferred until subset activation or sufficient timing evidence from parallel runs.
+The final `checks` aggregate preserves its required-check name and always runs. Only successful static checks with an explicit `docs_only` decision, a positive changed-path count and a PR event can authorize skipped heavy lanes; the summary reports that evidence. Failures, cancellations, unexpected skips, invalid decisions and missing receipts still fail. Only an explicitly disabled static lane may itself be skipped, in which case heavy lanes must run. Dependency skips after static failure cannot pass the aggregate.
+
+可复用工作流的 `static-checks` 默认关闭，由 `ci.yml` 开启；nightly 不重复静态检查。CI 不提交自动修复，hook 修改文件仍视为失败。PR 阶段预算先按 30 分钟；当前 static 上限 10 分钟，Python、前端和每个浏览器 job 各 30 分钟，汇总 5 分钟。这些仍是各 job 限额，不能相加或解释为已强制的阶段总上限；后续按实际测量改进端到端耗时。
+
+The reusable workflow's `static-checks` defaults to false and is enabled by `ci.yml`; nightly does not duplicate static checks. CI never commits automatic fixes; hook edits remain failures. The PR stage budget is 30 minutes for now. Static has 10 minutes, Python/frontend/each browser job 30 minutes, and the aggregate 5 minutes. These remain per-job limits, not a summed or enforced workflow-wide deadline; improve end-to-end time using actual measurements.
+
+## PR 安全扫描 / PR security scanning
+
+CodeQL、Release checks 和 DSH plugin checks 在入口工作流按“工作流名称 + 事件 + PR 编号”设置并发组；同一 PR 更新会取消该工作流的旧运行，不同 PR 和工作流互不取消。非 PR 事件按 `run_id` 独立分组且不启用取消，保留每次 main push 的检查和扫描基线。DSH 的路径筛选保持不变。参见 [GitHub 并发控制](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
+
+CodeQL, Release checks and DSH plugin checks group entry workflows by workflow name, event and PR number. Updates cancel outdated runs of the same workflow for that PR; different PRs and workflows do not cancel each other. Non-PR events use a unique `run_id` group with cancellation disabled, retaining checks and scan baselines for every main push. DSH path filters remain unchanged. See [GitHub concurrency control](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) 对每个 PR（包含 draft 和纯文档变更）独立执行 Python 与 JavaScript/TypeScript CodeQL `security-extended` 分析；不等待 Release checks 的范围筛选。main push 建立合并版本基线，另提供手动运行。两条语言任务并行且互不取消，每条上限 30 分钟，汇总上限 5 分钟；这些不是阶段总墙钟上限。
+
+[`codeql.yml`](../../.github/workflows/codeql.yml) independently runs CodeQL `security-extended` analysis for Python and JavaScript/TypeScript on every PR, including drafts and documentation-only changes. It does not depend on Release checks scope selection. Main pushes establish the merged baseline; manual dispatch is also available. Language jobs run in parallel without fail-fast cancellation, with a 30-minute limit each and a 5-minute aggregate limit, not a workflow-wide deadline.
+
+扫描使用固定提交的官方 Actions、`build-mode: none` 和不保留 Git 凭证的 checkout，不安装应用依赖、不构建应用、不调用模型。默认 token 只读内容，上传分析结果的任务额外拥有 `actions: read` 和 `security-events: write`。使用 `pull_request` 而非 `pull_request_target`，不读取仓库 secrets；fork PR 仍受 GitHub 的首次贡献者审批策略约束。这是源码安全分析，不替代依赖漏洞或容器镜像扫描，也不能证明不存在漏洞。
+
+Scanning uses pinned official Actions, `build-mode: none` and checkout without persisted Git credentials. It does not install application dependencies, build the application or call models. The default token reads contents; analysis upload jobs additionally receive `actions: read` and `security-events: write`. It uses `pull_request`, not `pull_request_target`, with no repository secrets; GitHub contributor approval policies still apply to fork PRs. Source analysis does not replace dependency or container-image scanning and cannot prove the absence of vulnerabilities.
+
+稳定汇总 job `CodeQL / checks` 只接受全部语言分析成功，失败、取消、跳过和缺失结果均失败。它证明扫描执行及上传完成，不根据告警等级自行判断是否允许合并。GitHub 的独立 **Code scanning results / CodeQL** 检查负责 PR 新增行的告警门禁；默认失败阈值包含 error 及 high/critical 安全告警，仓库设置可能覆盖阈值。参见 [PR 告警检查语义](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests)。
+
+The stable aggregate job `CodeQL / checks` accepts only successful analyses for every language; failed, cancelled, skipped and missing results fail. It proves analysis and upload completion, without deciding merge eligibility from alert severity. GitHub's separate **Code scanning results / CodeQL** check gates alerts on added PR lines; default failure thresholds include error-level and high/critical security alerts, subject to repository overrides. See [PR alert check semantics](https://docs.github.com/en/code-security/how-tos/manage-security-alerts/manage-code-scanning-alerts/triage-alerts-in-pull-requests).
+
+管理员需确认仓库使用 advanced setup、没有冲突的 default setup，并验证首次扫描、fork PR 上传及告警阈值；之后将执行汇总和告警结果检查一并设为 required。仅合入 YAML 不会自动配置仓库保护规则。合并队列支持在后续 PR6 添加 `merge_group`，规则强制在 PR7 处理；完成这些配置前，不宣称安全门禁不可绕过。配置方式见 [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning)。
+
+An administrator must confirm advanced setup without conflicting default setup, verify the first analysis, fork uploads and alert thresholds, then require both the execution aggregate and alert-result checks. Merging YAML does not configure repository protection rules. PR6 adds `merge_group` support and PR7 handles enforcement; security gates are not claimed to be non-bypassable before those settings are complete. See [CodeQL advanced setup](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning).
+
+本地契约验证 / Local contract verification:
+
+```sh
+python -m pytest tests/test_ci_security.py -q
+python -m pre_commit run --files .github/workflows/codeql.yml tests/test_ci_security.py docs/development/validation.md
+```
+
+本地检查验证工作流语法、触发与权限边界，以及实际汇总命令对异常状态的拒绝；CodeQL 建库、分析和上传必须以 GitHub Actions 的真实运行结果验收。
+
+Local checks verify workflow syntax, trigger/permission boundaries and rejection of unsuccessful states by the actual aggregate command. CodeQL database creation, analysis and upload require a real GitHub Actions run for acceptance.
 
 ## Python 分层与迁移 / Python layers and transition
 
@@ -196,6 +266,10 @@ node tests/browser/new_image_node_outputs.mjs  # 新建图片节点采用所选�
 
 等待异步保存时，不要用会改名的按钮判断编辑器是否关闭：保存中的按钮会变成 `Processing…` 或 `Applying…`，locator 匹配不到元素时 `waitFor({ state: "hidden" })` 立即满足，测试会在确认回执到达前继续，随后 reload 恢复未确认的草稿。改为等编辑器对话框 detach 或服务端回执出现；图层编辑器的这一等待封装在 [tests/browser/layerApply.mjs](../../tests/browser/layerApply.mjs)。
 
+保存标签可能仍属于上一次编辑；读取结果前应等待本次操作对应的服务端绑定、版本或字段值。运行 `node tests/browser/canvas_selection_history.mjs` 验证四类节点的选择、复制、删除与撤销，并检查文本 `AB` 的实际资产内容、自动保存合并和 `storage_busy` 使用相同命令重试。
+
+A saved label can still describe the preceding edit. Wait for the current operation's persisted binding, version or field value before reading its result. `node tests/browser/canvas_selection_history.mjs` checks selection, copy, deletion and undo for all four media kinds, the actual `AB` text asset, autosave coalescing and reuse of the same command when retrying `storage_busy`.
+
 AI 多会话检查使用同一隔离 API，但启动 `creation_server.py` 时额外传入 `--assistant-fixture`，再运行 `node tests/browser/assistant_sessions.mjs`。该检查通过真实 UI、接口与项目文件验证新建、历史搜索、切换、草稿和附件恢复、刷新、失败重试及输入撤销隔离；仅模型回复使用可暂停的替身，不调用真实模型。同一环境下运行 `node tests/browser/assistant_run_navigation.mjs`，验证回复进行中切换项目只断开当前视图：Agent 继续运行，返回后重新接入并收到完整回复，全程不调用停止接口；切走再返回后显式停止仍然有效。
 
 聊天与辅助面板共存检查运行 `node tests/browser/assistant_auxiliary_panels.mjs`，同样需要 `--assistant-fixture`。它通过真实界面切换中英文，在宽窄窗口和助手调整宽度后检查资产列表、生成历史的可操作性与聊天展开状态，并验证草稿、对话和执行中的回复／生成任务保持。可设置 `CREATION_SCREENSHOTS` 保存代表性截图。此检查会控制隔离服务的模型替身 gate，应与其他使用同一 gate 的浏览器用例顺序运行。
@@ -208,7 +282,9 @@ Release checks 的 `Assistant auxiliary panels` 阶段自动运行此检查，�
 
 ### 五级测试体系
 
-自动化检查按级别分层：每个级别明确范围与重点、触发频率、时间预算和实现位置。新增检查先选择级别再进入对应工作流；超出预算时先调整级别或拆分，而不是让某个级别无限增长。
+以下表格记录切换前的当前执行，包含尚未移除的 main 重跑和 nightly gate-parity，不覆盖上方目标阶段契约。新增检查先选择覆盖级别，再按目标阶段安排；只有过渡约束满足后才改变运行门槛。
+
+The table records current execution before cutover, including main reruns and nightly gate parity. It does not supersede the target stage contract above. Select a coverage level and target stage for new checks; change the active bar only after the transition safeguards are satisfied.
 
 | 级别 | 范围与重点 | 频率 | 预算 | 实现 |
 | --- | --- | --- | --- | --- |
@@ -222,7 +298,7 @@ L1–L4 的自动检查不调用付费模型、不依赖真实服务；真实凭
 
 ### 发布决策与 lane 政策
 
-- Gate parity 绿色是候选 `v0.1.x` 的发布门槛；nightly 不自动打 tag，也不以任何结果自动触发发布动作。
+- 切换前，候选 `v0.1.x` 仍须通过当前 gate-parity 发布门槛。队列完成验证并强制生效后，发布依据切换为与准确 main 内容对应的成功队列证据；nightly 不作为替代门槛，也不自动打 tag 或触发发布。/ Before cutover, candidate `v0.1.x` releases retain the current gate-parity bar. After queue validation and enforcement, release decisions use successful queue evidence proven to match exact main content; nightly is not a substitute gate and never automatically tags or publishes.
 - Extended、production、perf 与 daily benchmark lane 当前为建议性（advisory）：失败需登记跟进，但不单独阻断发布。某条 lane 连续两周稳定绿色后，由发布协调人决定是否升级为阻断项。
 - 每次运行产出 `nightly-summary`（各 lane 结果 + SHA + 基准一行摘要）与 `nightly-perf`（渲染探针与拖拽采样）artifact；发布看板与失败通知按 summary artifact 对接，通知通道由发布协调人约定。`lanes.dailyBenchmark.notify` 只在超阈回归、基准套件本身失败或必填测量缺失（样本解析成功但缺少 `--ui-required` 时应有的帧采样，或 storage 样本缺少必填字段）时为 true，改善和阈值内波动不通知。
 - `flaky-watchlist.txt` 一行一个 pytest node id，`#` 为注释；用例稳定后应删除条目，而不是长期静默重试。triage 结论写入 `flake-report` artifact 与 Actions summary。
@@ -298,6 +374,79 @@ node tests/browser/first_last_frame_connections.mjs
 
 ### 提供商与模型设置
 
+HEIC/HEIF imports and MiniMax H3 image editing:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_minimax_image.py tests/test_creation_assets.py -q
+node tests/browser/heif_import.mjs
+```
+
+The browser script uses the isolated API and Vite above. It checks real HEVC-encoded
+HEIC/HEIF fixtures through upload and mixed-format drag and drop, oriented pixels,
+project reload, both display languages, corrupt/oversized upload rejection, original
+downloads and canvas archive round trips, cross-project paste with an unavailable source, and
+both MiniMax model submissions with fixture results. Python tests exercise Agent
+artifact import and preview, and run the real MiniMax adapter against mocked HTTP through UI
+and Agent command sources, checking original bytes, ordered frozen inputs, result
+adoption, rejection before submission and request-size limits. These tests do not
+call MiniMax, verify model quality, or exercise a live Agent conversation. Camera
+HDR profiles and platform wheel installation require separate validation.
+
+HEIF regression coverage also includes conditional browser-image reads (304 without
+decoding, while still checking original-file integrity), localized decoder errors,
+standalone thumbnail registration, alpha compositing, multi-image rejection and
+full-resolution display at the 25-million-pixel limit. Timeline package tests preserve
+HEIF bytes and extensions through export/import; the browser check covers FCPXML
+media ZIP output and refuses an orphaned preview download in both languages.
+
+HEIC 上传恢复与相机样本 / HEIC upload recovery and camera sample:
+
+```sh
+node tests/browser/heif_upload_recovery.mjs
+# Optional: download and unpack the review attachment locally first.
+HEIF_REVIEW_FILE=/absolute/path/IMG_8066.HEIC node tests/browser/heif_upload_recovery.mjs
+```
+
+该脚本可连接上文的隔离 API 和 Vite，也可通过 `CREATION_WEB_URL` 指向 `npm run build` 后的 `npm run preview`（使用相同 `OPENDIRECTOR_API_URL`）。它在中英界面验证普通上传、拖拽、刚创建图片节点的替换上传、图片和视频节点的参考图上传、保存后重开及原始字节。用受控延迟让首次保存回执落在上传期间；注入预览 404 时，必须显示错误、保留已注册原件，且不能创建空白生成节点或误报成功。
+
+This script supports the isolated API and Vite above, or `npm run preview` after a build via `CREATION_WEB_URL` (with the same `OPENDIRECTOR_API_URL`). In both languages it checks upload, drop, replacement in a fresh image node, image/video reference uploads, reopening and original bytes. Controlled delays put the first save acknowledgement inside the upload. An injected preview 404 must report failure and retain the registered original without creating an empty generation item or claiming success.
+
+2026-11-12 使用 [reviewer 提供的 IMG_8066.HEIC](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5868923062) 在 macOS 27.2、Chrome 157.0.8103.52 的正式构建上验证：显示尺寸为 3024×4032，保存后重开正常，原件字节不变。另通过可见 Chrome 的系统文件选择器手动导入并刷新验证。原始相机文件和 EXIF 不纳入仓库。受控故障证明了错误处理路径，不能证明 reviewer 当时预览请求失败的具体原因；其他平台及 HDR 色彩准确性仍需单独验收。
+
+On 2026-11-12, the reviewer's linked `IMG_8066.HEIC` was checked in the production build on macOS 27.2 / Chrome 157.0.8103.52: 3024×4032 decoded pixels, successful reopening and unchanged original bytes. Import through the visible Chrome system file picker and refresh were also verified. The original camera file and EXIF are not committed. The injected failure proves the error path, not the cause of the reviewer's preview request failure. Other platforms and HDR color accuracy require separate acceptance.
+
+同日补测 pillow-heif 的两张实拍样本：[小米 `xiaomi.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/xiaomi.heic)（2592×1944）和 [三星 `aux_YCbCr.heic`](https://github.com/bigcat88/pillow_heif/blob/master/tests/images/heif_special/aux_YCbCr.heic)（4000×1848）。两张均通过上述六种模式的中英文检查，显示尺寸与已保存媒体信息一致，原件字节不变；可见 Chrome 中将三张一起导入同一画布并刷新，均正常显示。
+
+Two additional camera samples from pillow-heif passed the same six modes in both languages that day: Xiaomi `xiaomi.heic` (2592×1944) and Samsung `aux_YCbCr.heic` (4000×1848), linked above. Display dimensions matched persisted media facts and original bytes were unchanged. All three photos were also imported into one canvas through visible Chrome and remained visible after refresh.
+
+本地补充手动测试：三张 HEIC 图片导入同一画布，保存并刷新后正常显示。
+
+Additional local manual test: three HEIC images imported into one canvas remain visible after saving and refreshing.
+
+![Local HEIC test after refresh / 本地 HEIC 测试刷新后](images/heif-282/local-heic-test.png)
+
+HEIF 色彩配置回归 / HEIF color-profile regression:
+
+```sh
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python -m pytest tests/test_heif.py tests/test_creation_assets.py tests/test_tool_tasks.py -q
+```
+
+2026-11-12 按 [P3 review](https://github.com/ThinkFlowLab/OpenDirector/pull/287#pullrequestreview-5870014881) 复核发现两条独立路径丢失 ICC：素材库 JPEG，以及资产预览、版本历史和 Agent 预览使用的 WebP。修复后，`IMG_8066.HEIC` 的 536 字节 Display P3 配置在浏览器 PNG、WebP 和 JPEG 中均与原件完全相同。PNG 保持 3024×4032（14,103,756 字节）；360×480 WebP 为 43,812 字节，JPEG 为 51,744 字节。原件下载字节不变；浏览器 PNG 的 ETag 升级，旧预览缓存会重新获取，新缓存继续支持 304。新增用例覆盖带／不带配置的 HEIC、通用 HEIF 和灰度转换；125 项相关测试通过。灰度等非 RGB 像素转换后不继续附带原通道配置，这不是通用色彩空间归一化。
+
+The P3 review above exposed two independent ICC omissions: library JPEGs and the WebP used by asset previews, version history and Agent previews. After the fix, the sample's 536-byte Display P3 profile is byte-identical in browser PNG, WebP and JPEG. PNG remains 3024×4032 (14,103,756 bytes); 360×480 WebP is 43,812 bytes and JPEG is 51,744 bytes. Original downloads are unchanged; the browser PNG ETag is versioned so old renditions are refreshed while current ones retain 304 support. New cases cover profiled/unprofiled HEIC, generic HEIF and grayscale conversion; 125 focused tests passed. Profiles for non-RGB channels are not retained after RGB conversion; this is not general color-space normalization.
+
+本地可见 Chrome 测试：通过系统文件选择器上传同一张 `IMG_8066.HEIC`，再用“替换素材”重新上传以产生两个真实上传版本；核对画布、悬浮资产预览和版本历史。未调用模型生成。
+
+Local visible-Chrome test: upload `IMG_8066.HEIC` through the system file picker, then upload it again with Replace asset to produce two actual upload versions. Inspect the canvas, hover asset preview and version history. No model generation is involved.
+
+![Local canvas test / 本地画布测试](images/heif-282/local-p3-canvas.png)
+![Local asset preview test / 本地资产预览测试](images/heif-282/local-p3-asset-preview.png)
+![Local version history test / 本地版本历史测试](images/heif-282/local-p3-version-history.png)
+
+`browser-image` 同时供裁剪、蒙版和图像编辑读取原始像素尺寸，因此本次没有直接将长边限制为 2048；单独的显示缩略版本需要与编辑输入区分。首次全尺寸 PNG 传输仍约 14 MB。没有复验其他平台、HDR 准确性或完整 Python 测试集。
+
+`browser-image` also supplies the pixel dimensions for cropping, masks and image editing, so this patch does not impose a 2048-pixel limit on that shared route. A bounded display rendition must be separate from editing inputs. The first full-resolution PNG transfer remains about 14 MB. Other platforms, HDR accuracy and the full Python suite were not revalidated.
+
 Kling 4.0 protocol and bilingual workflow checks:
 
 ```sh
@@ -315,6 +464,37 @@ node tests/browser/provider_settings.mjs
 ```
 
 浏览器用例使用隔离服务验证提供商预设、手动添加、逐模型图片输入能力、保存不推理、已有连接复用及取消草稿。不会向外部提供商发送请求或保存真实密钥。
+
+## 画布 Markdown 文本节点（#336）
+
+使用隔离的 API 和 Vite 运行已注册到浏览器门禁的回归；在三个终端分别执行：
+
+```sh
+# 终端 1：隔离工程存储与模型替身
+PYTHONPATH=packages/core/src:apps/api/src .venv/bin/python tests/browser/creation_server.py --port 8027
+
+# 终端 2：前端代理到隔离 API
+OPENDIRECTOR_API_URL=http://127.0.0.1:8027 npm run dev -- --port 5187
+
+# 终端 3：文本节点回归
+CREATION_WEB_URL=http://127.0.0.1:5187 node tests/browser/canvas_text_markdown.mjs
+```
+
+如使用本机安装的浏览器或 Playwright 模块，通过 `BROWSER_PATH`、`PLAYWRIGHT_MODULE` 指定路径。完整浏览器门禁使用 `npm run test:browser`，并将 `CREATION_API_URL`、`CREATION_WEB_URL` 指向同一组隔离服务。
+
+该回归验证：
+
+- 在 zoom 0.8 和 1.3 下，从未选中卡片的角落拖动并选中后立即拖拽缩放手柄，不等待选中后的视口动画结束。指针按住期间视口 transform 字符串保持不变；保存的宽高等于原尺寸加上屏幕位移除以手势开始时的 zoom，允许不超过 1 个画布单位的整数舍入误差。
+- 缩放期间没有业务写入，释放指针后只有一次提交；释放位置在手柄外也能结束交互。Escape 和 pointercancel 丢弃临时尺寸、结束历史事务并清除交互保护。正常选中仍可调整视口，手势开始会停止进行中的自动调整；手势后工具栏、生成器和键盘快捷键恢复可用。
+- 缩放只修改展示尺寸，保持文本素材不变，一次撤销／重做覆盖整个手势，重新打开工程后宽高保留。锁定文本节点不提供手柄且拒绝编辑。
+- Markdown 标题、列表、引用、强调、链接、代码块和表格的渲染，代码块语言标签的展示，以及行内输入缓冲区、全屏源码／预览、选区／光标／滚动交接和中英界面。
+
+自动化必须遵守两个运行条件：
+
+- `canvas text show` 的有界完整源码读取需要正在监听的 HTTP API，即使其他命令使用进程内或 live agent 桥接；没有监听 API 时会返回 `asset_text_api_unavailable`，提示启动 API 并检查 `OPENDIRECTOR_API_URL`。
+- 工程租约在 15 秒后过期。跨 agent 轮次的脚本必须续租，否则写入会被拒绝，错误为 `工程已关闭或会话已过期`。
+
+CLI 命令、参数和示例见 [CLI 使用说明](../guides/cli.md)。每个拉取请求的媒体、实测结果和验证范围记录在该拉取请求描述中。
 
 ## 定时文字与可移植时间线
 
@@ -380,6 +560,14 @@ OPENDIRECTOR_URL=http://127.0.0.1:18238 ZHIPU_API_KEY=... ZHIPU_SAMPLE=/path/to/
 
 Python 用例使用按真实服务响应录制的模拟 HTTP，检查 `/audio/speech` 只请求非流式 WAV 并按 RIFF/WAVE 字节验收（服务默认返回裸 PCM，且部分错误以 HTTP 200 + JSON 返回）、`1113` 余额不足归为额度而非限流、音色库只列出文档中的 7 个预置音色加 `PRIVATE` 复刻音色、复刻前的真实音频校验（mp3/wav、3–30 秒、10 MB）、复刻成功或失败后都删除上传的样本文件、`POST /voice/delete` 删除及重名/不存在的错误映射、试听只从公网 HTTPS 下载且不带凭据，以及统一生成服务的音色预检与执行快照。真实验收需要已充值且开通 GLM-TTS 的 BigModel 账户；保留预置音色与复刻音色生成的实际音频、复刻到删除的完整流程截图，并确认账户中没有遗留的 `voice-clone-input` 文件。
 
+Atlas Cloud chat access uses the following checks. The preset has no fixed model list: the provider form discovers models from the gateway's public `/v1/models` endpoint, like the DeepSeek preset.
+
+```sh
+.venv/bin/python -m pytest tests/test_atlascloud.py -q
+node --test tests/providerPresets.test.ts
+```
+
+The Python cases check that only the high thinking level sends reasoning_effort. The gateway serves several model families and some reject low and medium with a 400, so the other levels use the model default. The Node cases check the preset shape, the label in both display languages and the saved connection identity. Neither calls api.atlascloud.ai. Real streaming and model discovery additionally require network access, and chat requires an Atlas Cloud API key; keep the discovered model count, the reply and the status codes as evidence.
 
 ### Voice library / 音色库
 
@@ -387,6 +575,7 @@ The voice browser workflow uses a separate isolated fixture. It runs the real sh
 
 ```sh
 .venv/bin/python -m pytest tests/test_voice_library.py -q
+.venv/bin/python -m pytest tests/test_minimax_speech.py -q
 node --test tests/voiceLibrary.test.ts tests/creationParameters.test.ts
 # Terminal 1
 .venv/bin/python tests/browser/voice_library_server.py --port 8030
@@ -398,6 +587,10 @@ CREATION_API_URL=http://127.0.0.1:8030 CREATION_WEB_URL=http://127.0.0.1:5190 no
 
 For a slow-response regression, set `VOICE_REOPEN_DELAY_MS=17000` for the browser command. It delays the reopened asset request beyond the ordinary 15-second interaction timeout. Cold navigation, saved-state and reopened-media waits have explicit 45-second limits; HTTP errors still fail immediately with their status. No generation is retried.
 
+The audio-reopen check waits for the saved indicator and acknowledges the page's session-release request before reloading. Its result must not depend on an unload-time request reaching the server; keep the server's editing-lease checks intact.
+
 慢响应回归：在浏览器命令的环境变量中设置 `VOICE_REOPEN_DELAY_MS=17000`，让重开后的资源请求超过普通交互的 15 秒等待。冷启动导航、保存状态和重开媒体分别有明确的 45 秒上限；HTTP 错误仍立即报告状态并失败，不重试生成。
 
 The bilingual browser workflow covers opening/outside click/Escape, keyboard tabs, four-column and narrow layouts, real previews and unavailable previews, metadata filters, scoped favorites, loading/error/retry, invalid and valid local audio, creation, selection, Drama3 transcript and Nano reference requirements, supported deletion and failure feedback, model/service switching, project reopening and persisted job input. `moss_speech.mjs` is retained as an alias for this integrated workflow. The pagination regression includes a 15,001-voice catalog. With a configured MOSS account, open the library, go to the next page, and return to the first. Verify the page counts and that returning to the first page restores its entries using read-only requests. Python tests verify provider fields, pagination, credentials, account boundaries, actual audio/container/duration validation, and equivalent Agent operations. Actual provider synthesis still requires a configured service, account permission and a recording authorized for use.
+
+The same browser workflow also covers MiniMax's mainland speech preset in both languages, localized rejection of unsupported model IDs, saved credentials remaining private, read-only system voices, IDs containing spaces, selection retention between HD and Turbo, the 3,000-character precheck (3,000 accepted and 3,001 rejected), and generation/reopen/playback. Its generated audio is a local WAV fixture, not MiniMax output. `test_minimax_speech.py` uses mocked HTTP with real MP3 bytes to check `/t2a_v2` and `/get_voice`, HTTP-200 error envelopes, invalid or incomplete responses, public result downloads without credentials, UI/Agent acceptance and receipts, actual media probing, and recovery after model removal, replacement or whitelist retirement without another synthesis call. Recovery must still reject private destinations, DNS changes to private addresses, and redirects into private networks. `test_generation_recovery.py` also checks that self-hosted downloads retain the accepted origin without credentials after configuration changes; `test_result_download_security.py` pins the same-origin vLLM behavior, including rejection of redirects. Live MiniMax synthesis and perceptual voice quality remain separate real-account checks.

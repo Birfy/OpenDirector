@@ -23,6 +23,14 @@ TIMELINE_TEXT_MAX_LENGTH = 4096
 TIMELINE_TEXT_TOTAL_LENGTH = 200000
 TIMELINE_FONT_BYTES = 32 * 1024 * 1024
 TIMELINE_FONT_TOTAL_BYTES = 64 * 1024 * 1024
+# A clip's out point is seeded from the duration a probe reported, so comparing
+# it against a later measurement must tolerate re-probing noise. Durations also
+# travel through millisecond-rounded fields (`durationMs`), so a stored value can
+# sit up to half a millisecond past the measured one: a 121-frame clip at 24 fps
+# is 5.041667s and is announced as 5042ms, which is 5.042s. Rounding to the
+# nearest millisecond is the widest error a caller can introduce, so half a
+# millisecond is the tolerance every boundary shares.
+TIMELINE_DURATION_EPSILON = 0.0005
 FRAME_IMAGE_LIMIT = 2
 PROMPT_MAX_LENGTH = 20000
 TEXT_MAX_TOKENS = 32768
@@ -52,6 +60,7 @@ def facts_payload():
         'timelineTextTotalLength': TIMELINE_TEXT_TOTAL_LENGTH,
         'timelineFontBytes': TIMELINE_FONT_BYTES,
         'timelineFontTotalBytes': TIMELINE_FONT_TOTAL_BYTES,
+        'timelineDurationEpsilon': TIMELINE_DURATION_EPSILON,
         'maxReferences': MAX_REFERENCES,
         'textReferenceBytes': TEXT_REFERENCE_BYTES,
         'agentImageBytes': AGENT_IMAGE_BYTES,
@@ -93,6 +102,12 @@ def aspect_ratio_choices(spec):
     return ['auto']
 
 
+def duration_matches(seconds: float, durations: list[int] | tuple[int, ...], fractional: bool = False) -> bool:
+    if fractional:
+        return bool(durations) and min(durations) <= seconds <= max(durations)
+    return seconds in durations
+
+
 def resolution_choices(spec):
     """Sizes offered before submit. Callers report whether an image reference is connected."""
     kind = spec['kind']
@@ -113,7 +128,7 @@ def resolution_choices(spec):
     duration = spec.get('durationSeconds')
     if outputs is not None and duration is not None:
         choices = [label for label in choices
-                   if any(item['resolution'] == label and duration in item['durations'] for item in outputs)]
+                   if any(item['resolution'] == label and duration_matches(duration, item['durations'], spec.get('fractionalDuration', False)) for item in outputs)]
     return ['auto', *choices]
 
 
@@ -327,7 +342,14 @@ export function aspectRatioChoices(input: {
   return ["auto"];
 }
 
+export function durationMatches(seconds: number, durations: readonly number[], fractional = false): boolean {
+  return fractional
+    ? durations.length > 0 && seconds >= Math.min(...durations) && seconds <= Math.max(...durations)
+    : durations.includes(seconds);
+}
+
 export function resolutionChoices(input: {
+  readonly fractionalDuration?: boolean;
   readonly kind: string;
   readonly videoMode?: string | null;
   readonly aspectRatio?: string | null;
@@ -371,7 +393,7 @@ export function resolutionChoices(input: {
       ? choices.filter((label) =>
           outputs.some(
             (item) =>
-              item.resolution === label && item.durations.includes(duration),
+              item.resolution === label && durationMatches(duration, item.durations, input.fractionalDuration),
           ),
         )
       : choices;

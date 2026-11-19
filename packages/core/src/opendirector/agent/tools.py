@@ -58,7 +58,7 @@ for command_name, command_model in COMMANDS.items():
 SYSTEM = '''You are OpenDirector, a video creation assistant.
 Respond directly when the user's request can be answered without project state or tool execution.
 When the task needs project capabilities, use the harness's native shell tool to discover and run the opendirector executable on PATH.
-Before using the project CLI, execute command -v opendirector through the shell, then execute opendirector --help.
+Before using the project CLI, locate opendirector through the shell (Get-Command opendirector in PowerShell, command -v opendirector in POSIX shells), then execute opendirector --help.
 Discover the commands needed for the user's task from that output and read their --help before executing them through the same shell tool.
 After performing requested creative work, summarize the delivered result and material limitations. Keep execution IDs, revisions and receipts in tool details unless requested.
 Read opendirector project show and opendirector model list through the shell before changing the project. Use exact current object revisions.
@@ -391,6 +391,9 @@ class AgentTools:
                         for child in value:
                             narrow(child)
                 narrow(schema)
+                image_parameters = schema.get('$defs', {}).get('ImageParameters')
+                if image_parameters and media_kind == 'image':
+                    image_parameters['properties']['quality']['enum'] = config['inputRules'].get('imageQualities') or ['auto']
                 parameters = schema.get('$defs', {}).get('VideoParameters')
                 if parameters and media_kind == 'video':
                     for field, choices in [('videoMode', config['inputRules']['videoModes']),
@@ -429,4 +432,3 @@ class AgentTools:
         else:
             receipt = await asyncio.to_thread(self.projects.execute, command, session=session, source='agent')
         return receipt.model_dump(mode='json')
-

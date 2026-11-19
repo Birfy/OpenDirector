@@ -3477,6 +3477,13 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -3503,6 +3510,10 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
               "zhipu_speech_text",
               "zhipu_speech_voice",
               "zhipu_speech_reference",
@@ -6124,6 +6135,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -6506,6 +6529,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -6558,6 +6593,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -6702,6 +6743,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -8110,6 +8173,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8166,6 +8230,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8266,6 +8331,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8322,6 +8388,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8411,6 +8478,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8467,6 +8535,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -8537,6 +8606,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -8593,6 +8663,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -12828,6 +12899,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -14287,7 +14372,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {
@@ -14423,6 +14508,7 @@
             "enum": [
               "vllm_omni",
               "moss",
+              "minimax",
               "zhipu"
             ],
             "title": "Provider",
@@ -18685,6 +18771,13 @@
               "role_restricted",
               "missing_object",
               "reference_invalid",
+              "image_quality_unsupported",
+              "bigmodel_video_model",
+              "bigmodel_video_output",
+              "bigmodel_video_image",
+              "bigmodel_video_frames",
+              "bigmodel_video_prompt",
+              "bigmodel_video_cancel",
               "kling_model",
               "kling_mode",
               "kling_image",
@@ -18711,6 +18804,10 @@
               "minimax_image_reference",
               "minimax_image_count",
               "minimax_image_bytes",
+              "minimax_speech_text",
+              "minimax_speech_voice",
+              "minimax_speech_reference",
+              "minimax_speech_model",
               "zhipu_speech_text",
               "zhipu_speech_voice",
               "zhipu_speech_reference",
@@ -21447,6 +21544,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality fixed for this execution; auto omits the provider field.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "description": "Effective image dimensions sent to the provider.",
             "title": "Size",
@@ -21848,6 +21957,18 @@
       "ImageParameters": {
         "additionalProperties": false,
         "properties": {
+          "quality": {
+            "default": "auto",
+            "description": "Image rendering quality; auto leaves the provider request unchanged.",
+            "enum": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
           "size": {
             "default": "auto",
             "description": "Requested image dimensions or size preset.",
@@ -21907,6 +22028,12 @@
       "InputRules": {
         "additionalProperties": false,
         "properties": {
+          "fractionalDuration": {
+            "default": false,
+            "description": "Accept fractional video seconds within each output duration range.",
+            "title": "Fractionalduration",
+            "type": "boolean"
+          },
           "profile": {
             "description": "Model capability profile.",
             "maxLength": 100,
@@ -22051,6 +22178,28 @@
             },
             "title": "Imageoutputs",
             "type": "array"
+          },
+          "imageQualities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "auto",
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Supported image rendering qualities; omitted for models without quality control.",
+            "title": "Imagequalities"
           },
           "outputResolutions": {
             "default": [],
@@ -23525,6 +23674,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23581,6 +23731,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23671,6 +23822,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23727,6 +23879,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23821,6 +23974,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -23877,6 +24031,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -23951,6 +24106,7 @@
             "enum": [
               "openai",
               "volcengine",
+              "bigmodel_video",
               "kling_video",
               "minimax_video_v2",
               "vllm_omni",
@@ -24007,6 +24163,7 @@
             "enum": [
               "auto",
               "fasth3",
+              "fasth3_dual",
               "minimax_h3",
               "standard"
             ],
@@ -28410,6 +28567,20 @@
             "title": "Outputid",
             "type": "string"
           },
+          "expectedOutputRevision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Current output node revision when appending a rendered version.",
+            "title": "Expectedoutputrevision"
+          },
           "title": {
             "default": "合成视频",
             "description": "User-visible title.",
@@ -29932,7 +30103,7 @@
               }
             ],
             "default": null,
-            "description": "Duration in seconds.",
+            "description": "Duration in seconds; fractional values require model inputRules.fractionalDuration. Generated frames may be aligned by the model.",
             "title": "Durationseconds"
           },
           "aspectRatio": {
@@ -30085,6 +30256,7 @@
             "enum": [
               "vllm_omni",
               "moss",
+              "minimax",
               "zhipu"
             ],
             "title": "Provider",

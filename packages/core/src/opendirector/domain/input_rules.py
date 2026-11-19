@@ -5,6 +5,8 @@ from opendirector.domain.rule_facts import AGENT_IMAGE_BYTES, DEFAULT_VIDEO_BYTE
 from opendirector.domain.video_capabilities import capability_fields, seedance_20_variant
 from .moss_image import MOSS_IMAGE_PROMPT_CHARACTERS, is_moss_image
 from .moss_speech import is_moss_speech
+from .minimax_speech import MINIMAX_SPEECH_MODELS, MINIMAX_SPEECH_TEXT_CHARACTERS, is_minimax_speech
+from .projects import ProjectError
 from .kling_models import KLING_MODELS, KLING_RATIOS, kling_capabilities
 from .bigmodel_image import is_bigmodel_image
 from .zhipu_speech import ZHIPU_DEFAULT_VOICE, ZHIPU_SPEECH_CHARACTERS, is_zhipu_speech
@@ -37,6 +39,12 @@ def _adapter_rules(config):
         rules.update(profile='moss-speech', allowedKinds=[], maxImages=0,
                      voiceRequired=True, referencesAllowed=False)
         return rules
+    if is_minimax_speech(config):
+        if config['modelId'] not in MINIMAX_SPEECH_MODELS:
+            raise ProjectError('不支持该 MiniMax 语音型号，请选择预设中的型号。', 422, code='minimax_speech_model')
+        rules.update(profile='minimax-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
+                     referencesAllowed=False, maxPromptCharacters=MINIMAX_SPEECH_TEXT_CHARACTERS)
+        return rules
     if is_zhipu_speech(config):
         rules.update(profile='zhipu-speech', allowedKinds=[], maxImages=0, voiceRequired=True,
                      referencesAllowed=False, maxPromptCharacters=ZHIPU_SPEECH_CHARACTERS,
@@ -54,6 +62,13 @@ def _adapter_rules(config):
         # SheetSage2 transcription service: it turns a reference recording into
         # a score for music generation and never generates audio itself.
         rules.update(profile='vllm-omni-score', allowedKinds=[], maxImages=0)
+        return rules
+    if kind == 'video' and config.get('protocol') == 'bigmodel_video':
+        from .bigmodel_video import cogvideo_capabilities
+        cogvideo_capabilities(model)
+        rules.update(profile='bigmodel-cogvideox-3', allowedKinds=['text', 'image'], maxImages=2,
+                     imageBytes=5 * 1024 * 1024, requestBytes=16 * 1024 * 1024, maxPromptCharacters=512,
+                     videoModes=['first_frame'], frameRoles=['first_frame', 'last_frame'], aspectRatios=[])
         return rules
     if kind == 'video' and config.get('protocol') == 'kling_video':
         kling_capabilities(model)
@@ -83,10 +98,12 @@ def _adapter_rules(config):
                      imageBytes=30 * 1024 * 1024, requestBytes=64 * 1024 * 1024, videoModes=['first_frame', 'reference', 'continuation'],
                      outputResolutions=['480P', '768P'])
         return rules
-    if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter == 'fasth3':
+    if kind == 'video' and config.get('protocol') == 'vllm_omni' and adapter in {'fasth3', 'fasth3_dual'}:
         rules.update(profile='fasth3-omni', allowedKinds=['text', 'image', 'video', 'audio'],
                      maxImages=9, maxVideos=3, maxAudios=3, imageBytes=30 * 1024 * 1024,
                      requestBytes=160 * 1024 * 1024, videoModes=['reference'], outputResolutions=['480P', '768P'])
+        if adapter == 'fasth3_dual':
+            rules.update(videoModes=['reference', 'first_frame'], frameRoles=['first_frame', 'last_frame'])
         return rules
     if kind == 'video' and config.get('protocol') == 'vllm_omni':
         rules.update(profile='standard-video', maxImages=1, videoModes=['first_frame'])
@@ -128,7 +145,8 @@ def _adapter_rules(config):
         # documented text-to-image plus reference editing with at
         # most 16 images, each under 25 MB and under 50 MB for the whole request.
         rules.update(profile='openai-gpt-image', allowedKinds=['text', 'image'], maxImages=16,
-                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024)
+                     imageBytes=25 * 1024 * 1024, requestBytes=50 * 1024 * 1024,
+                     imageQualities=['auto', 'low', 'medium', 'high'])
     if kind == 'audio':
         # vLLM-Omni music models (MiniMax Music 3, YuE2) share /audio/speech with
         # TTS but read a style caption and lyrics, so the protocol names the role.
@@ -148,7 +166,7 @@ def input_rules(config):
         if library is not None:
             rules['voiceLibrary'] = library
     if config['kind'] == 'video':
-        rules['generateAudioOptions'] = [True, False] if config.get('protocol') == 'volcengine' else [True]
+        rules['generateAudioOptions'] = [True, False] if config.get('protocol') in {'volcengine', 'bigmodel_video'} else [True]
     if config['kind'] == 'image' and rules['profile'] != 'vllm-omni-segmentation':
         from .image_output import image_outputs
         rules['imageOutputs'] = image_outputs(config, rules['profile'])
