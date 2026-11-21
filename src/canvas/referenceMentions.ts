@@ -135,4 +135,3 @@ export function mentionDismissAfterEvent(
   }
   return { dismissedStart, leftSinceDismiss: false, open: false };
 }
-
